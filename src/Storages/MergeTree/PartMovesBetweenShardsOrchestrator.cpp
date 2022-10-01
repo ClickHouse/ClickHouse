@@ -5,6 +5,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Storages/MergeTree/KeeperAccess.h>
 
 namespace DB
 {
@@ -454,7 +455,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, std::make_shared<KeeperAccess>(zk), attach_log_entry_barrier_path, entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData log_entry;
 

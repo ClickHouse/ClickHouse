@@ -713,11 +713,6 @@ private:
     /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
-        const zkutil::ZooKeeperPtr & zookeeper,
-        const String & zookeeper_block_id_path = "",
-        const String & zookeeper_path_prefix = "") const;
-    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
-        const String & partition_id,
         const KeeperAccessPtr & zookeeper,
         const String & zookeeper_block_id_path = "",
         const String & zookeeper_path_prefix = "") const;

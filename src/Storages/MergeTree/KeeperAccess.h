@@ -118,7 +118,7 @@ class KeeperAccess
 public:
     using Ptr = std::shared_ptr<KeeperAccess>;
 
-    static KeeperAccess::Ptr create(
+    static KeeperAccess::Ptr createInstance(
         int fault_injection_mode,
         UInt64 fault_injection_seed,
         double fault_injection_probability,
@@ -150,13 +150,13 @@ public:
         zk::Ptr const & keeper_, std::unique_ptr<FaultInjection> fault_policy_, std::string name_, Poco::Logger * logger_ = nullptr)
         : keeper(keeper_), fault_policy(std::move(fault_policy_)), name(std::move(name_)), logger(logger_)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_DEBUG(logger, "Created KeeperAccess({}): seed={}", name, fault_policy->getSeed());
     }
 
     ~KeeperAccess()
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_DEBUG(
                 logger,
                 "KeeperAccess({}): seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
@@ -184,21 +184,21 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<Strings>([&]() { return keeper->getChildren(path, stat, watch, list_request_type); });
     }
 
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<zk::FutureExists>([&]() { return keeper->asyncExists(path, watch_callback); });
     }
 
     zk::FutureGet asyncTryGet(const std::string & path)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<zk::FutureGet>([&]() { return keeper->asyncTryGet(path); });
     }
@@ -210,37 +210,51 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<bool>([&]() { return keeper->tryGet(path, res, stat, watch, code); });
     }
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        if (logger)
-            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, requests.front()->getPath());
+        if (unlikely(logger))
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, !requests.empty() ? requests.front()->getPath() : "");
         return access<Coordination::Error>([&]() { return keeper->tryMulti(requests, responses); });
     }
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, requests.front()->getPath());
         return access<Coordination::Error>([&]() { return keeper->tryMultiNoThrow(requests, responses); });
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<std::string>([&]() { return keeper->get(path, stat, watch); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
-        if (logger)
+        if (unlikely(logger))
             LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
         return access<bool>([&]() { return keeper->exists(path, stat, watch); });
+    }
+
+    std::string create(const std::string & path, const std::string & data, int32_t mode)
+    {
+        if (unlikely(logger))
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, path);
+        return access<std::string>([&]() { return keeper->create(path, data, mode); });
+    }
+
+    Coordination::Responses multi(const Coordination::Requests & requests)
+    {
+        if (unlikely(logger))
+            LOG_TRACE(logger, "{}({})", __PRETTY_FUNCTION__, !requests.empty() ? requests.front()->getPath() : "");
+        return access<Coordination::Responses>([&]() { return keeper->multi(requests); });
     }
 
 private:

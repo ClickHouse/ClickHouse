@@ -4669,7 +4669,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     if (mutation_affected_partition_ids.size() == 1)
     {
         const auto & affected_partition_id = *mutation_affected_partition_ids.cbegin();
-        auto block_number_holder = allocateBlockNumber(affected_partition_id, zookeeper);
+        auto block_number_holder = allocateBlockNumber(affected_partition_id, std::make_shared<KeeperAccess>(zookeeper));
         if (!block_number_holder.has_value())
             return {};
         auto block_number = block_number_holder->getNumber();  /// Avoid possible UB due to std::move
@@ -4946,8 +4946,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     Int64 mutation_version;
 
     {
-        auto zookeeper = getZooKeeper();
-        delimiting_block_lock = allocateBlockNumber(partition_id, zookeeper);
+        delimiting_block_lock = allocateBlockNumber(partition_id, std::make_shared<KeeperAccess>(getZooKeeper()));
         right = delimiting_block_lock->getNumber();
         /// Make sure we cover all parts in drop range.
         /// There might be parts with mutation version greater than current block number
@@ -5250,7 +5249,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
 
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id,
-    const zkutil::ZooKeeperPtr & zookeeper,
+    const KeeperAccessPtr & zookeeper,
     const String & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const
 {
@@ -5279,16 +5278,7 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     }
 
     return createEphemeralLockInZooKeeper(
-        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_path);
-}
-
-std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
-    const String & partition_id,
-    const KeeperAccessPtr & zookeeper,
-    const String & zookeeper_block_id_path,
-    const String & zookeeper_path_prefix) const
-{
-    return allocateBlockNumber(partition_id, zookeeper->getKeeper(), zookeeper_block_id_path, zookeeper_path_prefix);
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", zookeeper, zookeeper_block_id_path);
 }
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
@@ -6489,7 +6479,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             String block_id_path = replace ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
 
-            auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+            auto lock = allocateBlockNumber(partition_id, std::make_shared<KeeperAccess>(zookeeper), block_id_path);
             if (!lock)
             {
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
@@ -6718,7 +6708,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             String block_id_path;
 
-            auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
+            auto lock = dest_table_storage->allocateBlockNumber(partition_id, std::make_shared<KeeperAccess>(zookeeper), block_id_path);
             if (!lock)
             {
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);

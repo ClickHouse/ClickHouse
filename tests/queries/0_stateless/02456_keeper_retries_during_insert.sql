@@ -16,12 +16,4 @@ INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=0 VALU
 INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=1, insert_keeper_fault_injection_probability=0, insert_keeper_max_retries=0 VALUES (12);
 INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=1, insert_keeper_fault_injection_probability=1, insert_keeper_max_retries=0 VALUES (13); -- { serverError KEEPER_EXCEPTION }
 
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_probability=0.01, insert_keeper_fault_injection_mode=1 VALUES (21);
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_probability=0.01, insert_keeper_fault_injection_mode=1 VALUES (22);
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_probability=0.01, insert_keeper_fault_injection_mode=1 VALUES (23);
-
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=2 VALUES (31);
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=2 VALUES (32);
--- INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=2 VALUES (33);
-
 SELECT * FROM keeper_retries_r1 order by a;

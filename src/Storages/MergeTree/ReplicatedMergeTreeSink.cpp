@@ -160,7 +160,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
 
-    KeeperAccessPtr zookeeper = KeeperAccess::create(settings.insert_keeper_fault_injection_mode,
+    KeeperAccessPtr zookeeper = KeeperAccess::createInstance(settings.insert_keeper_fault_injection_mode,
             settings.insert_keeper_fault_injection_seed,
             settings.insert_keeper_fault_injection_probability,
             storage.getZooKeeper(),

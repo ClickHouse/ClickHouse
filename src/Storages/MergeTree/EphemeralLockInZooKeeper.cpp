@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
+#include <Storages/MergeTree/KeeperAccess.h>
 
 
 namespace DB
@@ -12,8 +13,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_)
-    : zookeeper(&zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const KeeperAccessPtr & zookeeper_, const String & holder_path_)
+    : zookeeper(zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
 {
     /// Write the path to the secondary node in the main node.
     path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
@@ -22,7 +23,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
 }
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path)
+    const String & path_prefix_, const String & temp_path, const KeeperAccessPtr & zookeeper_, const String & deduplication_path)
 {
     /// The /abandonable_lock- name is for backward compatibility.
     String holder_path_prefix = temp_path + "/abandonable_lock-";
@@ -31,7 +32,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     /// Let's create an secondary ephemeral node.
     if (deduplication_path.empty())
     {
-        holder_path = zookeeper_.create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
+        holder_path = zookeeper_->create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
     }
     else
     {
@@ -41,7 +42,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
         ops.emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
-        Coordination::Error e = zookeeper_.tryMulti(ops, responses);
+        Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e != Coordination::Error::ZOK)
         {
             if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
