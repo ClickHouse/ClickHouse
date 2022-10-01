@@ -666,7 +666,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 }
                 else
                 {
-                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
+                    LOG_TEST(log, "Bypassing cache because writeCache (in predownload) method failed");
                     continue_predownload = false;
                 }
             }

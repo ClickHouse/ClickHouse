@@ -74,6 +74,10 @@ public:
     /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
 
+    /// Whether this is a disk or a volume.
+    virtual bool isDisk() const { return false; }
+    virtual bool isVolume() const { return false; }
+
     virtual ~Space() = default;
 };
 
@@ -107,6 +111,9 @@ public:
         : executor(executor_)
     {
     }
+
+    /// This is a disk.
+    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
