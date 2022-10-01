@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 }
@@ -657,9 +658,22 @@ void ClientBase::initTtyBuffer()
         if (!ec && exists(tty) && is_character_file(tty)
             && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
         {
-            tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+            try
+            {
+                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+                return;
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                    throw;
+
+                /// It is normal if file exists, indicated as writeable but still cannot be opened.
+                /// Fallback to other options.
+            }
         }
-        else if (stderr_is_a_tty)
+
+        if (stderr_is_a_tty)
         {
             tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
         }
