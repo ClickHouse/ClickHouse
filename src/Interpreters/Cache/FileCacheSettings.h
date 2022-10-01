@@ -9,6 +9,8 @@ namespace DB
 
 struct FileCacheSettings
 {
+    std::string base_path;
+
     size_t max_size = 0;
     size_t max_elements = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS;
     size_t max_file_segment_size = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE;
@@ -22,6 +24,9 @@ struct FileCacheSettings
 
     /// In bytes.
     size_t background_download_max_memory_usage = REMOTE_FS_OBJECTS_CACHE_BACKGROUND_DOWNLOAD_MEMORY_USAGE;
+
+    size_t background_download_threadpool_pool_size = 100;
+    size_t background_download_threadpool_queue_size = 1000000;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

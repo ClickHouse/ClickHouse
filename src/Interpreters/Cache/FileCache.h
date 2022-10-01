@@ -19,6 +19,7 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/BackgroundDownloadReservation.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 public:
     using Key = DB::FileCacheKey;
 
-    FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    FileCache(const FileCacheSettings & cache_settings_);
 
     ~FileCache() = default;
 
@@ -142,11 +143,14 @@ private:
     const size_t max_size;
     const size_t max_element_size;
     const size_t max_file_segment_size;
-    const size_t background_download_max_memory_usage;
 
     const bool allow_persistent_files;
     const size_t enable_cache_hits_threshold;
     const bool enable_filesystem_query_cache_limit;
+
+    const size_t background_download_max_memory_usage;
+    const size_t background_download_threadpool_pool_size;
+    const size_t background_download_threadpool_queue_size;
 
     mutable std::mutex mutex;
     Poco::Logger * log;
@@ -156,12 +160,17 @@ private:
 
     void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
 
-    std::optional<ThreadPool> async_write_threadpool;
-    ssize_t background_download_current_memory_usage = 0;
     mutable std::mutex background_download_memory_usage_mutex;
+    /// Current total bytes of memory buffers waiting to be written to disk.
+    size_t background_download_current_memory_usage TSA_GUARDED_BY(background_download_memory_usage_mutex) = 0;
+
+    /// Threadpool for background asynchronous download of data into cache.
+    std::optional<ThreadPool> async_write_threadpool;
 
     ThreadPool & getThreadPoolForAsyncWrite();
-    void incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & background_download_memory_usage_mutex);
+
+    /// Try reserve `size` bytes. Return nullptr if reservation failed.
+    BackgroundDownloadReservationPtr tryReserveForBackgroundDownload(size_t size);
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 

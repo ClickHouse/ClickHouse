@@ -17,13 +17,14 @@ extern const Metric CacheDetachedFileSegments;
 namespace DB
 {
 
+/// A thread local variable to identify background download threads.
+/// Only background download threads will make this value non-empty.
 thread_local std::string background_caller_id;
 
 namespace ErrorCodes
 {
     extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int BACKGROUND_CACHE_WRITE_WAS_CANCELLED;
 }
 
 FileSegment::FileSegment(
@@ -90,7 +91,7 @@ FileSegment::State FileSegment::state() const
 
 bool FileSegment::isInternal()
 {
-    /// isInternal() == true means that current method is called by background download thread.
+    /// Is this method called by background download thread?
     return !background_caller_id.empty();
 }
 
@@ -126,8 +127,8 @@ size_t FileSegment::getCurrentWriteOffset() const
 
 size_t FileSegment::getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const
 {
-    /// In case of synchronous-cache-writing getCurrentWriteOffset() == getFirstNonDownloadedOffset().
-    /// In case of asynchronous cache writing it is not always true.
+    /// In case of synchronous cache writing getCurrentWriteOffset() == getFirstNonDownloadedOffset().
+    /// In case of asynchronous cache writing getCurrentWriteOffset() >= getFirstNonDownloadedOffset().
     if (background_download)
     {
         /// Get offset as it would be if background download queue was finished.
@@ -498,10 +499,10 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset, size_t max_wait_
     }
 
     LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded is finished", offset);
-}
+ }
 
-void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> & /* segment_lock */)
-{
+ void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> & /* segment_lock */)
+ {
     /// Background download might be cancelled in case file segment was detached
     /// (e.g. removed from cache, etc see detach() method comment ).
     /// In this case we need to wait for all the current tasks to finish.
@@ -807,7 +808,7 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
         std::unique_lock segment_lock(mutex);
 
         if (background_download && background_download->is_cancelled)
-            throw Exception(ErrorCodes::BACKGROUND_CACHE_WRITE_WAS_CANCELLED, "Background download was cancelled");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Background download was cancelled");
 
         assertIsDownloaderUnlocked("write", segment_lock);
         assertNotDetachedUnlocked(segment_lock);
@@ -894,17 +895,17 @@ FileSegment::State FileSegment::wait()
 
 bool FileSegment::BackgroundDownload::reserve(size_t size, std::unique_lock<std::mutex> & /* segment_lock */)
 {
-    std::lock_guard background_download_lock(cache->background_download_memory_usage_mutex);
-
-    if (cache->background_download_current_memory_usage + size > cache->background_download_max_memory_usage)
+    auto reservation = cache->tryReserveForBackgroundDownload(size);
+    if (!reservation)
         return false;
 
     try
     {
-        reserved_buffer = std::make_unique<BackgroundDownload::Buffer>(size, cache, background_download_lock);
+        reserved_buffer = std::make_unique<BackgroundDownload::Buffer>(std::move(reservation));
     }
     catch (...)
     {
+        /// catch only MEMORY_LIMIT_EXCEEDED?
 #ifdef NDEBUG
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
@@ -916,16 +917,9 @@ bool FileSegment::BackgroundDownload::reserve(size_t size, std::unique_lock<std:
     return true;
 }
 
-FileSegment::BackgroundDownload::Buffer::Buffer(size_t size_, FileCache * cache_, std::lock_guard<std::mutex> & background_download_lock)
-    : memory(size_), buf_size(size_), cache(cache_)
+FileSegment::BackgroundDownload::Buffer::Buffer(BackgroundDownloadReservationPtr reservation_)
+    : memory(reservation_->size), buf_size(reservation_->size), reservation(std::move(reservation_))
 {
-    cache->incrementBackgroundDownloadSize(buf_size, background_download_lock);
-}
-
-FileSegment::BackgroundDownload::Buffer::~Buffer()
-{
-    std::lock_guard background_download_lock(cache->background_download_memory_usage_mutex);
-    cache->incrementBackgroundDownloadSize(-static_cast<int64_t>(buf_size), background_download_lock);
 }
 
 std::optional<FileSegment::Range>
@@ -938,10 +932,10 @@ FileSegment::BackgroundDownload::getCurrentlyDownloadingRange(std::unique_lock<s
     return FileSegment::Range(range.offset, range.offset + range.size - 1);
 }
 
-std::vector<FileSegment::Range>
+FileSegment::BackgroundDownload::Ranges
 FileSegment::BackgroundDownload::getDownloadQueueRanges(std::unique_lock<std::mutex> & /* segment_lock */) const
 {
-    std::vector<FileSegment::Range> result;
+    Ranges result;
     for (const auto & buffer : buffers)
         result.emplace_back(buffer->offset, buffer->offset + buffer->size() - 1);
     return result;
@@ -1045,6 +1039,15 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     assertNotDetachedUnlocked(segment_lock);
     assertIsDownloaderUnlocked("completePartAndResetDownloader", segment_lock);
 
+    /// With background download we have two "downloaders". The first one is from the main thread,
+    /// which calls getOrSetDownloader and executed the logic in CachedFromDiskReadBufferFromFile
+    /// (identified by downloader_id). The second one is the background downloader who executes
+    /// background download (identified by background_downloader_id). There is an invariant that
+    /// download_state can be changed only by main downloader if downloader_id is non-empty, e.g.
+    /// there is an active main downloader. Nevertheless, if downloader_id is empty, background
+    /// downloader can and should change the download state. The state is always finalized because
+    /// some of them will be the last to call completePartAndResetDownloader() and this file segment
+    /// will be completed with the final state.
     if (isInternal())
     {
         if (downloader_id.empty())
@@ -1074,7 +1077,7 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     cv.notify_all();
 }
 
-void FileSegment::completeWithoutState()
+void FileSegment::complete()
 {
     std::lock_guard cache_lock(cache->mutex);
     completeWithoutStateUnlocked(cache_lock);

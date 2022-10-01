@@ -198,8 +198,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::DROP_FILESYSTEM_CACHE or type == Type::DROP_BACKGROUND_FILESYSTEM_CACHE_DOWNLOAD)
     {
-        if (!filesystem_cache_path_or_name.empty())
-            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path_or_name;
+        if (!filesystem_cache_name.empty())
+            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
     }
     else if (type == Type::UNFREEZE)
     {

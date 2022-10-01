@@ -15,73 +15,37 @@ FileCacheFactory & FileCacheFactory::instance()
     return ret;
 }
 
-FileCacheFactory::CacheByBasePath FileCacheFactory::getAll()
+FileCacheFactory::CacheByName FileCacheFactory::getAll()
 {
     std::lock_guard lock(mutex);
-    return caches_by_path;
-}
-
-const FileCacheSettings & FileCacheFactory::getSettings(const std::string & cache_base_path)
-{
-    std::lock_guard lock(mutex);
-    auto it = caches_by_path.find(cache_base_path);
-    if (it == caches_by_path.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
-    return it->second->settings;
-
-}
-
-bool FileCacheFactory::tryGetByPath(FileCacheData & result, const std::string & cache_path)
-{
-    std::lock_guard lock(mutex);
-
-    auto it = caches_by_path.find(cache_path);
-    if (it == caches_by_path.end())
-        return false;
-
-    result = *it->second;
-    return true;
-
+    return caches_by_name;
 }
 
 FileCachePtr FileCacheFactory::getOrCreate(
-    const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name)
+    const std::string & cache_name, const FileCacheSettings & file_cache_settings)
 {
     std::lock_guard lock(mutex);
 
-    auto it = caches_by_path.find(cache_base_path);
-    if (it != caches_by_path.end())
+    auto [it, inserted] = caches_by_name.emplace(cache_name, Caches::iterator{});
+    if (inserted)
     {
-        caches_by_name.emplace(name, it->second);
-        return it->second->cache;
+        it->second = caches.insert(
+            caches.end(),
+            FileCacheData{std::make_shared<FileCache>(file_cache_settings), file_cache_settings});
     }
 
-    auto cache = std::make_shared<FileCache>(cache_base_path, file_cache_settings);
-    FileCacheData result{cache, file_cache_settings};
-
-    auto cache_it = caches.insert(caches.end(), std::move(result));
-    caches_by_name.emplace(name, cache_it);
-    caches_by_path.emplace(cache_base_path, cache_it);
-
-    return cache;
+    return it->second->cache;
 }
 
-bool FileCacheFactory::tryGetByName(FileCacheData & result, const std::string & cache_name)
+const FileCacheFactory::FileCacheData & FileCacheFactory::getByName(const std::string & cache_name)
 {
     std::lock_guard lock(mutex);
 
     auto it = caches_by_name.find(cache_name);
     if (it == caches_by_name.end())
-        return false;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no cache by name: {}", cache_name);
 
-    result = *it->second;
-    return true;
-}
-
-FileCacheFactory::CacheByName FileCacheFactory::getAllByName()
-{
-    std::lock_guard lock(mutex);
-    return caches_by_name;
+    return *it->second;
 }
 
 }

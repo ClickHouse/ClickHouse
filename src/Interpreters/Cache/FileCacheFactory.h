@@ -27,28 +27,19 @@ public:
     };
 
     using Caches = std::list<FileCacheData>;
-    using CacheByBasePath = std::unordered_map<std::string, Caches::iterator>;
     using CacheByName = std::unordered_map<std::string, Caches::iterator>;
 
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
+    FileCachePtr getOrCreate(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
 
-    bool tryGetByPath(FileCacheData & result, const std::string & cache_path);
+    CacheByName getAll();
 
-    bool tryGetByName(FileCacheData & result, const std::string & cache_name);
-
-    CacheByBasePath getAll();
-
-    CacheByName getAllByName();
-
-    const FileCacheSettings & getSettings(const std::string & cache_base_path);
+    const FileCacheData & getByName(const std::string & cache_name);
 
 private:
     std::mutex mutex;
     Caches caches;
-
-    CacheByBasePath caches_by_path;
     CacheByName caches_by_name;
 };
 

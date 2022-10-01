@@ -2,6 +2,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/BackgroundDownloadReservation.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -209,7 +210,7 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-    void completeWithoutState();
+    void complete();
 
     /// Complete file segment's part which was last written.
     void completePartAndResetDownloader();
@@ -338,12 +339,10 @@ public:
     getCurrentlyDownloadingRange(std::unique_lock<std::mutex> & segment_lock) const;
 
     /// Get a list of ranges, which are waiting to be downloaded.
-    std::vector<FileSegment::Range>
-    getDownloadQueueRanges(std::unique_lock<std::mutex> & segment_lock) const;
+    using Ranges = std::vector<FileSegment::Range>;
+    Ranges getDownloadQueueRanges(std::unique_lock<std::mutex> & segment_lock) const;
 
 private:
-    bool hasError(std::unique_lock<std::mutex> & /* segment_lock */) const { return exception != nullptr; }
-
     /// Get size of the file segment as it would be if all entries
     /// in this queue would be downloaded successfully.
     size_t getFutureDownloadedSize(std::unique_lock<std::mutex> & /* segment_lock */) const { return future_downloaded_size; }
@@ -366,9 +365,7 @@ private:
 
     struct Buffer : private boost::noncopyable
     {
-        explicit Buffer(size_t size_, FileCache * cache_, std::lock_guard<std::mutex> & background_download_lock);
-
-        ~Buffer();
+        explicit Buffer(BackgroundDownloadReservationPtr reservation_);
 
         char * data() { return memory.data(); }
 
@@ -376,13 +373,12 @@ private:
 
         /// Buffer data.
         Memory<> memory;
-
         /// Offset within a file segment where current buffer needs to be written.
         size_t offset;
         /// Size of current buffer. size == memory.size().
         size_t buf_size;
 
-        FileCache * cache;
+        BackgroundDownloadReservationPtr reservation;
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheBackgroundDownloadBuffers};
     };
@@ -413,17 +409,18 @@ private:
     /// wait list because previous buffer could be popped any time by the download thread.)
     std::optional<OffsetAndSize> last_added_buffer_range;
 
+    /// A range that is being currently downloaded by a background download thread.
     std::optional<OffsetAndSize> currently_executing_range;
 
     /// Downloaded size as it would be at the point when all currently submitted download
     /// tasks would be finished.
     std::atomic<size_t> future_downloaded_size = 0;
 
-    FileCache * cache;
-
     /// Buffer placeholder is put here in file_segment.reserve() method. It will be moved from here
     /// to Buffers queue when write() method is called.
     BufferPtr reserved_buffer;
+
+    FileCache * cache;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

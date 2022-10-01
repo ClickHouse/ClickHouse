@@ -44,10 +44,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-    FileCacheFactory::FileCacheData cache_data;
-    bool found = FileCacheFactory::instance().tryGetByName(cache_data, ast.cache_name);
-    if (!found)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find cache identified by {}", ast.cache_name);
+    auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
     const auto & settings = cache_data.settings;
     const auto & cache = cache_data.cache;
 

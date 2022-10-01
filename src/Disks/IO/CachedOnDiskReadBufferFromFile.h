@@ -88,7 +88,7 @@ private:
 
     void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
-    bool writeCache(char * data, size_t size, size_t offset, FileSegmentPtr & file_segment);
+    bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
     void prepareForSkipCache(FileSegment & file_segment);
 

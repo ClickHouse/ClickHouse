@@ -7,7 +7,6 @@
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <Common/config.h>
-#include <Common/scope_guard_safe.h>
 #include <IO/SeekableReadBuffer.h>
 
 #include <future>

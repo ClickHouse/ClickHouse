@@ -27,17 +27,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(
-    const String & cache_base_path_,
-    const FileCacheSettings & cache_settings_)
-    : cache_base_path(cache_base_path_)
+FileCache::FileCache(const FileCacheSettings & cache_settings_)
+    : cache_base_path(cache_settings_.base_path)
     , max_size(cache_settings_.max_size)
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
-    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
+    , background_download_threadpool_pool_size(cache_settings_.background_download_threadpool_pool_size)
+    , background_download_threadpool_queue_size(cache_settings_.background_download_threadpool_queue_size)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
@@ -527,10 +527,12 @@ ThreadPool & FileCache::getThreadPoolForAsyncWrite()
     std::lock_guard lock(mutex);
     if (!async_write_threadpool)
     {
-        constexpr size_t pool_size = 50; /// TODO: add a user setting for this
-        constexpr size_t queue_size = 1000000;
-        async_write_threadpool.emplace(pool_size, pool_size, queue_size);
+        async_write_threadpool.emplace(
+            background_download_threadpool_pool_size,
+            background_download_threadpool_pool_size,
+            background_download_threadpool_queue_size);
     }
+
     return *async_write_threadpool;
 }
 
@@ -540,11 +542,22 @@ bool FileCache::getCurrentMemoryUsageOfBackgroundDownload() const
     return background_download_current_memory_usage;
 }
 
-void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* background_download_memory_usage_mutex */)
+BackgroundDownloadReservationPtr FileCache::tryReserveForBackgroundDownload(size_t size)
 {
-    background_download_current_memory_usage += increment;
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheBackgroundDownloadSize, increment);
-    assert(background_download_current_memory_usage >= 0);
+    std::lock_guard lock(background_download_memory_usage_mutex);
+
+    if (background_download_current_memory_usage + size > background_download_max_memory_usage)
+        return nullptr;
+
+    background_download_current_memory_usage += size;
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheBackgroundDownloadSize, size);
+
+    return std::make_unique<BackgroundDownloadReservation>(size, [this, size]
+    {
+        std::lock_guard lk(background_download_memory_usage_mutex);
+        assert(background_download_current_memory_usage >= size);
+        background_download_current_memory_usage -= size;
+    });
 }
 
 FileSegmentPtr FileCache::createFileSegmentForDownload(
@@ -940,6 +953,7 @@ void FileCache::removeIfReleasable()
 void FileCache::dropBackgroundDownload()
 {
     std::lock_guard cache_lock(mutex);
+
     for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
         const auto & key = it->key();

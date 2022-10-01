@@ -3,6 +3,7 @@
         <default>
           <enable_filesystem_cache_on_write_operations>1</enable_filesystem_cache_on_write_operations>
           <enable_filesystem_cache>1</enable_filesystem_cache>
+          <enable_filesystem_cache_asynchronous_write>1</enable_filesystem_cache_asynchronous_write>
         </default>
     </profiles>
 </clickhouse>

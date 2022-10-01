@@ -53,10 +53,9 @@ public:
 
     void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
-    const std::string & getCacheBasePath() const override
-    {
-        return object_storage->getCacheBasePath();
-    }
+    const std::string & getCacheBasePath() const override { return object_storage->getCacheBasePath(); }
+
+    const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 

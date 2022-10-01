@@ -65,7 +65,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     else
     {
         auto file_segment = *current_file_segment_it;
-        assert(file_segment->getCurrentWriteOffset() == current_file_segment_write_offset);
+        chassert(file_segment->getCurrentWriteOffset() == current_file_segment_write_offset);
 
         if (current_file_segment_write_offset != offset)
         {
@@ -96,7 +96,7 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     bool reserved = file_segment->reserve(size);
     if (!reserved)
     {
-        assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         appendFilesystemCacheLog(*file_segment);
 
         LOG_DEBUG(
@@ -202,7 +202,7 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
     if (file_segment.isDetached())
         return;
 
-    file_segment.completeWithoutState();
+    file_segment.complete();
     appendFilesystemCacheLog(file_segment);
 }
 

@@ -80,7 +80,7 @@ void complete(const DB::FileSegmentsHolderPtr & holder)
     {
         ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(file_segment);
-        file_segment->completeWithoutState();
+        file_segment->complete();
     }
 }
 
@@ -103,9 +103,10 @@ TEST(FileCache, get)
     DB::FileCacheSettings settings;
     settings.max_size = 30;
     settings.max_elements = 5;
+    settings.base_path = cache_base_path;
 
     {
-        auto cache = DB::FileCache(cache_base_path, settings);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         auto key = cache.hash("key1");
 
@@ -127,7 +128,7 @@ TEST(FileCache, get)
             assertRange(2, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADING);
 
             download(segments[0]);
-            segments[0]->completeWithoutState();
+            segments[0]->complete();
             assertRange(3, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -148,7 +149,7 @@ TEST(FileCache, get)
 
             ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[1]);
-            segments[1]->completeWithoutState();
+            segments[1]->complete();
             assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -205,7 +206,7 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[2]);
 
-            segments[2]->completeWithoutState();
+            segments[2]->complete();
 
             assertRange(14, segments[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
 
@@ -246,7 +247,7 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[3]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[3]);
 
-            segments[3]->completeWithoutState();
+            segments[3]->complete();
             ASSERT_TRUE(segments[3]->state() == DB::FileSegment::State::DOWNLOADED);
         }
 
@@ -269,8 +270,8 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments[0]);
             prepareAndDownload(segments[2]);
-            segments[0]->completeWithoutState();
-            segments[2]->completeWithoutState();
+            segments[0]->complete();
+            segments[2]->complete();
         }
 
         /// Current cache:    [____][_]  [][___][__]
@@ -292,8 +293,8 @@ TEST(FileCache, get)
             ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(s5[0]);
             prepareAndDownload(s1[0]);
-            s5[0]->completeWithoutState();
-            s1[0]->completeWithoutState();
+            s5[0]->complete();
+            s1[0]->complete();
 
             /// Current cache:    [___]       [_][___][_]   [__]
             ///                   ^   ^       ^  ^   ^  ^   ^  ^
@@ -395,7 +396,7 @@ TEST(FileCache, get)
             }
 
             prepareAndDownload(segments[2]);
-            segments[2]->completeWithoutState();
+            segments[2]->complete();
             ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
 
             other_1.join();
@@ -460,7 +461,7 @@ TEST(FileCache, get)
 
                 ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
                 prepareAndDownload(segments_2[1]);
-                segments_2[1]->completeWithoutState();
+                segments_2[1]->complete();
             });
 
             {
@@ -482,7 +483,7 @@ TEST(FileCache, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(cache_base_path, settings);
+        auto cache2 = DB::FileCache(settings);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
@@ -503,7 +504,8 @@ TEST(FileCache, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
+        settings2.base_path = caches_dir / "cache2";
+        auto cache2 = DB::FileCache(settings2);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
