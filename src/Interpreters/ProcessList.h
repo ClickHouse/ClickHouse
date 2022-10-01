@@ -5,6 +5,8 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -236,6 +238,8 @@ struct ProcessListForUser
 {
     explicit ProcessListForUser(ProcessList * global_process_list);
 
+    ProcessListForUser(ContextPtr global_context, ProcessList * global_process_list);
+
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatus *>;
     QueryToElement queries;
@@ -243,6 +247,8 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
 
@@ -257,6 +263,7 @@ struct ProcessListForUser
     /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
     void resetTrackers()
     {
+        /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
         if (user_throttler)
             user_throttler.reset();
@@ -374,7 +381,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextPtr query_context);
+    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }
