@@ -1498,7 +1498,7 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 - `move_factor` is ignored.
 - `keep_free_space_bytes` is ignored.
 - `max_data_part_size_bytes` is ignored.
-- Уou must have exactly one volume in that policy.
+- Policy should have exactly one volume with local disks.
 :::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
