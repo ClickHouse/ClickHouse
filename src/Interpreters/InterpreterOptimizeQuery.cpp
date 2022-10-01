@@ -6,6 +6,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -74,6 +75,9 @@ BlockIO InterpreterOptimizeQuery::execute()
                         required_col, fmt::join(column_names, "', '"));
         }
     }
+
+    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
 
