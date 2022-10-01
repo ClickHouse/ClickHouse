@@ -142,12 +142,6 @@ private:
             if (!is_input_finished[input] && last_chunk_id[input] < current_chunk_id)
                 return false;
 
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "SortingAggregatedForMemoryBoundMergingTransform pushing chunk with id ({}, {})",
-            current_chunk_id.bucket_id,
-            current_chunk_id.chunk_num);
-
         output.push(std::move(it->second));
         chunks.erase(it);
         return true;

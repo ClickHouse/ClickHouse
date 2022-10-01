@@ -2472,14 +2472,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         auto sorting_step = std::make_unique<SortingStep>(
             query_plan.getCurrentDataStream(),
             group_by_sort_description,
-            settings.max_block_size,
             0 /* LIMIT */,
-            SizeLimits{} /* no limits */,
-            settings.max_bytes_before_remerge_sort,
-            settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort,
-            context->getTemporaryVolume(),
-            settings.min_free_disk_space_for_temporary_data,
+            SortingStep::Settings(*context),
             settings.optimize_sorting_by_input_stream_properties);
         sorting_step->setStepDescription("Enforced sorting for aggregation in order");
 
