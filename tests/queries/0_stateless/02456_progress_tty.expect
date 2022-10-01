@@ -4,7 +4,7 @@ set basedir [file dirname $argv0]
 set basename [file tail $argv0]
 #exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
 
-log_user 1
+log_user 0
 set timeout 60
 match_max 100000
 set stty_init "rows 25 cols 120"
