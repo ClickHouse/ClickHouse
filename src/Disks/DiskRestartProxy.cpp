@@ -331,6 +331,20 @@ void DiskRestartProxy::getRemotePathsRecursive(
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
+DiskPtr DiskRestartProxy::getNestedDisk() const
+{
+    DiskPtr delegate_copy;
+
+    {
+        ReadLock lock (mutex);
+        delegate_copy = delegate;
+    }
+
+    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate_copy.get()))
+        return decorator->getNestedDisk();
+    return delegate_copy;
+}
+
 void DiskRestartProxy::restart(ContextPtr context)
 {
     /// Speed up processing unhealthy requests.

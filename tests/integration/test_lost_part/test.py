@@ -73,6 +73,9 @@ def test_lost_part_same_replica(start_cluster):
     node1.query("ATTACH TABLE mt0")
 
     node1.query("SYSTEM START MERGES mt0")
+    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt0")
+    print("result: ", res)
+    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
@@ -133,6 +136,9 @@ def test_lost_part_other_replica(start_cluster):
     node1.query("CHECK TABLE mt1")
 
     node2.query("SYSTEM START REPLICATION QUEUES")
+    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
+    print("result: ", res)
+    print("error: ", res)
 
     for i in range(10):
         result = node2.query("SELECT count() FROM system.replication_queue")
@@ -190,6 +196,9 @@ def test_lost_part_mutation(start_cluster):
     node1.query("CHECK TABLE mt2")
 
     node1.query("SYSTEM START MERGES mt2")
+    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt2")
+    print("result: ", res)
+    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
@@ -237,10 +246,13 @@ def test_lost_last_part(start_cluster):
     node1.query("CHECK TABLE mt3")
 
     node1.query("SYSTEM START MERGES mt3")
+    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt3")
+    print("result: ", res)
+    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
-        assert int(result) <= 1, "Have a lot of entries in queue {}".format(
+        assert int(result) <= 2, "Have a lot of entries in queue {}".format(
             node1.query("SELECT * FROM system.replication_queue FORMAT Vertical")
         )
         if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log(
