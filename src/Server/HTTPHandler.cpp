@@ -26,7 +26,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>

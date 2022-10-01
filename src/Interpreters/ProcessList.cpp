@@ -69,7 +69,7 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextPtr query_context)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context)
 {
     EntryPtr res;
 
@@ -198,7 +198,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
-            user_process_list_it = user_to_queries.emplace(client_info.current_user, this).first;
+        {
+            user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
+                std::forward_as_tuple(client_info.current_user),
+                std::forward_as_tuple(query_context->getGlobalContext(), this)).first;
+        }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
@@ -208,6 +212,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            if (user_process_list.user_temp_data_on_disk)
+            {
+                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                    user_process_list.user_temp_data_on_disk, settings.max_temp_data_on_disk_size_for_query));
+            }
             thread_group->query = query_;
             thread_group->one_line_query = toOneLineQuery(query_);
             thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
@@ -556,9 +565,19 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
+    : ProcessListForUser(nullptr, global_process_list)
+{}
+
+ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * global_process_list)
     : user_overcommit_tracker(global_process_list, this)
 {
     user_memory_tracker.setOvercommitTracker(&user_overcommit_tracker);
+
+    if (global_context)
+    {
+        size_t size_limit = global_context->getSettingsRef().max_temp_data_on_disk_size_for_user;
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
+    }
 }
 
 

@@ -24,6 +24,11 @@ runner_arch() {
   esac
 }
 
+# We have test for cgroups, and it's broken with cgroups v2
+# Ubuntu 22.04 has it enabled by default
+sed -r '/GRUB_CMDLINE_LINUX=/ s/"(.*)"/"\1 systemd.unified_cgroup_hierarchy=0"/' -i /etc/default/grub
+update-grub
+
 apt-get update
 
 apt-get install --yes --no-install-recommends \
