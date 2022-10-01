@@ -4,12 +4,13 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1032,7 +1033,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

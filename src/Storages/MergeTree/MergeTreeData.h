@@ -867,9 +867,12 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
-    /// Returns destination disk or volume for the TTL rule according to current storage policy
-    /// 'is_insert' - is TTL move performed on new data part insert.
-    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
+
+    /// Returns destination disk or volume for the TTL rule according to current storage policy.
+    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
+
+    /// Whether INSERT of a data part which is already expired should move it immediately to a volume/disk declared in move rule.
+    bool shouldPerformTTLMoveOnInsert(const SpacePtr & move_destination) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.

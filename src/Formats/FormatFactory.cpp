@@ -247,8 +247,8 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
-               context->getApplicationType() == Context::ApplicationType::SERVER};
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
+            settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
         if (!settings.input_format_record_errors_file_path.toString().empty())
         {
