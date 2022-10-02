@@ -7,6 +7,8 @@
 #include <utility>
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
+#include <Server/IServer.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace GraphiteCarbon
 {
@@ -87,8 +89,8 @@ public:
     std::string table;
 };
 
-std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_);
+std::shared_ptr<GraphiteFinder> new_plain_finder(DB::IServer & server, const std::string & table_name_);
 
-std::string MetricsFind(const std::string & table_name, const std::string & query, int from, int until, const std::string & format);
+std::string MetricsFind(DB::IServer & server, const std::string & table_name, const std::string & query, int from, int until, const std::string & format);
 
 }

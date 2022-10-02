@@ -8,8 +8,11 @@
 #include <DataTypes/Serializations/SerializationDateTime.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Server/IServer.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
+
 
 namespace GraphiteCarbon
 {
@@ -24,14 +27,15 @@ const std::string graphite_index = "graphite_index";
 const std::string graphite_reversed = "graphite_reversed";
 const std::string graphite_prefix = "graphite_prefix";
 
-std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_)
+std::shared_ptr<GraphiteFinder> new_plain_finder(DB::IServer & server, const std::string & table_name_)
 {
     auto f = std::make_shared<IndexFinder>(table_name_, false, 1, false, false);
     if (table_name_ == graphite_index)
         return f;
     if (table_name_ == graphite_prefix)
     {
-        return std::make_shared<PrefixFinder>(f, "");
+        const auto & prefix = server.config().getString("graphite_carbon.graphite_prefix.prefix", "prefix");
+        return std::make_shared<PrefixFinder>(f, prefix);
     }
     if (table_name_ == graphite_reversed)
     {
@@ -40,9 +44,9 @@ std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_
     return f;
 
 }
-std::string MetricsFind(const std::string & table_name, const std::string & query, int from, int until, const std::string & format)
+std::string MetricsFind(DB::IServer & server, const std::string & table_name, const std::string & query, int from, int until, const std::string & format)
 {
-    auto f = new_plain_finder(table_name);
+    auto f = new_plain_finder(server, table_name);
     return f->generate_query(query, from, until, format);
 }
 

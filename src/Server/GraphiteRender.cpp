@@ -5,13 +5,15 @@
 #include <iostream>
 #include <utility>
 #include "GraphiteFinder.h"
+#include <Server/IServer.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace GraphiteCarbon
 {
 
-std::string RenderQuery(std::string & table_name_, std::string & target_, int from_, int until_, std::string & format_)
+std::string RenderQuery(DB::IServer & server, std::string & table_name_, std::string & target_, int from_, int until_, std::string & format_)
 {
-    auto f = new_plain_finder(table_name_);
+    auto f = new_plain_finder(server, table_name_);
     std::string query_ = f->generate_query(target_, from_, until_);
     GraphiteRender g(query_, from_, until_, format_);
     return g.generate_render_query();

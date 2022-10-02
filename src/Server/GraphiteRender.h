@@ -2,12 +2,14 @@
 
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
+#include <Server/IServer.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace GraphiteCarbon
 {
 
-std::string RenderQuery(std::string & table_name_, std::string & target_, int from_, int until_, std::string & format_);
+std::string RenderQuery(DB::IServer & server, std::string & table_name_, std::string & target_, int from_, int until_, std::string & format_);
 
 class GraphiteRender
 {

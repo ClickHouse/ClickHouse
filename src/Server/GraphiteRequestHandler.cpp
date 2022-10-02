@@ -56,7 +56,7 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
         {
             customizeQueryParam(context, it.first, it.second);
         }
-        return GraphiteCarbon::MetricsFind(table_name, q, from, until, format);
+        return GraphiteCarbon::MetricsFind(server, table_name, q, from, until, format);
     }
     else if (uri.toString().find("/render?") != std::string::npos)
     {
@@ -87,7 +87,7 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
                 LOG_DEBUG(log, "until: {}", until);
             }
         }
-        return GraphiteCarbon::RenderQuery(table_name, target, from, until, format);
+        return GraphiteCarbon::RenderQuery(server, table_name, target, from, until, format);
     }
     if (!context)
     {
