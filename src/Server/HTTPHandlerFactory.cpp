@@ -151,7 +151,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, Asynchronous
     else if (name == "GraphiteHandler-factory")
     {
 
-        const auto & table_name = server.config().getString("graphite.table_name", "graphite_index");
+        const auto & table_name = server.config().getString("graphite_carbon.table_name", "graphite_index");
         std::optional<String> content_type_override;
 
         auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
@@ -225,7 +225,7 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
     if (server.config().has("graphite_carbon") && server.config().getInt("graphite_carbon.port", 0) == 0)
     {
        
-        const auto & table_name = server.config().getString("graphite.table_name", "graphite_index");
+        const auto & table_name = server.config().getString("graphite_carbon.table_name", "graphite_index");
         std::optional<String> content_type_override;
         auto graphite_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<GraphiteRequestHandler>>(
         server, std::move(table_name), std::move(content_type_override));

@@ -1010,13 +1010,16 @@
         <!-- Graphite Carbon. -->
     <!--
         endpoint - mertics path (relative to root, statring with "/")
-        port - port to setup server. If not defined or 0 than http_port used
+        port - port to setup server
     -->
     
     <graphite_carbon>
         <endpoint>/graphite</endpoint>
         <port>9365</port>
         <table_name>graphite_index</table_name>
+        <graphite_prefix>
+            <prefix>data_center.cluster</prefix>>
+        </graphite_prefix>>
 
     </graphite_carbon>
 

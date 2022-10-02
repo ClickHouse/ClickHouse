@@ -21,12 +21,24 @@ const int ReverseTreeLevelOffset = 30000;
 const std::string DefaultTreeDate = "1970-02-12";
 
 const std::string graphite_index = "graphite_index";
+const std::string graphite_reversed = "graphite_reversed";
+const std::string graphite_prefix = "graphite_prefix";
 
 std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_)
 {
+    auto f = std::make_shared<IndexFinder>(table_name_, false, 1, false, false);
     if (table_name_ == graphite_index)
-        return std::make_shared<IndexFinder>(table_name_, false, 1, false, false);
-    return std::make_shared<IndexFinder>(table_name_, false, 1, false, false);
+        return f;
+    if (table_name_ == graphite_prefix)
+    {
+        return std::make_shared<PrefixFinder>(f, "");
+    }
+    if (table_name_ == graphite_reversed)
+    {
+        return std::make_shared<ReverseFinder>(f, table_name_);
+    }
+    return f;
+
 }
 std::string MetricsFind(const std::string & table_name, const std::string & query, int from, int until, const std::string & format)
 {
@@ -214,7 +226,6 @@ ReverseFinder::generate_query(const std::string & query, int from = 0, int until
     {
         wrapped->generate_query(query, from, until, format);
     }
-    is_used = true;
     return base_finder.generate_query(reverse_string(query), from, until);
 }
 

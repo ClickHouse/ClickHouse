@@ -85,7 +85,6 @@ public:
     std::shared_ptr<GraphiteFinder> wrapped;
     BaseFinder base_finder;
     std::string table;
-    bool is_used{};
 };
 
 std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_);

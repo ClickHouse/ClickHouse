@@ -25,7 +25,10 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
     if (uri.toString().find("/metrics/find?") != std::string::npos)
     {
         LOG_DEBUG(log, "METRICS: {}", uri.toString());
-        std::string q = "";
+        LOG_DEBUG(log, "table name: {}", table_name);
+        const auto & t = server.config().getString("graphite_carbon.graphite_prefix.prefix", "prefix");
+        LOG_DEBUG(log, "prefix: {}", t);
+        std::string q;
         std::string format = "TabSeparatedRaw";
         int from = 0;
         int until = 0;

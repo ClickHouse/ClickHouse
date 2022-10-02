@@ -28,6 +28,7 @@ class IServer;
 class GraphiteRequestHandler : public HTTPHandler
 {
 private:
+    IServer & server;
     Poco::Logger * log = &Poco::Logger::get("GraphiteCarbon");
     std::string table_name;
 
@@ -36,7 +37,7 @@ public:
         IServer & server_,
         const std::string & table_name_ = "graphite_index",
         const std::optional<String> & content_type_override_ = std::nullopt)
-        : HTTPHandler(server_, "graphite_carbon", content_type_override_), table_name(table_name_)
+        : HTTPHandler(server_, "graphite_carbon", content_type_override_), server(server_), table_name(table_name_)
     {
     }
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
