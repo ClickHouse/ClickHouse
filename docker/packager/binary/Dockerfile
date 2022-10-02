@@ -24,6 +24,7 @@ RUN apt-get install \
         --yes
 
 # Install CMake 3.20+ for Rust compilation
+# Used https://askubuntu.com/a/1157132 as reference
 RUN apt purge cmake --yes
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
 RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'

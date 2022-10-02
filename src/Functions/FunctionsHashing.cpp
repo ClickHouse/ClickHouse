@@ -53,7 +53,7 @@ The function is rather fast and shows approximately two times faster performance
 It returns a BLAKE3 hash as a byte array with type FixedString(32).
 )",
         Documentation::Examples{
-            {"hash", "SELECT hex(BLAKE3('ABC'))"}},
+            {"hash", "SELECT hex(blake3('ABC'))"}},
         Documentation::Categories{"Hash"}
     },
     FunctionFactory::CaseSensitive);
