@@ -909,6 +909,7 @@ trimLeft
 trimRight
 trunc
 tryBase58Decode
+tryDecrypt
 tumble
 tumbleEnd
 tumbleStart
