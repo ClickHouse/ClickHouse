@@ -596,7 +596,7 @@ struct ImplXxHash64
 #if USE_BLAKE3
 struct ImplBLAKE3
 {
-    static constexpr auto name = "BLAKE3";
+    static constexpr auto name = "blake3";
     enum { length = 32 };
 
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
