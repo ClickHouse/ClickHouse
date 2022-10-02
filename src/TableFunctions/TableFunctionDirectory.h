@@ -18,9 +18,9 @@
 #include <Processors/ISource.h>
 
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageDirectory.h>
 
@@ -42,7 +42,7 @@ public:
     static constexpr auto name = "directory";
     std::string getName() const override { return name; }
 
-    bool hasStaticStructure() const override {return true;}
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     String path;
@@ -87,19 +87,34 @@ protected:
 private:
     const char * getStorageTypeName() const override { return "Directory"; }
     ColumnsDescription structure{NamesAndTypesList{
-        NameAndTypePair{"permissions", std::make_shared<DataTypeString>()},
-        NameAndTypePair{"type", std::make_shared<DataTypeString>()},
+//        NameAndTypePair{"type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         NameAndTypePair{"symlink", DataTypeFactory::instance().get("Bool")},
-        NameAndTypePair{"path", std::make_shared<DataTypeString>()},
-//        NameAndTypePair{"permissions", std::make_shared<DataTypeString>()},
-        NameAndTypePair{"size", std::make_shared<DataTypeUInt32>()},
-        NameAndTypePair{"last_write_time", std::make_shared<DataTypeDateTime>()},
-        NameAndTypePair{"name", std::make_shared<DataTypeString>()}}};
+        NameAndTypePair{"path", std::make_shared<DataTypeString>()}
+//        NameAndTypePair{"size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
+//        NameAndTypePair{"last_write_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+//        NameAndTypePair{"name", std::make_shared<DataTypeString>()},
+//        NameAndTypePair{"owner_read", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"owner_write", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"owner_exec", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"group_read", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"group_write", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"group_exec", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"others_read", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"others_write", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"others_exec", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"set_gid", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"set_uid", DataTypeFactory::instance().get("Bool")},
+//        NameAndTypePair{"sticky_bit", DataTypeFactory::instance().get("Bool")}
+        }};
     StoragePtr executeImpl(
-        const ASTPtr & /* ast_function */, ContextPtr /* context */ , const std::string & table_name, ColumnsDescription /* cached_columns */) const override
+        const ASTPtr & /* ast_function */,
+        ContextPtr /* context */,
+        const std::string & table_name,
+        ColumnsDescription /* cached_columns */) const override
     {
         printf("%s\n", path.c_str());
-        StoragePtr res = StorageDirectory::create(StorageID(getDatabaseName(), table_name), structure, path, ConstraintsDescription(), String{});
+        StoragePtr res
+            = StorageDirectory::create(StorageID(getDatabaseName(), table_name), structure, path, ConstraintsDescription(), String{});
         printf("execute2");
         res->startup();
         printf("execute3");

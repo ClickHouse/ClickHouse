@@ -59,38 +59,36 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
 }
 
-namespace fs = std::filesystem;
-
-String fileTypeToString(std::filesystem::file_type type)
+String fileTypeToString(fs::file_type type)
 {
     switch (type)
     {
-        case std::filesystem::file_type::none:
+        case fs::file_type::none:
             return "none";
-        case std::filesystem::file_type::not_found:
+        case fs::file_type::not_found:
             return "not found";
-        case std::filesystem::file_type::regular:
+        case fs::file_type::regular:
             return "regular file";
-        case std::filesystem::file_type::directory:
+        case fs::file_type::directory:
             return "directory";
-        case std::filesystem::file_type::symlink:
+        case fs::file_type::symlink:
             return "symlink";
-        case std::filesystem::file_type::block:
+        case fs::file_type::block:
             return "block";
-        case std::filesystem::file_type::character:
+        case fs::file_type::character:
             return "character";
-        case std::filesystem::file_type::fifo:
+        case fs::file_type::fifo:
             return "fifo";
-        case std::filesystem::file_type::socket:
+        case fs::file_type::socket:
             return "socket";
-        case std::filesystem::file_type::unknown:
+        case fs::file_type::unknown:
             return "unknown";
     }
 }
 
 String permissionsToString(fs::perms perms)
 {
-    using permissions = std::filesystem::perms;
+    using permissions = fs::perms;
     String result = "rwxrwxrwx";
     for (uint32_t i = 0; i < 9; ++i)
     {
@@ -118,18 +116,76 @@ String permissionsToString(fs::perms perms)
     return result;
 }
 
+template <typename T>
+class ConcurrentQueue
+{
+public:
+    bool pull(T * res)
+    {
+        std::unique_lock lock(mtx);
+        if (queue.empty())
+        {
+            if (++curr >= max_streams)
+            {
+                printf("curr pizda %d\n", static_cast<int>(curr));
+                std::cout << std::endl;
+                closed = true;
+                lock.unlock();
+                cv.notify_all();
+                return false;
+            }
+            printf("curr %d", static_cast<int>(curr));
+            std::cout << std::endl;
+            cv.wait(lock, [this]() { return !queue.empty() || closed; });
+            --curr;
+        }
+        if (closed)
+        {
+            return false;
+        }
+        if (queue.empty())
+        {
+            printf("JJF:LKAJDSF:LKJDS:FLKJSD:LKF:LKSDJLK :JHASDFLJHLKJGASD");
+        }
+        *res = std::move(queue.front());
+        queue.pop();
+        return true;
+    }
+
+    void push(T value)
+    {
+        std::unique_lock lock(mtx);
+        queue.push(std::move(value));
+        lock.unlock();
+        cv.notify_all();
+    }
+
+    explicit ConcurrentQueue(int max_streams_) : max_streams(max_streams_) { }
+
+private:
+    const int max_streams;
+    std::atomic_int curr = 0;
+    bool closed = false;
+    std::condition_variable cv;
+    std::queue<T> queue;
+
+    std::mutex mtx;
+};
+
 class StorageDirectorySource final : public ISource
 {
 public:
     struct PathInfo
     {
-        boost::sync_queue<fs::directory_entry> queue;
+        ConcurrentQueue<fs::directory_entry> queue;
+
         fs::recursive_directory_iterator directory_iterator;
         std::mutex mutex;
         const String path;
-        unsigned curr_row = 0;
+        std::atomic_uint32_t rows = 1;
 
-        PathInfo(String path_) : directory_iterator(path_), path(path_) {
+        PathInfo(String path_, int max_streams) : queue(max_streams), directory_iterator(path_), path(path_)
+        {
             queue.push(fs::directory_entry(path));
         }
     };
@@ -139,39 +195,84 @@ public:
 
     Chunk generate() override
     {
+        std::unordered_map<String, MutableColumnPtr> columns_map;
+        for (const auto & name : columns_in_use)
+        {
+            if (columns_description.has(name))
+            {
+                columns_map[name] = columns_description.get(name).type->createColumn();
+                const auto & kk = *columns_map[name];
+                printf("COLUMN %s %s\n", name.c_str(), typeid(kk).name());
+            }
+        }
+//        Chunk cj = metadata_snapshot->getSampleBlockForColumns(columns_in_use);
+
         printf("\nmaxblocksize = %lu\n", max_block_size);
         // TODO change to vectors?
-        auto permissions = ColumnString::create();
-        auto type = ColumnString::create();
-        auto symlink = ColumnUInt8::create();
-        auto path_column = ColumnString::create();
-        //        auto permissions = ColumnString::create();
-        auto size = ColumnUInt32::create();
-        auto last_write_time = std::shared_ptr<DataTypeDateTime>()->createColumn();
-        auto name = ColumnString::create();
-
-
+        
         fs::directory_entry file;
-
-        while (true)
+        while (path_info->queue.pull(&file))
         {
-            if (std::lock_guard<std::mutex> lock(path_info->mutex);
-                path_info->curr_row < max_block_size && path_info->directory_iterator != end(path_info->directory_iterator))
+            std::error_code ec;
+            if (file.is_directory(ec) && !file.is_symlink(ec) && ec.value() == 0)
             {
-                ++path_info->curr_row;
-                file = *path_info->directory_iterator++;
+                printf("%s file\n", file.path().string().c_str());
+                for (const auto & child : fs::directory_iterator(file, ec))
+                {
+                    printf("beginfor\n");
+                    if (path_info->rows++ >= this->max_block_size)
+                    {
+                        break;
+                    }
+                    printf("beforepush\n");
+                    path_info->queue.push(std::move(child));
+                    printf("afterpush\n");
+                }
             }
-            else
-            {
-                break;
-            }
-            permissions->insert(permissionsToString(file.status().permissions()));
-            type->insert(fileTypeToString(file.status().type()));
-            symlink->insert(file.is_symlink());
-            path_column->insert(file.path().string());
-            //            permissions->insert(directory_iterator->status().permissions())
-            size->insert(file.is_regular_file() ? file.file_size() : 0);
+            ec.clear();
 
+            if (columns_map.contains("type"))
+            {
+                std::cout << "can we get much higher?????" << std::endl;
+                auto inserted = fileTypeToString(file.status(ec).type());
+                if (ec.value() == 0)
+                {
+                    columns_map["type"]->insert(std::move(inserted));
+                }
+                else
+                {
+                    columns_map["type"]->insertDefault();
+                    ec.clear();
+                }
+            }
+            if (columns_map.contains("type"))
+            {
+                columns_map["type"]->insert(fileTypeToString(file.status().type()));
+            }
+
+            if (columns_map.contains("symlink"))
+            {
+                columns_map["symlink"]->insert(file.is_symlink());
+            }
+
+            if (columns_map.contains("path"))
+            {
+                columns_map["path"]->insert(file.path().string());
+            }
+            if (columns_map.contains("size"))
+            {
+                auto is_regular_file = file.is_regular_file(ec);
+                auto inserted = is_regular_file ? file.file_size(ec) : 0;
+                if (ec.value() == 0 && is_regular_file)
+                {
+                    columns_map["size"]->insert(std::move(inserted));
+                }
+                else
+                {
+                    columns_map["size"]->insertDefault();
+                    ec.clear();
+                }
+            }
             //            time_t time;
             //            try
             //            {
@@ -180,11 +281,32 @@ public:
             //                printf("%s\n", e.what());
             //            }
             printf("beforetime\n");
-            printf("%lu", static_cast<UInt64>(fs::last_write_time(file.path().string()).time_since_epoch().count()));
-            last_write_time->insert(std::chrono::file_clock::to_time_t(fs::last_write_time(file.path().string())));
+            if (columns_map.contains("last_write_time"))
+            {
+                auto inserted = std::chrono::file_clock::to_time_t(fs::last_write_time(file.path().string(), ec));
+                if (ec.value() == 0)
+                {
+                    columns_map["last_write_time"]->insert(std::move(inserted));
+                }
+                else
+                {
+                    columns_map["last_write_time"]->insertDefault();
+                    ec.clear();
+                }
+            }
             printf("aftertime\n");
 
-            name->insert(file.path().filename().string());
+            for (const auto & [column_name, perm] : permissions_columns_names)
+            {
+                if (!columns_map.contains(column_name))
+                    continue;
+                columns_map[column_name]->insert(static_cast<bool>(file.status().permissions() & perm));
+            }
+
+            if (columns_map.contains("name")) {
+                columns_map["name"]->insert(file.path().filename().string());
+            }
+
             printf(
                 "\n\n%s %lu %s\n",
                 file.path().string().c_str(),
@@ -194,7 +316,7 @@ public:
 
         printf("\n read completed \n");
 
-        auto num_rows = path_column->size();
+        auto num_rows = columns_map.begin() != columns_map.end() ? columns_map.begin()->second->size() : 0;
 
         if (num_rows == 0)
         {
@@ -204,14 +326,13 @@ public:
 
         printf("num rows %lu\n", num_rows);
 
-        Columns columns
-            = {std::move(permissions),
-               std::move(type),
-               std::move(symlink),
-               std::move(path_column),
-               std::move(size),
-               std::move(last_write_time),
-               std::move(name)};
+        Columns columns;
+
+        for (const auto & column : columns_description) {
+            if (columns_map.contains(column.name)) {
+                columns.emplace_back(std::move(columns_map[column.name]));
+            }
+        }
 
         printf("debugpnt\n");
 
@@ -224,7 +345,8 @@ public:
         //        ContextPtr context_,
         UInt64 max_block_size_,
         PathInfoPtr path_info_,
-        ColumnsDescription columns_description_)
+        ColumnsDescription columns_description_,
+        Names column_names)
         : ISource(metadata_snapshot_->getSampleBlock())
         //        , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
@@ -232,6 +354,7 @@ public:
         , columns_description(std::move(columns_description_))
         //        , context(context_)
         , max_block_size(max_block_size_)
+        , columns_in_use(std::move(column_names))
     {
     }
 
@@ -242,6 +365,21 @@ private:
     ColumnsDescription columns_description;
     //    ContextPtr context; /// TODO Untangle potential issues with context lifetime.
     UInt64 max_block_size;
+    Names columns_in_use;
+
+    const std::vector<std::pair<String, fs::perms>> permissions_columns_names{
+        {"owner_read", fs::perms::owner_read},
+        {"owner_write", fs::perms::owner_write},
+        {"owner_exec", fs::perms::owner_exec},
+        {"group_read", fs::perms::group_read},
+        {"group_write", fs::perms::group_write},
+        {"group_exec", fs::perms::group_exec},
+        {"others_read", fs::perms::others_read},
+        {"others_write", fs::perms::others_write},
+        {"others_exec", fs::perms::others_exec},
+        {"set_gid", fs::perms::set_gid},
+        {"set_uid", fs::perms::set_uid},
+        {"sticky_bit", fs::perms::sticky_bit}};
 };
 
 
@@ -253,15 +391,16 @@ public:
     std::string getName() const override { return "Directory"; }
 
     Pipe read(
-        const Names & /* column_names */,
+        const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /* context */,
+        SelectQueryInfo & queryInfo,
+        ContextPtr context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        printf("\nread1\n");
+
+        printf("\n%d numstreams read1\n", num_streams);
         auto this_ptr = std::static_pointer_cast<StorageDirectory>(shared_from_this());
         printf("\nread2 path %s \n", path.c_str());
         if (!fs::exists(path))
@@ -271,14 +410,16 @@ public:
         }
         printf("\nread3\n");
 
-        auto path_info = std::make_shared<StorageDirectorySource::PathInfo>(path);
+        auto path_info = std::make_shared<StorageDirectorySource::PathInfo>(path, num_streams);
         Pipes pipes;
-        for (unsigned i = 0; i < num_streams; ++i) {
-            pipes.emplace_back(std::make_shared<StorageDirectorySource>(metadata_snapshot, max_block_size, path_info, metadata_snapshot->getColumns()));
+        for (unsigned i = 0; i < num_streams; ++i)
+        {
+            pipes.emplace_back(std::make_shared<StorageDirectorySource>(
+                metadata_snapshot, max_block_size, path_info, metadata_snapshot->getColumns(), column_names));
         }
         printf("\nread4\n");
         auto pipe = Pipe::unitePipes(std::move(pipes));
-        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
+        //        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
         return pipe;
     }
 
@@ -302,11 +443,11 @@ private:
         const String & comment)
         : IStorage(table_id_), path(path_)
     {
-        StorageInMemoryMetadata metadata_;
-        metadata_.setColumns(columns_description_);
-        metadata_.setConstraints(constraints_);
-        metadata_.setComment(comment);
-        setInMemoryMetadata(metadata_);
+        StorageInMemoryMetadata metadata;
+        metadata.setColumns(columns_description_);
+        metadata.setConstraints(constraints_);
+        metadata.setComment(comment);
+        setInMemoryMetadata(metadata);
     }
 };
 }

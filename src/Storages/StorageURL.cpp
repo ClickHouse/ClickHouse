@@ -225,10 +225,7 @@ namespace
 
         String getName() const override
         {
-            std::time_t time = 1;
-            std::chrono::system_clock::time_point tp{std::chrono::seconds{timeSeconds}};
-            std::stringstream str;
-            
+            return name;
         }
 
         Chunk generate() override
