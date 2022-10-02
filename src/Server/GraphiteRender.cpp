@@ -6,7 +6,7 @@
 #include <utility>
 #include "GraphiteFinder.h"
 
-namespace DB
+namespace GraphiteCarbon
 {
 
 std::string RenderQuery(std::string & table_name_, std::string & target_, int from_, int until_, std::string & format_)
@@ -17,14 +17,14 @@ std::string RenderQuery(std::string & table_name_, std::string & target_, int fr
     return g.generate_render_query();
 }
 
-std::string DB::GraphiteRender::generate_render_query()
+std::string GraphiteCarbon::GraphiteRender::generate_render_query()
 {
     return fmt::format(
         "SELECT Path, groupArray(Time), groupArray(Value), groupArray(Timestamp) FROM graphite_data WHERE {} GROUP BY Path FORMAT {}",
         getRenderWhere(),
         format);
 }
-std::string DB::GraphiteRender::getRenderWhere()
+std::string GraphiteCarbon::GraphiteRender::getRenderWhere()
 {
     Where w;
     size_t pos = path.find("FORMAT");
@@ -41,7 +41,7 @@ std::string DB::GraphiteRender::getRenderWhere()
     w.And(timestamp_between("Time", seconds_from, seconds_until));
     return w.string();
 }
-DB::GraphiteRender::GraphiteRender(std::string & path_, int from_, int until_, std::string & format_)
+GraphiteCarbon::GraphiteRender::GraphiteRender(std::string & path_, int from_, int until_, std::string & format_)
     : path(path_), from(from_), until(until_), format(format_)
 {
 }

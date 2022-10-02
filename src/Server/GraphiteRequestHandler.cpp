@@ -42,18 +42,18 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
             }
             else if (el.first == "from")
             {
-                from = IntervalStrings(el.second);
+                from = GraphiteCarbon::IntervalStrings(el.second);
             }
             else if (el.first == "until")
             {
-                until = IntervalStrings(el.second);
+                until = GraphiteCarbon::IntervalStrings(el.second);
             }
         }
         for (const auto & it : params)
         {
             customizeQueryParam(context, it.first, it.second);
         }
-        return MetricsFind(table_name, q, from, until, format);
+        return GraphiteCarbon::MetricsFind(table_name, q, from, until, format);
     }
     else if (uri.toString().find("/render?") != std::string::npos)
     {
@@ -71,7 +71,7 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
             }
             else if (el.first == "from")
             {
-                from = IntervalStrings(el.second);
+                from = GraphiteCarbon::IntervalStrings(el.second);
                 LOG_DEBUG(log, "from: {}", from);
             }
             else if (el.first == "format")
@@ -80,11 +80,11 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
             }
             else if (el.first == "until")
             {
-                until = IntervalStrings(el.second);
+                until = GraphiteCarbon::IntervalStrings(el.second);
                 LOG_DEBUG(log, "until: {}", until);
             }
         }
-        return RenderQuery(table_name, target, from, until, format);
+        return GraphiteCarbon::RenderQuery(table_name, target, from, until, format);
     }
     if (!context)
     {

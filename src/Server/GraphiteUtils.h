@@ -5,7 +5,7 @@
 #include <vector>
 #include <fmt/format.h>
 
-namespace DB
+namespace GraphiteCarbon
 {
 
 

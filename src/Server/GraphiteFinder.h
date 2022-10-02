@@ -8,7 +8,7 @@
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
 
-namespace DB
+namespace GraphiteCarbon
 {
 
 
@@ -16,9 +16,6 @@ extern int IndexDirect;
 extern int IndexAuto;
 extern int IndexReversed;
 
-extern int ReverseLevelOffset;
-extern int TreeLevelOffset;
-extern int ReverseTreeLevelOffset;
 extern std::string DefaultTreeDate;
 
 

@@ -11,7 +11,7 @@
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
 
-namespace DB
+namespace GraphiteCarbon
 {
 
 
@@ -22,9 +22,6 @@ int ReverseLevelOffset = 10000;
 int TreeLevelOffset = 20000;
 int ReverseTreeLevelOffset = 30000;
 std::string DefaultTreeDate = "1970-02-12";
-int PrefixNotMatched = 1;
-int PrefixMatched = 2;
-int PrefixPartialMathed = 3;
 
 std::string graphite_index = "graphite_index";
 
@@ -71,10 +68,10 @@ BaseFinder::generate_query(const std::string & query, int from = 0, int until = 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t time_from = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(from));
     std::time_t time_until = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(until));
-    WriteBufferFromOwnString date_from;
-    WriteBufferFromOwnString date_until;
-    writeDateTimeText(time_from, date_from);
-    writeDateTimeText(time_until, date_until);
+    DB::WriteBufferFromOwnString date_from;
+    DB::WriteBufferFromOwnString date_until;
+    DB::writeDateTimeText(time_from, date_from);
+    DB::writeDateTimeText(time_until, date_until);
 
     if (use_daily)
     {
@@ -102,10 +99,10 @@ DateFinder::generate_query(const std::string & query, int from = 0, int until = 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t time_from = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(from));
     std::time_t time_until = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(until));
-    WriteBufferFromOwnString date_from;
-    WriteBufferFromOwnString date_until;
-    writeDateTimeText(time_from, date_from);
-    writeDateTimeText(time_until, date_until);
+    DB::WriteBufferFromOwnString date_from;
+    DB::WriteBufferFromOwnString date_until;
+    DB::writeDateTimeText(time_from, date_from);
+    DB::writeDateTimeText(time_until, date_until);
 
 
     date_where.And(fmt::format("Date >='{}' AND Date <= '{}'", date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
@@ -123,10 +120,10 @@ DateFinderV3::generate_query(const std::string & query, int from = 0, int until 
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t time_from = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(from));
     std::time_t time_until = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(until));
-    WriteBufferFromOwnString date_from;
-    WriteBufferFromOwnString date_until;
-    writeDateTimeText(time_from, date_from);
-    writeDateTimeText(time_until, date_until);
+    DB::WriteBufferFromOwnString date_from;
+    DB::WriteBufferFromOwnString date_until;
+    DB::writeDateTimeText(time_from, date_from);
+    DB::writeDateTimeText(time_until, date_until);
 
 
     date_where.And(fmt::format("Date >='{}' AND Date <= '{}'", date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
@@ -182,10 +179,10 @@ IndexFinder::generate_query(const std::string & query, int from = 0, int until =
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     std::time_t time_from = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(from));
     std::time_t time_until = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(until));
-    WriteBufferFromOwnString date_from;
-    WriteBufferFromOwnString date_until;
-    writeDateTimeText(time_from, date_from);
-    writeDateTimeText(time_until, date_until);
+    DB::WriteBufferFromOwnString date_from;
+    DB::WriteBufferFromOwnString date_until;
+    DB::writeDateTimeText(time_from, date_from);
+    DB::writeDateTimeText(time_until, date_until);
 
     if (use_daily)
     {
