@@ -16,7 +16,7 @@ struct ZooKeeperArgs
     ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const String & config_name);
 
     /// hosts_string -- comma separated [secure://]host:port list
-    explicit ZooKeeperArgs(const String & hosts_string);
+    ZooKeeperArgs(const String & hosts_string);
     ZooKeeperArgs() = default;
     bool operator == (const ZooKeeperArgs &) const = default;
 
