@@ -74,7 +74,7 @@ def test_lost_part_same_replica(start_cluster):
     node1.query("ATTACH TABLE mt0")
 
     node1.query("SYSTEM START MERGES mt0")
-    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt0")
+    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt0")
     print("result: ", res)
     print("error: ", res)
 
@@ -138,7 +138,7 @@ def test_lost_part_other_replica(start_cluster):
     node1.query("CHECK TABLE mt1")
 
     node2.query("SYSTEM START REPLICATION QUEUES")
-    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
+    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
     print("result: ", res)
     print("error: ", res)
 
@@ -199,7 +199,7 @@ def test_lost_part_mutation(start_cluster):
     node1.query("CHECK TABLE mt2")
 
     node1.query("SYSTEM START MERGES mt2")
-    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt2")
+    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt2")
     print("result: ", res)
     print("error: ", res)
 
@@ -251,7 +251,7 @@ def test_lost_last_part(start_cluster):
     node1.query("CHECK TABLE mt3")
 
     node1.query("SYSTEM START MERGES mt3")
-    res, err = node1.http_query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt3")
+    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt3")
     print("result: ", res)
     print("error: ", res)
 
@@ -263,6 +263,8 @@ def test_lost_last_part(start_cluster):
         if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log(
             "DROP/DETACH PARTITION"
         ):
+            break
+        if node1.contains_in_log("Created empty part 8b8f0fede53df97513a9fb4cb19dc1e4_0_0_0 "):
             break
         time.sleep(1)
     else:
