@@ -200,7 +200,7 @@ private:
                 fault_policy->afterOperation();
             ++calls_without_fault_injection;
             if (unlikely(logger))
-                LOG_TRACE(logger, "KeeperAccess call SUCCEDED: seed={} func={} path={}", seed, func_name, path);
+                LOG_TRACE(logger, "KeeperAccess call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
             return res;
         }
         catch (const zkutil::KeeperException & e)
