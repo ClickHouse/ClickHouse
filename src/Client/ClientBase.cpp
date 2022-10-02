@@ -661,10 +661,19 @@ void ClientBase::initTtyBuffer()
             try
             {
                 tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+
+                /// It is possible that the terminal file has writeable permissions
+                /// but we cannot write anything there. Check it with invisible character.
+                tty_buf->write('\0');
+                tty_buf->next();
+
                 return;
             }
             catch (const Exception & e)
             {
+                if (tty_buf)
+                    tty_buf.reset();
+
                 if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
                     throw;
 
