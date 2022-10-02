@@ -8,7 +8,18 @@ else()
   list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
   find_package(Rust)
   option(ENABLE_RUST "Enable rust" ${Rust_FOUND})
+if (NOT ENABLE_LIBRARIES)
+  set(DEFAULT_ENABLE_RUST FALSE)
+elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "aarch64"))
+  message(STATUS "Rust is not available on aarch64-apple-darwin")
+  set(DEFAULT_ENABLE_RUST FALSE)
+else()
+  list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
+  find_package(Rust)
+  set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
 endif()
+
+option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
 
 message(STATUS ${ENABLE_RUST})
 
