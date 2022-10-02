@@ -200,12 +200,15 @@ public:
         {
             if (columns_description.has(name))
             {
+                if (columns_description.get(name).type->isNullable()) {
+                    auto type = std::dynamic_pointer_cast<const DataTypeNullable>(columns_description.get(name).type);
+                    columns_map[name] = ColumnNullable::create(type->getNestedType()->createColumn(), ColumnUInt8::create());
+                }
                 columns_map[name] = columns_description.get(name).type->createColumn();
                 const auto & kk = *columns_map[name];
                 printf("COLUMN %s %s\n", name.c_str(), typeid(kk).name());
             }
         }
-//        Chunk cj = metadata_snapshot->getSampleBlockForColumns(columns_in_use);
 
         printf("\nmaxblocksize = %lu\n", max_block_size);
         // TODO change to vectors?
@@ -231,20 +234,6 @@ public:
             }
             ec.clear();
 
-            if (columns_map.contains("type"))
-            {
-                std::cout << "can we get much higher?????" << std::endl;
-                auto inserted = fileTypeToString(file.status(ec).type());
-                if (ec.value() == 0)
-                {
-                    columns_map["type"]->insert(std::move(inserted));
-                }
-                else
-                {
-                    columns_map["type"]->insertDefault();
-                    ec.clear();
-                }
-            }
             if (columns_map.contains("type"))
             {
                 columns_map["type"]->insert(fileTypeToString(file.status().type()));
@@ -393,8 +382,8 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & queryInfo,
-        ContextPtr context,
+        SelectQueryInfo & /* queryInfo */,
+        ContextPtr /* context */,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t max_block_size,
         unsigned num_streams) override
