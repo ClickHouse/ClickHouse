@@ -1,9 +1,8 @@
 -- Tags: replica
 
-set database_atomic_wait_for_drop_and_detach_synchronously=true;
+DROP TABLE IF EXISTS keeper_retries_r1 SYNC;
+DROP TABLE IF EXISTS keeper_retries_r2 SYNC;
 
-DROP TABLE IF EXISTS keeper_retries_r1;
-DROP TABLE IF EXISTS keeper_retries_r2;
 CREATE TABLE keeper_retries_r1(a UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/02456_keeper_retries_during_insert', 'r1') ORDER BY tuple ();
 CREATE TABLE keeper_retries_r2(a UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/02456_keeper_retries_during_insert', 'r2') ORDER BY tuple();
 
@@ -26,5 +25,5 @@ INSERT INTO keeper_retries_r1 SETTINGS insert_keeper_fault_injection_mode=1, ins
 
 SELECT * FROM keeper_retries_r1 order by a;
 
-DROP TABLE keeper_retries_r1;
-DROP TABLE keeper_retries_r2;
+DROP TABLE keeper_retries_r1 SYNC;
+DROP TABLE keeper_retries_r2 SYNC;
