@@ -251,9 +251,6 @@ def test_lost_last_part(start_cluster):
     node1.query("CHECK TABLE mt3")
 
     node1.query("SYSTEM START MERGES mt3")
-    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt3")
-    print("result: ", res)
-    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
