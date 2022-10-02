@@ -37,7 +37,10 @@ std::string in_table(const std::string &field,const std::string &table);
 
 std::string date_between (const std::string &field, int from, int until);
 
-std::string timestamp_between(const std::string &field, int from, int until);
+std::string timestamp_between(const std::string &field, long long from, long long until);
+
+int IntervalStrings(std::string &s, int sign);
+
 
 
 

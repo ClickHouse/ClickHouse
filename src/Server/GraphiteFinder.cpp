@@ -3,8 +3,15 @@
 #include "GraphiteFinder.h"
 #include "GraphiteUtils.h"
 #include "fmt/format.h"
-#include <regex>
 #include <chrono>
+#include <iostream>
+#include <iomanip>
+#include <ctime>
+#include <chrono>
+#include <ctime>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/SerializationDateTime.h>
 
 namespace DB
 {
@@ -62,50 +69,47 @@ std::string BaseFinder::generate_query(const std::string &query, int from = 0, i
     use_daily = false;
   }
 
-  char time_from[100];
-  char time_until[100];
-  struct tm t_from= {.tm_sec = from, .tm_year = 1020};
-  struct tm t_until= {.tm_sec = until , .tm_year = 1020};
-  strftime(time_from, 50, "%F", &t_from);
-  strftime(time_until, 50, "%F", &t_until);
-
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+  std::time_t time_from = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(from));
+  std::time_t time_until = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(until));
+  WriteBufferFromOwnString date_from;
+  WriteBufferFromOwnString date_until;
+  writeDateTimeText(time_from, date_from);
+  writeDateTimeText(time_until, date_until);
 
   if (use_daily) {
-    w.And(fmt::format("Date >='{}' AND Date <= '{}'",
-                      time_from, time_until));
+      w.And(fmt::format("Date >='{}' AND Date <= '{}'",
+                        date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
   } else {
-    w.And(eq(("Date"), DefaultTreeDate));
+      w.And(eq(("Date"), DefaultTreeDate));
   }
 
   std::string q = fmt::format("SELECT Path FROM {} WHERE {} GROUP BY Path FORMAT {}", table, w.string(), format);
   return q;
 }
+BaseFinder::BaseFinder(const std::string &table_) : table(table_) {}
 
-std::string BlackListFinder::generate_query(const std::string &query, int from = 0, int until = 0, const std::string &format = "TabSeparatedRaw") 
-{
-  for (const std::regex& re : blacklist) {
-    std::smatch m;
-    if (std::regex_match(query, m, re)){
-      matched = true;
-      return "";
-    }
-  }
-  return wrapped->generate_query(query, from, until, format);
-}
-
-std::string DateFinder::generate_query(const std::string &query, int from = 0, int until = 0, const std::string &format = "TabSeparatedRaw") 
+std::string DateFinder::generate_query(const std::string &query, int from = 0, int until = 0, const std::string &format = "TabSeparatedRaw")
 {
   Where w = finder.where(query);
   Where date_where;
-  char time_from[100];
-  char time_until[100];
-  struct tm t_from= {.tm_sec = from, .tm_year = 1020};
-  struct tm t_until= {.tm_sec = until , .tm_year = 1020};
-  strftime(time_from, 50, "%Y-%m-%e", &t_from);
-  strftime(time_until, 50, "%Y-%m-%e", &t_until);
+
+
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+  std::time_t time_from = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(from));
+  std::time_t time_until = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(until));
+  WriteBufferFromOwnString date_from;
+  WriteBufferFromOwnString date_until;
+  writeDateTimeText(time_from, date_from);
+  writeDateTimeText(time_until, date_until);
+
 
   date_where.And(fmt::format("Date >='{}' AND Date <= '{}'",
-                             time_from, time_until));
+                             date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
 
   std::string q = fmt::format("SELECT Path FROM {} WHERE ({}) AND ({}) GROUP BY Path FORMAT {}", finder.table, date_where.string(), w.string(), format);
   return q;
@@ -116,15 +120,20 @@ std::string DateFinderV3::generate_query(const std::string &query, int from = 0,
 
   Where w = finder.where(reverse_string(query));
   Where date_where;
-  char time_from[100];
-  char time_until[100];
-  struct tm t_from= {.tm_sec = from, .tm_year = 1020};
-  struct tm t_until= {.tm_sec = until , .tm_year = 1020};
-  strftime(time_from, 50, "%Y-%m-%e", &t_from);
-  strftime(time_until, 50, "%Y-%m-%e", &t_until);
+
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+  std::time_t time_from = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(from));
+  std::time_t time_until = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(until));
+  WriteBufferFromOwnString date_from;
+  WriteBufferFromOwnString date_until;
+  writeDateTimeText(time_from, date_from);
+  writeDateTimeText(time_until, date_until);
+
 
   date_where.And(fmt::format("Date >='{}' AND Date <= '{}'",
-                             time_from, time_until));
+                            date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
 
   std::string q = fmt::format("SELECT Path FROM {} WHERE ({}) AND ({}) GROUP BY Path FORMAT {}", finder.table, date_where.string(), w.string(), format);
   return q;
@@ -161,12 +170,10 @@ bool IndexFinder::use_reverse(const std::string &query)
   } else if (reverse == IndexReversed) {
     return true;
   }
-
   reverse = check_reverses(query);
   if (reverse != IndexAuto) {
     return use_reverse(query);
   }
-
   size_t w = index_wildcard(query);
   if (w == std::string::npos) {
     reverse = IndexDirect;
@@ -191,7 +198,7 @@ std::string IndexFinder::generate_query(const std::string &query, int from = 0, 
 {
 
   std::string new_query = query;
-  if (daily_enabled && from > 0 && until > 0) {
+  if (daily_enabled) {
     use_daily = true;
   } else {
     use_daily = false;
@@ -217,17 +224,19 @@ std::string IndexFinder::generate_query(const std::string &query, int from = 0, 
   Where w = where(new_query, levelOffset);
 
 
-  char time_from[100];
-  char time_until[100];
-  struct tm t_from= {.tm_sec = from, .tm_year = 1020};
-  struct tm t_until= {.tm_sec = until , .tm_year = 1020};
-  strftime(time_from, 50, "%F", &t_from);
-  strftime(time_until, 50, "%F", &t_until);
-
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+  std::time_t time_from = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(from));
+  std::time_t time_until = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(until));
+  WriteBufferFromOwnString date_from;
+  WriteBufferFromOwnString date_until;
+  writeDateTimeText(time_from, date_from);
+  writeDateTimeText(time_until, date_until);
 
   if (use_daily) {
     w.And(fmt::format("Date >='{}' AND Date <= '{}'",
-                      time_from, time_until));
+                      date_from.str().substr(0, 10), date_until.str().substr(0, 10)));
   } else {
     w.And(eq(("Date"), DefaultTreeDate));
   }
@@ -240,16 +249,8 @@ std::string PrefixFinder::generate_query(const std::string &query, int from = 0,
 {
   std::vector<std::string> qs = split(query, ".");
   std::vector<std::string> ps = split(prefix, ".");
-  for (size_t i = 0; i < qs.size() && i < ps.size(); i++) {
-    std::smatch m;
-    if (!std::regex_search(ps[i], m, std::regex("^"+glob_to_regexp(qs[i])+"$"))) {
-      return "";
-    }
-  }
   if (qs.size() < ps.size()) {
-
     part = join(qs, 0, qs.size(), ".") + ".";
-    matched = PrefixMatched;
   }
   return wrapped->generate_query(join(qs, ps.size(), qs.size(), "."), from, until, format);
 
@@ -270,4 +271,14 @@ std::string ReverseFinder::generate_query(const std::string &query, int from = 0
 
 }
 
+std::string GraphiteFinder::generate_query(const std::string &query_,
+                                           int from_,
+                                           int until_,
+                                           const std::string &format_) {
+  return fmt::format("error while creating query {} from {} untill {} format",
+                     query_,
+                     from_,
+                     until_,
+                     format_);
+}
 }

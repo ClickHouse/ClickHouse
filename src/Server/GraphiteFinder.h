@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "GraphiteUtils.h"
 #include <iostream>
+#include <utility>
 #include "fmt/format.h"
 
 namespace DB {
@@ -33,9 +34,6 @@ extern int TreeLevelOffset;
 extern int ReverseTreeLevelOffset;
 extern std::string DefaultTreeDate;
 
-extern int PrefixNotMatched;
-extern int PrefixMatched;
-extern int PrefixPartialMathed;
 
 extern std::unordered_map<std::string, size_t> index_reverse;
 
@@ -44,19 +42,13 @@ class GraphiteFinder {
   virtual std::string generate_query(const std::string &query_,
                                      int from_ = 0,
                                      int until_ = 0,
-                                     const std::string &format_ = "TabSeparatedRaw") {
-    return fmt::format("error while creating query {} from {} untill {} format",
-                       query_,
-                       from_,
-                       until_,
-                       format_);
-  }
+                                     const std::string &format_ = "TabSeparatedRaw");
   virtual ~GraphiteFinder() = default;
 };
 
 class BaseFinder : virtual public GraphiteFinder {
  public:
-  BaseFinder(const std::string &table_) : table(table_) {}
+  explicit BaseFinder(const std::string &table_);
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,
@@ -67,23 +59,9 @@ class BaseFinder : virtual public GraphiteFinder {
 
 };
 
-class BlackListFinder : public GraphiteFinder {
- public:
-  BlackListFinder(std::shared_ptr<GraphiteFinder> &wrapped_, std::vector<std::regex> &blacklist_)
-      : wrapped(wrapped_), blacklist(blacklist_), matched(false) {}
-  std::string generate_query(const std::string &query_,
-                             int from_,
-                             int until_,
-                             const std::string &format_) override;
- private:
-  std::shared_ptr<GraphiteFinder> wrapped;
-  std::vector<std::regex> blacklist;
-  bool matched;
-};
-
 class DateFinder : public GraphiteFinder {
  public:
-  DateFinder(const std::string &table_) : finder(table_) {}
+  DateFinder(std::string &table_) : finder(table_) {}
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,
@@ -132,14 +110,9 @@ class IndexFinder : public GraphiteFinder {
 
 class PrefixFinder : public GraphiteFinder {
  public:
-  PrefixFinder(std::shared_ptr<GraphiteFinder> &wrapped_,
-               std::string &prefix_,
-               char *prefixBytes_,
-               int matched_,
-               std::string &part_) :
-      wrapped(wrapped_), prefix(prefix_), matched(matched_), part(part_) {
-    strcat(prefixBytes_, ".");
-    prefix_bytes = prefixBytes_;
+  PrefixFinder(std::shared_ptr<GraphiteFinder> wrapped_,
+               const std::string &prefix_) :
+      wrapped(std::move(wrapped_)), prefix(prefix_){
   }
   std::string generate_query(const std::string &query_,
                              int from_,
@@ -148,16 +121,14 @@ class PrefixFinder : public GraphiteFinder {
 
   std::shared_ptr<GraphiteFinder> wrapped;
   std::string prefix;
-  char *prefix_bytes;
-  int matched;
-  std::string &part;
+  std::string part{};
 };
 
 class ReverseFinder : public GraphiteFinder {
  public:
-  ReverseFinder(std::shared_ptr<GraphiteFinder> &wrapped_, std::string &table_, bool is_used_)
+  ReverseFinder(std::shared_ptr<GraphiteFinder> wrapped_, const std::string &table_)
       :
-      wrapped(wrapped_), base_finder(table_), table(table_), is_used(is_used_) {}
+      wrapped(std::move(wrapped_)), base_finder(table_), table(table_) {}
   std::string generate_query(const std::string &query_,
                              int from_,
                              int until_,
@@ -165,8 +136,8 @@ class ReverseFinder : public GraphiteFinder {
 
   std::shared_ptr<GraphiteFinder> wrapped;
   BaseFinder base_finder;
-  std::string &table;
-  bool is_used;
+  std::string table;
+  bool is_used{};
 };
 
 std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string &table_name_);

@@ -21,16 +21,6 @@ class IServer;
 
 std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
-    context = nullptr;
-
-        if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
-    {
-        /// Part of the query can be passed in the 'query' parameter and the rest in the request body
-        /// (http method need not necessarily be POST). In this case the entire query consists of the
-        /// contents of the 'query' parameter, a line break and the request body.
-        std::string query_param = params.get(table_name, "");
-        
-    }
         Poco::URI uri{request.getURI()};
         if (uri.toString().find("/metrics/find?") != std::string::npos)
         {
@@ -87,6 +77,7 @@ std::string GraphiteRequestHandler::getQuery(HTTPServerRequest & request, HTMLFo
             return RenderQuery(table_name, target, from, until, format);
 
         }
+        if (!context){}
         return "";
 }
 

@@ -1,6 +1,9 @@
 #include "GraphiteRender.h"
 #include "GraphiteFinder.h"
-
+#include <iostream>
+#include <iomanip>
+#include <ctime>
+#include <chrono>
 #include <utility>
 
 namespace DB {
@@ -22,7 +25,19 @@ std::string DB::GraphiteRender::getRenderWhere() {
   size_t pos = path.find("FORMAT");
   path = path.substr(0, pos);
   w.And(in_table("Path", path));
-  w.And(timestamp_between("Time", from, until));
+
+
+  std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+  std::time_t time_from = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(from));
+
+  long long seconds_from = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count() + from;
+  long long seconds_until = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count() + until;
+
+  std::time_t time_until = std::chrono::system_clock::to_time_t(
+      now + std::chrono::seconds(until));
+
+  w.And(timestamp_between("Time", seconds_from, seconds_until));
   return w.string();
 }
 DB::GraphiteRender::GraphiteRender(std::string & path_, int from_, int until_, std::string & format_)

@@ -200,7 +200,7 @@ std::string date_between (const std::string &field, int from, int until) {
   return fmt::format("{} >= toDate({}) AND {} <= toDate({})", field, from, field, until);
 }
 
-std::string timestamp_between(const std::string &field, int from, int until) {
+std::string timestamp_between(const std::string &field, long long from, long long until) {
   return fmt::format("{} >= {} AND {} <= {}", field, from, field, until);
 }
 
@@ -392,10 +392,10 @@ std::vector<std::string> split(const std::string &target, const std::string& del
   size_t pos = 0;
   std::string token;
   std::vector<std::string> result;
-  while ((pos = s.find_last_of(delimiter)) != std::string::npos) {
-    token = s.substr(pos + delimiter.size());
+  while ((pos = s.find_first_of(delimiter)) != std::string::npos) {
+    token = s.substr(0, pos);
     result.push_back(token);
-    s.erase(pos);
+    s.erase(0, pos + delimiter.size());
   }
   result.push_back(s);
   return result;
