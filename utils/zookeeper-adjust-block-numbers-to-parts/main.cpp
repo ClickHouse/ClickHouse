@@ -255,7 +255,7 @@ try
 
     /// Check if the adjusting of the block numbers is required.
     std::cout << "Checking if adjusting of the block numbers is required:" << std::endl;
-    zkutil::ZooKeeper zookeeper(zkutil::ZooKeeperArgs(options.at("zookeeper").as<std::string>()));
+    zkutil::ZooKeeper zookeeper(options.at("zookeeper").as<std::string>());
     auto part_paths_with_max_block_numbers = getPartitionsNeedAdjustingBlockNumbers(zookeeper, root, shards, tables);
 
     if (part_paths_with_max_block_numbers.empty())
