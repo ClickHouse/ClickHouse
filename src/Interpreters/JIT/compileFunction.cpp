@@ -875,8 +875,8 @@ CompiledSortDescriptionFunction compileSortDescription(
 
             auto * ty_lhs_column_data = llvm::cast<llvm::PointerType>(lhs_column_data->getType()->getScalarType())->getElementType();
 
-            llvm::Value * lhs_cip_gep = b.CreateInBoundsGEP(ty_lhs_column_data, lhs_column_data, lhs_index_arg);
-            llvm::Value * lhs_value = b.CreateLoad(lhs_cip_gep->getType()->getPointerElementType(), lhs_cip_gep);
+            llvm::Value * lhs_cib_gep = b.CreateInBoundsGEP(ty_lhs_column_data, lhs_column_data, lhs_index_arg);
+            llvm::Value * lhs_value = b.CreateLoad(lhs_cib_gep->getType()->getPointerElementType(), lhs_cib_gep);
 
             if (lhs_column_null_data)
             {
@@ -893,8 +893,8 @@ CompiledSortDescriptionFunction compileSortDescription(
 
             auto * ty_rhs_column_data = llvm::cast<llvm::PointerType>(rhs_column_data->getType()->getScalarType())->getElementType();
 
-            llvm::Value * rhs_cip_gep = b.CreateInBoundsGEP(ty_rhs_column_data, rhs_column_data, rhs_index_arg);
-            llvm::Value * rhs_value = b.CreateLoad(rhs_cip_gep->getType()->getPointerElementType(), rhs_cip_gep);
+            llvm::Value * rhs_cib_gep = b.CreateInBoundsGEP(ty_rhs_column_data, rhs_column_data, rhs_index_arg);
+            llvm::Value * rhs_value = b.CreateLoad(rhs_cib_gep->getType()->getPointerElementType(), rhs_cib_gep);
 
             if (rhs_column_null_data)
             {
