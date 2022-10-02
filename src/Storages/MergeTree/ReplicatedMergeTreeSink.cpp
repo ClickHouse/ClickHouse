@@ -108,17 +108,28 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const KeeperAccessPtr & 
     zkutil::ZooKeeper::FutureGet is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
     zkutil::ZooKeeper::FutureGet host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
+    Coordination::Error keeper_error = Coordination::Error::ZOK;
     size_t active_replicas = 1;     /// Assume current replica is active (will check below)
     for (auto & status : replicas_status_futures)
-        if (status.get().error == Coordination::Error::ZOK)
+    {
+        auto error = status.get().error;
+        if (error == Coordination::Error::ZOK)
             ++active_replicas;
+        else if (Coordination::isHardwareError(error))
+            keeper_error = error;
+    }
 
     size_t replicas_number = replicas.size();
     size_t quorum_size = getQuorumSize(replicas_number);
 
     if (active_replicas < quorum_size)
+    {
+        if (Coordination::isHardwareError(keeper_error))
+            throw Coordination::Exception("Failed to check number of alive replicas", keeper_error);
+
         throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}/{}).",
                         active_replicas, quorum_size, replicas_number);
+    }
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.
@@ -344,7 +355,6 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
-    zookeeper->resetFaultInjection();
     RetriesControl retries_ctl("commitPart", keeper_retries_info);
     retries_ctl.retryLoop([&]()
     {
@@ -647,7 +657,6 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
-        zookeeper->resetFaultInjection();
         RetriesControl quorum_retries_ctl("waitForQuorum", keeper_retries_info);
         quorum_retries_ctl.retryLoop([&]()
         {
