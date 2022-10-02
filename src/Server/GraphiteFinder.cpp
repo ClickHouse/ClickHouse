@@ -15,21 +15,13 @@ namespace GraphiteCarbon
 {
 
 
-int IndexDirect = 1;
-int IndexAuto = 2;
-int IndexReversed = 3;
-int ReverseLevelOffset = 10000;
-int TreeLevelOffset = 20000;
-int ReverseTreeLevelOffset = 30000;
-std::string DefaultTreeDate = "1970-02-12";
+const int ReverseLevelOffset = 10000;
+const int TreeLevelOffset = 20000;
+const int ReverseTreeLevelOffset = 30000;
+const std::string DefaultTreeDate = "1970-02-12";
 
-std::string graphite_index = "graphite_index";
+const std::string graphite_index = "graphite_index";
 
-std::unordered_map<std::string, size_t> index_reverse = {
-    {"direct", IndexDirect},
-    {"auto", IndexAuto},
-    {"reversed", IndexReversed},
-};
 std::shared_ptr<GraphiteFinder> new_plain_finder(const std::string & table_name_)
 {
     if (table_name_ == graphite_index)

@@ -11,16 +11,6 @@
 namespace GraphiteCarbon
 {
 
-
-extern int IndexDirect;
-extern int IndexAuto;
-extern int IndexReversed;
-
-extern std::string DefaultTreeDate;
-
-
-extern std::unordered_map<std::string, size_t> index_reverse;
-
 class GraphiteFinder
 {
 public:
