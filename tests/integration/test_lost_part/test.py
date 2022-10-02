@@ -264,7 +264,9 @@ def test_lost_last_part(start_cluster):
             "DROP/DETACH PARTITION"
         ):
             break
-        if node1.contains_in_log("Created empty part 8b8f0fede53df97513a9fb4cb19dc1e4_0_0_0 "):
+        if node1.contains_in_log(
+            "Created empty part 8b8f0fede53df97513a9fb4cb19dc1e4_0_0_0 "
+        ):
             break
         time.sleep(1)
     else:
