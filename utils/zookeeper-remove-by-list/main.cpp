@@ -26,7 +26,7 @@ try
         return 1;
     }
 
-    zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
+    zkutil::ZooKeeper zookeeper(zkutil::ZooKeeperArgs(options.at("address").as<std::string>()));
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
     std::list<std::future<Coordination::RemoveResponse>> futures;

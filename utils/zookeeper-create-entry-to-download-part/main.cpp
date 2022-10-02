@@ -30,7 +30,7 @@ try
     std::string path = options.at("path").as<std::string>();
     std::string name = options.at("name").as<std::string>();
 
-    zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
+    zkutil::ZooKeeper zookeeper(zkutil::ZooKeeperArgs(options.at("address").as<std::string>()));
 
     DB::ReplicatedMergeTreeLogEntry entry;
     entry.type = DB::ReplicatedMergeTreeLogEntry::MERGE_PARTS;
