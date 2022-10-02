@@ -1030,7 +1030,7 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        UInt64 divisor = 60 * minutes;
+        Int64 divisor = 60 * minutes;
         if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             if (likely(t >= 0))

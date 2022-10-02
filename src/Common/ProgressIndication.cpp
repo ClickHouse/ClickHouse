@@ -102,17 +102,6 @@ void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread
     cpu_usage_meter.add(getElapsedNanoseconds(), total_cpu_ns);
 }
 
-size_t ProgressIndication::getUsedThreadsCount() const
-{
-    std::lock_guard lock(profile_events_mutex);
-
-    return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
-        [] (size_t acc, auto const & threads)
-        {
-            return acc + threads.second.size();
-        });
-}
-
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
