@@ -69,11 +69,11 @@ public:
             throw Exception("First argument for function " + getName() + " (unit) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isDate(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
+        if (!isDate(arguments[2]) && !isDate32(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
             throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -137,12 +137,16 @@ private:
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnInt32>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_32_s, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
         else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnInt32>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
         else
@@ -159,12 +163,16 @@ private:
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+            vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
             vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
             vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnInt32>(&y))
+            vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
             vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
         else
