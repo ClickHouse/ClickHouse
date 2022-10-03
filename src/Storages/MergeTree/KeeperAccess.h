@@ -9,45 +9,18 @@
 namespace DB
 {
 
-class FaultInjection
+class RandomFaultInjection
 {
 public:
-    explicit FaultInjection(UInt64 seed_ = 0) : seed(seed_)
-    {
-        if (0 == seed)
-            seed = randomSeed();
-    }
-    virtual ~FaultInjection() = default;
-    virtual void beforeOperation() = 0;
-    virtual void afterOperation() = 0;
-    UInt64 getSeed() const { return seed; }
+    RandomFaultInjection() : rndgen(0), distribution(.0) { }
+    RandomFaultInjection(double probability, UInt64 seed_) : rndgen(seed_), distribution(probability) { }
 
-protected:
-    UInt64 seed = 0;
-};
-
-class Random : public FaultInjection
-{
-public:
-    static std::unique_ptr<Random> create(UInt64 seed_, double probability)
-    {
-        if (probability < 0.0)
-            probability = .0;
-        if (probability > 1.0)
-            probability = 1.0;
-
-        return std::make_unique<Random>(seed_, probability);
-    }
-
-    explicit Random(UInt64 seed_, double probability) : FaultInjection(seed_), rndgen(getSeed()), distribution(probability) { }
-    ~Random() override = default;
-
-    void beforeOperation() override
+    void beforeOperation()
     {
         if (distribution(rndgen))
             throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
     }
-    void afterOperation() override
+    void afterOperation()
     {
         if (distribution(rndgen))
             throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
@@ -66,45 +39,58 @@ class KeeperAccess
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
-    std::unique_ptr<FaultInjection> fault_policy;
+    RandomFaultInjection random_fault_injection;
+    RandomFaultInjection * fault_policy = nullptr;
     std::string name;
     Poco::Logger * logger = nullptr;
     UInt64 calls_total = 0;
     UInt64 calls_without_fault_injection = 0;
-    UInt64 seed = 0;
+    const UInt64 seed = 0;
+
+    KeeperAccess(
+        zk::Ptr const & keeper_,
+        double fault_injection_probability,
+        UInt64 fault_injection_seed,
+        std::string name_,
+        Poco::Logger * logger_ = nullptr)
+        : keeper(keeper_)
+        , random_fault_injection(fault_injection_probability, fault_injection_seed)
+        , name(std::move(name_))
+        , logger(logger_)
+        , seed(fault_injection_seed)
+    {
+        if (fault_injection_probability > .0)
+            fault_policy = &random_fault_injection;
+
+        if (unlikely(logger))
+            LOG_TRACE(logger, "KeeperAccess created: name={} seed={}", name, seed);
+    }
 
 public:
     using Ptr = std::shared_ptr<KeeperAccess>;
 
     static KeeperAccess::Ptr createInstance(
-        int fault_injection_mode,
-        UInt64 fault_injection_seed,
-        double fault_injection_probability,
-        const zk::Ptr & zookeeper,
-        std::string name,
-        Poco::Logger * logger)
+        double fault_injection_probability, UInt64 fault_injection_seed, const zk::Ptr & zookeeper, std::string name, Poco::Logger * logger)
     {
-        switch (fault_injection_mode)
-        {
-            case 1:
-                return std::make_shared<KeeperAccess>(
-                    zookeeper, Random::create(fault_injection_seed, fault_injection_probability), std::move(name), logger);
-            default:
-                /// if no fault injection provided, create instance which will not log anything
-                return std::make_shared<KeeperAccess>(zookeeper);
-        }
-        __builtin_unreachable();
+        /// validate all parameters here, constructor just accept everything
+
+        if (fault_injection_probability < 0.0)
+            fault_injection_probability = .0;
+        else if (fault_injection_probability > 1.0)
+            fault_injection_probability = 1.0;
+
+        if (0 == fault_injection_seed)
+            fault_injection_seed = randomSeed();
+
+        if (fault_injection_probability > 0.0)
+            return std::shared_ptr<KeeperAccess>(
+                new KeeperAccess(zookeeper, fault_injection_probability, fault_injection_seed, std::move(name), logger));
+
+        /// if no fault injection provided, create instance which will not log anything
+        return std::make_shared<KeeperAccess>(zookeeper);
     }
 
-    explicit KeeperAccess(zk::Ptr const & keeper_) : keeper(keeper_), fault_policy(nullptr) { }
-
-    KeeperAccess(
-        zk::Ptr const & keeper_, std::unique_ptr<FaultInjection> fault_policy_, std::string name_, Poco::Logger * logger_ = nullptr)
-        : keeper(keeper_), fault_policy(std::move(fault_policy_)), name(std::move(name_)), logger(logger_), seed(fault_policy->getSeed())
-    {
-        if (unlikely(logger))
-            LOG_TRACE(logger, "KeeperAccess created: name={} seed={}", name, seed);
-    }
+    explicit KeeperAccess(zk::Ptr const & keeper_) : keeper(keeper_) { }
 
     ~KeeperAccess()
     {
@@ -113,7 +99,7 @@ public:
                 logger,
                 "KeeperAccess report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
                 name,
-                fault_policy->getSeed(),
+                seed,
                 calls_total,
                 calls_without_fault_injection,
                 calls_total - calls_without_fault_injection,

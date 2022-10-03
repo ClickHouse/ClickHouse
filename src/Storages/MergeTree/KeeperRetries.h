@@ -64,9 +64,6 @@ public:
             return false;
         }
 
-        /// the flag will set to false in case of error
-        iteration_succeeded = true;
-
         if (retries_info.retry_count >= retries_info.max_retries)
         {
             logLastError("retry limit is reached");
@@ -79,6 +76,9 @@ public:
         ++retries_info.retry_count;
         sleepForMilliseconds(retries_info.curr_backoff_ms);
         retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
+
+        /// reset the flag, will set to false in case of error
+        iteration_succeeded = true;
 
         return true;
     }

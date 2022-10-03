@@ -171,12 +171,12 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
 
-    KeeperAccessPtr zookeeper = KeeperAccess::createInstance(settings.insert_keeper_fault_injection_mode,
-            settings.insert_keeper_fault_injection_seed,
-            settings.insert_keeper_fault_injection_probability,
-            storage.getZooKeeper(),
-            "ReplicatedMergeTreeSink::consume",
-            log);
+    KeeperAccessPtr zookeeper = KeeperAccess::createInstance(
+        settings.insert_keeper_fault_injection_probability,
+        settings.insert_keeper_fault_injection_seed,
+        storage.getZooKeeper(),
+        "ReplicatedMergeTreeSink::consume",
+        log);
 
     /** If write is with quorum, then we check that the required number of replicas is now live,
       *  and also that for all previous parts for which quorum is required, this quorum is reached.
