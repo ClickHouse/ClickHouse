@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/formatSettingName.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
@@ -14,7 +13,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include <Common/FieldVisitorToString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -189,14 +187,10 @@ void MutationCommands::readText(ReadBuffer & in)
 
 void MutationCommands::writeSettings(WriteBuffer & out) const
 {
-    for (auto it = settings_changes.begin(); it != settings_changes.end(); ++it)
-    {
-        if (it != settings_changes.begin())
-            out << ", ";
-        formatSettingName(it->name, out);
-        out << " = ";
-        writeEscapedString(applyVisitor(FieldVisitorToString(), it->value), out);
-    }
+    ASTSetQuery ast;
+    ast.is_standalone = false;
+    ast.changes = settings_changes;
+    out << serializeAST(ast);
 }
 
 void MutationCommands::readSettings(ReadBuffer & in)
