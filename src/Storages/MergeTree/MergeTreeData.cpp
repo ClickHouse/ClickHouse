@@ -4917,23 +4917,32 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     if (move_ttl_entry)
     {
         LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
-        SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
+        SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry);
+        bool perform_ttl_move_on_insert = is_insert && destination_ptr && shouldPerformTTLMoveOnInsert(destination_ptr);
+
         if (!destination_ptr)
         {
             if (move_ttl_entry->destination_type == DataDestinationType::VOLUME && !move_ttl_entry->if_exists)
                 LOG_WARNING(
                     log,
-                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not "
-                    "applicable at the moment",
+                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found",
                     move_ttl_entry->destination_name,
                     *std::atomic_load(&log_name));
             else if (move_ttl_entry->destination_type == DataDestinationType::DISK && !move_ttl_entry->if_exists)
                 LOG_WARNING(
                     log,
-                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable "
-                    "at the moment",
+                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found",
                     move_ttl_entry->destination_name,
                     *std::atomic_load(&log_name));
+        }
+        else if (is_insert && !perform_ttl_move_on_insert)
+        {
+            LOG_TRACE(
+                log,
+                "TTL move on insert to {} {} for table {} is disabled",
+                (move_ttl_entry->destination_type == DataDestinationType::VOLUME ? "volume" : "disk"),
+                move_ttl_entry->destination_name,
+                *std::atomic_load(&log_name));
         }
         else
         {
@@ -4978,39 +4987,31 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     return reservation;
 }
 
-SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert) const
+SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl) const
 {
     auto policy = getStoragePolicy();
     if (move_ttl.destination_type == DataDestinationType::VOLUME)
-    {
-        auto volume = policy->tryGetVolumeByName(move_ttl.destination_name);
-
-        if (!volume)
-            return {};
-
-        if (is_insert && !volume->perform_ttl_move_on_insert)
-            return {};
-
-        return volume;
-    }
+        return policy->tryGetVolumeByName(move_ttl.destination_name);
     else if (move_ttl.destination_type == DataDestinationType::DISK)
-    {
-        auto disk = policy->tryGetDiskByName(move_ttl.destination_name);
-
-        if (!disk)
-            return {};
-
-        auto volume = policy->getVolume(policy->getVolumeIndexByDisk(disk));
-        if (!volume)
-            return {};
-
-        if (is_insert && !volume->perform_ttl_move_on_insert)
-            return {};
-
-        return disk;
-    }
+        return policy->tryGetDiskByName(move_ttl.destination_name);
     else
         return {};
+}
+
+bool MergeTreeData::shouldPerformTTLMoveOnInsert(const SpacePtr & move_destination) const
+{
+    if (move_destination->isVolume())
+    {
+        auto volume = std::static_pointer_cast<IVolume>(move_destination);
+        return volume->perform_ttl_move_on_insert;
+    }
+    if (move_destination->isDisk())
+    {
+        auto disk = std::static_pointer_cast<IDisk>(move_destination);
+        if (auto volume = getStoragePolicy()->tryGetVolumeByDisk(disk))
+            return volume->perform_ttl_move_on_insert;
+    }
+    return false;
 }
 
 bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const

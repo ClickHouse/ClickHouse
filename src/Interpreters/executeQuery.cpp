@@ -109,12 +109,19 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
-static String prepareQueryForLogging(const String & query, ContextPtr context)
+/// Makes a version of a query without sensitive information (e.g. passwords) for logging.
+/// The parameter `parsed query` can be nullptr if the query cannot be parsed.
+static String prepareQueryForLogging(const String & query, const ASTPtr & parsed_query, ContextPtr context)
 {
     String res = query;
 
-    // Wiping a password or its hash from CREATE/ALTER USER query because we don't want it to go to logs.
-    res = wipePasswordFromQuery(res);
+    // Wiping a password or hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    if (parsed_query && canContainPassword(*parsed_query))
+    {
+        ASTPtr ast_for_logging = parsed_query->clone();
+        wipePasswordFromQuery(ast_for_logging);
+        res = serializeAST(*ast_for_logging);
+    }
 
     // Wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log.
@@ -381,16 +388,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr ast;
-    const char * query_end;
-
     size_t max_query_size = settings.max_query_size;
     /// Don't limit the size of internal queries or distributed subquery.
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
 
-    String query_database;
-    String query_table;
+    ASTPtr ast;
+    String query;
+    String query_for_logging;
+
+    /// Parse the query from string.
     try
     {
         if (settings.dialect == Dialect::kusto && !internal)
@@ -408,6 +415,50 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
 
+        const char * query_end = end;
+        if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            query_end = insert_query->data;
+
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        if (context->hasQueryParameters())
+        {
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            visitor.visit(ast);
+            query = serializeAST(*ast);
+        }
+        else
+        {
+            /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+            query.assign(begin, query_end);
+        }
+
+        /// Wipe any sensitive information (e.g. passwords) from the query.
+        /// MUST go before any modification (except for prepared statements,
+        /// since it substitute parameters and without them query does not contain
+        /// parameters), to keep query as-is in query_log and server log.
+        query_for_logging = prepareQueryForLogging(query, ast, context);
+    }
+    catch (...)
+    {
+        /// Anyway log the query.
+        if (query.empty())
+            query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+        query_for_logging = prepareQueryForLogging(query, ast, context);
+
+        logQuery(query_for_logging, context, internal, stage);
+
+        if (!internal)
+            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
+        throw;
+    }
+
+    BlockIO res;
+    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
+    String query_database;
+    String query_table;
+
+    try
+    {
         if (auto txn = context->getCurrentTransaction())
         {
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
@@ -433,80 +484,34 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-        }
 
-        if (auto * create_query = ast->as<ASTCreateQuery>())
-        {
-            if (create_query->select)
+            if (const auto * create_query = ast->as<ASTCreateQuery>())
             {
-                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
+                if (create_query->select)
+                {
+                    applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
+                }
             }
         }
-
-        auto * insert_query = ast->as<ASTInsertQuery>();
-
-        if (insert_query && insert_query->settings_ast)
-            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
-
-        if (insert_query)
+        else if (auto * insert_query = ast->as<ASTInsertQuery>())
         {
-            if (insert_query->data)
-                query_end = insert_query->data;
-            else
-                query_end = end;
-
+            if (insert_query->settings_ast)
+                InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
             insert_query->tail = istr;
         }
-        else
+
+        setQuerySpecificSettings(ast, context);
+
+        /// There is an option of probabilistic logging of queries.
+        /// If it is used - do the random sampling and "collapse" the settings.
+        /// It allows to consistently log queries with all the subqueries in distributed query processing
+        /// (subqueries on remote nodes will receive these "collapsed" settings)
+        if (!internal && settings.log_queries && settings.log_queries_probability < 1.0)
         {
-            query_end = end;
-        }
-    }
-    catch (...)
-    {
-        /// Anyway log the query.
-        String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+            std::bernoulli_distribution should_write_log{settings.log_queries_probability};
 
-        auto query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal, stage);
-
-        if (!internal)
-        {
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
-        }
-
-        throw;
-    }
-
-    setQuerySpecificSettings(ast, context);
-
-    /// There is an option of probabilistic logging of queries.
-    /// If it is used - do the random sampling and "collapse" the settings.
-    /// It allows to consistently log queries with all the subqueries in distributed query processing
-    /// (subqueries on remote nodes will receive these "collapsed" settings)
-    if (!internal && settings.log_queries && settings.log_queries_probability < 1.0)
-    {
-        std::bernoulli_distribution should_write_log{settings.log_queries_probability};
-
-        context->setSetting("log_queries", should_write_log(thread_local_rng));
-        context->setSetting("log_queries_probability", 1.0);
-    }
-
-    /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-    String query(begin, query_end);
-    BlockIO res;
-
-    String query_for_logging;
-    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
-
-    try
-    {
-        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (context->hasQueryParameters())
-        {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
-            visitor.visit(ast);
-            query = serializeAST(*ast);
+            context->setSetting("log_queries", should_write_log(thread_local_rng));
+            context->setSetting("log_queries_probability", 1.0);
         }
 
         if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -515,10 +520,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query_table = query_with_table_output->getTable();
         }
 
-        /// MUST go before any modification (except for prepared statements,
-        /// since it substitute parameters and without them query does not contain
-        /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal, stage);
 
         /// Propagate WITH statement to children ASTSelect.
@@ -1083,12 +1084,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         if (!internal)
-        {
-            if (query_for_logging.empty())
-                query_for_logging = prepareQueryForLogging(query, context);
-
             onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
-        }
 
         throw;
     }

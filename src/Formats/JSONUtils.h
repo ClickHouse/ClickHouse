@@ -15,9 +15,8 @@ namespace DB
 
 namespace JSONUtils
 {
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size);
-    std::pair<bool, size_t>
-    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows);
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows);
+    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
 
     /// Parse JSON from string and convert it's type to ClickHouse type. Make the result type always Nullable.
     /// JSON array with different nested types is treated as Tuple.
