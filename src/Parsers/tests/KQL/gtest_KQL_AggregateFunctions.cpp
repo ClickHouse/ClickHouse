@@ -28,7 +28,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Aggregate, ParserTest,
         },
         {
             "Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName",
-            "SELECT\n    FirstName,\n    quantiles(30 / 100, 40 / 100, 50 / 100, 60 / 100, 70 / 100)(Age)\nFROM Customers\nGROUP BY FirstName"
+            "SELECT\n    FirstName,\n    quantiles(30 / 100, 40 / 100, 50 / 100, 60 / 100, 70 / 100)(Age) AS percentiles_Age\nFROM Customers\nGROUP BY FirstName"
         },
         {
             "Customers | summarize t = percentiles_array(Age, 10, 20, 30, 50) by FirstName",
@@ -55,7 +55,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Aggregate, ParserTest,
             "SELECT quantileExactWeighted(50 / 100)(Bucket, Frequency) AS t\nFROM DataTable"
         },
         {
-             "Customers | summarize t = make_list_with_nulls(Age) by FirstName",
-             "SELECT\n    FirstName,\n    arrayConcat(groupArray(Age) AS ga, arrayMap(x -> NULL, range(0, toUInt32(count(*) - length(ga)), 1))) AS t\nFROM Customers\nGROUP BY FirstName"
+            "Customers | summarize t = make_list_with_nulls(Age) by FirstName",
+            "SELECT\n    FirstName,\n    arrayConcat(groupArray(Age) AS ga, arrayMap(x -> NULL, range(0, toUInt32(count(*) - length(ga)), 1))) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize count() by bin(Age, 10)",
+            "SELECT\n    toInt64(toFloat64(Age) / 10) * 10 AS Age,\n    count() AS count_\nFROM Customers\nGROUP BY Age"
+        },
+        {
+            "Customers | summarize count(Age+1) by bin(Age+1, 10)",
+            "SELECT\n    toInt64(toFloat64(Age + 1) / 10) * 10 AS Columns1,\n    count(Age + 1) AS count_\nFROM Customers\nGROUP BY Columns1"
+        },
+        {
+            "Customers | summarize count(Age) by bin(Age, 10)",
+            "SELECT\n    toInt64(toFloat64(Age) / 10) * 10 AS Age,\n    count(Age) AS count_Age\nFROM Customers\nGROUP BY Age"
         }
 })));
