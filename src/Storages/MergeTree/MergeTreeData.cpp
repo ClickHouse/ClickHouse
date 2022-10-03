@@ -3210,7 +3210,20 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     modifyPartState(part, DataPartState::Active);
 }
 
-void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
+
+void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (prefix.empty())
+        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
+    else
+        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
+
+    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
+}
+
+void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
 {
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
@@ -3508,8 +3521,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
         k_inactive = static_cast<ssize_t>(inactive_parts_count_in_partition) - static_cast<ssize_t>(settings->inactive_parts_to_delay_insert);
     }
 
-    auto parts_to_delay_insert = query_settings.parts_to_delay_insert.changed ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
-    auto parts_to_throw_insert = query_settings.parts_to_throw_insert.changed ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
+    auto parts_to_delay_insert = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
+    auto parts_to_throw_insert = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
 
     if (parts_count_in_partition >= parts_to_throw_insert)
     {
@@ -4917,23 +4930,32 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     if (move_ttl_entry)
     {
         LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
-        SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry, is_insert);
+        SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry);
+        bool perform_ttl_move_on_insert = is_insert && destination_ptr && shouldPerformTTLMoveOnInsert(destination_ptr);
+
         if (!destination_ptr)
         {
             if (move_ttl_entry->destination_type == DataDestinationType::VOLUME && !move_ttl_entry->if_exists)
                 LOG_WARNING(
                     log,
-                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not "
-                    "applicable at the moment",
+                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found",
                     move_ttl_entry->destination_name,
                     *std::atomic_load(&log_name));
             else if (move_ttl_entry->destination_type == DataDestinationType::DISK && !move_ttl_entry->if_exists)
                 LOG_WARNING(
                     log,
-                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable "
-                    "at the moment",
+                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found",
                     move_ttl_entry->destination_name,
                     *std::atomic_load(&log_name));
+        }
+        else if (is_insert && !perform_ttl_move_on_insert)
+        {
+            LOG_TRACE(
+                log,
+                "TTL move on insert to {} {} for table {} is disabled",
+                (move_ttl_entry->destination_type == DataDestinationType::VOLUME ? "volume" : "disk"),
+                move_ttl_entry->destination_name,
+                *std::atomic_load(&log_name));
         }
         else
         {
@@ -4978,39 +5000,31 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     return reservation;
 }
 
-SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert) const
+SpacePtr MergeTreeData::getDestinationForMoveTTL(const TTLDescription & move_ttl) const
 {
     auto policy = getStoragePolicy();
     if (move_ttl.destination_type == DataDestinationType::VOLUME)
-    {
-        auto volume = policy->tryGetVolumeByName(move_ttl.destination_name);
-
-        if (!volume)
-            return {};
-
-        if (is_insert && !volume->perform_ttl_move_on_insert)
-            return {};
-
-        return volume;
-    }
+        return policy->tryGetVolumeByName(move_ttl.destination_name);
     else if (move_ttl.destination_type == DataDestinationType::DISK)
-    {
-        auto disk = policy->tryGetDiskByName(move_ttl.destination_name);
-
-        if (!disk)
-            return {};
-
-        auto volume = policy->getVolume(policy->getVolumeIndexByDisk(disk));
-        if (!volume)
-            return {};
-
-        if (is_insert && !volume->perform_ttl_move_on_insert)
-            return {};
-
-        return disk;
-    }
+        return policy->tryGetDiskByName(move_ttl.destination_name);
     else
         return {};
+}
+
+bool MergeTreeData::shouldPerformTTLMoveOnInsert(const SpacePtr & move_destination) const
+{
+    if (move_destination->isVolume())
+    {
+        auto volume = std::static_pointer_cast<IVolume>(move_destination);
+        return volume->perform_ttl_move_on_insert;
+    }
+    if (move_destination->isDisk())
+    {
+        auto disk = std::static_pointer_cast<IDisk>(move_destination);
+        if (auto volume = getStoragePolicy()->tryGetVolumeByDisk(disk))
+            return volume->perform_ttl_move_on_insert;
+    }
+    return false;
 }
 
 bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const
