@@ -21,7 +21,7 @@ struct TryDecryptImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(Decrypt)
+REGISTER_FUNCTION(TryDecrypt)
 {
     factory.registerFunction<FunctionDecrypt<TryDecryptImpl>>(
         "Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.");
