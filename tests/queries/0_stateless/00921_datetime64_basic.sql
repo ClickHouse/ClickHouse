@@ -28,4 +28,21 @@ SELECT toString(t, 'UTC'), toDate(t), toStartOfDay(t), toStartOfQuarter(t), toTi
 
 SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk');
 
+-- from float and int
+
+SELECT toDateTime64(0.0, 9, 'UTC') ;
+SELECT toDateTime64(0, 9, 'UTC');
+
+SELECT toDateTime64(-2200000000.0, 9, 'UTC'); -- value > 1900-01-01
+SELECT toDateTime64(-2200000000, 9, 'UTC');
+
+SELECT toDateTime64(-2300000000.0, 9, 'UTC'); -- value < 1900-01-01
+SELECT toDateTime64(-2300000000, 9, 'UTC');
+
+SELECT toDateTime64(9200000000.0, 9, 'UTC'); -- value < 2262-04-11
+SELECT toDateTime64(9200000000, 9, 'UTC'); -- value < 2262-04-11
+
+SELECT toDateTime64(9300000000.0, 9, 'UTC'); -- { serverError 407 } # value > 2262-04-11
+SELECT toDateTime64(9300000000, 9, 'UTC'); -- { serverError 407 } # value > 2262-04-11
+
 DROP TABLE A;
