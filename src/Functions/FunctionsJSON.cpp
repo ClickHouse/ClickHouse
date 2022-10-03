@@ -1338,7 +1338,7 @@ public:
         chars.push_back(0);
         std::string str = reinterpret_cast<const char *>(chars.data());
 
-        auto padded_str = str.data() + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
+        auto padded_str = str + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
         assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
 
         return true;
