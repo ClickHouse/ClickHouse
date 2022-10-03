@@ -408,9 +408,8 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
 
     if (type != "'windows'")
         throw Exception("Supported type argument is windows for  " + fn_name, ErrorCodes::BAD_ARGUMENTS);
-    
-    out = std::format("empty({0}) ? NULL   : splitByChar(' ' , {0})", json_string);
 
+    out = std::format("if(empty({0}) OR hasAll(splitByChar(' ', {0}) , ['']) , arrayMap(x->null, splitByChar(' ', '')), splitByChar(' ', {0}))" , json_string);
     return true;
 }
 
@@ -483,7 +482,6 @@ bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
-
     ++pos;
     const String query = getConvertedArgument(fn_name, pos);
 

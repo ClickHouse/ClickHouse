@@ -197,7 +197,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         },
         {
             "print parse_command_line('echo \"hello world!\" print$?', 'windows')",
-            "SELECT if(empty('echo \"hello world!\" print$?'), NULL, splitByChar(' ', 'echo \"hello world!\" print$?'))"
+            "SELECT if(empty('echo \"hello world!\" print$?') OR hasAll(splitByChar(' ', 'echo \"hello world!\" print$?'), ['']), arrayMap(x -> NULL, splitByChar(' ', '')), splitByChar(' ', 'echo \"hello world!\" print$?'))"
         },
         {
             "print reverse(123)",
