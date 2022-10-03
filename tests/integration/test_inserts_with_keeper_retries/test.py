@@ -75,7 +75,7 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         node2.query("DROP TABLE IF EXISTS r SYNC")
 
 
-@pytest.mark.skip(reason="Unfortunately the showed to be flaky. Disabled for now")
+@pytest.mark.skip(reason="Unfortunately it showed to be flaky. Disabled for now")
 def test_replica_inserts_with_keeper_disconnect(started_cluster):
     try:
         settings = {

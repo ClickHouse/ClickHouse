@@ -487,7 +487,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    if (!retries_ctl.call(
+                    if (!retries_ctl.callAndCatchAll(
                             [&]()
                             {
                                 waitForQuorum(
@@ -672,7 +672,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     storage.updateQuorum(part->name, false);
             }
 
-            if (!quorum_retries_ctl.call(
+            if (!quorum_retries_ctl.callAndCatchAll(
                     [&]()
                     { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
                 return;

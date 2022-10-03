@@ -101,7 +101,7 @@ public:
         }
     }
 
-    bool call(auto && f)
+    bool callAndCatchAll(auto && f)
     {
         try
         {
