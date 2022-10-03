@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ## KQL implemented features  
 
 # October 9, 2022
@@ -46,12 +45,6 @@
 [Null values are missing in the result of `make_list_with_nulls'](https://github.ibm.com/ClickHouse/issue-repo/issues/1009)  
 [trim functions use non-unique aliases](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1111)  
 [format_ipv4_mask returns incorrect mask value](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1039)  
-
-# September 12, 2022
-## Extend operator
-https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extendoperator  
-`T | extend T | extend duration = endTime - startTime`  
-`T | project endTime, startTime | extend duration = endTime - startTime`
 
 # September 12, 2022
 ## Extend operator
