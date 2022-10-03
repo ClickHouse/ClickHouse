@@ -13,7 +13,18 @@ Snargaluff cost 28080 on average based on 5 samples.
 Aldi	Apple	4	2016-09-10	Apple was purchased from Aldi for $4 on 2016-09-10	400
 Costco	Apple	2	2016-09-11	Apple was purchased from Costco for $2 on 2016-09-11	200
 -- extend #6 --
+Aldi    	Apple     	2016-09-10	  400.0
+Costco  	Apple     	2016-09-11	  200.0
+Aldi    	Apple     	2016-09-10	  600.0
+Costco  	Snargaluff	2016-09-12	10000.0
+Aldi    	Apple     	2016-09-12	  700.0
+Aldi    	Snargaluff	2016-09-11	40000.0
+Costco  	Snargaluff	2016-09-12	10400.0
+Aldi    	Apple     	2016-09-12	  500.0
+Aldi    	Snargaluff	2016-09-11	60000.0
+Costco  	Snargaluff	2016-09-10	20000.0
 -- extend #7 --
+5
 -- extend #8 --
 -- extend #9 --
 -- extend #10 --

@@ -15,9 +15,55 @@ namespace DB
 bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_query;
-    String expr = getExprFromToken(pos);
+    int32_t new_column_index = 1;
 
-    expr = std::format("SELECT *, {} from prev", expr);
+    String extend_expr = getExprFromToken(pos);
+
+    String except_str;
+    String new_extend_str;
+    Tokens ntokens(extend_expr.c_str(), extend_expr.c_str() + extend_expr.size());
+    IParser::Pos npos(ntokens, pos.max_depth);
+
+    String alias;
+
+    auto apply_alias =[&]
+    {
+        if (alias.empty())
+        {
+            alias = std::format("Column{}", new_column_index);
+            ++new_column_index;
+            new_extend_str += " AS";
+        }
+        else
+            except_str = except_str.empty() ? " except " + alias : except_str + " except " + alias;
+
+        new_extend_str = new_extend_str + " " + alias;
+
+        alias.clear();
+    };
+
+    while (!npos->isEnd())
+    {
+        auto expr = String(npos->begin, npos->end);
+        if (expr == "AS")
+        {
+            ++npos;
+            alias = String(npos->begin, npos->end);
+        }
+
+        if (npos->type == TokenType::Comma)
+        {
+            apply_alias();
+            new_extend_str += ", ";
+        }
+        else
+            new_extend_str = new_extend_str.empty() ? expr : new_extend_str + " " + expr;
+
+        ++npos;
+    }
+    apply_alias();
+
+    String expr = std::format("SELECT * {}, {} from prev", except_str, new_extend_str);
     Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
     IParser::Pos new_pos(tokens, pos.max_depth);
 
