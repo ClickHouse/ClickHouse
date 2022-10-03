@@ -73,15 +73,15 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     ReadSettings modified_settings{read_settings};
     switch (modified_settings.local_fs_method)
     {
-        case LocalFSReadMethod::pread_threadpool:
-        case LocalFSReadMethod::pread_fake_async:
+        case LocalFSReadMethod::read:
+        case LocalFSReadMethod::pread:
         {
-            modified_settings.local_fs_method = LocalFSReadMethod::pread;
-            LOG_INFO(log, "Changing local filesystem read method to `pread`");
             break;
         }
         default:
         {
+            modified_settings.local_fs_method = LocalFSReadMethod::pread;
+            LOG_INFO(log, "Changing local filesystem read method to `pread`");
             break;
         }
     }
