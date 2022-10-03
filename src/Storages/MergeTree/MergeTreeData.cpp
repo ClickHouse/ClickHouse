@@ -1685,7 +1685,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     return cleared_count;
 }
 
-scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name)
+scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name) const
 {
     bool inserted = temporary_parts.add(part_dir_name);
     if (!inserted)
@@ -6358,23 +6358,37 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
+    scope_guard src_flushed_tmp_dir_lock;
+    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
+
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
+    /// Protect tmp dir from removing by cleanup thread with src_flushed_tmp_dir_lock
+    /// Construct src_flushed_tmp_part in order to delete part with its directory at destructor
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
-        auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_storage = src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
+        auto flushed_part_path = *src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
+
+        auto tmp_src_part_file_name = fs::path(tmp_dst_part_name).filename();
+        src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
+
+        auto flushed_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+        src_flushed_tmp_part = createPart(src_part->name, src_part->info, flushed_part_storage);
+        src_flushed_tmp_part->is_temp = true;
+
+        src_part_storage = flushed_part_storage;
     }
 
     String with_copy;
     if (copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    LOG_DEBUG(log, "Cloning part {} to {}{}",
-              src_part_storage->getFullPath(),
-              std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
-              with_copy);
-
     auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
+
+    LOG_DEBUG(log, "Clone {} part {} to {}{}",
+              src_flushed_tmp_part ? "flushed" : "",
+              src_part_storage->getFullPath(),
+              std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
+              with_copy);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 

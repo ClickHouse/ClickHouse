@@ -1488,7 +1488,7 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts, MergeTreeDataFormatVersion format_version)
+FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
     FutureNewEmptyParts new_parts;
 
@@ -1499,18 +1499,8 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
 
         new_part.part_info = old_part->info;
         new_part.part_info.level += 1;
-
         new_part.partition = old_part->partition;
-
-        if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        {
-            DayNum min_date;
-            DayNum max_date;
-            MergeTreePartInfo::parseMinMaxDatesFromPartName(old_part->name, min_date, max_date);
-            new_part.part_name = new_part.part_info.getPartNameV0(min_date, max_date);
-        }
-        else
-            new_part.part_name = new_part.part_info.getPartName();
+        new_part.part_name = old_part->getNewName(new_part.part_info);
     }
 
     return new_parts;
@@ -1574,7 +1564,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
         auto parts = getVisibleDataPartsVector(query_context);
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts, format_version);
+        auto new_parts = initCoverageWithNewEmptyParts(parts);
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}, ",
                  new_parts.size(), parts.size(),
@@ -1623,7 +1613,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
 
         {
-            auto new_parts = initCoverageWithNewEmptyParts({part}, format_version);
+            auto new_parts = initCoverageWithNewEmptyParts({part});
 
             LOG_TEST(log, "Made {} empty parts in order to cover {} part.",
                      fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames({part}), ", "));
@@ -1682,7 +1672,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 part->makeCloneInDetached("", metadata_snapshot);
             }
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts, format_version);
+        auto new_parts = initCoverageWithNewEmptyParts(parts);
 
         LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
                  new_parts.size(), parts.size(),

@@ -33,7 +33,7 @@ function concurrent_drop_after()
     tx 11 "begin transaction"
     tx 11 "select count() from tt"
     tx 11 "truncate table tt"
-    $CLICKHOUSE_CLIENT -q              "drop table tt"
+    $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table tt"
     tx 11 "commit"
 }
 
