@@ -26,7 +26,7 @@ struct ResourceHolder
     ResourceTest & t;
     SchedulerNodePtr root_node;
 
-    ResourceHolder(ResourceTest & t_)
+    explicit ResourceHolder(ResourceTest & t_)
         : t(t_)
     {}
 
@@ -68,14 +68,14 @@ TEST(IOSchedulerRoot, Smoke)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    auto fc1 = r1.add<FlowCtlTest>("/", "<max_requests>1</max_requests>");
+    auto * fc1 = r1.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
     auto a = r1.addQueue("/prio/A", "<priority>1</priority>");
     auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
     ResourceHolder r2(t);
-    auto fc2 = r2.add<FlowCtlTest>("/", "<max_requests>1</max_requests>");
+    auto * fc2 = r2.add<ConstraintTest>("/", "<max_requests>1</max_requests>");
     r2.add<PriorityPolicy>("/prio");
     auto c = r2.addQueue("/prio/C", "<priority>-1</priority>");
     auto d = r2.addQueue("/prio/D", "<priority>-2</priority>");
