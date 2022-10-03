@@ -39,18 +39,18 @@ public:
         return std::make_unique<Random>(seed_, probability);
     }
 
-    explicit Random(const UInt64 seed_, double probability) : FaultInjection(seed_), rndgen(getSeed()), distribution(probability) { }
+    explicit Random(UInt64 seed_, double probability) : FaultInjection(seed_), rndgen(getSeed()), distribution(probability) { }
     ~Random() override = default;
 
     void beforeOperation() override
     {
         if (distribution(rndgen))
-            throw zkutil::KeeperException("Fault injection", Coordination::Error::ZSESSIONEXPIRED);
+            throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
     }
     void afterOperation() override
     {
         if (distribution(rndgen))
-            throw zkutil::KeeperException("Fault injection", Coordination::Error::ZOPERATIONTIMEOUT);
+            throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
     }
 
 private:
@@ -58,6 +58,9 @@ private:
     std::bernoulli_distribution distribution;
 };
 
+///
+/// KeeperAccess mimics keeper interface and inject failures according to failure policy if provided
+///
 class KeeperAccess
 {
     using zk = zkutil::ZooKeeper;
@@ -87,6 +90,7 @@ public:
                 return std::make_shared<KeeperAccess>(
                     zookeeper, Random::create(fault_injection_seed, fault_injection_probability), std::move(name), logger);
             default:
+                /// if no fault injection provided, create instance which will not log anything
                 return std::make_shared<KeeperAccess>(zookeeper);
         }
         __builtin_unreachable();
