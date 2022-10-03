@@ -2164,7 +2164,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &part_desc->hardlinked_files, false, {});
+                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &part_desc->hardlinked_files, false);
             part_desc->res_part = std::move(res_part);
             part_desc->temporary_part_lock = std::move(temporary_part_lock);
         }
@@ -3914,7 +3914,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     {
         get_part = [&, part_to_clone]()
         {
-            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false, {});
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false);
             part_to_clone_lock = std::move(lock);
             return cloned_part;
         };
@@ -6495,7 +6495,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             bool copy_instead_of_hardlink = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                                             && src_part->isStoredOnRemoteDiskWithZeroCopySupport();
 
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink, {});
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
+
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
             dst_parts_locks.emplace_back(std::move(part_lock));
@@ -6725,7 +6726,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             bool copy_instead_of_hardlink = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                                             && src_part->isStoredOnRemoteDiskWithZeroCopySupport();
 
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink, {});
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);

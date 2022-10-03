@@ -790,7 +790,7 @@ public:
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
-        bool copy_instead_of_hardlink, const NameSet & files_to_copy_instead_of_hardlinks);
+        bool copy_instead_of_hardlink);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
