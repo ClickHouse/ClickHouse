@@ -333,8 +333,8 @@ Number was: 1
 [1,2,3]
 [{"a":123.5,"b":"{\\"c\\":456}"}]
 -- parse_command_line()
-\N
-\N
+[NULL]
+[NULL]
 -- reverse()
 321
 43.321
@@ -347,6 +347,7 @@ dsa
 Peter	Nara	Skilled Manual	Graduate Degree	26
 Latoya	Shen	Professional	Graduate Degree	25
 -- parse_csv()
+['']
 ['aaa']
 ['aa','b','cc']
 ['record1','a','b','c']
