@@ -273,7 +273,7 @@ Chain buildPushingToViewsChain(
         /// and switch back to the original thread_status.
         auto * original_thread = current_thread;
         SCOPE_EXIT({ current_thread = original_thread; });
-
+        current_thread = nullptr;
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
         /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
         /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
