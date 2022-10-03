@@ -216,7 +216,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             memory_limit_exceeded_ignored = true;
     }
 
-    Int64 amount_to_check = current_hard_limit;
+    Int64 amount_to_check = will_be;
     bool used_rss_counter = false;
 
     if (level == VariableContext::Global)
