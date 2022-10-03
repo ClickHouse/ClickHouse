@@ -3210,7 +3210,20 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     modifyPartState(part, DataPartState::Active);
 }
 
-void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
+
+void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (prefix.empty())
+        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
+    else
+        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
+
+    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
+}
+
+void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
 {
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
