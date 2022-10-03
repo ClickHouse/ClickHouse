@@ -7585,6 +7585,8 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     if (!settings->allow_remote_fs_zero_copy_replication)
         return std::make_pair(true, NameSet{});
 
+    bool only_zero_copy = part.isStoredOnRemoteDiskWithZeroCopySupport() && getDisks().size() == 1;
+
     if (!part.data_part_storage)
         LOG_WARNING(log, "Datapart storage for part {} (temp: {}) is not initialzied", part.name, part.is_temp);
 
@@ -7630,14 +7632,15 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     else
         zookeeper = getZooKeeper();
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
-        zookeeper_path);
+    return unlockSharedDataByID(
+        part.getUniqueId(), getTableSharedID(), part.name, replica_name,
+        part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log, zookeeper_path, only_zero_copy);
 }
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, std::string disk_type, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
-        Poco::Logger * logger, const String & zookeeper_path_old)
+        Poco::Logger * logger, const String & zookeeper_path_old, bool only_zero_copy)
 {
     boost::replace_all(part_id, "/", "_");
 
@@ -7731,8 +7734,18 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                      zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+
+            if (only_zero_copy)
+            {
+                LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists, will not remove blobs",
+                          zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+                part_has_no_more_locks = false;
+            }
+            else
+            {
+                LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
+                          zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+            }
         }
     }
 
@@ -8268,9 +8281,14 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         {
             String id = disk->getUniqueId(checksums);
             bool can_remove = false;
-            std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                detached_replica_name, toString(disk->getDataSourceDescription().type), zookeeper, local_context->getReplicatedMergeTreeSettings(), &Poco::Logger::get("StorageReplicatedMergeTree"),
-                detached_zookeeper_path);
+            std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(
+                id, table_uuid, part_name,
+                detached_replica_name,
+                toString(disk->getDataSourceDescription().type),
+                zookeeper, local_context->getReplicatedMergeTreeSettings(),
+                &Poco::Logger::get("StorageReplicatedMergeTree"),
+                detached_zookeeper_path,
+                false);
 
             keep_shared = !can_remove;
         }
