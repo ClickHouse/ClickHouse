@@ -465,6 +465,17 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
+        if (partition)
+        {
+            last_mutation_by_partition[*partition] = version;
+        }
+        else
+        {
+            /// Mutation for all partitions, last mutation version can be calculated from
+            /// `current_mutations_by_version.rbegin()`.
+            last_mutation_by_partition.clear();
+        }
+
         LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
     background_operations_assignee.trigger();
@@ -623,7 +634,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                 if (mutation_ids)
                 {
                     auto mutations_begin_it = current_mutations_by_version.upper_bound(data_version);
-
+                    std::optional<UInt64> possible_last_mutation_version = getPartitionSpecificMutationVersion(data_part);
                     for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
                     {
                         if (it->second.partition_id && *it->second.partition_id != data_part->info.partition_id)
@@ -632,6 +643,9 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                         /// All applicable mutations with the same failure
                         if (it->second.latest_fail_reason == result.latest_fail_reason)
                             mutation_ids->insert(it->second.file_name);
+
+                        if (it->first == possible_last_mutation_version)
+                            break;
                     }
                 }
             }
@@ -759,6 +773,19 @@ void StorageMergeTree::loadDeduplicationLog()
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
     deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
     deduplication_log->load();
+}
+
+std::optional<UInt64> StorageMergeTree::getPartitionSpecificMutationVersion(const DataPartPtr & part) const
+{
+    auto possible_last_mutation_version_it = last_mutation_by_partition.find(part->info.partition_id);
+    if (possible_last_mutation_version_it != last_mutation_by_partition.end())
+    {
+        return possible_last_mutation_version_it->second;
+    }
+    else
+    {
+        return {};
+    }
 }
 
 void StorageMergeTree::loadMutations()
@@ -1065,6 +1092,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
+
+        std::optional<UInt64> possible_last_mutation_version = getPartitionSpecificMutationVersion(part);
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             if (it->second.partition_id && *it->second.partition_id != part->info.partition_id)
@@ -1119,6 +1148,11 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             current_ast_elements += commands_size;
             commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
             last_mutation_to_apply = it;
+
+            if (it->first == possible_last_mutation_version)
+            {
+                break;
+            }
         }
 
         assert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
@@ -1848,12 +1882,19 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
     std::lock_guard lock(currently_processing_in_background_mutex);
 
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+    std::optional<UInt64> possible_last_mutation_version = getPartitionSpecificMutationVersion(part);
     while (it != current_mutations_by_version.end())
     {
         if (!it->second.partition_id || *it->second.partition_id == part->info.partition_id)
         {
             return it->second.commands;
         }
+
+        if (it->first == possible_last_mutation_version)
+        {
+            break;
+        }
+
         ++it;
     }
 

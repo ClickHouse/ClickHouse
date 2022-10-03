@@ -145,6 +145,14 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
+    /// Accessed under `currently_processing_in_background_mutex` lock.
+    /// If partition exists in this map, we know last mutation version for it.
+    std::map<String, UInt64> last_mutation_by_partition;
+
+    /// Accessed under `currently_processing_in_background_mutex` lock.
+    std::optional<UInt64> getPartitionSpecificMutationVersion(const DataPartPtr & part) const;
+
+    /// Accessed under `currently_processing_in_background_mutex` lock.
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
