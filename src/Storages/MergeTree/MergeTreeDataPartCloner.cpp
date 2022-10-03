@@ -17,12 +17,14 @@ MergeTreeDataPartCloner::MergeTreeDataPartCloner(
     const MergeTreeTransactionPtr & txn_,
     bool require_part_metadata_,
     MergeTreeData::HardlinkedFiles * hardlinked_files_,
-    bool copy_instead_of_hardlink_
+    bool copy_instead_of_hardlink_,
+    const NameSet & files_to_copy_instead_of_hardlinks_
 )
 : merge_tree_data(merge_tree_data_), src_part(src_part_), metadata_snapshot(metadata_snapshot_),
     dst_part_info(dst_part_info_), tmp_part_prefix(tmp_part_prefix_),
     txn(txn_), require_part_metadata(require_part_metadata_),
-    hardlinked_files(hardlinked_files_), copy_instead_of_hardlink(copy_instead_of_hardlink_)
+    hardlinked_files(hardlinked_files_), copy_instead_of_hardlink(copy_instead_of_hardlink_),
+    files_to_copy_instead_of_hardlinks(files_to_copy_instead_of_hardlinks_)
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
@@ -84,7 +86,8 @@ std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
             path,
             false /* make_source_readonly */,
             {},
-            false /* copy_instead_of_hardlinks */
+            false /* copy_instead_of_hardlinks */,
+            files_to_copy_instead_of_hardlinks
     );
 }
 
@@ -112,7 +115,9 @@ void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
 
     for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
     {
-        if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+        if (!files_to_copy_instead_of_hardlinks.contains(it->name())
+            && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+            && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
             hardlinked_files->hardlinks_from_source_part.insert(it->name());
     }
 }

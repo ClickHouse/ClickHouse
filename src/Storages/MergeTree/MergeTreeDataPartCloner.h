@@ -25,7 +25,8 @@ namespace DB
             const MergeTreeTransactionPtr & txn,
             bool require_part_metadata,
             MergeTreeData::HardlinkedFiles * hardlinked_files,
-            bool copy_instead_of_hardlink
+            bool copy_instead_of_hardlink,
+            const NameSet & files_to_copy_instead_of_hardlinks
         );
 
         virtual ~MergeTreeDataPartCloner() = default;
@@ -46,6 +47,7 @@ namespace DB
         bool require_part_metadata;
         MergeTreeData::HardlinkedFiles * hardlinked_files;
         bool copy_instead_of_hardlink;
+        NameSet files_to_copy_instead_of_hardlinks;
 
         /// Check that the storage policy contains the disk where the src_part is located.
         bool doesStoragePolicyAllowSameDisk() const;

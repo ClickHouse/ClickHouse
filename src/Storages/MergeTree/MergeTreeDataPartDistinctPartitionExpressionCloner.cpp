@@ -15,7 +15,7 @@ MergeTreeDataPartDistinctPartitionExpressionCloner::MergeTreeDataPartDistinctPar
     const IMergeTreeDataPart::MinMaxIndex & new_min_max_index_
 )
 : MergeTreeDataPartCloner(merge_tree_data_, src_part_, merge_tree_data_->getInMemoryMetadataPtr(),
-                          dst_part_info_, tmp_part_prefix_, txn_, false, {}, false),
+                          dst_part_info_, tmp_part_prefix_, txn_, false, {}, false, {}),
     new_partition(new_partition_), new_min_max_index(new_min_max_index_)
 {}
 

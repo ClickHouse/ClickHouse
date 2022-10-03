@@ -6174,9 +6174,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         txn,
         require_part_metadata,
         hardlinked_files,
-        copy_instead_of_hardlink
+        copy_instead_of_hardlink,
+        files_to_copy_instead_of_hardlinks
     };
-
 
     return part_cloner.clone();
 }
