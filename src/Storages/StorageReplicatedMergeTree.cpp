@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <ranges>
 #include "Common/hex.h"
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -7585,8 +7586,6 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     if (!settings->allow_remote_fs_zero_copy_replication)
         return std::make_pair(true, NameSet{});
 
-    bool only_zero_copy = part.isStoredOnRemoteDiskWithZeroCopySupport() && getDisks().size() == 1;
-
     if (!part.data_part_storage)
         LOG_WARNING(log, "Datapart storage for part {} (temp: {}) is not initialzied", part.name, part.is_temp);
 
@@ -7634,13 +7633,53 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
 
     return unlockSharedDataByID(
         part.getUniqueId(), getTableSharedID(), part.name, replica_name,
-        part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log, zookeeper_path, only_zero_copy);
+        part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log, zookeeper_path, format_version);
+}
+
+namespace
+{
+
+NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version)
+{
+    NameSet files_not_to_remove;
+
+    MergeTreePartInfo part_info = MergeTreePartInfo::fromPartName(part_info_str, format_version);
+    if (part_info.mutation == 0)
+        return files_not_to_remove;
+
+    auto parts_str = zookeeper_ptr->getChildren(zero_copy_part_path_prefix);
+
+
+    std::vector<MergeTreePartInfo> parts_infos;
+    for (const auto & part_str : parts_str)
+    {
+        MergeTreePartInfo parent_candidate_info = MergeTreePartInfo::fromPartName(part_str, format_version);
+        parts_infos.push_back(parent_candidate_info);
+    }
+
+    std::sort(parts_infos.begin(), parts_infos.end());
+
+    for (const auto & parent_candidate_info : parts_infos | std::views::reverse)
+    {
+        if (parent_candidate_info == part_info)
+            continue;
+
+        if (part_info.isMutationChildOf(parent_candidate_info))
+        {
+            String files_not_to_remove_str = zookeeper_ptr->get(fs::path(zero_copy_part_path_prefix) / parent_candidate_info.getPartName());
+            boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+            break;
+        }
+    }
+    return files_not_to_remove;
+}
+
 }
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, std::string disk_type, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
-        Poco::Logger * logger, const String & zookeeper_path_old, bool only_zero_copy)
+        Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
 
@@ -7657,6 +7696,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         files_not_to_remove.clear();
         if (!files_not_to_remove_str.empty())
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+
+        auto parent_not_to_remove = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version);
+        files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
@@ -7734,19 +7776,8 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            if (only_zero_copy)
-            {
-                /// If we have only_zero_copy configuration it means, that part was actually created on the same disk. It can happen
-                /// in extremely rare cases when both replicas decide to merge something due to one of tables in-progress drop.
-                LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists, will not remove blobs",
-                          zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
-                part_has_no_more_locks = false;
-            }
-            else
-            {
-                LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                          zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
-            }
+            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
+                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
         }
     }
 
@@ -8289,7 +8320,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
                 zookeeper, local_context->getReplicatedMergeTreeSettings(),
                 &Poco::Logger::get("StorageReplicatedMergeTree"),
                 detached_zookeeper_path,
-                false);
+                MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 
             keep_shared = !can_remove;
         }
