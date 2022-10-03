@@ -155,9 +155,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Hour>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
         {
@@ -173,9 +173,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Minute>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 minutes, const DateLUTImpl & time_zone, Int64)
         {
@@ -191,9 +191,9 @@ namespace
     template <>
     struct Transform<IntervalKind::Second>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, Int64 seconds, const DateLUTImpl & time_zone, Int64)
         {
@@ -209,11 +209,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Millisecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {
@@ -246,11 +246,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Microsecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 microseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {
@@ -283,11 +283,11 @@ namespace
     template <>
     struct Transform<IntervalKind::Nanosecond>
     {
-        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(Int32, Int64, const DateLUTImpl &, Int64) { throwDateIsNotSupported(function_name); }
 
-        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { return dateTimeIsNotSupported(function_name); }
+        static UInt32 execute(UInt32, Int64, const DateLUTImpl &, Int64) { throwDateTimeIsNotSupported(function_name); }
 
         static Int64 execute(Int64 t, Int64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier)
         {

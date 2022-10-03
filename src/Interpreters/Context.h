@@ -161,6 +161,8 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -362,6 +364,8 @@ private:
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
 
+    /// Temporary data for query execution accounting.
+    TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -435,7 +439,10 @@ public:
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const;
+    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
+
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
+    void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -446,7 +453,7 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -919,7 +926,7 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
-    time_t getUptimeSeconds() const;
+    double getUptimeSeconds() const;
 
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
@@ -1010,6 +1017,17 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+
+    enum class FilesystemReaderType
+    {
+        SYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_REMOTE_FS_READER,
+    };
+
+    IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+
+    ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

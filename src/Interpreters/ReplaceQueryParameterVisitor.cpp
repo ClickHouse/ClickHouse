@@ -12,6 +12,7 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -26,6 +27,8 @@ namespace ErrorCodes
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
+    checkStackSize();
+
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
