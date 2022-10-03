@@ -125,7 +125,7 @@
 /// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
-        #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
+        #define chassert(x) static_cast<bool>(x) ? void(0) : DB::abortOnFailedAssertion(#x)
     #else
         #define chassert(x) ((void)0)
     #endif
