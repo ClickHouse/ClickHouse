@@ -1,4 +1,3 @@
-#include <Storages/StorageSnapshot.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
