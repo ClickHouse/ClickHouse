@@ -6,6 +6,8 @@
 #include <functional>
 #include <filesystem>
 
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
@@ -139,11 +141,13 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
+
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : zk_log(std::move(zk_log_))
 {
-    zk_log = std::move(zk_log_);
     init(args_);
 }
+
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
@@ -605,7 +609,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::removeChildrenRecursive(const std::string & path, RemoveException keep_child)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -613,16 +617,23 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            removeChildrenRecursive(fs::path(path) / children.back());
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
+            {
+                removeChildrenRecursive(fs::path(path) / children.back());
                 ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+            }
+            else if (keep_child.remove_subtree)
+            {
+                removeChildrenRecursive(fs::path(path) / children.back());
+            }
+
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, const String & keep_child_node)
+bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probably_flat, RemoveException keep_child)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -639,15 +650,19 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
         {
             String child_path = fs::path(path) / children.back();
 
-            /// Will try to avoid recursive getChildren calls if child_path probably has no children.
-            /// It may be extremely slow when path contain a lot of leaf children.
-            if (!probably_flat)
-                tryRemoveChildrenRecursive(child_path);
-
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
+            if (keep_child.path.empty() || keep_child.path != children.back()) [[likely]]
             {
+                /// Will try to avoid recursive getChildren calls if child_path probably has no children.
+                /// It may be extremely slow when path contain a lot of leaf children.
+                if (!probably_flat)
+                    tryRemoveChildrenRecursive(child_path);
+
                 batch.push_back(child_path);
                 ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
+            }
+            else if (keep_child.remove_subtree && !probably_flat)
+            {
+                tryRemoveChildrenRecursive(child_path);
             }
 
             children.pop_back();
@@ -976,6 +991,24 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     return future;
 }
 
+std::future<Coordination::ListResponse>
+ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->list(path, list_request_type, std::move(callback), {});
+    return future;
+}
+
 std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
@@ -1193,6 +1226,37 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->version = version;
     return request;
 }
+
+Coordination::RequestPtr makeGetRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::GetRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
+    request->path = path;
+    request->list_request_type = list_request_type;
+    return request;
+}
+
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSimpleListRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeExistsRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperExistsRequest>();
+    request->path = path;
+    return request;
+}
+
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {

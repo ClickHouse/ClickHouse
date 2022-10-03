@@ -28,8 +28,8 @@ struct ZooKeeperArgs
     int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
-    float send_fault_probability = 0;
-    float recv_fault_probability = 0;
+    double send_fault_probability = 0.0;
+    double recv_fault_probability = 0.0;
 
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
 };
