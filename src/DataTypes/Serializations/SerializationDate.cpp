@@ -76,9 +76,22 @@ void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    LocalDate value;
-    readCSV(value, istr);
-    assert_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
+    DayNum x;
+
+    if (istr.eof())
+        throwReadAfterEOF();
+
+    char maybe_quote = *istr.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++istr.position();
+
+    readDateText(x, istr);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, istr);
+
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 }
