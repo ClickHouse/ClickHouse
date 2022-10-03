@@ -169,11 +169,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
 
             "print parse_version('1.2.3.40')",
-            "SELECT substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1.2.3.40'), 4)))), 8)"
+            "SELECT if((length(splitByChar('.', '1.2.3.40')) > 4) OR (length(splitByChar('.', '1.2.3.40')) < 1) OR (match('1.2.3.40', '.*[a-zA-Z]+.*') = 1), toDecimal128OrNull('NULL', 0), toDecimal128OrNull(substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1.2.3.40'), 4)))), 8), 0))"
         },
         {
             "print parse_version('1')",
-            "SELECT substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1'), 4)))), 8)"
+            "SELECT if((length(splitByChar('.', '1')) > 4) OR (length(splitByChar('.', '1')) < 1) OR (match('1', '.*[a-zA-Z]+.*') = 1), toDecimal128OrNull('NULL', 0), toDecimal128OrNull(substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> if(empty(x), '0', x), arrayResize(splitByChar('.', '1'), 4)))), 8), 0))"
         },
         {
             "print parse_json( dynamic([1, 2, 3]))",
@@ -197,7 +197,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         },
         {
             "print parse_command_line('echo \"hello world!\" print$?', 'windows')",
-            "SELECT splitByChar(' ', 'echo \"hello world!\" print$?')"
+            "SELECT if(empty('echo \"hello world!\" print$?'), NULL, splitByChar(' ', 'echo \"hello world!\" print$?'))"
         },
         {
             "print reverse(123)",
