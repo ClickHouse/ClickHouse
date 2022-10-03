@@ -446,8 +446,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
                 fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
                 std::string ulimits_content = fmt::format(
-                    "{0}\tsoft\tnofile\t262144\n"
-                    "{0}\thard\tnofile\t262144\n", user);
+                    "{0}\tsoft\tnofile\t1048576\n"
+                    "{0}\thard\tnofile\t1048576\n", user);
 
                 fs::create_directories(ulimits_dir);
 
@@ -927,7 +927,11 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-            command = fmt::format("clickhouse su '{}' {}", user, command);
+        {
+            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
+            /// that's why we are using it instead of the 'clickhouse su' tool.
+            command = fmt::format("sudo -u '{}' {}", user, command);
+        }
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);

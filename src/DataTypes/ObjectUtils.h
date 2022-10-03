@@ -174,20 +174,17 @@ ColumnsDescription getConcreteObjectColumns(
     const ColumnsDescription & storage_columns,
     EntryColumnsGetter && entry_columns_getter)
 {
-    ColumnsDescription res;
-
-    if (begin == end)
-    {
-        for (const auto & column : storage_columns)
-        {
-            if (column.type->hasDynamicSubcolumns())
-                res.add({column.name, createConcreteEmptyDynamicColumn(column.type)});
-        }
-
-        return res;
-    }
-
     std::unordered_map<String, DataTypes> types_in_entries;
+
+    /// Add dummy column for all Object columns
+    /// to not lose any column if it's missing
+    /// in all entries. If it exists in any entry
+    /// dummy column will be removed.
+    for (const auto & column : storage_columns)
+    {
+        if (column.type->hasDynamicSubcolumns())
+            types_in_entries[column.name].push_back(createConcreteEmptyDynamicColumn(column.type));
+    }
 
     for (auto it = begin; it != end; ++it)
     {
@@ -200,6 +197,7 @@ ColumnsDescription getConcreteObjectColumns(
         }
     }
 
+    ColumnsDescription res;
     for (const auto & [name, types] : types_in_entries)
     {
         auto storage_column = storage_columns.getPhysical(name);

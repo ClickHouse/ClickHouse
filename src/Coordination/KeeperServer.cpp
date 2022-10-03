@@ -442,9 +442,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
     state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_machine->shutdownStorage();
 }
 
 namespace
@@ -520,7 +520,7 @@ bool KeeperServer::isFollower() const
 
 bool KeeperServer::isLeaderAlive() const
 {
-    return raft_instance->is_leader_alive();
+    return raft_instance && raft_instance->is_leader_alive();
 }
 
 /// TODO test whether taking failed peer in count
@@ -617,7 +617,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
                 request_for_session.zxid = next_zxid;
-                state_machine->preprocess(request_for_session);
+                if (!state_machine->preprocess(request_for_session))
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;
@@ -703,7 +705,7 @@ void KeeperServer::waitInit()
 
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
-        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
+        LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
 std::vector<int64_t> KeeperServer::getDeadSessions()

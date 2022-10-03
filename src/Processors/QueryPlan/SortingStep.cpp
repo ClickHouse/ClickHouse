@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static ITransformingStep::Traits getTraits(size_t limit)
 {
     return ITransformingStep::Traits
@@ -37,7 +42,7 @@ SortingStep::SortingStep(
     size_t max_bytes_before_remerge_,
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
-    VolumePtr tmp_volume_,
+    TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
     bool optimize_sorting_by_input_stream_properties_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
@@ -49,10 +54,13 @@ SortingStep::SortingStep(
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
-    , tmp_volume(tmp_volume_)
+    , tmp_data(tmp_data_)
     , min_free_disk_space(min_free_disk_space_)
     , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
+    if (max_bytes_before_external_sort && tmp_data == nullptr)
+        throw Exception("Temporary data storage for external sorting is not provided", ErrorCodes::LOGICAL_ERROR);
+
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
@@ -189,7 +197,7 @@ void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescri
                 max_bytes_before_remerge / pipeline.getNumStreams(),
                 remerge_lowered_memory_bytes_ratio,
                 max_bytes_before_external_sort,
-                tmp_volume,
+                std::make_unique<TemporaryDataOnDisk>(tmp_data),
                 min_free_disk_space);
         });
 }

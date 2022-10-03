@@ -53,7 +53,6 @@ class AccessRightsElements;
 enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
-class ExternalModelsLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
@@ -162,6 +161,8 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -363,6 +364,8 @@ private:
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
 
+    /// Temporary data for query execution accounting.
+    TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -436,7 +439,10 @@ public:
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const;
+    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
+
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
+    void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -447,7 +453,7 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -612,6 +618,7 @@ public:
 
     void killCurrentQuery();
 
+    bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
@@ -644,19 +651,15 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
-    const ExternalModelsLoader & getExternalModelsLoader() const;
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-    ExternalModelsLoader & getExternalModelsLoader();
-    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
-    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -806,6 +809,7 @@ public:
     void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+    ThreadPool & getLoadMarksThreadpool() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -922,7 +926,7 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
-    time_t getUptimeSeconds() const;
+    double getUptimeSeconds() const;
 
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
@@ -936,7 +940,7 @@ public:
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-    ActionLocksManagerPtr getActionLocksManager();
+    ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType
     {
@@ -1013,6 +1017,17 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+
+    enum class FilesystemReaderType
+    {
+        SYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_LOCAL_FS_READER,
+        ASYNCHRONOUS_REMOTE_FS_READER,
+    };
+
+    IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+
+    ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
