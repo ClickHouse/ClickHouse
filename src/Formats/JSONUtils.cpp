@@ -33,7 +33,7 @@ namespace JSONUtils
 
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
-    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
+    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         skipWhitespaceIfAny(in);
 
@@ -41,14 +41,17 @@ namespace JSONUtils
         size_t balance = 0;
         bool quotes = false;
         size_t number_of_rows = 0;
+        bool need_more_data = true;
 
-        while (loadAtPosition(in, memory, pos)
-               && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size || number_of_rows < min_rows))
+        if (max_rows && (max_rows < min_rows))
+            max_rows = min_rows;
+
+        while (loadAtPosition(in, memory, pos) && need_more_data)
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
-            if (min_chunk_size != 0 && current_object_size > 10 * min_chunk_size)
+            if (min_bytes != 0 && current_object_size > 10 * min_bytes)
                 throw ParsingException(
-                    "Size of JSON object is extremely large. Expected not greater than " + std::to_string(min_chunk_size)
+                    "Size of JSON object is extremely large. Expected not greater than " + std::to_string(min_bytes)
                         + " bytes, but current is " + std::to_string(current_object_size)
                         + " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed",
                     ErrorCodes::INCORRECT_DATA);
@@ -106,7 +109,12 @@ namespace JSONUtils
                 }
 
                 if (balance == 0)
+                {
                     ++number_of_rows;
+                    if ((number_of_rows >= min_rows)
+                        && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+                        need_more_data = false;
+                }
             }
         }
 
@@ -118,7 +126,7 @@ namespace JSONUtils
     static String readJSONEachRowLineIntoStringImpl(ReadBuffer & in)
     {
         Memory memory;
-        fileSegmentationEngineJSONEachRowImpl<opening_bracket, closing_bracket>(in, memory, 0, 1);
+        fileSegmentationEngineJSONEachRowImpl<opening_bracket, closing_bracket>(in, memory, 0, 1, 1);
         return String(memory.data(), memory.size());
     }
 
@@ -297,15 +305,15 @@ namespace JSONUtils
         return data_types;
     }
 
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_chunk_size, 1);
+        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
     }
 
     std::pair<bool, size_t>
-    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
+    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_chunk_size, min_rows);
+        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
     }
 
     struct JSONEachRowFieldsExtractor

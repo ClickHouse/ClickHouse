@@ -35,6 +35,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -57,6 +58,20 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForAggregation;
+}
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int TOO_MANY_ROWS;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
+    extern const int LOGICAL_ERROR;
+}
+
 }
 
 namespace
@@ -311,17 +326,6 @@ size_t getMinBytesForPrefetch()
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
-    extern const int NOT_ENOUGH_SPACE;
-    extern const int TOO_MANY_ROWS;
-    extern const int EMPTY_DATA_PASSED;
-    extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
-    extern const int LOGICAL_ERROR;
-}
-
-
 AggregatedDataVariants::~AggregatedDataVariants()
 {
     if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
@@ -566,6 +570,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
+    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
@@ -1562,30 +1567,28 @@ bool Aggregator::executeOnBlock(Columns columns,
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
+    if (!tmp_data)
+        throw Exception("Cannot write to temporary file because temporary file is not initialized", ErrorCodes::LOGICAL_ERROR);
+
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTempFile(max_temp_file_size);
-
-    const auto & path = file->path();
-    WriteBufferFromFile file_buf(path);
-    CompressedWriteBuffer compressed_buf(file_buf);
-    NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
-
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", path);
+    auto & out_stream = tmp_data->createStream(getHeader(false), CurrentMetrics::TemporaryFilesForAggregation, max_temp_file_size);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
+
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.path());
 
     /// Flush only two-level data and possibly overflow data.
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception("Unknown aggregated data variant", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
     /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
     data_variants.init(data_variants.type);
@@ -1598,61 +1601,31 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         data_variants.without_key = place;
     }
 
-    block_out.flush();
-    compressed_buf.next();
-    file_buf.next();
+    auto stat = out_stream.finishWriting();
+
+    ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, stat.compressed_size);
+    ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, stat.uncompressed_size);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
 
     double elapsed_seconds = watch.elapsedSeconds();
-    size_t compressed_bytes = file_buf.count();
-    size_t uncompressed_bytes = compressed_buf.count();
-
-    {
-        std::lock_guard lock(temporary_files.mutex);
-        temporary_files.files.emplace_back(std::move(file));
-        temporary_files.sum_size_uncompressed += uncompressed_bytes;
-        temporary_files.sum_size_compressed += compressed_bytes;
-    }
-
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_bytes);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_bytes);
-
+    double compressed_size = stat.compressed_size;
+    double uncompressed_size = stat.uncompressed_size;
     LOG_DEBUG(log,
         "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
         " {:.3f} uncompressed bytes per row, {:.3f} compressed bytes per row, compression rate: {:.3f}"
         " ({:.3f} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
-        ReadableSize(uncompressed_bytes),
-        ReadableSize(compressed_bytes),
-        static_cast<double>(uncompressed_bytes) / rows,
-        static_cast<double>(compressed_bytes) / rows,
-        static_cast<double>(uncompressed_bytes) / compressed_bytes,
+        ReadableSize(uncompressed_size),
+        ReadableSize(compressed_size),
+        static_cast<double>(uncompressed_size) / rows,
+        static_cast<double>(compressed_size) / rows,
+        static_cast<double>(uncompressed_size) / compressed_size,
         static_cast<double>(rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(uncompressed_bytes) / elapsed_seconds),
-        ReadableSize(static_cast<double>(compressed_bytes) / elapsed_seconds));
+        ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
+        ReadableSize(static_cast<double>(compressed_size) / elapsed_seconds));
 }
-
-
-TemporaryFileOnDiskHolder Aggregator::createTempFile(size_t max_temp_file_size) const
-{
-    auto file = std::make_unique<TemporaryFileOnDisk>(params.tmp_volume->getDisk(), CurrentMetrics::TemporaryFilesForAggregation);
-
-    // enoughSpaceInDirectory() is not enough to make it right, since
-    // another process (or another thread of aggregator) can consume all
-    // space.
-    //
-    // But true reservation (IVolume::reserve()) cannot be used here since
-    // current_memory_usage does not takes compression into account and
-    // will reserve way more that actually will be used.
-    //
-    // Hence let's do a simple check.
-    if (max_temp_file_size > 0 && !enoughSpaceInDirectory(file->getPath(), max_temp_file_size))
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
-    return file;
-}
-
 
 template <typename Method>
 Block Aggregator::convertOneBucketToBlock(
@@ -1703,7 +1676,7 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    NativeWriter & out) const
+    TemporaryFileStream & out) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
