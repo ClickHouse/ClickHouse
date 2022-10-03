@@ -1286,6 +1286,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     getRootActions(select_query->where(), only_types, step.actions());
 
+    //For creating parameterized view, query parameters are allowed in select
+    //As select will be stored without substituting query parameters, we don't want to evaluate the where expression
     if (select_query->allow_query_parameters && select_query->hasQueryParameters())
         return true;
 
@@ -1906,6 +1908,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
+                    //For creating parameterized view, query parameters are allowed in select
+                    //As select will be stored without substituting query parameters, we don't want to evaluate the where expression
                     bool has_query_parameters = query.allow_query_parameters && query.hasQueryParameters();
                     if (!has_query_parameters)
                     {
@@ -2075,6 +2079,8 @@ void ExpressionAnalysisResult::finalize(
     ssize_t & having_step_num,
     const ASTSelectQuery & query)
 {
+    //For creating parameterized view, query parameters are allowed in select
+    //As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
     if (query.allow_query_parameters && query.hasQueryParameters())
         return;
 

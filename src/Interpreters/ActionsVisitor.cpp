@@ -54,7 +54,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
-#include <Interpreters/QueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
