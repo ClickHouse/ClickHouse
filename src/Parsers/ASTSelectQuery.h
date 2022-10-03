@@ -143,7 +143,10 @@ public:
     void setFinal();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
-    bool hasQueryParameters() const;
+
+    bool has_query_parameters = false;
+    bool hasQueryParameters() const { return has_query_parameters; }
+    void setHasQueryParameters();
     NameToNameMap getQueryParameterValues() const;
 
 protected:

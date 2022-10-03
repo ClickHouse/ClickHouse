@@ -100,6 +100,10 @@ StorageView::StorageView(
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
     SelectQueryDescription description;
 
+    //When storing the select_query clear allow_query_parameters from the select, so that when this view is used in select,
+    //the query parameters are expected to be substituted
+    query.select->clearAllowQueryParameters();
+
     description.inner_query = query.select->ptr();
     is_parameterized_view = query.isParameterizedView();
     storage_metadata.setSelectQuery(description);

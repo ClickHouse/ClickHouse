@@ -4,7 +4,6 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Interpreters/QueryParameterVisitor.h>
 
 #include <iostream>
 
@@ -88,13 +87,36 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
         || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
 }
 
-bool ASTSelectWithUnionQuery::hasQueryParameters() const
+
+void ASTSelectWithUnionQuery::setHasQueryParameters()
 {
-    if (!analyzeReceiveQueryParams(this->list_of_selects).empty())
+    if (!list_of_selects)
+        return;
+
+    for (const auto & child : list_of_selects->children)
     {
-        return true;
+        if (auto * select_node = child->as<ASTSelectQuery>())
+        {
+            select_node->setHasQueryParameters();
+            if (select_node->hasQueryParameters())
+            {
+                has_query_parameters = true;
+                break;
+            }
+        }
     }
-    return false;
+}
+
+void ASTSelectWithUnionQuery::clearAllowQueryParameters()
+{
+    if (!list_of_selects)
+        return;
+
+    for (const auto & child : list_of_selects->children)
+    {
+        if (auto * select_node = child->as<ASTSelectQuery>())
+            select_node->allow_query_parameters = false;
+    }
 }
 
 }
