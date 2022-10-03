@@ -36,20 +36,9 @@ namespace ErrorCodes
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
-    static inline UInt32 dateIsNotSupported(const char * name)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", name);
-    }
-
-    static inline UInt32 dateTimeIsNotSupported(const char * name)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
-    }
-
-    static inline Int64 date32IsNotSupported(const char * name)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date32 of argument for function {}", name);
-    }
+[[noreturn]] void throwDateIsNotSupported(const char * name);
+[[noreturn]] void throwDateTimeIsNotSupported(const char * name);
+[[noreturn]] void throwDate32IsNotSupported(const char * name);
 
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
@@ -335,11 +324,11 @@ struct ToTimeImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ToDateImpl;
@@ -362,11 +351,11 @@ struct ToStartOfMinuteImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -374,7 +363,7 @@ struct ToStartOfMinuteImpl
     }
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -409,11 +398,11 @@ struct ToStartOfSecondImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -456,11 +445,11 @@ struct ToStartOfMillisecondImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -499,11 +488,11 @@ struct ToStartOfMicrosecondImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -536,11 +525,11 @@ struct ToStartOfNanosecondImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -560,11 +549,11 @@ struct ToStartOfFiveMinutesImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -572,7 +561,7 @@ struct ToStartOfFiveMinutesImpl
     }
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -592,11 +581,11 @@ struct ToStartOfTenMinutesImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -604,7 +593,7 @@ struct ToStartOfTenMinutesImpl
     }
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -624,11 +613,11 @@ struct ToStartOfFifteenMinutesImpl
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -636,7 +625,7 @@ struct ToStartOfFifteenMinutesImpl
     }
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -659,12 +648,12 @@ struct TimeSlotImpl
 
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     static inline DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
@@ -676,7 +665,7 @@ struct TimeSlotImpl
 
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -701,12 +690,12 @@ struct ToStartOfHourImpl
 
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
@@ -716,7 +705,7 @@ struct ToStartOfHourImpl
 
     static inline Int64 executeExtendedResult(Int32, const DateLUTImpl &)
     {
-        return date32IsNotSupported(name);
+        throwDate32IsNotSupported(name);
     }
 
     using FactorTransform = ZeroTransform;
@@ -880,11 +869,11 @@ struct ToHourImpl
     }
     static inline UInt8 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ToDateImpl;
@@ -906,12 +895,12 @@ struct TimezoneOffsetImpl
 
     static inline time_t execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     static inline time_t execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ToTimeImpl;
@@ -931,11 +920,11 @@ struct ToMinuteImpl
     }
     static inline UInt8 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ToStartOfHourImpl;
@@ -955,11 +944,11 @@ struct ToSecondImpl
     }
     static inline UInt8 execute(Int32, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        throwDateTimeIsNotSupported(name);
     }
 
     using FactorTransform = ToStartOfMinuteImpl;
