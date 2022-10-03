@@ -12,10 +12,10 @@ namespace ErrorCodes
     extern const int OK;
 }
 
-struct RetriesInfo
+struct KeeperRetriesInfo
 {
-    RetriesInfo() = default;
-    RetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+    KeeperRetriesInfo() = default;
+    KeeperRetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : name(std::move(name_))
         , logger(logger_)
         , max_retries(max_retries_)
@@ -32,23 +32,10 @@ struct RetriesInfo
     UInt64 retry_count = 0;
 };
 
-class RetriesControl
+class KeeperRetriesControl
 {
 public:
-    RetriesControl(std::string name_, RetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_) { }
-
-    struct KeeperError
-    {
-        using Code = Coordination::Error;
-        Code code = Code::ZOK;
-        std::string message;
-    };
-
-    struct UserError
-    {
-        int code = ErrorCodes::OK;
-        std::string message;
-    };
+    KeeperRetriesControl(std::string name_, KeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_) { }
 
     bool canTry()
     {
@@ -96,93 +83,6 @@ public:
         return true;
     }
 
-    void throwIfError() const
-    {
-        if (user_error.code != ErrorCodes::OK)
-            throw Exception(user_error.code, user_error.message);
-
-        if (keeper_error.code != KeeperError::Code::ZOK)
-            throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
-    }
-
-    void setUserError(int code, std::string message)
-    {
-        iteration_succeeded = false;
-        user_error.code = code;
-        user_error.message = std::move(message);
-        keeper_error = KeeperError{};
-    }
-
-    template <typename... Args>
-    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setKeeperError(KeeperError::Code code, std::string message)
-    {
-        iteration_succeeded = false;
-        keeper_error.code = code;
-        keeper_error.message = std::move(message);
-        user_error = UserError{};
-    }
-
-    bool call(auto && f)
-    {
-        try
-        {
-            f();
-            return true;
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            setKeeperError(e.code, e.message());
-        }
-        catch (const Exception & e)
-        {
-            setUserError(e.code(), e.what());
-        }
-        return false;
-    }
-
-    void logLastError(std::string header)
-    {
-        if (user_error.code == ErrorCodes::OK)
-        {
-            if (retries_info.logger)
-                LOG_DEBUG(
-                    retries_info.logger,
-                    "{}/{}: {}: count={} timeout={}ms error={} message={}",
-                    retries_info.name,
-                    name,
-                    header,
-                    retries_info.retry_count,
-                    retries_info.curr_backoff_ms,
-                    keeper_error.code,
-                    keeper_error.message);
-        }
-        else
-        {
-            if (retries_info.logger)
-                LOG_DEBUG(
-                    retries_info.logger,
-                    "{}/{}: {}: count={} timeout={}ms error={} message={}",
-                    retries_info.name,
-                    name,
-                    header,
-                    retries_info.retry_count,
-                    retries_info.curr_backoff_ms,
-                    user_error.code,
-                    user_error.message);
-        }
-    }
-
-    const auto & getUserError() const { return user_error; }
-
-    const auto & getKeeperError() const { return keeper_error; }
-
-    void requestUnconditionalRetry() { unconditional_retry = true; }
-
     void retryLoop(auto && f)
     {
         while (canTry())
@@ -201,9 +101,106 @@ public:
         }
     }
 
+    bool callAndCatchAll(auto && f)
+    {
+        try
+        {
+            f();
+            return true;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            setKeeperError(e.code, e.message());
+        }
+        catch (const Exception & e)
+        {
+            setUserError(e.code(), e.what());
+        }
+        return false;
+    }
+
+    void setUserError(int code, std::string message)
+    {
+        iteration_succeeded = false;
+        user_error.code = code;
+        user_error.message = std::move(message);
+        keeper_error = KeeperError{};
+    }
+
+    template <typename... Args>
+    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
+    {
+        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
+    void setKeeperError(Coordination::Error code, std::string message)
+    {
+        iteration_succeeded = false;
+        keeper_error.code = code;
+        keeper_error.message = std::move(message);
+        user_error = UserError{};
+    }
+
+    void requestUnconditionalRetry() { unconditional_retry = true; }
+
 private:
+    struct KeeperError
+    {
+        using Code = Coordination::Error;
+        Code code = Code::ZOK;
+        std::string message;
+    };
+
+    struct UserError
+    {
+        int code = ErrorCodes::OK;
+        std::string message;
+    };
+
+    void throwIfError() const
+    {
+        if (user_error.code != ErrorCodes::OK)
+            throw Exception(user_error.code, user_error.message);
+
+        if (keeper_error.code != KeeperError::Code::ZOK)
+            throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
+    }
+
+    void logLastError(std::string header)
+    {
+        if (user_error.code == ErrorCodes::OK)
+        {
+            if (retries_info.logger)
+                LOG_DEBUG(
+                    retries_info.logger,
+                    "{}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    retries_info.name,
+                    name,
+                    header,
+                    retries_info.retry_count,
+                    retries_info.curr_backoff_ms,
+                    keeper_error.code,
+                    keeper_error.message);
+        }
+        else
+        {
+            if (retries_info.logger)
+                LOG_DEBUG(
+                    retries_info.logger,
+                    "{}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    retries_info.name,
+                    name,
+                    header,
+                    retries_info.retry_count,
+                    retries_info.curr_backoff_ms,
+                    user_error.code,
+                    user_error.message);
+        }
+    }
+
+
     std::string name;
-    RetriesInfo & retries_info;
+    KeeperRetriesInfo & retries_info;
     Int64 iteration_count = -1;
     UserError user_error;
     KeeperError keeper_error;

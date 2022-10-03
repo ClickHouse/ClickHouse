@@ -75,52 +75,53 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         node2.query("DROP TABLE IF EXISTS r SYNC")
 
 
-# def test_replica_inserts_with_keeper_disconnect(started_cluster):
-#     try:
-#         settings = {
-#             "insert_quorum": "2",
-#         }
-#         node1.query(
-#             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
-#         )
-#         node2.query(
-#             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
-#         )
+@pytest.mark.skip(reason="Unfortunately it showed to be flaky. Disabled for now")
+def test_replica_inserts_with_keeper_disconnect(started_cluster):
+    try:
+        settings = {
+            "insert_quorum": "2",
+        }
+        node1.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
+        )
+        node2.query(
+            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
+        )
 
-#         p = Pool(1)
-#         disconnect_event = threading.Event()
+        p = Pool(1)
+        disconnect_event = threading.Event()
 
-#         def keeper_disconnect(node, event):
-#             with PartitionManager() as pm:
-#                 pm.drop_instance_zk_connections(node)
-#                 event.set()
-#                 time.sleep(5)
+        def keeper_disconnect(node, event):
+            with PartitionManager() as pm:
+                pm.drop_instance_zk_connections(node)
+                event.set()
+                time.sleep(5)
 
-#         job = p.apply_async(
-#             keeper_disconnect,
-#             (
-#                 node1,
-#                 disconnect_event,
-#             ),
-#         )
-#         disconnect_event.wait(60)
+        job = p.apply_async(
+            keeper_disconnect,
+            (
+                node1,
+                disconnect_event,
+            ),
+        )
+        disconnect_event.wait(60)
 
-#         node1.query(
-#             "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
-#             settings=settings,
-#         )
-#         node1.query(
-#             "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
-#             settings=settings,
-#         )
-#         node1.query(
-#             "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
-#             settings=settings,
-#         )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
+            settings=settings,
+        )
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
+            settings=settings,
+        )
 
-#         assert node1.query("SELECT COUNT() FROM r") == "30\n"
-#         assert node2.query("SELECT COUNT() FROM r") == "30\n"
+        assert node1.query("SELECT COUNT() FROM r") == "30\n"
+        assert node2.query("SELECT COUNT() FROM r") == "30\n"
 
-#     finally:
-#         node1.query("DROP TABLE IF EXISTS r SYNC")
-#         node2.query("DROP TABLE IF EXISTS r SYNC")
+    finally:
+        node1.query("DROP TABLE IF EXISTS r SYNC")
+        node2.query("DROP TABLE IF EXISTS r SYNC")

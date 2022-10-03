@@ -164,7 +164,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     const auto & settings = context->getSettingsRef();
-    keeper_retries_info = RetriesInfo(
+    keeper_retries_info = KeeperRetriesInfo(
         "ReplicatedMergeTreeSink::consume",
         log,
         settings.insert_keeper_max_retries,
@@ -184,7 +184,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = 0;
-    RetriesControl quorum_retries_ctl("checkQuorumPrecondition", keeper_retries_info);
+    KeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", keeper_retries_info);
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -355,7 +355,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
-    RetriesControl retries_ctl("commitPart", keeper_retries_info);
+    KeeperRetriesControl retries_ctl("commitPart", keeper_retries_info);
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -487,7 +487,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    if (!retries_ctl.call(
+                    if (!retries_ctl.callAndCatchAll(
                             [&]()
                             {
                                 waitForQuorum(
@@ -657,7 +657,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     if (isQuorumEnabled())
     {
-        RetriesControl quorum_retries_ctl("waitForQuorum", keeper_retries_info);
+        KeeperRetriesControl quorum_retries_ctl("waitForQuorum", keeper_retries_info);
         quorum_retries_ctl.retryLoop([&]()
         {
             zookeeper->setKeeper(storage.getZooKeeper());
@@ -672,7 +672,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     storage.updateQuorum(part->name, false);
             }
 
-            if (!quorum_retries_ctl.call(
+            if (!quorum_retries_ctl.callAndCatchAll(
                     [&]()
                     { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num); }))
                 return;
