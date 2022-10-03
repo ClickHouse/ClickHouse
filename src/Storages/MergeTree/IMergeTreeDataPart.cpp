@@ -218,7 +218,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        replace(other);
+        *this = other;
     }
     else
     {

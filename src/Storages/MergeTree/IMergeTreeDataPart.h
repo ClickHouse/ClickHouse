@@ -295,7 +295,6 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        void replace(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files);
     };
 

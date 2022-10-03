@@ -59,7 +59,7 @@ void MergeTreeDataPartDistinctPartitionExpressionCloner::updateNewPartFiles(cons
 {
     auto data_part_storage_builder = dst_part->data_part_storage->getBuilder();
 
-    dst_part->minmax_idx->replace(new_min_max_index);
+    *dst_part->minmax_idx = new_min_max_index;
 
     updatePartitionFile(new_partition, dst_part, data_part_storage_builder);
 
