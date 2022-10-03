@@ -20,3 +20,4 @@ Tuple(k2 String, k3 String, k4 Int8)
 {"arr":[1,{"y":1}]}
 {"arr":[2,{"y":2}]}
 {"arr":[{"x":"aaa","y":[1,2,3]}]}
+{"arr":[{"x":1}]}

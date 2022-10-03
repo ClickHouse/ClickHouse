@@ -165,16 +165,23 @@ void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "DataTypeObject doesn't support serialization with non-trivial state");
 
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    if (!column_object.isFinalized())
+    {
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkStatePrefix(*finalized, settings, state);
+        return;
+    }
+
     settings.path.push_back(Substream::ObjectStructure);
     auto * stream = settings.getter(settings.path);
 
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
 
-    writeIntBinary(static_cast<UInt8>(BinarySerializationKind::TUPLE), *stream);
-
-    const auto & column_object = assert_cast<const ColumnObject &>(column);
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
+
+    writeIntBinary(static_cast<UInt8>(BinarySerializationKind::TUPLE), *stream);
     writeStringBinary(tuple_type->getName(), *stream);
 
     auto state_object = std::make_shared<SerializeStateObject>();
