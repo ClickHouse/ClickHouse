@@ -249,7 +249,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         if (part)
         {
             LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
-            storage.forgetPartAndMoveToDetached(part, "noquorum");
+            storage.forcefullyMovePartToDetachedAndRemoveFromMemory(part, "noquorum");
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
