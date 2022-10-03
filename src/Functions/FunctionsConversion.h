@@ -618,8 +618,8 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        from = std::max<time_t>(from, LUT_MIN_TIME);
-        from = std::min<time_t>(from, LUT_MAX_TIME);
+        from = std::max(static_cast<time_t>(from), LUT_MIN_TIME);
+        from = std::min(static_cast<time_t>(from), LUT_MAX_TIME);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -636,6 +636,8 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        from = std::max(static_cast<time_t>(from), LUT_MIN_TIME);
+        from = std::min(static_cast<time_t>(from), LUT_MAX_TIME);
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
