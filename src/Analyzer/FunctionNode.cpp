@@ -119,7 +119,8 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name ||
         isAggregateFunction() != rhs_typed.isAggregateFunction() ||
-        isNonAggregateFunction() != rhs_typed.isNonAggregateFunction())
+        isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() ||
+        isWindowFunction() != rhs_typed.isWindowFunction())
         return false;
 
     if (result_type && rhs_typed.result_type && !result_type->equals(*rhs_typed.getResultType()))
@@ -143,6 +144,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
+    hash_state.update(isOrdinaryFunction());
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
 

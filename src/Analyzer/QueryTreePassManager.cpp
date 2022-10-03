@@ -7,6 +7,7 @@
 #include <Analyzer/OrderByTupleEliminationPass.h>
 #include <Analyzer/NormalizeCountVariantsPass.h>
 #include <Analyzer/CountDistinctPass.h>
+#include <Analyzer/CustomizeFunctionsPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -36,7 +37,7 @@ namespace ErrorCodes
   * TODO: Support GROUP BY functions of other keys elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_rewrite_sum_if_to_count_if.
-  * TODO: Support settings.optimize_aggregators_of_group_by_keys.
+  * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
@@ -47,6 +48,7 @@ namespace ErrorCodes
   * TODO: Support settings.optimize_syntax_fuse_functions.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Support function name normalizer.
+  * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 
 QueryTreePassManager::QueryTreePassManager(ContextPtr context_) : WithContext(context_) {}
@@ -122,6 +124,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_normalize_count_variants)
         manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
+
+    manager.addPass(std::make_shared<CustomizeFunctionsPass>());
 
     if (settings.optimize_multiif_to_if)
         manager.addPass(std::make_shared<MultiIfToIfPass>());
