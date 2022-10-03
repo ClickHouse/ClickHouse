@@ -94,6 +94,7 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
+std::atomic<Int64> MemoryTracker::rss;
 std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
@@ -143,6 +144,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         {
             /// For global memory tracker always update memory usage.
             amount.fetch_add(size, std::memory_order_relaxed);
+            rss.fetch_add(size, std::memory_order_relaxed);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
@@ -214,18 +216,21 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             memory_limit_exceeded_ignored = true;
     }
 
-    Int64 limit_to_check = current_hard_limit;
+    Int64 amount_to_check = current_hard_limit;
+    bool used_rss_counter = false;
 
-#if USE_JEMALLOC
     if (level == VariableContext::Global)
     {
+        Int64 current_rss = size + rss.fetch_add(size, std::memory_order_relaxed);
+        Int64 current_free_memory_in_allocator_arenas = free_memory_in_allocator_arenas.load(std::memory_order_relaxed);
+
+#if USE_JEMALLOC
         /// Jemalloc arenas may keep some extra memory.
         /// This memory was substucted from RSS to decrease memory drift.
         /// In case memory is close to limit, try to pugre the arenas.
         /// This is needed to avoid OOM, because some allocations are directly done with mmap.
-        Int64 current_free_memory_in_allocator_arenas = free_memory_in_allocator_arenas.load(std::memory_order_relaxed);
 
-        if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
+        if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_rss > current_hard_limit)
         {
             if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas) > 0)
             {
@@ -233,11 +238,20 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             }
         }
 
-        limit_to_check += abs(current_free_memory_in_allocator_arenas);
-    }
+        current_free_memory_in_allocator_arenas = abs(current_free_memory_in_allocator_arenas);
 #endif
 
-    if (unlikely(current_hard_limit && will_be > limit_to_check))
+        /// For Global memory tracker, additionally check RSS.
+        /// It is needed to avoid possible OOM.
+        /// We can't track all memory allocations from external libraries (yet).
+        if (current_rss - current_free_memory_in_allocator_arenas > will_be)
+        {
+            used_rss_counter = true;
+            amount_to_check = current_rss - current_free_memory_in_allocator_arenas;
+        }
+    }
+
+    if (unlikely(current_hard_limit && amount_to_check > current_hard_limit))
     {
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
@@ -256,9 +270,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
+                    "Memory limit{}{} {}exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
                     description ? " " : "",
                     description ? description : "",
+                    used_rss_counter ? "(RSS) " : "",
                     formatReadableSizeWithBinarySuffix(will_be),
                     size,
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
@@ -334,12 +349,16 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 
 void MemoryTracker::free(Int64 size)
 {
+    if (level == VariableContext::Global)
+        rss.fetch_sub(size, std::memory_order_relaxed);
+
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
         if (level == VariableContext::Global)
         {
             /// For global memory tracker always update memory usage.
-            amount.fetch_sub(size, std::memory_order_relaxed);
+            [[maybe_unused]] Int64 curr_amount = amount.fetch_sub(size, std::memory_order_relaxed) - size;
+            chassert(curr_amount >= 0);
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
@@ -362,7 +381,8 @@ void MemoryTracker::free(Int64 size)
     if (level == VariableContext::Thread || level == VariableContext::Global)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
-        amount.fetch_sub(accounted_size, std::memory_order_relaxed);
+        [[maybe_unused]] Int64 curr_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
+        chassert (level != VariableContext::Global || curr_amount >= 0);
     }
     else
     {
@@ -432,16 +452,8 @@ void MemoryTracker::reset()
 
 void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
 {
-    Int64 new_amount = rss_; // - free_memory_in_allocator_arenas_;
-    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
+    rss.store(rss_, std::memory_order_relaxed);
     free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
-
-    auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::set(metric_loaded, new_amount);
-
-    bool log_memory_usage = true;
-    total_memory_tracker.updatePeak(rss_, log_memory_usage);
 }
 
 

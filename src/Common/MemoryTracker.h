@@ -56,6 +56,7 @@ private:
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
 
+    static std::atomic<Int64> rss;
     static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
