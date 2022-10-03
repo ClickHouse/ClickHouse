@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/SelectUnionMode.h>
-#include <Interpreters/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -33,8 +32,11 @@ public:
     /// Consider any mode other than ALL as non-default.
     bool hasNonDefaultUnionMode() const;
 
-    bool hasQueryParameters() const;
+    bool has_query_parameters = false;
+    bool hasQueryParameters() const { return has_query_parameters; }
+    void setHasQueryParameters();
 
+    void clearAllowQueryParameters();
 
 };
 

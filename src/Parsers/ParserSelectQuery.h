@@ -14,6 +14,7 @@ public:
         : allow_query_parameters(allow_query_parameters_)
     {
     }
+
     bool allow_query_parameters;
 
 protected:

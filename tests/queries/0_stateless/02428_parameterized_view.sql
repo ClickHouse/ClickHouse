@@ -10,11 +10,18 @@ INSERT INTO Catalog VALUES ('Paper', 20, 1);
 CREATE VIEW v1 AS SELECT * FROM Catalog WHERE Price={price:UInt64};
 SELECT Price FROM v1(price=20);
 
+DETACH TABLE v1;
+ATTACH TABLE v1;
+
+EXPLAIN SYNTAX SELECT * from v1(price=10);
+
+INSERT INTO v1 VALUES ('Bag', 50, 2); -- { serverError NOT_IMPLEMENTED}
+
 SELECT Price FROM v123(price=20); -- { serverError UNKNOWN_FUNCTION }
 
 CREATE VIEW v10 AS SELECT * FROM Catalog WHERE Price=10;
-SELECT Price FROM v10(price=10);  -- { serverError UNKNOWN_FUNCTION }
 
+SELECT Price FROM v10(price=10);  -- { serverError UNKNOWN_FUNCTION }
 
 CREATE VIEW v2 AS SELECT * FROM Catalog WHERE Price={price:UInt64} AND Quantity={quantity:UInt64};
 SELECT Price FROM v2(price=50,quantity=2);

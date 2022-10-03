@@ -1,3 +1,13 @@
 20
+SELECT
+    Name,
+    Price,
+    Quantity
+FROM
+(
+    SELECT *
+    FROM default.Catalog
+    WHERE Price = _CAST(10, \'UInt64\')
+) AS v1
 50
 10

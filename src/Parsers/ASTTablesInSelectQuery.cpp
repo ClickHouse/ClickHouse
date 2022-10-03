@@ -112,15 +112,15 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << " ";
         database_and_table_name->formatImpl(settings, state, frame);
     }
-    else if (table_function)
-    {
-        settings.ostr << " ";
-        table_function->formatImpl(settings, state, frame);
-    }
     else if (subquery)
     {
         settings.ostr << settings.nl_or_ws << indent_str;
         subquery->formatImpl(settings, state, frame);
+    }
+    else if (table_function)
+    {
+        settings.ostr << " ";
+        table_function->formatImpl(settings, state, frame);
     }
 
     if (final)
