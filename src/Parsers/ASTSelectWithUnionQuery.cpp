@@ -23,6 +23,8 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->list_of_modes = list_of_modes;
     res->set_of_modes = set_of_modes;
 
+    res->has_query_parameters = has_query_parameters;
+
     cloneOutputOptions(*res);
     return res;
 }

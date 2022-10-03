@@ -1,4 +1,4 @@
-#include <Interpreters/QueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
