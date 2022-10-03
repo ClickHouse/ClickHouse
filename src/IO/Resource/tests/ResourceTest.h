@@ -73,9 +73,9 @@ struct ResourceTestBase
 };
 
 
-struct FlowCtlTest : public SemaphoreConstraint
+struct ConstraintTest : public SemaphoreConstraint
 {
-    FlowCtlTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : SemaphoreConstraint(event_queue_, config, config_prefix)
     {}
 

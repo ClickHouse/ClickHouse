@@ -31,21 +31,21 @@ TEST(IOResourceStaticResourceManager, Smoke)
         </clickhouse>
     )CONFIG");
 
-    ClassifierPtr cA = t.manager->acquire("A");
-    ClassifierPtr cB = t.manager->acquire("B");
+    ClassifierPtr ca = t.manager->acquire("A");
+    ClassifierPtr cb = t.manager->acquire("B");
 
     for (int i = 0; i < 10; i++)
     {
-        ResourceGuard gA(cA->get("res1"));
-        ResourceGuard gB(cB->get("res1"));
+        ResourceGuard ga(ca->get("res1"));
+        ResourceGuard gb(cb->get("res1"));
     }
 }
 
 TEST(IOResourceStaticResourceManager, Prioritization)
 {
-    constexpr size_t T = 2; // threads per queue
-    int N = 100; // requests per thread
-    ResourceTest t(4 * T + 1);
+    constexpr size_t threads_per_queue = 2;
+    int requests_per_thead = 100;
+    ResourceTest t(4 * threads_per_queue + 1);
 
     t.update(R"CONFIG(
         <clickhouse>
@@ -81,14 +81,14 @@ TEST(IOResourceStaticResourceManager, Prioritization)
 
     for (String name : {"A", "B", "C", "D"})
     {
-        for (int thr = 0; thr < T; thr++)
+        for (int thr = 0; thr < threads_per_queue; thr++)
         {
             t.threads.emplace_back([&, name]
             {
                 ClassifierPtr c = t.manager->acquire(name);
                 ResourceLink link = c->get("res1");
-                t.startBusyPeriod(link, 1, N);
-                for (int req = 0; req < N; req++)
+                t.startBusyPeriod(link, 1, requests_per_thead);
+                for (int req = 0; req < requests_per_thead; req++)
                 {
                     TestGuard g(t, link, 1);
                     check(link.queue->info.priority);
