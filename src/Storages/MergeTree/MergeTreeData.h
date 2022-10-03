@@ -1033,7 +1033,7 @@ public:
     using MatcherFn = std::function<bool(const String &)>;
 
     /// Returns an object that protects temporary directory from cleanup
-    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
+    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1407,7 +1407,7 @@ private:
 
     static MutableDataPartPtr preparePartForRemoval(const DataPartPtr & part);
 
-    TemporaryParts temporary_parts;
+    mutable TemporaryParts temporary_parts;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

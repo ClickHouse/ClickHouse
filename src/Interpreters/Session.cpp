@@ -117,7 +117,7 @@ public:
             if (!thread.joinable())
                 thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
-            LOG_DEBUG(log, "Create new session in storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
 
             return {session, true};
         }
@@ -230,7 +230,7 @@ private:
                 }
                 else
                 {
-                    LOG_DEBUG(log, "Close session from storage with session_id: {}, user_id: {}", key.second, key.first);
+                    LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
                     sessions.erase(session);
                 }
             }
