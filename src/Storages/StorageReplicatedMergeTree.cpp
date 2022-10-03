@@ -7734,9 +7734,10 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-
             if (only_zero_copy)
             {
+                /// If we have only_zero_copy configuration it means, that part was actually created on the same disk. It can happen
+                /// in extremely rare cases when both replicas decide to merge something due to one of tables in-progress drop.
                 LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists, will not remove blobs",
                           zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
                 part_has_no_more_locks = false;
