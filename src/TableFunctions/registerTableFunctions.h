@@ -17,7 +17,7 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
-void registerTableFunctionDirectory(TableFunctionFactory & factory);
+void registerTableFunctionFilesystem(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 
 void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);

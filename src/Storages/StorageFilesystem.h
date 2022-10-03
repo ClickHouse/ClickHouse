@@ -7,16 +7,21 @@
 namespace DB
 {
 
-class StorageDirectory final : public shared_ptr_helper<StorageDirectory>, public IStorage
+class StorageFilesystem final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageDirectory>;
-
 public:
-    std::string getName() const override { return "Directory"; }
+    std::string getName() const override { return "Filesystem"; }
+
+    StorageFilesystem(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        String path_,
+        ConstraintsDescription constraints_,
+        const String & comment);
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & /* queryInfo */,
         ContextPtr /* context */,
         QueryProcessingStage::Enum /* processed_stage */,
@@ -30,16 +35,9 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 protected:
-    friend class StorageDirectorySource;
+    friend class StorageFilesystemSource;
 
 private:
     String path;
-
-    StorageDirectory(
-        const StorageID & table_id_,
-        ColumnsDescription columns_description_,
-        String path_,
-        ConstraintsDescription constraints_,
-        const String & comment);
 };
 }

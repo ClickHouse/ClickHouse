@@ -1,19 +1,18 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/StorageDirectory.h>
-#include <TableFunctions/TableFunctionDirectory.h>
+#include <Storages/StorageFilesystem.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionFilesystem.h>
 
 namespace DB
 {
 
-void registerTableFunctionDirectory(TableFunctionFactory & factory)
+void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDirectory>();
+    factory.registerFunction<TableFunctionFilesystem>();
 }
-void TableFunctionDirectory::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionFilesystem::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-
     /// Parse args
     ASTs & args_func = ast_function->children;
 
@@ -23,8 +22,7 @@ void TableFunctionDirectory::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(
-                "Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -34,10 +32,10 @@ void TableFunctionDirectory::parseArguments(const ASTPtr & ast_function, Context
     if (args.size() > 1)
         throw Exception("Table function '" + getName() + "' requires path", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
-StoragePtr TableFunctionDirectory::executeImpl(const ASTPtr &, ContextPtr, const std::string & table_name, ColumnsDescription) const
+StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr, const std::string & table_name, ColumnsDescription) const
 {
-    StoragePtr res
-        = StorageDirectory::create(StorageID(getDatabaseName(), table_name), structure, path, ConstraintsDescription(), String{});
+    StoragePtr res = std::make_shared<StorageFilesystem>(
+        StorageID(getDatabaseName(), table_name), structure, path, ConstraintsDescription(), String{});
     res->startup();
     return res;
 }

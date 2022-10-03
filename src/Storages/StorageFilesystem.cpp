@@ -1,6 +1,7 @@
+#include <chrono>
 #include <filesystem>
 #include <Processors/ISource.h>
-#include <Storages/StorageDirectory.h>
+#include <Storages/StorageFilesystem.h>
 
 namespace fs = std::filesystem;
 
@@ -116,7 +117,7 @@ private:
     std::mutex mtx;
 };
 
-class StorageDirectorySource final : public ISource
+class StorageFilesystemSource final : public ISource
 {
 public:
     struct PathInfo
@@ -140,12 +141,10 @@ public:
     Chunk generate() override
     {
         std::unordered_map<String, MutableColumnPtr> columns_map;
-        for (const auto & name : columns_in_use)
+        auto names_and_types_in_use = storage_snapshot->getSampleBlockForColumns(columns_in_use).getNamesAndTypesList();
+        for (const auto & [name, type] : names_and_types_in_use)
         {
-            if (columns_description.has(name))
-            {
-                columns_map[name] = columns_description.get(name).type->createColumn();
-            }
+            columns_map[name] = type->createColumn();
         }
 
         fs::directory_entry file;
@@ -154,7 +153,7 @@ public:
             std::error_code ec;
             if (file.is_directory(ec) && !file.is_symlink(ec) && ec.value() == 0)
             {
-                for (const auto & child : fs::directory_iterator(file, ec))
+                for (auto & child : fs::directory_iterator(file, ec))
                 {
                     if (path_info->rows++ >= this->max_block_size)
                     {
@@ -196,10 +195,14 @@ public:
 
             if (columns_map.contains("last_write_time"))
             {
-                auto inserted = std::chrono::file_clock::to_time_t(fs::last_write_time(file.path().string(), ec));
+                auto file_time = fs::last_write_time(file.path().string(), ec);
+                auto sys_clock_file_time = std::chrono::file_clock::to_sys(file_time);
+                auto sys_clock_in_seconds_duration = std::chrono::time_point_cast<std::chrono::seconds>(sys_clock_file_time);
+                auto file_time_since_epoch = sys_clock_in_seconds_duration.time_since_epoch().count();
+
                 if (ec.value() == 0)
                 {
-                    columns_map["last_write_time"]->insert(std::move(inserted));
+                    columns_map["last_write_time"]->insert(file_time_since_epoch);
                 }
                 else
                 {
@@ -231,34 +234,26 @@ public:
 
         Columns columns;
 
-        for (const auto & column : columns_description)
+        for (const auto & [name, _] : names_and_types_in_use)
         {
-            if (columns_map.contains(column.name))
-            {
-                columns.emplace_back(std::move(columns_map[column.name]));
-            }
+            columns.emplace_back(std::move(columns_map[name]));
         }
 
         return {std::move(columns), num_rows};
     }
 
-    StorageDirectorySource(
-        const StorageMetadataPtr & metadata_snapshot_,
-        UInt64 max_block_size_,
-        PathInfoPtr path_info_,
-        ColumnsDescription columns_description_,
-        Names column_names)
+    StorageFilesystemSource(
+        const StorageSnapshotPtr & metadata_snapshot_, UInt64 max_block_size_, PathInfoPtr path_info_, Names column_names)
         : ISource(metadata_snapshot_->getSampleBlockForColumns(column_names))
-        , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(metadata_snapshot_)
         , path_info(path_info_)
-        , columns_description(std::move(columns_description_))
         , max_block_size(max_block_size_)
         , columns_in_use(std::move(column_names))
     {
     }
 
 private:
-    StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     PathInfoPtr path_info;
     ColumnsDescription columns_description;
     UInt64 max_block_size;
@@ -280,32 +275,31 @@ private:
 };
 
 
-Pipe StorageDirectory::read(
+Pipe StorageFilesystem::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo &,
     ContextPtr,
     QueryProcessingStage::Enum,
     size_t max_block_size,
     unsigned int num_streams)
 {
-    auto this_ptr = std::static_pointer_cast<StorageDirectory>(shared_from_this());
+    auto this_ptr = std::static_pointer_cast<StorageFilesystem>(shared_from_this());
     if (!fs::exists(path))
     {
         throw Exception("Directory " + path + " doesn't exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
     }
 
-    auto path_info = std::make_shared<StorageDirectorySource::PathInfo>(path, num_streams);
+    auto path_info = std::make_shared<StorageFilesystemSource::PathInfo>(path, num_streams);
     Pipes pipes;
     for (unsigned i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageDirectorySource>(
-            metadata_snapshot, max_block_size, path_info, metadata_snapshot->getColumns(), column_names));
+        pipes.emplace_back(std::make_shared<StorageFilesystemSource>(storage_snapshot, max_block_size, path_info, column_names));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
     return pipe;
 }
-StorageDirectory::StorageDirectory(
+StorageFilesystem::StorageFilesystem(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     String path_,
@@ -319,11 +313,11 @@ StorageDirectory::StorageDirectory(
     metadata.setComment(comment);
     setInMemoryMetadata(metadata);
 }
-Strings StorageDirectory::getDataPaths() const
+Strings StorageFilesystem::getDataPaths() const
 {
     return {path};
 }
-NamesAndTypesList StorageDirectory::getVirtuals() const
+NamesAndTypesList StorageFilesystem::getVirtuals() const
 {
     return {};
 }

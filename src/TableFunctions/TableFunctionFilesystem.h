@@ -19,10 +19,10 @@ namespace ErrorCodes
  *
  * TODO
  */
-class TableFunctionDirectory : public ITableFunction
+class TableFunctionFilesystem : public ITableFunction
 {
 public:
-    static constexpr auto name = "directory";
+    static constexpr auto name = "filesystem";
     std::string getName() const override { return name; }
 
     bool hasStaticStructure() const override { return true; }
