@@ -37,7 +37,12 @@ void MergeTreeDataPartDistinctPartitionExpressionCloner::updateMinMaxFiles(
 {
     deleteMinMaxFiles(storage_builder);
 
-    [[maybe_unused]] auto written_files = dst_part->minmax_idx->store(*merge_tree_data, storage_builder, dst_part->checksums);
+    auto written_files = dst_part->minmax_idx->store(*merge_tree_data, storage_builder, dst_part->checksums);
+
+    for (auto & file : written_files)
+    {
+        file->finalize();
+    }
 }
 
 void MergeTreeDataPartDistinctPartitionExpressionCloner::updatePartitionFile(
