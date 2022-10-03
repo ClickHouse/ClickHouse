@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS decimal_sum;
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE decimal_sum
 (
     date Date,

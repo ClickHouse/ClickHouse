@@ -42,11 +42,6 @@ struct Null
     }
 };
 
-/// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#endif
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
@@ -87,10 +82,8 @@ enum class TypeIndex
     AggregateFunction,
     LowCardinality,
     Map,
+    Object,
 };
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 
 using UInt128 = ::UInt128;

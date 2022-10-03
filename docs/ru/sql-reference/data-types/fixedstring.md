@@ -1,6 +1,7 @@
 ---
-toc_priority: 45
-toc_title: FixedString(N)
+slug: /ru/sql-reference/data-types/fixedstring
+sidebar_position: 45
+sidebar_label: FixedString(N)
 ---
 
 # FixedString {#fixedstring}

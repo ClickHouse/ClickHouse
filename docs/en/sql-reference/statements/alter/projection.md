@@ -1,9 +1,9 @@
 ---
-toc_priority: 49
-toc_title: PROJECTION
+slug: /en/sql-reference/statements/alter/projection
+sidebar_position: 49
+sidebar_label: PROJECTION
+title: "Manipulating Projections"
 ---
-
-# Manipulating Projections {#manipulations-with-projections}
 
 The following operations with [projections](../../../engines/table-engines/mergetree-family/mergetree.md#projections) are available:
 
@@ -20,5 +20,6 @@ The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only
 
 Also, they are replicated, syncing projections metadata via ZooKeeper.
 
-!!! note "Note"
-    Projection manipulation is supported only for tables with [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) variants).
+:::note    
+Projection manipulation is supported only for tables with [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) variants).
+:::

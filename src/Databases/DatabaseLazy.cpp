@@ -10,8 +10,8 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
-#include <base/logger_useful.h>
-#include <base/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
@@ -38,7 +38,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, bool /* force_restore */, bool /*force_attach*/, bool /* skip_startup_tables */)
+    ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
     {
@@ -77,10 +77,10 @@ void DatabaseLazy::createTable(
 void DatabaseLazy::dropTable(
     ContextPtr local_context,
     const String & table_name,
-    bool no_delay)
+    bool sync)
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
-    DatabaseOnDisk::dropTable(local_context, table_name, no_delay);
+    DatabaseOnDisk::dropTable(local_context, table_name, sync);
 }
 
 void DatabaseLazy::renameTable(
@@ -158,6 +158,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
 
 bool DatabaseLazy::empty() const
 {
+    std::lock_guard lock(mutex);
     return tables_cache.empty();
 }
 

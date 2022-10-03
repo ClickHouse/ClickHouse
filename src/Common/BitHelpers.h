@@ -31,7 +31,7 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 
 
 template <typename T>
-inline size_t getLeadingZeroBitsUnsafe(T x)
+inline uint32_t getLeadingZeroBitsUnsafe(T x)
 {
     assert(x != 0);
 
@@ -39,7 +39,7 @@ inline size_t getLeadingZeroBitsUnsafe(T x)
     {
         return __builtin_clz(x);
     }
-    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
         return __builtin_clzl(x);
     }
@@ -79,7 +79,7 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     {
         return __builtin_ctz(x);
     }
-    else if constexpr (sizeof(T) <= sizeof(unsigned long int))
+    else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
         return __builtin_ctzl(x);
     }

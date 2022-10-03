@@ -1,6 +1,7 @@
 ---
-toc_priority: 43
-toc_title: "Манипуляции с ограничениями"
+slug: /ru/sql-reference/statements/alter/constraint
+sidebar_position: 43
+sidebar_label: "Манипуляции с ограничениями"
 ---
 
 # Манипуляции с ограничениями (constraints) {#manipuliatsii-s-ogranicheniiami-constraints}
@@ -10,8 +11,8 @@ toc_title: "Манипуляции с ограничениями"
 Добавить или удалить ограничение можно с помощью запросов
 
 ``` sql
-ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
-ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT constraint_name;
 ```
 
 Запросы выполняют добавление или удаление метаданных об ограничениях таблицы `[db].name`, поэтому выполняются мгновенно.

@@ -66,7 +66,7 @@ public:
     void postpone();
     void finish();
 
-    void scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
+    bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     void scheduleFetchTask(ExecutableTaskPtr fetch_task);
     void scheduleMoveTask(ExecutableTaskPtr move_task);
     void scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);

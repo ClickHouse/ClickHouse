@@ -15,9 +15,10 @@ namespace ErrorCodes
 
 BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
-        std::move(header),
+        header,
         in_,
-        std::move(params_),
+        params_,
+        true,
         with_names_,
         with_types_,
         format_settings_,
@@ -95,7 +96,7 @@ void BinaryFormatReader::skipField(size_t file_column)
 }
 
 BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesSchemaReader(in_, 0, true, true, &reader), reader(in_, format_settings_)
+    : FormatWithNamesAndTypesSchemaReader(in_, format_settings_, true, true, &reader), reader(in_, format_settings_)
 {
 }
 
@@ -119,7 +120,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
 
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("RowBinaryWithNamesAndTypes", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("RowBinaryWithNamesAndTypes", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
     });

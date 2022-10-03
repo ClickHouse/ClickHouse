@@ -1,6 +1,7 @@
 ---
-toc_priority: 52
-toc_title: USE
+slug: /ru/sql-reference/statements/use
+sidebar_position: 52
+sidebar_label: USE
 ---
 
 # USE {#use}

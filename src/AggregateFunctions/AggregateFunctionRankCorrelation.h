@@ -31,8 +31,8 @@ struct RankCorrelationData : public StatisticalSample<Float64, Float64>
         RanksArray ranks_y;
         std::tie(ranks_y, std::ignore) = computeRanksAndTieCorrection(this->y);
 
-        /// In our case sizes of both samples are equal.
-        const auto size = this->size_x;
+        /// Sizes can be non-equal due to skipped NaNs.
+        const auto size = std::min(this->size_x, this->size_y);
 
         /// Count d^2 sum
         Float64 answer = 0;
@@ -77,7 +77,7 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        auto & b = this->data(rhs);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }
@@ -102,4 +102,4 @@ public:
 
 };
 
-};
+}

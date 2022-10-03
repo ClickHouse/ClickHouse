@@ -66,7 +66,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id_first = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_id_first = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_id_first)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -76,7 +80,7 @@ public:
                 getName());
         const auto & data_id_first = col_id_first->getData();
 
-        const auto * col_id_second = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
+        const auto * col_id_second = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
         if (!col_id_second)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -111,7 +115,7 @@ public:
 
 }
 
-void registerFunctionS2CellsIntersect(FunctionFactory & factory)
+REGISTER_FUNCTION(S2CellsIntersect)
 {
     factory.registerFunction<FunctionS2CellsIntersect>();
 }

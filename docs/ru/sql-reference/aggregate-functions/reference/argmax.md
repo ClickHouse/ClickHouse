@@ -1,5 +1,6 @@
 ---
-toc_priority: 106
+slug: /ru/sql-reference/aggregate-functions/reference/argmax
+sidebar_position: 106
 ---
 
 # argMax {#agg-function-argmax}

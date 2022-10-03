@@ -42,13 +42,14 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    StringRef query_id;
+    std::string_view query_id;
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
     {
         query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
+        if (query_id.size() > QUERY_ID_MAX_LEN)
+            query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
     }
@@ -59,12 +60,12 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
-    writeBinary(static_cast<uint8_t>(query_id.size), out);
-    out.write(query_id.data, query_id.size);
+    writeBinary(static_cast<uint8_t>(query_id.size()), out);
+    out.write(query_id.data(), query_id.size());
 
     size_t stack_trace_size = stack_trace.getSize();
     size_t stack_trace_offset = stack_trace.getOffset();
-    writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
+    writeIntBinary(static_cast<UInt8>(stack_trace_size - stack_trace_offset), out);
     for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
         writePODBinary(stack_trace.getFramePointers()[i], out);
 

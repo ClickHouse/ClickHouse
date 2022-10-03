@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/operators/
+---
 # 操作符 {#cao-zuo-fu}
 
 所有的操作符（运算符）都会在查询时依据他们的优先级及其结合顺序在被解析时转换为对应的函数。下面按优先级从高到低列出各组运算符及其对应的函数：
@@ -44,9 +47,9 @@
 
 `a > b` – 对应函数 `greater(a, b)`
 
-`a LIKE s` – 对应函数 `like(a, b)`
+`a LIKE b` – 对应函数 `like(a, b)`
 
-`a NOT LIKE s` – 对应函数 `notLike(a, b)`
+`a NOT LIKE b` – 对应函数 `notLike(a, b)`
 
 `a BETWEEN b AND c` – 等价于 `a >= b AND a <= c`
 

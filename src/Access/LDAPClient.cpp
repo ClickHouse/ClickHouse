@@ -1,7 +1,7 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -153,7 +153,7 @@ namespace
 
 }
 
-void LDAPClient::diag(const int rc, String text)
+void LDAPClient::diag(int rc, String text)
 {
     std::scoped_lock lock(ldap_global_mutex);
 
@@ -509,7 +509,6 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                 if (referrals)
                 {
                     SCOPE_EXIT({
-//                      ldap_value_free(referrals);
                         ber_memvfree(reinterpret_cast<void **>(referrals));
                         referrals = nullptr;
                     });

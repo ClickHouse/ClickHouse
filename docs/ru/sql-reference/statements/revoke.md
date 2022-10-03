@@ -1,6 +1,7 @@
 ---
-toc_priority: 39
-toc_title: REVOKE
+slug: /ru/sql-reference/statements/revoke
+sidebar_position: 39
+sidebar_label: REVOKE
 ---
 
 # REVOKE

@@ -35,7 +35,7 @@ namespace
             return access_type_to_flags_mapping[static_cast<size_t>(type)];
         }
 
-        Flags keywordToFlags(const std::string_view & keyword) const
+        Flags keywordToFlags(std::string_view keyword) const
         {
             auto it = keyword_to_flags_map.find(keyword);
             if (it == keyword_to_flags_map.end())
@@ -142,14 +142,14 @@ namespace
             }
         };
 
-        static String replaceUnderscoreWithSpace(const std::string_view & str)
+        static String replaceUnderscoreWithSpace(std::string_view str)
         {
             String res{str};
             boost::replace_all(res, "_", " ");
             return res;
         }
 
-        static Strings splitAliases(const std::string_view & str)
+        static Strings splitAliases(std::string_view str)
         {
             Strings aliases;
             boost::split(aliases, str, boost::is_any_of(","));
@@ -160,10 +160,10 @@ namespace
 
         static void makeNode(
             AccessType access_type,
-            const std::string_view & name,
-            const std::string_view & aliases,
+            std::string_view name,
+            std::string_view aliases,
             NodeType node_type,
-            const std::string_view & parent_group_name,
+            std::string_view parent_group_name,
             std::unordered_map<std::string_view, Node *> & nodes,
             std::unordered_map<std::string_view, NodePtr> & owned_nodes,
             size_t & next_flag)
@@ -178,7 +178,7 @@ namespace
             }
             else
             {
-                if (nodes.count(keyword))
+                if (nodes.contains(keyword))
                     throw Exception(keyword + " declared twice", ErrorCodes::LOGICAL_ERROR);
                 node = std::make_unique<Node>(keyword, node_type);
                 nodes[node->keyword] = node.get();
@@ -204,7 +204,7 @@ namespace
             {
                 auto parent_node = std::make_unique<Node>(parent_keyword);
                 it_parent = nodes.emplace(parent_node->keyword, parent_node.get()).first;
-                assert(!owned_nodes.count(parent_node->keyword));
+                assert(!owned_nodes.contains(parent_node->keyword));
                 std::string_view parent_keyword_as_string_view = parent_node->keyword;
                 owned_nodes[parent_keyword_as_string_view] = std::move(parent_node);
             }
@@ -224,9 +224,9 @@ namespace
 
 #           undef MAKE_ACCESS_FLAGS_NODE
 
-            if (!owned_nodes.count("NONE"))
+            if (!owned_nodes.contains("NONE"))
                 throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
-            if (!owned_nodes.count("ALL"))
+            if (!owned_nodes.contains("ALL"))
                 throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
 
             all_node = std::move(owned_nodes["ALL"]);
@@ -353,7 +353,7 @@ namespace
 
 
 AccessFlags::AccessFlags(AccessType type) : flags(Helper::instance().accessTypeToFlags(type)) {}
-AccessFlags::AccessFlags(const std::string_view & keyword) : flags(Helper::instance().keywordToFlags(keyword)) {}
+AccessFlags::AccessFlags(std::string_view keyword) : flags(Helper::instance().keywordToFlags(keyword)) {}
 AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 AccessFlags::AccessFlags(const Strings & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 String AccessFlags::toString() const { return Helper::instance().flagsToString(flags); }

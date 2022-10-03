@@ -1,6 +1,7 @@
 ---
-toc_priority: 65
-toc_title: Кеши
+slug: /ru/operations/caches
+sidebar_position: 65
+sidebar_label: Кеши
 ---
 
 # Типы кеша {#cache-types}

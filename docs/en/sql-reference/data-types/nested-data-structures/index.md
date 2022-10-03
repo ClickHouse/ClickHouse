@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Nested Data Structures
-toc_hidden: true
-toc_priority: 54
-toc_title: hidden
+slug: /en/sql-reference/data-types/nested-data-structures/
+sidebar_label: Nested Data Structures
+sidebar_position: 54
 ---
 
-# Nested Data Structures {#nested-data-structures}
+# Nested Data Structures
 
 [Original article](https://clickhouse.com/docs/en/data_types/nested_data_structures/) <!--hide-->

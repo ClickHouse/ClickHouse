@@ -1,7 +1,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -20,6 +21,9 @@ enum class ArrayFirstLastIndexStrategy
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -124,7 +128,7 @@ struct NameArrayLastIndex { static constexpr auto name = "arrayLastIndex"; };
 using ArrayLastIndexImpl = ArrayFirstLastIndexImpl<ArrayFirstLastIndexStrategy::Last>;
 using FunctionArrayLastIndex = FunctionArrayMapped<ArrayLastIndexImpl, NameArrayLastIndex>;
 
-void registerFunctionArrayFirstIndex(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFirstIndex)
 {
     factory.registerFunction<FunctionArrayFirstIndex>();
     factory.registerFunction<FunctionArrayLastIndex>();

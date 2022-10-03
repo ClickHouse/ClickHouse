@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <utility>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -22,7 +23,7 @@ struct ReadSettings;
 *
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
-* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHTTP -> ReadBufferFromIStream.
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
@@ -30,7 +31,7 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, const ReadSettings & settings_,
+        IAsynchronousReader & reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
@@ -44,9 +45,15 @@ public:
 
     void prefetch() override;
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override;
+
+    String getInfoForLog() override;
+
+    size_t getFileSize() override;
+
+    bool isIntegratedWithFilesystemCache() const override { return true; }
 
 private:
     bool nextImpl() override;
@@ -55,9 +62,9 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
+    IAsynchronousReader & reader;
 
     Int32 priority;
 
@@ -75,7 +82,7 @@ private:
 
     std::optional<size_t> read_until_position;
 
-    bool must_read_until_position;
+    Poco::Logger * log;
 };
 
 }

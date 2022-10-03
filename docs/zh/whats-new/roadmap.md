@@ -1,6 +1,7 @@
 ---
-toc_priority: 74
-toc_title: Roadmap
+slug: /zh/whats-new/roadmap
+sidebar_position: 74
+sidebar_label: Roadmap
 ---
 
 # Roadmap {#roadmap}

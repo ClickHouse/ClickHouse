@@ -1,6 +1,10 @@
+-- Tags: no-s3-storage
+-- Temporary supressed
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;
+SET use_uncompressed_cache = 0;
+SET local_filesystem_read_method='pread';
 
 CREATE TABLE nested
 (

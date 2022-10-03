@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-s3-storage
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -49,6 +49,7 @@ FORMAT PrettyCompactNoEscapes;
 DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in old format
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE check_system_tables
   (
     Event Date,
@@ -68,6 +69,20 @@ DROP TABLE IF EXISTS check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for TinyLog';
 CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+INSERT INTO check_system_tables VALUES (1);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for Log';
+CREATE TABLE check_system_tables (key UInt8) ENGINE = Log();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+INSERT INTO check_system_tables VALUES (1);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for StripeLog';
+CREATE TABLE check_system_tables (key UInt8) ENGINE = StripeLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();

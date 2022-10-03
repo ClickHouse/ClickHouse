@@ -28,6 +28,9 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 
+// MEILISEARCH
+void registerStorageMeiliSearch(StorageFactory& factory);
+
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
@@ -51,12 +54,17 @@ void registerStorageMySQL(StorageFactory & factory);
 
 void registerStorageMongoDB(StorageFactory & factory);
 
+
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
+#endif
+
+#if USE_NATSIO
+void registerStorageNATS(StorageFactory & factory);
 #endif
 
 #if USE_ROCKSDB
@@ -80,6 +88,7 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -104,6 +113,9 @@ void registerStorages()
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
+
+    // MEILISEARCH
+    registerStorageMeiliSearch(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
@@ -132,12 +144,16 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-#if USE_FILELOG
+    #if USE_FILELOG
     registerStorageFileLog(factory);
-#endif
+    #endif
 
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
+    #endif
+
+    #if USE_NATSIO
+    registerStorageNATS(factory);
     #endif
 
     #if USE_ROCKSDB
@@ -156,6 +172,8 @@ void registerStorages()
     #if USE_SQLITE
     registerStorageSQLite(factory);
     #endif
+
+    registerStorageKeeperMap(factory);
 }
 
 }

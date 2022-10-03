@@ -7,7 +7,7 @@
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <boost/algorithm/string/split.hpp>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
 
@@ -46,6 +46,12 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
     BufferBase::set(nullptr, 0, 0);
 }
 
+
+void ReadBufferFromRabbitMQConsumer::closeChannel()
+{
+    if (consumer_channel)
+        consumer_channel->close();
+}
 
 void ReadBufferFromRabbitMQConsumer::subscribe()
 {

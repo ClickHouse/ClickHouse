@@ -1,6 +1,7 @@
 ---
-toc_priority: 40
-toc_title: UPDATE
+slug: /zh/sql-reference/statements/alter/update
+sidebar_position: 40
+sidebar_label: UPDATE
 ---
 
 # ALTER TABLE … UPDATE 语句 {#alter-table-update-statements}

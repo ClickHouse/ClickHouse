@@ -1,6 +1,7 @@
 ---
-toc_priority: 31
-toc_title: Lazy
+slug: /ru/engines/database-engines/lazy
+sidebar_position: 31
+sidebar_label: Lazy
 ---
 
 # Lazy {#lazy}

@@ -1,6 +1,7 @@
 ---
-toc_priority: 23
-toc_title: ODBC驱动
+slug: /zh/interfaces/odbc
+sidebar_position: 23
+sidebar_label: ODBC驱动
 ---
 
 # ODBC驱动 {#odbc-driver}

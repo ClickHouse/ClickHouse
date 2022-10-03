@@ -1,9 +1,10 @@
 ---
-toc_priority: 45
-toc_title: Monitoring
+slug: /en/operations/monitoring
+sidebar_position: 45
+sidebar_label: Monitoring
 ---
 
-# Monitoring {#monitoring}
+# Monitoring
 
 You can monitor:
 

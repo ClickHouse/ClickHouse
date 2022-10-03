@@ -1,14 +1,15 @@
 ---
-toc_priority: 35
-toc_title: ALTER
+slug: /zh/sql-reference/statements/alter/
+sidebar_position: 35
+sidebar_label: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
 
 大多数 `ALTER TABLE` 查询修改表设置或数据:
 
--   [COLUMN](../../../sql-reference/statements/alter/column.md)
--   [PARTITION](../../../sql-reference/statements/alter/partition.md)
+-   [COLUMN](../../../sql-reference/statements/alter/column.mdx)
+-   [PARTITION](../../../sql-reference/statements/alter/partition.mdx)
 -   [DELETE](../../../sql-reference/statements/alter/delete.md)
 -   [UPDATE](../../../sql-reference/statements/alter/update.md)
 -   [ORDER BY](../../../sql-reference/statements/alter/order-by.md)
@@ -26,13 +27,13 @@ toc_title: ALTER
 
 这些 `ALTER` 语句修改与基于角色的访问控制相关的实体:
 
--   [USER](../../../sql-reference/statements/alter/user.md)
+-   [USER](../../../sql-reference/statements/alter/user.mdx)
 -   [ROLE](../../../sql-reference/statements/alter/role.md)
--   [QUOTA](../../../sql-reference/statements/alter/quota.md)
+-   [QUOTA](../../../sql-reference/statements/alter/quota.mdx)
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
 
-[ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) 语句添加、修改或删除表中的注释，无论之前是否设置过。
+[ALTER TABLE ... MODIFY COMMENT](../alter/index.md) 语句添加、修改或删除表中的注释，无论之前是否设置过。
 
 ## Mutations 突变 {#mutations}
 

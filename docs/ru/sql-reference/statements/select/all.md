@@ -1,5 +1,6 @@
 ---
-toc_title: ALL
+slug: /ru/sql-reference/statements/select/all
+sidebar_label: ALL
 ---
 
 # Секция ALL {#select-all}

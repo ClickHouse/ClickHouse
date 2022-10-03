@@ -2,7 +2,7 @@
 
 #if USE_SSL
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
@@ -23,12 +23,6 @@ int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 }
 
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_STAT;
-}
-
-
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {
@@ -37,7 +31,7 @@ int CertificateReloader::setCertificate(SSL * ssl)
         return -1;
 
     SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
-    SSL_use_RSAPrivateKey(ssl, current->key.impl()->getRSA());
+    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
 
     int err = SSL_check_private_key(ssl);
     if (err != 1)
@@ -81,11 +75,12 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     {
         bool cert_file_changed = cert_file.changeIfModified(std::move(new_cert_path), log);
         bool key_file_changed = key_file.changeIfModified(std::move(new_key_path), log);
+        std::string pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
 
         if (cert_file_changed || key_file_changed)
         {
             LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
-            data.set(std::make_unique<const Data>(cert_file.path, key_file.path));
+            data.set(std::make_unique<const Data>(cert_file.path, key_file.path, pass_phrase));
             LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
         }
 
@@ -104,8 +99,8 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 }
 
 
-CertificateReloader::Data::Data(std::string cert_path, std::string key_path)
-    : cert(cert_path), key(/* public key */ "", /* private key */ key_path)
+CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
+    : cert(cert_path), key(/* public key */ "", /* private key */ key_path, pass_phrase)
 {
 }
 
@@ -117,7 +112,7 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Log
     if (ec)
     {
         LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ErrorCodes::CANNOT_STAT, ec.value()));
+            description, new_path, errnoToString(ec.value()));
         return false;
     }
 

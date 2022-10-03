@@ -1,7 +1,7 @@
 ---
-toc_folder_title: 函数
-toc_priority: 32
-toc_title: 简介
+slug: /zh/sql-reference/functions/
+sidebar_label: 函数
+sidebar_position: 32
 ---
 
 # 函数 {#han-shu}

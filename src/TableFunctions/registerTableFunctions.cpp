@@ -20,6 +20,9 @@ void registerTableFunctions()
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
     registerTableFunctionDirectory(factory);
+    registerTableFunctionMongoDB(factory);
+
+    registerTableFunctionMeiliSearch(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
@@ -32,10 +35,15 @@ void registerTableFunctions()
     registerTableFunctionHDFSCluster(factory);
 #endif
 
+#if USE_HIVE
+    registerTableFunctionHive(factory);
+#endif
+
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
 
     registerTableFunctionView(factory);
+    registerTableFunctionViewIfPermitted(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

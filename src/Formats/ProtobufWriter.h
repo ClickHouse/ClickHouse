@@ -16,7 +16,7 @@ class WriteBuffer;
 class ProtobufWriter
 {
 public:
-    ProtobufWriter(WriteBuffer & out_);
+    explicit ProtobufWriter(WriteBuffer & out_);
     ~ProtobufWriter();
 
     void startMessage();
@@ -30,7 +30,7 @@ public:
     void writeSInt(int field_number, Int64 value);
     template <typename T>
     void writeFixed(int field_number, T value);
-    void writeString(int field_number, const std::string_view & str);
+    void writeString(int field_number, std::string_view str);
 
     void startRepeatedPack();
     void endRepeatedPack(int field_number, bool skip_if_empty);

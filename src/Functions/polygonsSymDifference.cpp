@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -109,7 +109,7 @@ const char * FunctionPolygonsSymDifference<CartesianPoint>::name = "polygonsSymD
 template <>
 const char * FunctionPolygonsSymDifference<SphericalPoint>::name = "polygonsSymDifferenceSpherical";
 
-void registerFunctionPolygonsSymDifference(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsSymDifference)
 {
     factory.registerFunction<FunctionPolygonsSymDifference<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsSymDifference<SphericalPoint>>();

@@ -58,7 +58,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * column = checkAndGetColumn<ColumnUInt8>(non_const_arguments[0].column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -93,7 +97,7 @@ public:
 
 }
 
-void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
+REGISTER_FUNCTION(H3EdgeLengthM)
 {
     factory.registerFunction<FunctionH3EdgeLengthM>();
 }

@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -108,7 +108,7 @@ template <>
 const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
 
-void registerFunctionPolygonsEquals(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsEquals)
 {
     factory.registerFunction<FunctionPolygonsEquals<CartesianPoint>>();
 }

@@ -18,15 +18,16 @@ struct ConnectionParameters
     std::string default_database;
     std::string user;
     std::string password;
+    std::string quota_key;
     Protocol::Secure security = Protocol::Secure::Disable;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
 
-    ConnectionParameters() {}
+    ConnectionParameters() = default;
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
-    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, int port);
+    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, std::optional<UInt16> port);
 
-    static int getPortFromConfig(const Poco::Util::AbstractConfiguration & config);
+    static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config);
 };
 
 }

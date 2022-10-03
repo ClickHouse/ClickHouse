@@ -36,7 +36,7 @@ public:
     using OrGroup = std::set<AtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
-    CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { }
+    CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { } /// NOLINT
 
     template <typename P>
     CNFQuery & filterAlwaysTrueGroups(P predicate_is_unknown)  /// delete always true groups
@@ -91,7 +91,7 @@ public:
     CNFQuery & appendGroup(AndGroup&& and_group)
     {
         for (auto && or_group : and_group)
-            statements.emplace(std::move(or_group));
+            statements.emplace(or_group);
         return *this;
     }
 
@@ -133,7 +133,7 @@ public:
     /// Converts != -> NOT =; <,>= -> (NOT) <; >,<= -> (NOT) <= for simpler matching
     CNFQuery & pullNotOutFunctions();
     /// Revert pullNotOutFunctions actions
-    CNFQuery & pushNotInFuntions();
+    CNFQuery & pushNotInFunctions();
 
     /// (a OR b OR ...) AND (NOT a OR b OR ...) -> (b OR ...)
     CNFQuery & reduce();

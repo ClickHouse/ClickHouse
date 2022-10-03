@@ -55,7 +55,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnConst * column_pattern = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
-        Regexps::Pool::Pointer re = Regexps::get<false /* like */, true /* is_no_capture */, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
+        const Regexps::Regexp re = Regexps::createRegexp</*is_like*/ false, /*no_capture*/ true, CountMatchesBase::case_insensitive>(column_pattern->getValue<String>());
         OptimizedRegularExpression::MatchVec matches;
 
         const IColumn * column_haystack = arguments[0].column.get();
@@ -79,7 +79,7 @@ public:
                 current_src_offset = src_offsets[i];
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
 
-                StringRef str(pos, end - pos);
+                std::string_view str(pos, end - pos);
                 vec_res[i] = countMatches(str, re, matches);
             }
 
@@ -87,7 +87,7 @@ public:
         }
         else if (const ColumnConst * col_const_str = checkAndGetColumnConstStringOrFixedString(column_haystack))
         {
-            StringRef str = col_const_str->getDataColumn().getDataAt(0);
+            std::string_view str = col_const_str->getDataColumn().getDataAt(0).toView();
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
@@ -95,20 +95,20 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
     }
 
-    static uint64_t countMatches(StringRef src, Regexps::Pool::Pointer & re, OptimizedRegularExpression::MatchVec & matches)
+    static uint64_t countMatches(std::string_view src, const Regexps::Regexp & re, OptimizedRegularExpression::MatchVec & matches)
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
 
-        Pos pos = reinterpret_cast<Pos>(src.data);
-        Pos end = reinterpret_cast<Pos>(src.data + src.size);
+        Pos pos = reinterpret_cast<Pos>(src.data());
+        Pos end = reinterpret_cast<Pos>(src.data() + src.size());
 
         uint64_t match_count = 0;
         while (true)
         {
             if (pos >= end)
                 break;
-            if (!re->match(pos, end - pos, matches, matches_limit))
+            if (!re.match(pos, end - pos, matches, matches_limit))
                 break;
             /// Progress should be made, but with empty match the progress will not be done.
             /// Also note that simply check is pattern empty is not enough,

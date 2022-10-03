@@ -20,7 +20,7 @@ public:
 
     bool operator<=(const WrappingUInt32 & other) const
     {
-        const UInt32 HALF = 1 << 31;
+        const UInt32 HALF = static_cast<UInt32>(1) << 31;
         return (value <= other.value && other.value - value < HALF)
                || (value > other.value && value - other.value > HALF);
     }

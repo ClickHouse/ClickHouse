@@ -1,5 +1,6 @@
 ---
-toc_priority: 207
+slug: /ru/sql-reference/aggregate-functions/reference/quantiletdigest
+sidebar_position: 207
 ---
 
 # quantileTDigest {#quantiletdigest}

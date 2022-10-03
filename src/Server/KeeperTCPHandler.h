@@ -9,7 +9,6 @@
 #include <Common/MultiVersion.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
-#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -48,19 +47,22 @@ private:
     static std::unordered_set<KeeperTCPHandler *> connections;
 
 public:
-    KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
+    KeeperTCPHandler(
+        const Poco::Util::AbstractConfiguration & config_ref,
+        std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+        Poco::Timespan receive_timeout_,
+        Poco::Timespan send_timeout_,
+        const Poco::Net::StreamSocket & socket_);
     void run() override;
 
-    KeeperConnectionStats getConnectionStats() const;
+    KeeperConnectionStats & getConnectionStats();
     void dumpStats(WriteBufferFromOwnString & buf, bool brief);
     void resetStats();
 
     ~KeeperTCPHandler() override;
 
 private:
-    IServer & server;
     Poco::Logger * log;
-    ContextPtr global_context;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;
@@ -69,6 +71,8 @@ private:
     int64_t session_id{-1};
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
+    Poco::Timespan send_timeout;
+    Poco::Timespan receive_timeout;
 
     ThreadSafeResponseQueuePtr responses;
 
@@ -100,7 +104,6 @@ private:
 
     LastOpMultiVersion last_op;
 
-    mutable std::mutex conn_stats_mutex;
     KeeperConnectionStats conn_stats;
 
 };

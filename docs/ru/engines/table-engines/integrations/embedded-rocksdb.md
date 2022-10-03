@@ -1,6 +1,7 @@
 ---
-toc_priority: 9
-toc_title: EmbeddedRocksDB
+slug: /ru/engines/table-engines/integrations/embedded-rocksdb
+sidebar_position: 9
+sidebar_label: EmbeddedRocksDB
 ---
 
 # Движок EmbeddedRocksDB {#EmbeddedRocksDB-engine}

@@ -9,7 +9,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -147,7 +147,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         /// Unnest consecutive trailing -State combinators
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
-        that->addBatch(input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
+        that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -160,7 +160,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
 }
 
-void registerFunctionInitializeAggregation(FunctionFactory & factory)
+REGISTER_FUNCTION(InitializeAggregation)
 {
     factory.registerFunction<FunctionInitializeAggregation>();
 }

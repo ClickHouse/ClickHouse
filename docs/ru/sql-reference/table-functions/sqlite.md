@@ -1,6 +1,7 @@
 ---
-toc_priority: 55
-toc_title: sqlite
+slug: /ru/sql-reference/table-functions/sqlite
+sidebar_position: 55
+sidebar_label: sqlite
 ---
 
 ## sqlite {#sqlite}

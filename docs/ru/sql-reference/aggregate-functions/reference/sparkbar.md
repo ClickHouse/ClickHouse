@@ -1,6 +1,7 @@
 ---
-toc_priority: 311
-toc_title: sparkbar
+slug: /ru/sql-reference/aggregate-functions/reference/sparkbar
+sidebar_position: 311
+sidebar_label: sparkbar
 ---
 
 # sparkbar {#sparkbar}

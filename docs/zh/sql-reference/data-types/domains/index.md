@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "\u57DF"
-toc_title: "域"
-toc_priority: 56
+slug: /zh/sql-reference/data-types/domains/
+sidebar_label: "域"
+sidebar_position: 56
 ---
 
 # 域 {#domains}

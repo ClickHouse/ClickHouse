@@ -1,9 +1,10 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+slug: /en/engines/table-engines/integrations/mongodb
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
-# MongoDB {#mongodb}
+# MongoDB
 
 MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
 

@@ -494,7 +494,7 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
         {
             auto keys = cache_storage_ptr->getCachedSimpleKeys();
             auto keys_column = getColumnFromPODArray(std::move(keys));
-            key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            key_columns = {ColumnWithTypeAndName(keys_column, std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
         }
         else
         {
@@ -504,7 +504,7 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
     auto result = coordinator->read(num_streams);
 
     return result;

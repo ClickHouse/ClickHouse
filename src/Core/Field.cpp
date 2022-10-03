@@ -99,6 +99,12 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return value;
         }
+        case Field::Types::Object:
+        {
+            Object value;
+            readBinary(value, buf);
+            return value;
+        }
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
@@ -208,6 +214,40 @@ void writeText(const Map & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+void readBinary(Object & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+    {
+        UInt8 type;
+        String key;
+        readBinary(type, buf);
+        readBinary(key, buf);
+        x[key] = getBinaryValue(type, buf);
+    }
+}
+
+void writeBinary(const Object & x, WriteBuffer & buf)
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & [key, value] : x)
+    {
+        const UInt8 type = value.getType();
+        writeBinary(type, buf);
+        writeBinary(key, buf);
+        Field::dispatch([&buf] (const auto & val) { FieldVisitorWriteBinary()(val, buf); }, value);
+    }
+}
+
+void writeText(const Object & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
@@ -246,7 +286,7 @@ String Field::dump() const
     return applyVisitor(FieldVisitorDump(), *this);
 }
 
-Field Field::restoreFromDump(const std::string_view & dump_)
+Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
@@ -517,6 +557,33 @@ String toString(const Field & x)
             return toString<decltype(value)>(value);
         },
         x);
+}
+
+String fieldTypeToString(Field::Types::Which type)
+{
+    switch (type)
+    {
+        case Field::Types::Which::Null: return "Null";
+        case Field::Types::Which::Array: return "Array";
+        case Field::Types::Which::Tuple: return "Tuple";
+        case Field::Types::Which::Map: return "Map";
+        case Field::Types::Which::Object: return "Object";
+        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState";
+        case Field::Types::Which::Bool: return "Bool";
+        case Field::Types::Which::String: return "String";
+        case Field::Types::Which::Decimal32: return "Decimal32";
+        case Field::Types::Which::Decimal64: return "Decimal64";
+        case Field::Types::Which::Decimal128: return "Decimal128";
+        case Field::Types::Which::Decimal256: return "Decimal256";
+        case Field::Types::Which::Float64: return "Float64";
+        case Field::Types::Which::Int64: return "Int64";
+        case Field::Types::Which::Int128: return "Int128";
+        case Field::Types::Which::Int256: return "Int256";
+        case Field::Types::Which::UInt64: return "UInt64";
+        case Field::Types::Which::UInt128: return "UInt128";
+        case Field::Types::Which::UInt256: return "UInt256";
+        case Field::Types::Which::UUID: return "UUID";
+    }
 }
 
 }

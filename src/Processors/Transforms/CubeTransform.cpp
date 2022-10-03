@@ -1,5 +1,7 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include "Processors/Transforms/RollupTransform.h"
 
 namespace DB
 {
@@ -8,54 +10,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IAccumulatingTransform(std::move(header), params_->getHeader())
-    , params(std::move(params_))
-    , keys(params->params.keys)
+CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : GroupByModifierTransform(std::move(header), params_, use_nulls_)
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
     if (keys.size() >= 8 * sizeof(mask))
         throw Exception("Too many keys are used for CubeTransform.", ErrorCodes::LOGICAL_ERROR);
-}
-
-Chunk CubeTransform::merge(Chunks && chunks, bool final)
-{
-    BlocksList rollup_blocks;
-    for (auto & chunk : chunks)
-        rollup_blocks.emplace_back(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
-
-    auto rollup_block = params->aggregator.mergeBlocks(rollup_blocks, final);
-    auto num_rows = rollup_block.rows();
-    return Chunk(rollup_block.getColumns(), num_rows);
-}
-
-void CubeTransform::consume(Chunk chunk)
-{
-    consumed_chunks.emplace_back(std::move(chunk));
 }
 
 Chunk CubeTransform::generate()
 {
     if (!consumed_chunks.empty())
     {
-        if (consumed_chunks.size() > 1)
-            cube_chunk = merge(std::move(consumed_chunks), false);
-        else
-            cube_chunk = std::move(consumed_chunks.front());
+        mergeConsumed();
 
-        consumed_chunks.clear();
+        auto num_rows = current_chunk.getNumRows();
+        mask = (static_cast<UInt64>(1) << keys.size()) - 1;
 
-        auto num_rows = cube_chunk.getNumRows();
-        mask = (UInt64(1) << keys.size()) - 1;
-
-        current_columns = cube_chunk.getColumns();
+        current_columns = current_chunk.getColumns();
         current_zero_columns.clear();
         current_zero_columns.reserve(keys.size());
 
         for (auto key : keys)
-            current_zero_columns.emplace_back(current_columns[key]->cloneEmpty()->cloneResized(num_rows));
+            current_zero_columns.emplace_back(getColumnWithDefaults(key, num_rows));
     }
 
-    auto gen_chunk = std::move(cube_chunk);
+    auto gen_chunk = std::move(current_chunk);
 
     if (mask)
     {
@@ -70,10 +50,12 @@ Chunk CubeTransform::generate()
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), current_columns.front()->size());
-        cube_chunk = merge(std::move(chunks), false);
+        current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
-    finalizeChunk(gen_chunk);
+    finalizeChunk(gen_chunk, aggregates_mask);
+    if (!gen_chunk.empty())
+        gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), grouping_set++));
     return gen_chunk;
 }
 

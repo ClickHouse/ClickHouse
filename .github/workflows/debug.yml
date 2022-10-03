@@ -1,0 +1,11 @@
+# The CI for each commit, prints envs and content of GITHUB_EVENT_PATH
+name: Debug
+
+'on':
+  [push, pull_request, release, workflow_dispatch]
+
+jobs:
+  DebugInfo:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: hmarr/debug-action@1201a20fc9d278ddddd5f0f46922d06513892491

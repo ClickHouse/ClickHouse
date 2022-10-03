@@ -1,5 +1,7 @@
 #include "PartitionedSink.h"
 
+#include <Common/ArenaUtils.h>
+
 #include <Functions/FunctionsConversion.h>
 
 #include <Interpreters/Context.h>
@@ -11,7 +13,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -40,18 +42,17 @@ PartitionedSink::PartitionedSink(
 }
 
 
-SinkPtr PartitionedSink::getSinkForPartition(const String & partition_id)
+SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
 {
-    auto it = sinks.find(partition_id);
-    if (it == sinks.end())
+    auto it = partition_id_to_sink.find(partition_key);
+    if (it == partition_id_to_sink.end())
     {
-        auto sink = createSinkForPartition(partition_id);
-        std::tie(it, std::ignore) = sinks.emplace(partition_id, sink);
+        auto sink = createSinkForPartition(partition_key.toString());
+        std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }
 
     return it->second;
 }
-
 
 void PartitionedSink::consume(Chunk chunk)
 {
@@ -61,45 +62,66 @@ void PartitionedSink::consume(Chunk chunk)
     block_with_partition_by_expr.setColumns(columns);
     partition_by_expr->execute(block_with_partition_by_expr);
 
-    const auto * column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
+    const auto * partition_by_result_column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
 
-    std::unordered_map<String, size_t> sub_chunks_indices;
-    IColumn::Selector selector;
-    for (size_t row = 0; row < chunk.getNumRows(); ++row)
+    size_t chunk_rows = chunk.getNumRows();
+    chunk_row_index_to_partition_index.resize(chunk_rows);
+
+    partition_id_to_chunk_index.clear();
+
+    for (size_t row = 0; row < chunk_rows; ++row)
     {
-        auto value = column->getDataAt(row);
-        auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
-        selector.push_back(it->second);
+        auto partition_key = partition_by_result_column->getDataAt(row);
+        auto [it, inserted] = partition_id_to_chunk_index.insert(makePairNoInit(partition_key, partition_id_to_chunk_index.size()));
+        if (inserted)
+            it->value.first = copyStringInArena(partition_keys_arena, partition_key);
+
+        chunk_row_index_to_partition_index[row] = it->getMapped();
     }
 
-    Chunks sub_chunks;
-    sub_chunks.reserve(sub_chunks_indices.size());
-    for (size_t column_index = 0; column_index < columns.size(); ++column_index)
+    size_t columns_size = columns.size();
+    size_t partitions_size = partition_id_to_chunk_index.size();
+
+    Chunks partition_index_to_chunk;
+    partition_index_to_chunk.reserve(partitions_size);
+
+    for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
-        MutableColumns column_sub_chunks = columns[column_index]->scatter(sub_chunks_indices.size(), selector);
-        if (column_index == 0) /// Set sizes for sub-chunks.
+        MutableColumns partition_index_to_column_split = columns[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
+
+        /// Add chunks into partition_index_to_chunk with sizes of result columns
+        if (column_index == 0)
         {
-            for (const auto & column_sub_chunk : column_sub_chunks)
+            for (const auto & partition_column : partition_index_to_column_split)
             {
-                sub_chunks.emplace_back(Columns(), column_sub_chunk->size());
+                partition_index_to_chunk.emplace_back(Columns(), partition_column->size());
             }
         }
-        for (size_t sub_chunk_index = 0; sub_chunk_index < column_sub_chunks.size(); ++sub_chunk_index)
+
+        for (size_t partition_index = 0; partition_index  < partitions_size; ++partition_index)
         {
-            sub_chunks[sub_chunk_index].addColumn(std::move(column_sub_chunks[sub_chunk_index]));
+            partition_index_to_chunk[partition_index].addColumn(std::move(partition_index_to_column_split[partition_index]));
         }
     }
 
-    for (const auto & [partition_id, sub_chunk_index] : sub_chunks_indices)
+    for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
-        getSinkForPartition(partition_id)->consume(std::move(sub_chunks[sub_chunk_index]));
+        auto sink = getSinkForPartitionKey(partition_key);
+        sink->consume(std::move(partition_index_to_chunk[partition_index]));
     }
 }
 
+void PartitionedSink::onException()
+{
+    for (auto & [_, sink] : partition_id_to_sink)
+    {
+        sink->onException();
+    }
+}
 
 void PartitionedSink::onFinish()
 {
-    for (auto & [partition_id, sink] : sinks)
+    for (auto & [_, sink] : partition_id_to_sink)
     {
         sink->onFinish();
     }

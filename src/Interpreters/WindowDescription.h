@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { Rows, Groups, Range };
+    enum class FrameType { ROWS, GROUPS, RANGE };
     enum class BoundaryType { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
@@ -35,7 +36,7 @@ struct WindowFrame
     // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
     bool is_default = true;
 
-    FrameType type = FrameType::Range;
+    FrameType type = FrameType::RANGE;
 
     // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
     // uniformity the begin_preceding still has to be set to true for UNBOUNDED
@@ -89,6 +90,9 @@ struct WindowDescription
     // To calculate the window function, we sort input data first by PARTITION BY,
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
+
+    std::vector<ActionsDAGPtr> partition_by_actions;
+    std::vector<ActionsDAGPtr> order_by_actions;
 
     WindowFrame frame;
 

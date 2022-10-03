@@ -20,7 +20,7 @@ endif()
 option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 
 if (NOT ENABLE_PARQUET)
-    message(STATUS "Building without Parquet support")
+    message(STATUS "Not using parquet")
     return()
 endif()
 
@@ -364,10 +364,8 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
 add_definitions(-DARROW_WITH_ZLIB)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
 
-if (ARROW_WITH_ZSTD)
-    add_definitions(-DARROW_WITH_ZSTD)
-    SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
-endif ()
+add_definitions(-DARROW_WITH_ZSTD)
+SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
 
 
 add_library(_arrow ${ARROW_SRCS})
@@ -382,7 +380,6 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::lz4
     ch_contrib::snappy
     ch_contrib::zlib
-    ch_contrib::zstd
     ch_contrib::zstd
 )
 target_link_libraries(_arrow PUBLIC _orc)
@@ -465,5 +462,7 @@ foreach (TOOL ${PARQUET_TOOLS})
 endforeach ()
 
 # The library is large - avoid bloat.
-target_compile_options (_arrow PRIVATE -g0)
-target_compile_options (_parquet PRIVATE -g0)
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options (_arrow PRIVATE -g0)
+    target_compile_options (_parquet PRIVATE -g0)
+endif()

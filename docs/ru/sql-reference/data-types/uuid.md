@@ -1,6 +1,7 @@
 ---
-toc_priority: 46
-toc_title: UUID
+slug: /ru/sql-reference/data-types/uuid
+sidebar_position: 46
+sidebar_label: UUID
 ---
 
 

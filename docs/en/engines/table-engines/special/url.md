@@ -1,23 +1,42 @@
 ---
-toc_priority: 41
-toc_title: URL
+slug: /en/engines/table-engines/special/url
+sidebar_position: 80
+sidebar_label:  URL
 ---
 
-# URL Table Engine {#table_engines-url}
+# URL Table Engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
-Syntax: `URL(URL, Format)`
+Syntax: `URL(URL [,Format] [,CompressionMethod])`
+
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](../../../interfaces/formats.md#formats).
+
+    If this argument is not specified, ClickHouse detectes the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
+
+- `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used.
+
+To enable compression, please first make sure the remote HTTP endpoint indicated by the `URL` parameter supports corresponding compression algorithm.
+
+The supported `CompressionMethod` should be one of following:
+- gzip or gz
+- deflate
+- brotli or br
+- lzma or xz
+- zstd or zst
+- lz4
+- bz2
+- snappy
+- none
+- auto
+
+If `CompressionMethod` is not specified, it defaults to `auto`. This means ClickHouse detects compression method from the suffix of `URL` parameter automatically. If the suffix matches any of compression method listed above, corresponding compression is applied or there won't be any compression enabled.
+
+For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
 
 ## Usage {#using-the-engine-in-the-clickhouse-server}
-
-The `format` must be one that ClickHouse can use in
-`SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
-[Formats](../../../interfaces/formats.md#formats).
-
-The `URL` must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server
-that uses HTTP or HTTPS. This does not require any
-additional headers for getting a response from the server.
 
 `INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
 respectively. For processing `POST` requests, the remote server must support
@@ -78,4 +97,3 @@ SELECT * FROM url_engine_table
     -   Indexes.
     -   Replication.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

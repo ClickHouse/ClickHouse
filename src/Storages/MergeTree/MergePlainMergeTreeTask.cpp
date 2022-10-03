@@ -81,9 +81,7 @@ void MergePlainMergeTreeTask::prepare()
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        settings.memory_profiler_step,
-        settings.memory_profiler_sample_probability,
-        settings.max_untracked_memory);
+        settings);
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
@@ -109,15 +107,22 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            storage.merging_params);
+            storage.merging_params,
+            txn);
 }
 
 
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
+    auto builder = merge_task->getBuilder();
+
+    MergeTreeData::Transaction transaction(storage, txn.get());
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, builder);
+    transaction.commit();
+
     write_part_log({});
+    storage.incrementMergedPartsProfileEvent(new_part->getType());
 }
 
 }

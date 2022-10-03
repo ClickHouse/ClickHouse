@@ -43,6 +43,9 @@ public:
         for (size_t i = 2; i < args.size() - 1; i += 2)
             dst_array_types.push_back(args[i]);
 
+        // Type of the ELSE branch
+        dst_array_types.push_back(args.back());
+
         return getLeastSupertype(dst_array_types);
     }
 
@@ -104,7 +107,7 @@ private:
 
 }
 
-void registerFunctionCaseWithExpression(FunctionFactory & factory)
+REGISTER_FUNCTION(CaseWithExpression)
 {
     factory.registerFunction<FunctionCaseWithExpression>();
 

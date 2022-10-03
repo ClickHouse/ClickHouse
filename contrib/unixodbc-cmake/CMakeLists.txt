@@ -294,14 +294,6 @@ target_include_directories (_unixodbc
         "${LIBRARY_DIR}/include"
 )
 target_compile_definitions (_unixodbc PRIVATE -DHAVE_CONFIG_H)
-target_compile_options (_unixodbc
-    PRIVATE
-        -Wno-dangling-else
-        -Wno-parentheses
-        -Wno-misleading-indentation
-        -Wno-unknown-warning-option
-        -Wno-reserved-id-macro
-        -O2
-)
+target_compile_options (_unixodbc PRIVATE -O2) # intended?
 
 add_library (ch_contrib::unixodbc ALIAS _unixodbc)

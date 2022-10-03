@@ -243,12 +243,12 @@ public:
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
+        return removeOnCluster<ASTAlterQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Alter; }
+    QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -4,7 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Core/Block.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
@@ -16,7 +16,7 @@ namespace DB
 {
 
 template <typename T = pqxx::ReadTransaction>
-class PostgreSQLSource : public SourceWithProgress
+class PostgreSQLSource : public ISource
 {
 
 public:
@@ -24,7 +24,7 @@ public:
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,
         const Block & sample_block,
-        const UInt64 max_block_size_);
+        UInt64 max_block_size_);
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -33,7 +33,7 @@ protected:
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
         const Block & sample_block,
-        const UInt64 max_block_size_,
+        UInt64 max_block_size_,
         bool auto_commit_);
 
     String query_str;

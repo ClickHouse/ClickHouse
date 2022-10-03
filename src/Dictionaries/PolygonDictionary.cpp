@@ -61,7 +61,7 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
         auto & key_column_to_cast = key_columns[key_type_index];
         ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-        auto casted_column = castColumnAccurate(std::move(column_to_cast), float_64_type);
+        auto casted_column = castColumnAccurate(column_to_cast, float_64_type);
         key_column_to_cast = std::move(casted_column);
         key_type = float_64_type;
     }
@@ -133,7 +133,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 getItemsImpl<ValueType>(
                     requested_key_points,
                     [&](size_t row) { return attribute_data[row]; },
-                    [&](auto value) { result_data.emplace_back(value); },
+                    [&](auto value) { result_data.emplace_back(static_cast<AttributeType>(value)); },
                     default_value_provider);
             }
         };
@@ -525,7 +525,11 @@ void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offs
         if (offsets[i] - prev_offset != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "All points should be two-dimensional");
         prev_offset = offsets[i];
-        addNewPoint(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1), data, offset);
+        addNewPoint(
+            static_cast<IPolygonDictionary::Coord>(ptr_coord->getElement(2 * i)),
+            static_cast<IPolygonDictionary::Coord>(ptr_coord->getElement(2 * i + 1)),
+            data,
+            offset);
     }
 }
 
@@ -542,7 +546,11 @@ void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offs
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected coordinates to be of type Float64");
     for (size_t i = 0; i < column_x->size(); ++i)
     {
-        addNewPoint(column_x->getElement(i), column_y->getElement(i), data, offset);
+        addNewPoint(
+            static_cast<IPolygonDictionary::Coord>(column_x->getElement(i)),
+            static_cast<IPolygonDictionary::Coord>(column_y->getElement(i)),
+            data,
+            offset);
     }
 }
 

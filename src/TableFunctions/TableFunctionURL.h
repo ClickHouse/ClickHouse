@@ -10,7 +10,7 @@ namespace DB
 
 class Context;
 
-/* url(source, format[, structure, compression]) - creates a temporary storage from url
+/* url(source, format[, structure, compression]) - creates a temporary storage from url.
  */
 class TableFunctionURL : public ITableFunctionFileLike
 {
@@ -31,6 +31,8 @@ private:
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_) const override;
     const char * getStorageTypeName() const override { return "URL"; }
+
+    String getFormatFromFirstArgument() override;
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
 

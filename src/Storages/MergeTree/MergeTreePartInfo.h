@@ -72,10 +72,20 @@ struct MergeTreePartInfo
             && strictly_contains_block_range;
     }
 
+    /// Part was created with mutation of parent_candidate part
+    bool isMutationChildOf(const MergeTreePartInfo & parent_candidate) const
+    {
+        return partition_id == parent_candidate.partition_id
+            && min_block == parent_candidate.min_block
+            && max_block == parent_candidate.max_block
+            && level == parent_candidate.level
+            && mutation >= parent_candidate.mutation;
+    }
+
     /// Return part mutation version, if part wasn't mutated return zero
     Int64 getMutationVersion() const
     {
-        return mutation ? mutation : 0;
+        return mutation;
     }
 
     /// True if parts do not intersect in any way.
@@ -144,6 +154,16 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "tmp-fetch",
         "covered-by-broken",
+    });
+
+    static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "deleting",
+        "clone"
     });
 
     /// NOTE: It may parse part info incorrectly.

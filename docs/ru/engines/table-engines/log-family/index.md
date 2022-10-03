@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Семейство Log"
-toc_title: "Введение"
-toc_priority: 29
+slug: /ru/engines/table-engines/log-family/
+sidebar_label: "Семейство Log"
+sidebar_position: 29
 ---
 
 # Семейство Log {#semeistvo-log}

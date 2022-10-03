@@ -23,8 +23,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class AddIndexConstraintsOptimizer final
 {
 public:
-    AddIndexConstraintsOptimizer(
-        const StorageMetadataPtr & metadata_snapshot);
+    explicit AddIndexConstraintsOptimizer(const StorageMetadataPtr & metadata_snapshot);
 
     void perform(CNFQuery & cnf_query);
 

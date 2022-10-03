@@ -45,7 +45,4 @@ add_library(ch_contrib::brotli ALIAS _brotli)
 
 target_include_directories(_brotli SYSTEM BEFORE PUBLIC "${BROTLI_SOURCE_DIR}/include")
 
-if(M_LIBRARY)
-    target_link_libraries(_brotli PRIVATE ${M_LIBRARY})
-endif()
 target_compile_definitions(_brotli PRIVATE BROTLI_BUILD_PORTABLE=1)

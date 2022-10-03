@@ -1,5 +1,6 @@
 ---
-toc_priority: 113
+slug: /ru/sql-reference/aggregate-functions/reference/grouparraymovingsum
+sidebar_position: 113
 ---
 
 # groupArrayMovingSum {#agg_function-grouparraymovingsum}

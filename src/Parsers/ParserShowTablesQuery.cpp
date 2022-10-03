@@ -24,6 +24,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
+    ParserKeyword s_caches("FILESYSTEM CACHES");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
@@ -90,6 +91,10 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
         }
+    }
+    else if (s_caches.ignore(pos, expected))
+    {
+        query->caches = true;
     }
     else if (s_cluster.ignore(pos, expected))
     {
@@ -172,12 +177,11 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     tryGetIdentifierNameInto(database, query->from);
 
     if (like)
-        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
+        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
 
     node = query;
 
     return true;
 }
-
 
 }

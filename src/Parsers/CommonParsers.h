@@ -21,9 +21,9 @@ public:
     //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
     constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
 
-protected:
     constexpr const char * getName() const override { return s.data(); }
 
+protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -33,7 +33,8 @@ class ParserToken : public IParserBase
 private:
     TokenType token_type;
 public:
-    ParserToken(TokenType token_type_) : token_type(token_type_) {}
+    ParserToken(TokenType token_type_) : token_type(token_type_) {} /// NOLINT
+
 protected:
     const char * getName() const override { return "token"; }
 

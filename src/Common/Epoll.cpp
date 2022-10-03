@@ -3,7 +3,7 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -21,12 +21,12 @@ Epoll::Epoll() : events_count(0)
         throwFromErrno("Cannot open epoll descriptor", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-Epoll::Epoll(Epoll && other) : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
+Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
 {
     other.epoll_fd = -1;
 }
 
-Epoll & Epoll::operator=(Epoll && other)
+Epoll & Epoll::operator=(Epoll && other) noexcept
 {
     epoll_fd = other.epoll_fd;
     other.epoll_fd = -1;
@@ -70,6 +70,9 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 
         if (ready_size == -1 && errno != EINTR)
             throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
+
+        if (errno == EINTR)
+            LOG_TEST(&Poco::Logger::get("Epoll"), "EINTR");
     }
     while (ready_size <= 0 && (ready_size != 0 || blocking));
 

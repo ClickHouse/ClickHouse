@@ -1,6 +1,7 @@
 ---
-toc_priority: 61
-toc_title: "\u8BBE\u7F6E\u914D\u7F6E"
+slug: /zh/operations/settings/settings-profiles
+sidebar_position: 61
+sidebar_label: "\u8BBE\u7F6E\u914D\u7F6E"
 ---
 
 # 设置配置 {#settings-profiles}

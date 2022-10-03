@@ -36,7 +36,7 @@ private:
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
 public:
-    MergeTreePartsMover(MergeTreeData * data_)
+    explicit MergeTreePartsMover(MergeTreeData * data_)
         : data(data_)
         , log(&Poco::Logger::get("MergeTreePartsMover"))
     {
@@ -50,16 +50,15 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    std::shared_ptr<const IMergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
+    MergeTreeDataPartPtr clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
     ///IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    void swapClonedPart(const std::shared_ptr<const IMergeTreeDataPart> & cloned_parts) const;
+    void swapClonedPart(const MergeTreeDataPartPtr & cloned_parts) const;
 
-public:
     /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;
 

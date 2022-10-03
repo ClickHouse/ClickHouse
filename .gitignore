@@ -33,10 +33,6 @@
 /docs/zh/single.md
 /docs/ja/single.md
 /docs/fa/single.md
-/docs/en/development/cmake-in-clickhouse.md
-/docs/ja/development/cmake-in-clickhouse.md
-/docs/zh/development/cmake-in-clickhouse.md
-/docs/ru/development/cmake-in-clickhouse.md
 
 # callgrind files
 callgrind.out.*
@@ -62,6 +58,10 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
+*.so
+*.dll
+*.lib
+*.dylib
 cmake-build-*
 
 # Python cache

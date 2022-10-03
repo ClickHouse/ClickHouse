@@ -1,8 +1,8 @@
 ---
-toc_priority: 3
+slug: /en/sql-reference/aggregate-functions/reference/max
+sidebar_position: 3
+title: max
 ---
-
-# max {#agg_function-max}
 
 Aggregate function that calculates the maximum across a group of values.
 

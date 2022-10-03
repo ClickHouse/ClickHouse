@@ -4,7 +4,7 @@
 #include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 namespace DB
@@ -22,7 +22,7 @@ class ReadFromRemote final : public ISourceStep
 {
 public:
     ReadFromRemote(
-        ClusterProxy::IStreamFactory::Shards shards_,
+        ClusterProxy::SelectStreamFactory::Shards shards_,
         Block header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
@@ -32,7 +32,8 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
-        UInt32 shard_count_);
+        UInt32 shard_count_,
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemote"; }
 
@@ -45,7 +46,7 @@ private:
         PerShard
     };
 
-    ClusterProxy::IStreamFactory::Shards shards;
+    ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
 
     StorageID main_table;
@@ -57,19 +58,57 @@ private:
     Scalars scalars;
     Tables external_tables;
 
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+
     Poco::Logger * log;
 
     UInt32 shard_count;
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
-        std::shared_ptr<ConnectionPoolWithFailover> pool,
-        std::optional<IConnections::ReplicaInfo> replica_info);
-    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
-        std::shared_ptr<ConnectionPoolWithFailover> pool,
-        std::optional<IConnections::ReplicaInfo> replica_info);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+};
 
-    void addPipeForReplica();
+
+class ReadFromParallelRemoteReplicasStep : public ISourceStep
+{
+public:
+    ReadFromParallelRemoteReplicasStep(
+        ParallelReplicasReadingCoordinatorPtr coordinator_,
+        ClusterProxy::SelectStreamFactory::Shard shard,
+        Block header_,
+        QueryProcessingStage::Enum stage_,
+        StorageID main_table_,
+        ASTPtr table_func_ptr_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_,
+        Scalars scalars_,
+        Tables external_tables_,
+        Poco::Logger * log_,
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
+
+    String getName() const override { return "ReadFromRemoteParallelReplicas"; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+private:
+
+    void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
+
+    ParallelReplicasReadingCoordinatorPtr coordinator;
+    ClusterProxy::SelectStreamFactory::Shard shard;
+    QueryProcessingStage::Enum stage;
+
+    StorageID main_table;
+    ASTPtr table_func_ptr;
+
+    ContextPtr context;
+
+    ThrottlerPtr throttler;
+    Scalars scalars;
+    Tables external_tables;
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
+
+    Poco::Logger * log;
 };
 
 }

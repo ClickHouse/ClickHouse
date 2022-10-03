@@ -23,12 +23,12 @@ namespace DB
 class SerializationSparse final : public ISerialization
 {
 public:
-    SerializationSparse(const SerializationPtr & nested_);
+    explicit SerializationSparse(const SerializationPtr & nested_);
 
     Kind getKind() const override { return Kind::SPARSE; }
 
     virtual void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 

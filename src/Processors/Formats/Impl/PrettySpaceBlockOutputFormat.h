@@ -11,13 +11,13 @@ namespace DB
 class PrettySpaceBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettySpaceBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
-        : PrettyBlockOutputFormat(out_, header, format_settings_) {}
+    PrettySpaceBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_)
+        : PrettyBlockOutputFormat(out_, header, format_settings_, mono_block_) {}
 
     String getName() const override { return "PrettySpaceBlockOutputFormat"; }
 
 private:
-    void write(const Chunk & chunk, PortKind port_kind) override;
+    void writeChunk(const Chunk & chunk, PortKind port_kind) override;
     void writeSuffix() override;
 };
 

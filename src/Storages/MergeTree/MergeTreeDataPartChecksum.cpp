@@ -63,7 +63,7 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     {
         const String & name = it.first;
 
-        if (!files.count(name))
+        if (!files.contains(name))
             throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
     }
 
@@ -231,8 +231,10 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_s
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
 {
-    for (auto & checksum : rhs_checksums.files)
-        files[std::move(checksum.first)] = std::move(checksum.second);
+    for (auto && checksum : rhs_checksums.files)
+    {
+        files[checksum.first] = std::move(checksum.second);
+    }
 
     rhs_checksums.files.clear();
 }

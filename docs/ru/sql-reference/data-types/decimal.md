@@ -1,6 +1,7 @@
 ---
-toc_priority: 42
-toc_title: Decimal
+slug: /ru/sql-reference/data-types/decimal
+sidebar_position: 42
+sidebar_label: Decimal
 ---
 
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}

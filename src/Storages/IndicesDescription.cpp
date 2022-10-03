@@ -19,7 +19,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-};
+}
 
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
@@ -172,4 +172,13 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
+Names IndicesDescription::getAllRegisteredNames() const
+{
+    Names result;
+    for (const auto & index : *this)
+    {
+        result.emplace_back(index.name);
+    }
+    return result;
+}
 }

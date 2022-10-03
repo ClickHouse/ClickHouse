@@ -1,9 +1,10 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include "FunctionArrayMapped.h"
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -20,6 +21,9 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -80,7 +84,7 @@ struct ArrayDifferenceImpl
                 }
                 else
                 {
-                    dst[pos] = curr - prev;
+                    dst[pos] = static_cast<Result>(curr) - static_cast<Result>(prev);
                 }
 
                 prev = curr;
@@ -151,7 +155,7 @@ struct ArrayDifferenceImpl
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };
 using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArrayDifference>;
 
-void registerFunctionArrayDifference(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayDifference)
 {
     factory.registerFunction<FunctionArrayDifference>();
 }

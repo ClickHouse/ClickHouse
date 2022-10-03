@@ -24,6 +24,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::SessionID),
     static_cast<int32_t>(OpNum::SetACL),
     static_cast<int32_t>(OpNum::GetACL),
+    static_cast<int32_t>(OpNum::FilteredList),
 };
 
 std::string toString(OpNum op_num)
@@ -64,6 +65,8 @@ std::string toString(OpNum op_num)
             return "SetACL";
         case OpNum::GetACL:
             return "GetACL";
+        case OpNum::FilteredList:
+            return "FilteredList";
     }
     int32_t raw_op = static_cast<int32_t>(op_num);
     throw Exception("Operation " + std::to_string(raw_op) + " is unknown", Error::ZUNIMPLEMENTED);
@@ -71,7 +74,7 @@ std::string toString(OpNum op_num)
 
 OpNum getOpNum(int32_t raw_op_num)
 {
-    if (!VALID_OPERATIONS.count(raw_op_num))
+    if (!VALID_OPERATIONS.contains(raw_op_num))
         throw Exception("Operation " + std::to_string(raw_op_num) + " is unknown", Error::ZUNIMPLEMENTED);
     return static_cast<OpNum>(raw_op_num);
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 59
-toc_title: clickhouse-copier
+slug: /ru/operations/utilities/clickhouse-copier
+sidebar_position: 59
+sidebar_label: clickhouse-copier
 ---
 
 # clickhouse-copier {#clickhouse-copier}

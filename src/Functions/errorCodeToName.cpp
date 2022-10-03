@@ -54,7 +54,7 @@ public:
 };
 
 
-void registerFunctionErrorCodeToName(FunctionFactory & factory)
+REGISTER_FUNCTION(ErrorCodeToName)
 {
     factory.registerFunction<FunctionErrorCodeToName>();
 }

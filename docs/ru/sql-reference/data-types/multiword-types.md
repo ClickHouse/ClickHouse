@@ -1,6 +1,7 @@
 ---
-toc_priority: 61
-toc_title: Составные типы
+slug: /ru/sql-reference/data-types/multiword-types
+sidebar_position: 61
+sidebar_label: Составные типы
 ---
 
 # Составные типы {#multiword-types}

@@ -67,7 +67,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_id = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_id = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
         if (!col_id)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -111,7 +115,7 @@ public:
 
 }
 
-void registerFunctionS2GetNeighbors(FunctionFactory & factory)
+REGISTER_FUNCTION(S2GetNeighbors)
 {
     factory.registerFunction<FunctionS2GetNeighbors>();
 }

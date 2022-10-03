@@ -1,7 +1,8 @@
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include "FunctionArrayMapped.h"
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -14,6 +15,9 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArraySplitImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -112,7 +116,7 @@ struct NameArrayReverseSplit { static constexpr auto name = "arrayReverseSplit";
 using FunctionArraySplit = FunctionArrayMapped<ArraySplitImpl<false>, NameArraySplit>;
 using FunctionArrayReverseSplit = FunctionArrayMapped<ArraySplitImpl<true>, NameArrayReverseSplit>;
 
-void registerFunctionsArraySplit(FunctionFactory & factory)
+REGISTER_FUNCTION(ArraySplit)
 {
     factory.registerFunction<FunctionArraySplit>();
     factory.registerFunction<FunctionArrayReverseSplit>();

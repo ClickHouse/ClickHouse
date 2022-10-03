@@ -1,4 +1,7 @@
-# system.one {#system-one}
+---
+slug: /en/operations/system-tables/one
+---
+# one
 
 This table contains a single row with a single `dummy` UInt8 column containing the value 0.
 

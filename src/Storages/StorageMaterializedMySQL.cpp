@@ -32,9 +32,10 @@ bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_na
     return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
 }
 
-Pipe StorageMaterializedMySQL::read(
+void StorageMaterializedMySQL::read(
+    QueryPlan & query_plan,
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -44,7 +45,7 @@ Pipe StorageMaterializedMySQL::read(
     if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
         db->rethrowExceptionIfNeeded();
 
-    return readFinalFromNestedStorage(nested_storage, column_names, metadata_snapshot,
+    readFinalFromNestedStorage(query_plan, nested_storage, column_names,
             query_info, context, processed_stage, max_block_size, num_streams);
 }
 

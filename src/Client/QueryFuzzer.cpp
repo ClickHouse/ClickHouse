@@ -54,7 +54,7 @@ Field QueryFuzzer::getRandomField(int type)
     }
     case 1:
     {
-        static constexpr float values[]
+        static constexpr double values[]
                 = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
                    1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
                   FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % (sizeof(values) / sizeof(*values))];
@@ -137,9 +137,41 @@ Field QueryFuzzer::fuzzField(Field field)
             break;
         }
     }
-    else if (type == Field::Types::Array || type == Field::Types::Tuple)
+    else if (type == Field::Types::Array)
     {
-        auto & arr = field.reinterpret<FieldVector>();
+        auto & arr = field.get<Array>();
+
+        if (fuzz_rand() % 5 == 0 && !arr.empty())
+        {
+            size_t pos = fuzz_rand() % arr.size();
+            arr.erase(arr.begin() + pos);
+            std::cerr << "erased\n";
+        }
+
+        if (fuzz_rand() % 5 == 0)
+        {
+            if (!arr.empty())
+            {
+                size_t pos = fuzz_rand() % arr.size();
+                arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
+                std::cerr << fmt::format("inserted (pos {})\n", pos);
+            }
+            else
+            {
+                arr.insert(arr.begin(), getRandomField(0));
+                std::cerr << "inserted (0)\n";
+            }
+
+        }
+
+        for (auto & element : arr)
+        {
+            element = fuzzField(element);
+        }
+    }
+    else if (type == Field::Types::Tuple)
+    {
+        auto & arr = field.get<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -329,9 +361,9 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
         case 0:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::Rows
-                : r == 1 ? WindowFrame::FrameType::Range
-                    : WindowFrame::FrameType::Groups;
+            def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
+                : r == 1 ? WindowFrame::FrameType::RANGE
+                    : WindowFrame::FrameType::GROUPS;
             break;
         }
         case 1:
@@ -385,7 +417,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             break;
     }
 
-    if (def.frame_type == WindowFrame::FrameType::Range
+    if (def.frame_type == WindowFrame::FrameType::RANGE
         && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
         && def.frame_begin_preceding
         && def.frame_end_type == WindowFrame::BoundaryType::Current)
@@ -546,7 +578,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
  * small probability. Do this after we add this fuzzer to CI and fix all the
  * problems it can routinely find even in this boring version.
  */
-void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
 
@@ -569,7 +601,7 @@ void QueryFuzzer::collectFuzzInfoMain(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addTableLike(const ASTPtr ast)
+void QueryFuzzer::addTableLike(ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
@@ -583,7 +615,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::addColumnLike(const ASTPtr ast)
+void QueryFuzzer::addColumnLike(ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
@@ -606,7 +638,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
     }
 }
 
-void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
+void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {

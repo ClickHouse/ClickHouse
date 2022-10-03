@@ -22,7 +22,7 @@ class ReadBuffer;
 class RegexpFieldExtractor
 {
 public:
-    RegexpFieldExtractor(const FormatSettings & format_settings);
+    explicit RegexpFieldExtractor(const FormatSettings & format_settings);
 
     /// Return true if row was successfully parsed and row fields were extracted.
     bool parseRow(PeekableReadBuffer & buf);
@@ -76,16 +76,17 @@ private:
 class RegexpSchemaReader : public IRowSchemaReader
 {
 public:
-    RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
+    RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+
+
     using EscapingRule = FormatSettings::EscapingRule;
-    const FormatSettings format_settings;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;
-    ContextPtr context;
 };
 
 }

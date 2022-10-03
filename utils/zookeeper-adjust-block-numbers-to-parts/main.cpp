@@ -179,8 +179,8 @@ void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, Int
             if (number != current_block_number)
             {
                 char suffix[11] = "";
-                sprintf(suffix, "%010lld", current_block_number);
-                std::string expected_path = block_prefix + suffix;
+                size_t size = sprintf(suffix, "%010lld", current_block_number);
+                std::string expected_path = block_prefix + std::string(suffix, size);
                 std::cerr << "\t" << path_created << ": Ephemeral node has been created with an unexpected path (expected something like "
                           << expected_path << ")." << std::endl;
                 return false;
@@ -214,7 +214,7 @@ try
     po::options_description desc("Allowed options");
     desc.add_options()
     ("help,h", "show help")
-    ("zookeeper,z", po::value<std::string>(), "Addresses of ZooKeeper instances, comma-separated. Example: example01e.yandex.ru:2181")
+    ("zookeeper,z", po::value<std::string>(), "Addresses of ZooKeeper instances, comma-separated. Example: example01e.clickhouse.com:2181")
     ("path,p", po::value<std::string>(), "[optional] Path of replica queue to insert node (without trailing slash). By default it's /clickhouse/tables")
     ("shard,s", po::value<std::string>(), "[optional] Shards to process, comma-separated. If not specified then the utility will process all the shards.")
     ("table,t", po::value<std::string>(), "[optional] Tables to process, comma-separated. If not specified then the utility will process all the tables.")

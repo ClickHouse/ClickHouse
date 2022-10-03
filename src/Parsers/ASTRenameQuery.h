@@ -48,7 +48,7 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
         auto query_ptr = clone();
         auto & query = query_ptr->as<ASTRenameQuery &>();
@@ -57,15 +57,15 @@ public:
         for (Element & elem : query.elements)
         {
             if (elem.from.database.empty())
-                elem.from.database = new_database;
+                elem.from.database = params.default_database;
             if (elem.to.database.empty())
-                elem.to.database = new_database;
+                elem.to.database = params.default_database;
         }
 
         return query_ptr;
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Rename; }
+    QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override

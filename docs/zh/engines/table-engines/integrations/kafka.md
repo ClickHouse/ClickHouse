@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/integrations/kafka
+---
 # Kafka {#kafka}
 
 此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。
@@ -153,8 +156,9 @@ clickhouse也支持自己使用keyfile的方式来维护kerbros的凭证。配�
 -   `_topic` – Kafka 主题。
 -   `_key` – 信息的键。
 -   `_offset` – 消息的偏移量。
--   `_timestamp ` – 消息的时间戳。
--   `_partition ` – Kafka 主题的分区。
+-   `_timestamp` – 消息的时间戳。
+-   `_timestamp_ms` – 消息的时间戳(毫秒)。
+-   `_partition` – Kafka 主题的分区。
 
 **另请参阅**
 

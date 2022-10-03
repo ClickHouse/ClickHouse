@@ -1,3 +1,10 @@
+---
+slug: /zh/
+sidebar_position: 0
+sidebar_label: 什么是ClickHouse？
+---
+
+
 # 什么是ClickHouse？ {#shi-yao-shi-clickhouse}
 
 ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)。

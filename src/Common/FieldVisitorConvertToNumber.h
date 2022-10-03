@@ -46,6 +46,11 @@ public:
         throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
+    T operator() (const Object &) const
+    {
+        throw Exception("Cannot convert Object to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
@@ -89,21 +94,7 @@ public:
     T operator() (const DecimalField<U> & x) const
     {
         if constexpr (std::is_floating_point_v<T>)
-            return x.getValue(). template convertTo<T>() / x.getScaleMultiplier(). template convertTo<T>();
-        else if constexpr (std::is_same_v<T, UInt128>)
-        {
-            if constexpr (sizeof(U) < 16)
-            {
-                return UInt128(0, (x.getValue() / x.getScaleMultiplier()).value);
-            }
-            else if constexpr (sizeof(U) == 16)
-            {
-                auto tmp = (x.getValue() / x.getScaleMultiplier()).value;
-                return UInt128(tmp >> 64, UInt64(tmp));
-            }
-            else
-                throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
-        }
+            return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()). template convertTo<T>();
     }
@@ -113,7 +104,8 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
+    template <typename U>
+    requires is_big_int_v<U>
     T operator() (const U & x) const
     {
         if constexpr (is_decimal<T>)
@@ -128,4 +120,3 @@ public:
 };
 
 }
-

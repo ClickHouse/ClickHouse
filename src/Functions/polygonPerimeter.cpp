@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -78,10 +78,9 @@ public:
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+                    res_data.emplace_back(static_cast<Float64>(boost::geometry::perimeter(geometries[i])));
             }
-        }
-        );
+        });
 
         return res_column;
     }
@@ -99,7 +98,7 @@ template <>
 const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
 
-void registerFunctionPolygonPerimeter(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonPerimeter)
 {
     factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>();

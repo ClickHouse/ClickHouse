@@ -1,6 +1,7 @@
 ---
-toc_priority: 34
-toc_title: JDBC表引擎
+slug: /zh/engines/table-engines/integrations/jdbc
+sidebar_position: 34
+sidebar_label: JDBC表引擎
 ---
 
 # JDBC {#table-engine-jdbc}

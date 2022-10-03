@@ -1,6 +1,7 @@
 ---
-toc_priority: 76
-toc_title: Security Changelog
+slug: /ru/whats-new/security-changelog
+sidebar_position: 76
+sidebar_label: Security Changelog
 ---
 
 # Security Changelog {#security-changelog}

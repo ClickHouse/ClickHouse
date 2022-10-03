@@ -2,7 +2,7 @@ set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest")
 
 add_library(_gtest "${SRC_DIR}/src/gtest-all.cc")
 set_target_properties(_gtest PROPERTIES VERSION "1.0.0")
-target_compile_definitions (_gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+target_compile_definitions (_gtest PUBLIC GTEST_HAS_POSIX_RE=0)
 target_include_directories(_gtest SYSTEM PUBLIC "${SRC_DIR}/include")
 target_include_directories(_gtest PRIVATE "${SRC_DIR}")
 

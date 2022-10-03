@@ -1,6 +1,7 @@
 ---
-toc_priority: 43
-toc_title: "操作"
+slug: /zh/operations/
+sidebar_position: 43
+sidebar_label: "操作"
 ---
 
 # 操作 {#operations}

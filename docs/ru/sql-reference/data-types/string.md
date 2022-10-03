@@ -1,6 +1,7 @@
 ---
-toc_priority: 44
-toc_title: String
+slug: /ru/sql-reference/data-types/string
+sidebar_position: 44
+sidebar_label: String
 ---
 
 # String {#string}

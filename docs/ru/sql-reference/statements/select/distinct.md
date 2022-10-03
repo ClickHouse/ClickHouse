@@ -1,5 +1,6 @@
 ---
-toc_title: DISTINCT
+slug: /ru/sql-reference/statements/select/distinct
+sidebar_label: DISTINCT
 ---
 
 # Секция DISTINCT {#select-distinct}

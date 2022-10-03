@@ -3,6 +3,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
+#include <bit>
 #include <new>
 #include <variant>
 
@@ -21,17 +22,17 @@ struct StringKey24
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 {
     assert(n != 0);
-    return {reinterpret_cast<const char *>(&n), 8ul - (__builtin_clzll(n) >> 3)};
+    return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
-    return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.items[1]) >> 3)};
+    return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
     assert(n.c != 0);
-    return {reinterpret_cast<const char *>(&n), 24ul - (__builtin_clzll(n.c) >> 3)};
+    return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
 }
 
 struct StringHashTableHash
@@ -150,26 +151,26 @@ public:
 };
 
 template <size_t initial_size_degree = 8>
-struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
+struct StringHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
     // Smooth growing for string maps
-    void increaseSize() { this->size_degree += 1; }
+    void increaseSize() { this->increaseSizeDegree(1); }
 };
 
 template <typename Mapped>
 struct StringHashTableLookupResult
 {
     Mapped * mapped_ptr;
-    StringHashTableLookupResult() {}
-    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {}
-    StringHashTableLookupResult(std::nullptr_t) {}
-    const VoidKey getKey() const { return {}; }
+    StringHashTableLookupResult() {} /// NOLINT
+    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {} /// NOLINT
+    StringHashTableLookupResult(std::nullptr_t) {} /// NOLINT
+    const VoidKey getKey() const { return {}; } /// NOLINT
     auto & getMapped() { return *mapped_ptr; }
     auto & operator*() { return *this; }
     auto & operator*() const { return *this; }
     auto * operator->() { return this; }
     auto * operator->() const { return this; }
-    operator bool() const { return mapped_ptr; }
+    explicit operator bool() const { return mapped_ptr; }
     friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
     friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
     friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
@@ -214,7 +215,7 @@ public:
 
     StringHashTable() = default;
 
-    StringHashTable(size_t reserve_for_num_elements)
+    explicit StringHashTable(size_t reserve_for_num_elements)
         : m1{reserve_for_num_elements / 4}
         , m2{reserve_for_num_elements / 4}
         , m3{reserve_for_num_elements / 4}
@@ -222,7 +223,7 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs)
+    StringHashTable(StringHashTable && rhs) noexcept
         : m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
@@ -232,7 +233,6 @@ public:
 
     ~StringHashTable() = default;
 
-public:
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table

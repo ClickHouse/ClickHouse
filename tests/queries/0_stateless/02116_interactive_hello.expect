@@ -1,6 +1,10 @@
 #!/usr/bin/expect -f
 # Tags: long
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
 log_user 0
 set timeout 60
 match_max 100000
@@ -12,7 +16,6 @@ expect_after {
     timeout { exit 1 }
 }
 
-set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
 
 expect -re "ClickHouse client version \[\\d\]{2}.\[\\d\]{1,2}.\[\\d\]{1,2}.\[\\d\]{1,2}.\r"

@@ -1,6 +1,7 @@
 ---
-toc_priority: 47
-toc_title: ROW POLICY
+slug: /ru/sql-reference/statements/alter/row-policy
+sidebar_position: 47
+sidebar_label: ROW POLICY
 ---
 
 # ALTER ROW POLICY {#alter-row-policy-statement}

@@ -1,6 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -9,7 +9,6 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -141,6 +140,11 @@ namespace
         size_t rows = 0;
         size_t bytes = 0;
 
+        UInt32 shard_num = 0;
+        std::string cluster;
+        std::string distributed_table;
+        std::string remote_table;
+
         /// dumpStructure() of the header -- obsolete
         std::string block_header_string;
         Block block_header;
@@ -196,6 +200,14 @@ namespace
                             in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
             }
 
+            if (header_buf.hasPendingData())
+            {
+                readVarUInt(distributed_header.shard_num, header_buf);
+                readStringBinary(distributed_header.cluster, header_buf);
+                readStringBinary(distributed_header.distributed_table, header_buf);
+                readStringBinary(distributed_header.remote_table, header_buf);
+            }
+
             /// Add handling new data here, for example:
             ///
             /// if (header_buf.hasPendingData())
@@ -219,7 +231,7 @@ namespace
         return distributed_header;
     }
 
-    /// remote_error argument is used to decide whether some errors should be
+    /// 'remote_error' argument is used to decide whether some errors should be
     /// ignored or not, in particular:
     ///
     /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
@@ -299,7 +311,7 @@ namespace
         }
 
         /// This is old format, that does not have header for the block in the file header,
-        /// applying ConvertingBlockInputStream in this case is not a big overhead.
+        /// applying ConvertingTransform in this case is not a big overhead.
         ///
         /// Anyway we can get header only from the first block, which contain all rows anyway.
         if (!distributed_header.block_header)
@@ -340,7 +352,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= double(std::numeric_limits<uint64_t>::max()))
+        if (d >= static_cast<double>(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -399,7 +411,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     {
         processFiles(files);
 
-        /// Update counters
+        /// Update counters.
         getFiles();
     }
 }
@@ -475,7 +487,7 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    /// Update counters
+    /// Update counters.
     getFiles();
 
     if (!quit && do_sleep)
@@ -491,8 +503,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1)
+        /// Check new format shard{shard_index}_replica{replica_index}
+        /// (shard_index and replica_index starts from 1).
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
@@ -511,7 +523,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             return shard_info.per_replica_pools[address.replica_index - 1];
         }
 
-        /// existing connections pool have a higher priority
+        /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
@@ -539,6 +551,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.default_database,
             address.user,
             address.password,
+            address.quota_key,
             address.cluster,
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
@@ -609,6 +622,8 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
+
     Stopwatch watch;
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
 
@@ -619,11 +634,23 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
+            distributed_header.client_info.client_trace_context,
+            this->storage.getContext()->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
+        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
+        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
+        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
+        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
+
+        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+        LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
+            file_path,
+            connection->getDescription(),
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
@@ -634,8 +661,18 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
     catch (Exception & e)
     {
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(std::current_exception());
+
         e.addMessage(fmt::format("While sending {}", file_path));
         maybeMarkAsBroken(file_path, e);
+        throw;
+    }
+    catch (...)
+    {
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(std::current_exception());
+
         throw;
     }
 
@@ -718,10 +755,6 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         Stopwatch watch;
 
-        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
-            formatReadableQuantity(total_rows),
-            formatReadableSizeWithBinarySuffix(total_bytes));
-
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -749,6 +782,12 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
+
+        LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
+            file_indices.size(),
+            connection->getDescription(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
 
         bool batch_broken = false;
         bool batch_marked_as_broken = false;
@@ -849,6 +888,10 @@ private:
             ReadBufferFromFile in(file_path->second);
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
+            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+                distributed_header.client_info.client_trace_context,
+                parent.storage.getContext()->getOpenTelemetrySpanLog());
+
             if (!remote)
             {
                 remote = std::make_unique<RemoteInserter>(connection, timeouts,
@@ -883,6 +926,11 @@ private:
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
+                // this function is called in a separated thread, so we set up the trace context from the file
+                OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
+                    distributed_header.client_info.client_trace_context,
+                    parent.storage.getContext()->getOpenTelemetrySpanLog());
+
                 RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
@@ -905,7 +953,7 @@ private:
     }
 };
 
-class DirectoryMonitorSource : public SourceWithProgress
+class DirectoryMonitorSource : public ISource
 {
 public:
 
@@ -940,7 +988,7 @@ public:
     }
 
     explicit DirectoryMonitorSource(Data data_)
-        : SourceWithProgress(data_.first_block.cloneEmpty())
+        : ISource(data_.first_block.cloneEmpty())
         , data(std::move(data_))
     {
     }
@@ -1021,7 +1069,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.count(file_idx))
+        if (file_indices_to_skip.contains(file_idx))
             continue;
 
         size_t total_rows = 0;
@@ -1152,7 +1200,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
-    /// mark file as broken if necessary
+    /// Mark file as broken if necessary.
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);

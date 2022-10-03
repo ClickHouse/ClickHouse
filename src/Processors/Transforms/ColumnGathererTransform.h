@@ -20,7 +20,7 @@ struct RowSourcePart
 
     RowSourcePart() = default;
 
-    RowSourcePart(size_t source_num, bool skip_flag = false)
+    explicit RowSourcePart(size_t source_num, bool skip_flag = false)
     {
         static_assert(sizeof(*this) == 1, "Size of RowSourcePart is too big due to compiler settings");
         setSourceNum(source_num);

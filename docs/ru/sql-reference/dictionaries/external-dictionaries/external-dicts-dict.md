@@ -1,6 +1,7 @@
 ---
-toc_priority: 40
-toc_title: "Настройка внешнего словаря"
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
+sidebar_position: 40
+sidebar_label: "Настройка внешнего словаря"
 ---
 
 # Настройка внешнего словаря {#dicts-external-dicts-dict}

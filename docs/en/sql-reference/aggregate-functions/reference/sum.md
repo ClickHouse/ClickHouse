@@ -1,7 +1,8 @@
 ---
-toc_priority: 4
+slug: /en/sql-reference/aggregate-functions/reference/sum
+sidebar_position: 4
 ---
 
-# sum {#agg_function-sum}
+# sum
 
 Calculates the sum. Only works for numbers.

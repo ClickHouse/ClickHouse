@@ -1,6 +1,7 @@
 ---
-toc_priority: 50
-toc_title: SET
+slug: /zh/sql-reference/statements/set
+sidebar_position: 50
+sidebar_label: SET
 ---
 
 # SET 语句 {#query-set}

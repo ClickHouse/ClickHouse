@@ -1,9 +1,7 @@
--- Tags: no-parallel
-
 SELECT 'simple partition key:';
 DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)
-ENGINE = ReplicatedReplacingMergeTree('/clickhouse/test/tables/table12', '1', v)
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{database}/test_table12', '1', v)
 PARTITION BY id % 200 ORDER BY id;
 INSERT INTO table1 SELECT number-205, number FROM numbers(10);
 INSERT INTO table1 SELECT number-205, number FROM numbers(400, 10);

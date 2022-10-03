@@ -1,3 +1,6 @@
+---
+slug: /ru/sql-reference/table-functions/view
+---
 ## view {#view}
 
 Преобразовывает подзапрос в таблицу. Функция реализовывает представления (смотрите [CREATE VIEW](https://clickhouse.com/docs/ru/sql-reference/statements/create/view/#create-view)). Результирующая таблица не хранит данные, а только сохраняет указанный запрос `SELECT`. При чтении из таблицы, ClickHouse выполняет запрос и удаляет все ненужные столбцы из результата.

@@ -12,3 +12,5 @@ SELECT '1,,' == replaceRegexpOne('1,,', '^[,]*|[,]*$', '') x;
 
 SELECT '5935,5998,6014' == trim(BOTH ', ' FROM '5935,5998,6014, ') x;
 SELECT '5935,5998,6014' == replaceRegexpAll('5935,5998,6014, ', concat('^[', regexpQuoteMeta(', '), ']*|[', regexpQuoteMeta(', '), ']*$'), '') AS x;
+
+SELECT trim(BOTH '"' FROM '2') == '2'

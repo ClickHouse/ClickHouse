@@ -1,9 +1,10 @@
 ---
-toc_priority: 59
-toc_title: Set
+slug: /en/sql-reference/data-types/special-data-types/set
+sidebar_position: 59
+sidebar_label: Set
 ---
 
-# Set {#set}
+# Set
 
 Used for the right half of an [IN](../../../sql-reference/operators/in.md#select-in-operators) expression.
 

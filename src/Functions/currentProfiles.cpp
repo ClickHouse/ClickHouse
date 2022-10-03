@@ -49,8 +49,7 @@ namespace
             else
             {
                 static_assert(kind == Kind::DEFAULT_PROFILES);
-                if (auto user = context->getUser())
-                    profile_ids = user->settings.toProfileIDs();
+                profile_ids = context->getUser()->settings.toProfileIDs();
             }
 
             profile_names = manager.tryReadNames(profile_ids);
@@ -80,7 +79,7 @@ namespace
     };
 }
 
-void registerFunctionCurrentProfiles(FunctionFactory & factory)
+REGISTER_FUNCTION(CurrentProfiles)
 {
     factory.registerFunction<FunctionCurrentProfiles<Kind::CURRENT_PROFILES>>();
     factory.registerFunction<FunctionCurrentProfiles<Kind::ENABLED_PROFILES>>();

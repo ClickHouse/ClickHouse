@@ -2,7 +2,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 namespace DB
 {
@@ -66,7 +66,7 @@ void JoinSwitcher::switchJoin()
         for (const auto & sample_column : right_sample_block)
         {
             positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(sample_column.type->isNullable());
+            is_nullable.emplace_back(JoinCommon::isNullable(sample_column.type));
         }
     }
 

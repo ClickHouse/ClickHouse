@@ -1,4 +1,7 @@
-# system.text_log {#system_tables-text_log}
+---
+slug: /en/operations/system-tables/text_log
+---
+# text_log
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 
