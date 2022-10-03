@@ -266,10 +266,10 @@ print parse_version(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 print parse_version('1.2.3.40');
 print parse_version('1.2');
 print parse_version(strcat('1.', '2'));
--- print parse_version('1.2.4.5.6'); -> NULL
--- print parse_version('moo'); -> NULL
--- print parse_version('moo.boo.foo'); -> NULL
--- print parse_version(strcat_delim('.', 'moo', 'boo', 'foo')); -> NULL
+print parse_version('1.2.4.5.6');
+print parse_version('moo'); 
+print parse_version('moo.boo.foo');
+print parse_version(strcat_delim('.', 'moo', 'boo', 'foo'));
 Versions | project parse_version(Version);
 print '-- parse_json()';
 print parse_json(dynamic([1, 2, 3]));
@@ -277,8 +277,8 @@ print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}');
 print '-- parse_command_line()';
 print parse_command_line(55, 'windows'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- print parse_command_line((52 + 3) * 4 % 2, 'windows'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- print parse_command_line('', 'windows'); -> NULL
--- print parse_command_line(strrep(' ', 6), 'windows'); -> NULL
+print parse_command_line('', 'windows');
+print parse_command_line(strrep(' ', 6), 'windows'); 
 -- print parse_command_line('echo \"hello world!\" print$?', 'windows'); -> ["echo","hello world!","print$?"]
 -- print parse_command_line("yolo swag 'asd bcd' \"moo moo \"", 'windows'); -> ["yolo","swag","'asd","bcd'","moo moo "]
 -- print parse_command_line(strcat_delim(' ', "yolo", "swag", "\'asd bcd\'", "\"moo moo \""), 'windows'); -> ["yolo","swag","'asd","bcd'","moo moo "]
@@ -294,7 +294,7 @@ print reverse(datetime(2017-10-15 12:00));
 -- print reverse(timespan(3h)); -> 00:00:30
 Customers | where Education contains 'degree' | order by reverse(FirstName);
 print '-- parse_csv()';
--- print parse_csv(''); -> []
+print parse_csv(''); -> []
 print parse_csv(65); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 print parse_csv('aaa');
 print result=parse_csv('aa,b,cc');
