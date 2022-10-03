@@ -41,6 +41,10 @@ client.query(
     "CREATE TABLE t_async_insert_user_settings (id UInt64, s String, arr Array(UInt64)) ENGINE = Memory"
 )
 
+VALUE_IN_CI = int(client.query(
+    "select value from system.settings where name='async_insert_busy_timeout_ms';"
+))
+
 start_ms = time.time() * 1000.0
 for i in range(NUM_RUNS):
     client.query(query = insert_query.format(i,i,i), settings=settings)
@@ -48,8 +52,15 @@ end_ms = time.time() * 1000.0
 
 duration = end_ms - start_ms
 
-expected = (NUM_RUNS - 1) * TIME_TO_WAIT_MS
-if duration >= expected:
+expected = (NUM_RUNS - 1) * VALUE_IN_CI
+
+def check_inequality(duration, expected):
+    if TIME_TO_WAIT_MS >= VALUE_IN_CI:
+        return duration >= expected
+    else:
+        return duration < expected
+
+if check_inequality(duration, expected):
     print("Ok.")
 else:
     print(f"Fail. Duration: {duration}. Expected: {expected}")
