@@ -294,7 +294,7 @@ print reverse(datetime(2017-10-15 12:00));
 -- print reverse(timespan(3h)); -> 00:00:30
 Customers | where Education contains 'degree' | order by reverse(FirstName);
 print '-- parse_csv()';
-print parse_csv(''); -> []
+print parse_csv('');
 print parse_csv(65); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 print parse_csv('aaa');
 print result=parse_csv('aa,b,cc');
