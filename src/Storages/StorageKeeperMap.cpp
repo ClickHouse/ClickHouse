@@ -124,8 +124,6 @@ public:
     {
         auto zookeeper = storage.getClient();
 
-        Coordination::Requests requests;
-
         auto keys_limit = storage.keysLimit();
 
         size_t current_keys_num = 0;
@@ -140,23 +138,25 @@ public:
             current_keys_num = data_stat.numChildren;
         }
 
-        std::vector<std::pair<const std::string *, std::future<Coordination::ExistsResponse>>> exist_responses;
-        for (const auto & [key, value] : new_values)
-        {
-            auto path = storage.fullPathForKey(key);
+        std::vector<std::string> key_paths;
+        key_paths.reserve(new_values.size());
+        for (const auto & [key, _] : new_values)
+            key_paths.push_back(storage.fullPathForKey(key));
 
-            exist_responses.push_back({&key, zookeeper->asyncExists(path)});
-        }
+        auto results = zookeeper->exists(key_paths);
 
-        for (auto & [key, response] : exist_responses)
+        Coordination::Requests requests;
+        requests.reserve(key_paths.size());
+        for (size_t i = 0; i < key_paths.size(); ++i)
         {
-            if (response.get().error == Coordination::Error::ZOK)
+            auto key = fs::path(key_paths[i]).filename();
+            if (results[i].error == Coordination::Error::ZOK)
             {
-                requests.push_back(zkutil::makeSetRequest(storage.fullPathForKey(*key), new_values[*key], -1));
+                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
             }
             else
             {
-                requests.push_back(zkutil::makeCreateRequest(storage.fullPathForKey(*key), new_values[*key], zkutil::CreateMode::Persistent));
+                requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
                 ++new_keys_num;
             }
         }
