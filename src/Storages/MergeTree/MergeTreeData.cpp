@@ -6194,7 +6194,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         tmp_part_prefix,
         txn,
         new_partition,
-        new_min_max_index
+        new_min_max_index,
+        false
     };
 
     return part_cloner.clone();

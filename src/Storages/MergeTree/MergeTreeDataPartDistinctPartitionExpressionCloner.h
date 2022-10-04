@@ -14,6 +14,8 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
  * */
 class MergeTreeDataPartDistinctPartitionExpressionCloner : public MergeTreeDataPartCloner
 {
+    using WrittenFile = std::unique_ptr<WriteBufferFromFileBase>;
+    using WrittenFiles = std::vector<WrittenFile>;
 public:
     MergeTreeDataPartDistinctPartitionExpressionCloner(
         MergeTreeData * merge_tree_data,
@@ -22,21 +24,23 @@ public:
         const String & tmp_part_prefix,
         const MergeTreeTransactionPtr & txn,
         const MergeTreePartition & new_partition,
-        const IMergeTreeDataPart::MinMaxIndex & new_min_max_index
+        const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
+        bool sync_new_files
     );
 
 private:
     const MergeTreePartition & new_partition;
     const IMergeTreeDataPart::MinMaxIndex & new_min_max_index;
+    const bool sync_new_files;
 
     void deleteMinMaxFiles(const DataPartStorageBuilderPtr & storage_builder) const;
 
-    void updateMinMaxFiles(
+    WrittenFiles updateMinMaxFiles(
         const MutableDataPartPtr & dst_part,
         const DataPartStorageBuilderPtr & storage_builder
     ) const;
 
-    void updatePartitionFile(
+    WrittenFile updatePartitionFile(
         const MergeTreePartition & new_partition,
         const MutableDataPartPtr & dst_part,
         const DataPartStorageBuilderPtr & storage_builder
@@ -44,6 +48,8 @@ private:
 
     /// Re-writes partition.dat and minmax_<fields>.idx. Also deletes checksums.txt
     void updateNewPartFiles(const MutableDataPartPtr & dst_part) const;
+
+    void finalizeNewFiles(const WrittenFiles & min_max_files) const;
 
     MergeTreeDataPartCloner::MutableDataPartPtr finalizePart(const MutableDataPartPtr & dst_part) const override;
 

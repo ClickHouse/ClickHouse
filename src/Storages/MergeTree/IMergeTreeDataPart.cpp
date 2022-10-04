@@ -230,15 +230,6 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
 }
 
-void IMergeTreeDataPart::MinMaxIndex::replace(const MinMaxIndex & other)
-{
-    if (!other.initialized)
-        return;
-
-    hyperrectangle = other.hyperrectangle;
-    initialized = true;
-}
-
 void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
