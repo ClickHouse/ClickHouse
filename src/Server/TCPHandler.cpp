@@ -369,10 +369,12 @@ void TCPHandler::runImpl()
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
+                state.io.onFinish();
             }
             else if (state.io.pipeline.pulling())
             {
                 processOrdinaryQueryWithProcessors();
+                state.io.onFinish();
             }
             else if (state.io.pipeline.completed())
             {
@@ -398,7 +400,8 @@ void TCPHandler::runImpl()
                 }
                 executor.execute();
 
-                /// Send final progress
+                state.io.onFinish();
+                /// Send final progress after calling onFinish(), since it will update the progress.
                 ///
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
@@ -406,8 +409,10 @@ void TCPHandler::runImpl()
                 sendProgress();
                 sendSelectProfileEvents();
             }
-
-            state.io.onFinish();
+            else
+            {
+                state.io.onFinish();
+            }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
