@@ -10,6 +10,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
 #include <format>
+#include <string>
 
 namespace DB
 {
@@ -271,7 +272,13 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
 
     const auto value = getArgument(function_name, pos);
     const auto count = getArgument(function_name, pos);
-    out = std::format("arrayWithConstant({1}, {0})", value, count);
+
+    if(count.empty())
+        return false;
+    else if(!(count[0] >= '0' && count[0] <= '9'))
+        out = "toString(NULL)";
+    else
+        out = std::format("arrayWithConstant({1}, {0})", value, count);
 
     return true;
 }
