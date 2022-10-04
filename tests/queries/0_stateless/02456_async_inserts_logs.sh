@@ -15,6 +15,8 @@ ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_async_inserts_logs VALUES (1, 'a
 ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO t_async_inserts_logs FORMAT JSONEachRow qqqqqq' > /dev/null 2>&1 &
 ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO t_async_inserts_logs VALUES qqqqqq' > /dev/null 2>&1 &
 
+${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), t_async_inserts_logs) VALUES (1, 'aaa') (2, 'bbb')" &
+
 wait
 
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_async_inserts_logs FINAL"
@@ -24,11 +26,14 @@ ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_async_inserts_logs VALUES (1, 'a
 
 wait
 
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_async_inserts_logs"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -q "
     SELECT table, format, bytes, empty(exception), status,
     status = 'ParsingError' ? flush_time_microseconds = 0 : flush_time_microseconds > event_time_microseconds AS time_ok
-    FROM system.asynchronous_insert_log WHERE database = '$CLICKHOUSE_DATABASE'
+    FROM system.asynchronous_insert_log
+    WHERE database = '$CLICKHOUSE_DATABASE' OR query ILIKE 'INSERT INTO FUNCTION%$CLICKHOUSE_DATABASE%'
     ORDER BY table, status, format"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_async_inserts_logs"

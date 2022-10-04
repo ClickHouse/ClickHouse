@@ -11,11 +11,11 @@ namespace DB
 
 struct AsynchronousInsertLogElement
 {
-    enum Status
+    enum Status : Int8
     {
-        Ok,
-        ParsingError,
-        FlushError,
+        Ok = 0,
+        ParsingError = 1,
+        FlushError = 2,
     };
 
     time_t event_time{};
@@ -23,15 +23,15 @@ struct AsynchronousInsertLogElement
 
     ASTPtr query;
     String query_id;
-    UInt64 bytes;
+    UInt64 bytes{};
     String exception;
-    Status status;
+    Status status{};
 
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};
     String flush_query_id;
 
-    static std::string name() { return "AsynchronousInserts"; }
+    static std::string name() { return "AsynchronousInsertLog"; }
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;

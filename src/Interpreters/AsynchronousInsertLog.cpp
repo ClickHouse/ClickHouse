@@ -19,7 +19,7 @@ NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
     auto type_status = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Ok",               static_cast<Int8>(Status::Ok)},
+            {"Ok",           static_cast<Int8>(Status::Ok)},
             {"ParsingError", static_cast<Int8>(Status::ParsingError)},
             {"FlushError",   static_cast<Int8>(Status::FlushError)},
         });
@@ -64,8 +64,8 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        columns[i++]->insert(insert_query.table_id.getDatabaseName());
-        columns[i++]->insert(insert_query.table_id.getTableName());
+        columns[i++]->insertDefault();
+        columns[i++]->insertDefault();
     }
 
     columns[i++]->insert(insert_query.format);
