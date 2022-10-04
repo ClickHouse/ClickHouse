@@ -822,7 +822,7 @@ namespace
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserIdentifier id_parser;
+    ParserCompoundIdentifier compound_id_parser;
 
     bool has_all = false;
     bool has_distinct = false;
@@ -838,7 +838,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
     }
 
-    if (!id_parser.parse(pos, identifier, expected))
+    if (!compound_id_parser.parse(pos, identifier, expected))
         return false;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -1032,6 +1032,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         function_node->parameters = expr_list_params;
         function_node->children.push_back(function_node->parameters);
+    }
+
+    if (const auto *compound_identifier  = identifier->as<ASTIdentifier>())
+    {
+        if (!compound_identifier->isShort())
+            function_node->has_database_name = true;
     }
 
     ParserKeyword filter("FILTER");

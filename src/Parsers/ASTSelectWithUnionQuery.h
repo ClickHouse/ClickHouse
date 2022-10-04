@@ -36,7 +36,8 @@ public:
     bool hasQueryParameters() const { return has_query_parameters; }
     void setHasQueryParameters();
 
-    void clearAllowQueryParameters();
+    //clang-tidy wants it to be const, but it changes flags of children
+    void clearAllowQueryParameters();// NOLINT
 
 };
 

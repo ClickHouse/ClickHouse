@@ -96,6 +96,7 @@
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
+#include <base/find_symbols.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -1126,11 +1127,26 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
-    if (const auto * function = table_expression->as<ASTFunction>())
+    if (auto * function = table_expression->as<ASTFunction>())
     {
-        if (DatabaseCatalog::instance().isTableExist({getCurrentDatabase(), function->name}, getQueryContext()))
+        String database_name = getCurrentDatabase();
+        String table_name = function->name;
+
+        if (function->has_database_name)
         {
-            StoragePtr res = DatabaseCatalog::instance().getTable({getCurrentDatabase(), function->name}, getQueryContext());
+            std::vector<std::string> parts;
+            splitInto<'.'>(parts, function->name);
+
+            if (parts.size() == 2)
+            {
+                database_name = parts[0];
+                table_name = parts[1];
+            }
+        }
+
+        if (DatabaseCatalog::instance().isTableExist({database_name, table_name}, getQueryContext()))
+        {
+            StoragePtr res = DatabaseCatalog::instance().getTable({database_name, table_name}, getQueryContext());
             if (res.get()->isView() && res->as<StorageView>()->isParameterizedView())
                 return res;
         }
