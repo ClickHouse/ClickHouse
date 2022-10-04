@@ -597,7 +597,6 @@ def test_big_insert(cluster):
         committed, uncommited = blob_client.get_block_list()
 
         blocks = committed
-        assert len(blocks) > 1
         last_id = len(blocks)
         id = 1
 
