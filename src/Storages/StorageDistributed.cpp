@@ -868,7 +868,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto extension = src_storage_cluster.getTaskIteratorExtension(local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(nullptr, local_context);
 
     auto dst_cluster = getCluster();
 

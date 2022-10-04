@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "Interpreters/Context_fwd.h"
 
 #if USE_HDFS
 
@@ -74,8 +75,6 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    createIteratorAndCallback(context);
-
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
@@ -111,7 +110,7 @@ Pipe StorageHDFSCluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                extension);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -134,28 +133,17 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 }
 
 
-void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context) const
-{
-    cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
-    callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = this->iterator]() mutable -> String { return iter->next(); });
-}
-
-
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ContextPtr context) const
-{
-    createIteratorAndCallback(context);
-    return RemoteQueryExecutor::Extension{.task_iterator = callback};
-}
-
-
 ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context) const
 {
-    createIteratorAndCallback(context);
-    return cluster;
+    return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 }
 
+RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const
+{
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
+    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
+    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
+}
 
 NamesAndTypesList StorageHDFSCluster::getVirtuals() const
 {
