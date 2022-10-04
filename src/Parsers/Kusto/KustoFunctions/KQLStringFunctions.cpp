@@ -534,7 +534,13 @@ bool SubString::convertImpl(String & out,IParser::Pos & pos)
     {
         ++pos;
         auto length = getConvertedArgument(fn_name, pos);
-        out = "substr("+ source + ", " + startingIndex + " + 1, " + length + ")";
+
+        if(startingIndex.empty())
+            return false;
+        else if(startingIndex[0] == '-')
+            out = "substr("+ source + ", " + startingIndex + ", " + length + ")";
+        else
+            out = "substr("+ source + ", " + startingIndex + " + 1, " + length + ")";
     }
     else
         out = "substr("+ source + "," + startingIndex + " + 1)";
