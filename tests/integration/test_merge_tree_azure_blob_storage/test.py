@@ -589,6 +589,7 @@ def test_big_insert(cluster):
 
     blobs = blob_container_client.list_blobs()
     max_single_part_upload_size = 100000
+    checked = False
 
     for blob in blobs:
         blob_client = cluster.blob_service_client.get_blob_client(
@@ -599,6 +600,8 @@ def test_big_insert(cluster):
         blocks = committed
         last_id = len(blocks)
         id = 1
+        if len(blocks) > 1:
+            checked = True
 
         for block in blocks:
             print(f"blob: {blob.name}, block size: {block.size}")
@@ -607,3 +610,4 @@ def test_big_insert(cluster):
             else:
                 assert max_single_part_upload_size == block.size
             id += 1
+    assert checked  
