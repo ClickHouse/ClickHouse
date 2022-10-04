@@ -1,6 +1,8 @@
 #pragma once
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
+#include "Columns/ColumnsCommon.h"
+#include "Columns/IColumn.h"
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -32,6 +34,38 @@ struct PrewhereExprInfo
     std::vector<PrewhereExprStep> steps;
 
     std::string dump() const;
+};
+
+
+class FilterWithCachedCount
+{
+    ColumnPtr column = nullptr;
+    const IColumn::Filter * data = nullptr;
+    mutable size_t cached_count_bytes = -1;
+
+public:
+    explicit FilterWithCachedCount() = default;
+
+    explicit FilterWithCachedCount(const ColumnPtr & column_)
+        : column(column_->convertToFullColumnIfConst()) // TODO: is this optimal?
+        , data(&typeid_cast<const ColumnUInt8 *>(column.get())->getData())
+    {
+    }
+
+    bool present() const { return !!column; }
+
+    ColumnPtr getColumn() { return column; }
+
+    const IColumn::Filter & getData() const { return *data; }
+
+    size_t size() const { return column->size(); }
+
+    size_t countBytesInFilter() const
+    {
+        if (cached_count_bytes == size_t(-1))
+            cached_count_bytes = DB::countBytesInFilter(*data);
+        return cached_count_bytes;
+    }
 };
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
@@ -183,9 +217,7 @@ public:
         size_t totalRowsPerGranule() const { return total_rows_per_granule; }
         size_t numRowsToSkipInLastGranule() const { return num_rows_to_skip_in_last_granule; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
-        const ColumnUInt8 * getFilterOriginal() const { return filter_original ? filter_original : filter; }
-        const ColumnUInt8 * getFilter() const { return filter; }
-        ColumnPtr & getFilterHolder() { return filter_holder; }
+        const FilterWithCachedCount & getFilterOriginal() const { return filter_original.present() ? filter_original : filter; }
 
         void addGranule(size_t num_rows_);
         void adjustLastGranule();
@@ -206,8 +238,6 @@ public:
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
         void shrink(Columns & old_columns);
-
-        size_t countBytesInResultFilter(const IColumn::Filter & filter);
 
         /// If this flag is false than filtering form PREWHERE can be delayed and done in WHERE
         /// to reduce memory copies and applying heavy filters multiple times
@@ -230,16 +260,12 @@ public:
         /// Without any filtration.
         size_t num_bytes_read = 0;
         /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
-        ColumnPtr filter_holder;
-        ColumnPtr filter_holder_original;
-        const ColumnUInt8 * filter = nullptr;
-        const ColumnUInt8 * filter_original = nullptr;
+        FilterWithCachedCount filter;
+        FilterWithCachedCount filter_original;
 
         void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
-
-        std::map<const IColumn::Filter *, size_t> filter_bytes_map;
 
         Names extra_columns_filled;
     };
