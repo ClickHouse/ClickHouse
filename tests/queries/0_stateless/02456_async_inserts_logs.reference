@@ -1,3 +1,5 @@
+5
+	Values	21	1	Ok	1
 t_async_inserts_logs	JSONEachRow	39	1	Ok	1
 t_async_inserts_logs	Values	8	1	Ok	1
 t_async_inserts_logs	JSONEachRow	6	0	ParsingError	1
