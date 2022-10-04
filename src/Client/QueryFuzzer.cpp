@@ -554,7 +554,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     {
         size_t tmp = fuzz_rand() % 3;
         if (tmp == 0)
-            return type_nullable->getNestedType();
+            return fuzzDataType(type_nullable->getNestedType());
 
         if (tmp == 1)
         {
@@ -569,7 +569,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     {
         size_t tmp = fuzz_rand() % 3;
         if (tmp == 0)
-            return type_low_cardinality->getDictionaryType();
+            return fuzzDataType(type_low_cardinality->getDictionaryType());
 
         if (tmp == 1)
         {
