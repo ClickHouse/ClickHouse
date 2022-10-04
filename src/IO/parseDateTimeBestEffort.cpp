@@ -116,6 +116,8 @@ ReturnType parseDateTimeBestEffortImpl(
     bool is_am = false;
     bool is_pm = false;
 
+    bool has_comma_after_date = false;
+
     auto read_alpha_month = [&month] (const auto & alpha)
     {
         if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
@@ -137,6 +139,12 @@ ReturnType parseDateTimeBestEffortImpl(
 
     while (!in.eof())
     {
+        if (year && month && day_of_month && *in.position() == ',')
+        {
+            has_comma_after_date = true;
+            ++in.position();
+        }
+
         char digits[std::numeric_limits<UInt64>::digits10];
 
         size_t num_digits = 0;
@@ -551,6 +559,10 @@ ReturnType parseDateTimeBestEffortImpl(
             }
         }
     }
+
+    //// Date like '2022/03/04, ' should parse fail?
+    if (has_comma_after_date && !has_time)
+        return on_error("Cannot read DateTime: unexpected word after Date", ErrorCodes::CANNOT_PARSE_DATETIME);
 
     /// If neither Date nor Time is parsed successfully, it should fail
     if (!year && !month && !day_of_month && !has_time)
