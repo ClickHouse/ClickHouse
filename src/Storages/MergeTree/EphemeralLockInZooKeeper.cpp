@@ -86,6 +86,17 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
     {
         unlock();
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+            LOG_WARNING(
+                &Poco::Logger::get("~EphemeralLockInZooKeeper"),
+                "ZooKeeper communication error during unlock: code={} message='{}'",
+                e.code,
+                e.message());
+        else
+            tryLogCurrentException("~EphemeralLockInZooKeeper");
+    }
     catch (...)
     {
         tryLogCurrentException("~EphemeralLockInZooKeeper");
