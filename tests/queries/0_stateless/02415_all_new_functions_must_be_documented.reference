@@ -328,7 +328,7 @@ farmHash64
 file
 filesystemAvailable
 filesystemCapacity
-filesystemFree
+filesystemUnreserved
 finalizeAggregation
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
