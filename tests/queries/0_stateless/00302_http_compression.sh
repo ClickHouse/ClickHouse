@@ -42,5 +42,6 @@ echo "'Hello, world'" | zstd -c | ${CLICKHOUSE_CURL} -sS --data-binary @- -H 'Co
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 0' | wc -c;
 
-# POST multiple concatenated gzip streams.
+# POST multiple concatenated gzip and bzip2 streams.
 (echo -n "SELECT 'Part1" | gzip -c; echo " Part2'" | gzip -c) | ${CLICKHOUSE_CURL} -sS -H 'Content-Encoding: gzip' "${CLICKHOUSE_URL}" --data-binary @-
+(echo -n "SELECT 'Part1" | bzip2 -c; echo " Part2'" | bzip2 -c) | ${CLICKHOUSE_CURL} -sS -H 'Content-Encoding: bz2' "${CLICKHOUSE_URL}" --data-binary @-
