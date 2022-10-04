@@ -544,14 +544,14 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return first_bucket_is_empty && file_buckets_are_empty;
 }
 
-std::unique_ptr<NotJoinedBlocks> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
+std::unique_ptr<IBlocksStream> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
 {
     /// We do no support returning non joined blocks here.
     /// They will be reported by getDelayedBlocks instead.
     return nullptr;
 }
 
-class GraceHashJoin::DelayedBlocks : public IDelayedJoinedBlocksStream
+class GraceHashJoin::DelayedBlocks : public IBlocksStream
 {
 public:
     explicit DelayedBlocks(GraceHashJoin * parent_, FileBucket * bucket_, InMemoryJoinPtr join_)
@@ -575,7 +575,7 @@ public:
         }
 
         if (not_joined_blocks)
-            return not_joined_blocks->read();
+            return not_joined_blocks->next();
 
         return {};
     }
@@ -585,15 +585,20 @@ public:
     MergingBlockReader left_reader;
     InMemoryJoinPtr join;
     bool process_not_joined = true;
-    std::unique_ptr<NotJoinedBlocks> not_joined_blocks;
+    std::unique_ptr<IBlocksStream> not_joined_blocks;
 };
 
-std::unique_ptr<IDelayedJoinedBlocksStream> GraceHashJoin::getDelayedBlocks(IDelayedJoinedBlocksStream * prev_cursor)
+std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks(
+        const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_)
 {
-    if (prev_cursor)
-    {
-        assert_cast<DelayedBlocks *>(prev_cursor)->bucket->finish();
-    }
+    UNUSED(left_sample_block_);
+    UNUSED(result_sample_block_);
+    UNUSED(max_block_size_);
+
+    // if (prev_cursor)
+    // {
+    //     assert_cast<DelayedBlocks *>(prev_cursor)->bucket->finish();
+    // }
 
     if (!started_reading_delayed_blocks.exchange(true))
     {
