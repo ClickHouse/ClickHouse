@@ -501,7 +501,8 @@ try
             elem.query = key.query;
             elem.query_id = entry->query_id;
             elem.bytes = entry->bytes.size();
-            elem.exception = std::move(current_exception);
+            elem.exception = current_exception;
+            current_exception.clear();
 
             /// If there was a parsing error,
             /// the entry won't be flushed anyway,
