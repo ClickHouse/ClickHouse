@@ -96,14 +96,14 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
         }
         sentry_options_set_dsn(options, endpoint.c_str());
         sentry_options_set_database_path(options, temp_folder_path.c_str());
+
+        /// This value will be attached to each report
+        String environment_default_value = "test";
         if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts"))
-        {
-            sentry_options_set_environment(options, "prod");
-        }
-        else
-        {
-            sentry_options_set_environment(options, "test");
-        }
+            environment_default_value = "prod";
+        /// If the value is set in config - use it
+        auto value = config.getString("send_crash_reports.environment", environment_default_value);
+        sentry_options_set_environment(options, value.c_str());
 
         const std::string & http_proxy = config.getString("send_crash_reports.http_proxy", "");
         if (!http_proxy.empty())
