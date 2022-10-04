@@ -39,6 +39,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace

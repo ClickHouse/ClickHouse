@@ -44,7 +44,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
-
+    extern const int NOT_IMPLEMENTED;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const
@@ -598,7 +598,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         return {};
 
     /** For right table expression during execution columns have unique name.
-      * Direct key value join implementation during storage quering must use storage column names.
+      * Direct key value join implementation during storage querying must use storage column names.
       *
       * Example:
       * CREATE DICTIONARY test_dictionary (id UInt64, value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'test_dictionary_table')) LIFETIME(0);

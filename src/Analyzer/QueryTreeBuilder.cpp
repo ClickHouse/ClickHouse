@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace

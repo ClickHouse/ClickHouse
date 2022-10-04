@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
