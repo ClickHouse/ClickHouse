@@ -147,7 +147,6 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void outputQueryInfo(bool echo_query_);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);

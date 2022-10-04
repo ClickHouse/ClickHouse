@@ -92,6 +92,8 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
+add_contrib (corrosion-cmake corrosion)
+
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
@@ -107,7 +109,7 @@ if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-cmake llvm)
+add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 add_contrib (aws-s3-cmake
     aws

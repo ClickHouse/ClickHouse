@@ -56,6 +56,8 @@ struct S3Settings
             headers = from.headers;
             region = from.region;
             server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
+            use_environment_credentials = from.use_environment_credentials;
+            use_insecure_imds_request = from.use_insecure_imds_request;
         }
     };
 
