@@ -48,7 +48,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 
 /** Choose a compression method from HTTP header list of supported compression methods.
   */
-CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
+CompressionMethod chooseHTTPCompressionMethod(const std::string & list);
 
 /// Get a range of the valid compression levels for the compression method.
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method);
