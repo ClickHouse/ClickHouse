@@ -402,7 +402,6 @@ static void appendElementsToLogSafe(
 try
 {
     using Status = AsynchronousInsertLogElement::Status;
-    assert(elements.size() == entries.size());
 
     for (auto & elem : elements)
     {
