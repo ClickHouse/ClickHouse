@@ -5,11 +5,16 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
+
 
 namespace DB
 {
+
 void RewriteCountVariantsVisitor::visit(ASTPtr & node)
 {
+    checkStackSize();
+
     if (node->as<ASTSubquery>() || node->as<ASTTableExpression>() || node->as<ASTArrayJoin>())
         return;
 
