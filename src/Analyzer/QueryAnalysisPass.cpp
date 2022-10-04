@@ -4732,6 +4732,7 @@ public:
     struct Data
     {
         const QueryTreeNodes & group_by_keys_nodes;
+        const IdentifierResolveScope & scope;
     };
 
     static void visit(const QueryTreeNodePtr & node, Data & data)
@@ -4761,8 +4762,9 @@ public:
 
                 if (!found_argument_in_group_by_keys)
                     throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-                        "GROUPING function argument {} is not in GROUP BY",
-                        grouping_function_arguments_node->formatASTForErrorMessage());
+                        "GROUPING function argument {} is not in GROUP BY. In scope {}",
+                        grouping_function_arguments_node->formatASTForErrorMessage(),
+                        data.scope.scope_node->formatASTForErrorMessage());
             }
 
             return;
@@ -4792,8 +4794,9 @@ public:
         column_name += '.' + column_node->getColumnName();
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-            "Column {} is not under aggregate function and not in GROUP BY",
-            column_name);
+            "Column {} is not under aggregate function and not in GROUP BY. In scope {}",
+            column_name,
+            data.scope.scope_node->formatASTForErrorMessage());
     }
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node, Data & data)
@@ -4811,7 +4814,7 @@ public:
             }
         }
 
-        return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
+        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
 };
 
@@ -5235,7 +5238,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (has_aggregation)
     {
-        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes};
+        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes, scope};
         ValidateGroupByColumnsVisitor validate_group_by_visitor(validate_group_by_visitor_data);
 
         if (query_node_typed.hasHaving())
