@@ -80,7 +80,6 @@ ASTPtr LambdaNode::toASTImpl() const
 
     auto lambda_function_ast = std::make_shared<ASTFunction>();
     lambda_function_ast->name = "lambda";
-    lambda_function_ast->is_lambda_function = true;
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
