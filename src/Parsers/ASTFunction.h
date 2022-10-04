@@ -53,6 +53,9 @@ public:
 
     std::string getWindowDescription() const;
 
+    //This is used for parameterized view, to identify if name is 'db.view'
+    bool has_database_name = false;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

@@ -9,6 +9,7 @@ INSERT INTO Catalog VALUES ('Paper', 20, 1);
 
 CREATE VIEW v1 AS SELECT * FROM Catalog WHERE Price={price:UInt64};
 SELECT Price FROM v1(price=20);
+SELECT Price FROM `v1`(price=20);
 
 DETACH TABLE v1;
 ATTACH TABLE v1;
@@ -37,3 +38,16 @@ DROP TABLE v1;
 DROP TABLE v2;
 DROP TABLE v3;
 DROP TABLE Catalog;
+
+CREATE TABLE system.Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory;
+
+INSERT INTO system.Catalog VALUES ('Pen', 10, 3);
+INSERT INTO system.Catalog VALUES ('Book', 50, 2);
+INSERT INTO system.Catalog VALUES ('Paper', 20, 1);
+
+CREATE VIEW system.v1 AS SELECT * FROM system.Catalog WHERE Price={price:UInt64};
+SELECT Price FROM system.v1(price=20);
+SELECT Price FROM `system.v1`(price=20); -- { serverError UNKNOWN_FUNCTION }
+
+DROP TABLE system.v1;
+DROP TABLE system.Catalog;

@@ -1,4 +1,5 @@
 20
+20
 SELECT
     Name,
     Price,
@@ -11,3 +12,4 @@ FROM
 ) AS v1
 50
 10
+20
