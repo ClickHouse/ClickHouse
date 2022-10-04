@@ -1241,19 +1241,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (const auto & [_, disk_ptr] : getContext()->getDisksMap())
+        for (const auto & [disk_name, disk_ptr] : getContext()->getDisksMap())
         {
             /// In composable cache with the underlying source disk there might the following structure:
             /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
             /// In configuration file each of these layers has a different name, but data path
             /// (getPath() result) is the same. We need to take it into account here.
-            if (disk_ptr->supportsCache())
+            if (disk_ptr->supportsCache() && defined_disk_names.contains(disk_ptr->getName()))
             {
-                if (defined_disk_names.contains(disk_ptr->getName()))
-                {
-                    auto caches = disk_ptr->getCacheLayersNames();
-                    disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
-                }
+                auto caches = disk_ptr->getCacheLayersNames();
+                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
+                LOG_TEST(log, "Cache layers for cache disk `{}`, inner disk `{}`: {}",
+                         disk_name, disk_ptr->getName(), fmt::join(caches, ", "));
             }
         }
 
@@ -1272,8 +1271,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     {
                         throw Exception(
                             ErrorCodes::UNKNOWN_DISK,
-                            "Part {} ({}) was found on disk {} which is not defined in the storage policy",
-                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name));
+                            "Part {} ({}) was found on disk {} which is not defined in the storage policy (defined disks: {}, wrapped disks: {})",
+                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name),
+                            fmt::join(defined_disk_names, ", "), fmt::join(disk_names_wrapped_in_cache, ", "));
                     }
                 }
             }
