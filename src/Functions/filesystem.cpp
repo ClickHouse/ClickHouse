@@ -103,8 +103,7 @@ public:
                 return col_res;
             }
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
