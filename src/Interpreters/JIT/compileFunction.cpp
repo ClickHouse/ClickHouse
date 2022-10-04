@@ -873,15 +873,10 @@ CompiledSortDescriptionFunction compileSortDescription(
             auto * lhs_column_data = b.CreatePointerCast(b.CreateExtractValue(lhs_column, {0}), column_native_type_pointer);
             auto * lhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(lhs_column, {1}) : nullptr;
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
             auto * ty_lhs_column_data = llvm::cast<llvm::PointerType>(lhs_column_data->getType()->getScalarType())->getElementType();
-            llvm::Value * lhs_value = b.CreateLoad(b.CreateInBoundsGEP(ty_lhs_column_data, lhs_column_data, lhs_index_arg));
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+
+            llvm::Value * lhs_cib_gep = b.CreateInBoundsGEP(ty_lhs_column_data, lhs_column_data, lhs_index_arg);
+            llvm::Value * lhs_value = b.CreateLoad(lhs_cib_gep->getType()->getPointerElementType(), lhs_cib_gep);
 
             if (lhs_column_null_data)
             {
@@ -896,15 +891,11 @@ CompiledSortDescriptionFunction compileSortDescription(
             auto * rhs_column_data = b.CreatePointerCast(b.CreateExtractValue(rhs_column, {0}), column_native_type_pointer);
             auto * rhs_column_null_data = column_type_is_nullable ? b.CreateExtractValue(rhs_column, {1}) : nullptr;
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
             auto * ty_rhs_column_data = llvm::cast<llvm::PointerType>(rhs_column_data->getType()->getScalarType())->getElementType();
-            llvm::Value * rhs_value = b.CreateLoad(b.CreateInBoundsGEP(ty_rhs_column_data, rhs_column_data, rhs_index_arg));
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+
+            llvm::Value * rhs_cib_gep = b.CreateInBoundsGEP(ty_rhs_column_data, rhs_column_data, rhs_index_arg);
+            llvm::Value * rhs_value = b.CreateLoad(rhs_cib_gep->getType()->getPointerElementType(), rhs_cib_gep);
+
             if (rhs_column_null_data)
             {
                 auto * ty_rhs_column_null_data = llvm::cast<llvm::PointerType>(rhs_column_null_data->getType()->getScalarType())->getElementType();
