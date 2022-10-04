@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const KeeperAccessPtr & zookeeper_, const String & holder_path_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & holder_path_)
     : zookeeper(zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
 {
     /// Write the path to the secondary node in the main node.
@@ -23,7 +23,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
 }
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const KeeperAccessPtr & zookeeper_, const String & deduplication_path)
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path)
 {
     /// The /abandonable_lock- name is for backward compatibility.
     String holder_path_prefix = temp_path + "/abandonable_lock-";

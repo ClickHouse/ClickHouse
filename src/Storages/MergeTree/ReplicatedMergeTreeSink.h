@@ -75,11 +75,11 @@ private:
 
     /// Checks active replicas.
     /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(const KeeperAccessPtr & zookeeper);
+    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
-        const KeeperAccessPtr & zookeeper,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
         DataPartStorageBuilderPtr part_builder,
@@ -88,7 +88,7 @@ private:
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
-        const KeeperAccessPtr & zookeeper,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
         const std::string & part_name,
         const std::string & quorum_path,
         const std::string & is_active_node_value,
@@ -124,7 +124,7 @@ private:
     struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(const KeeperAccessPtr & zookeeper);
+    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 };
 
 }

@@ -12,8 +12,8 @@
 
 namespace DB
 {
-class KeeperAccess;
-using KeeperAccessPtr = std::shared_ptr<KeeperAccess>;
+class ZooKeeperWithFailtInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFailtInjection>;
 
 namespace ErrorCodes
 {
@@ -27,10 +27,10 @@ namespace ErrorCodes
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const KeeperAccessPtr & zookeeper_, const String & deduplication_path);
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
 protected:
-    EphemeralLockInZooKeeper(const String & path_prefix_, const KeeperAccessPtr & zookeeper_, const String & holder_path_);
+    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & holder_path_);
 
 public:
     EphemeralLockInZooKeeper() = delete;
@@ -88,14 +88,14 @@ public:
     ~EphemeralLockInZooKeeper();
 
 private:
-    KeeperAccessPtr zookeeper;
+    ZooKeeperWithFaultInjectionPtr zookeeper;
     String path_prefix;
     String path;
     String holder_path;
 };
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const KeeperAccessPtr & zookeeper_, const String & deduplication_path);
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
 
 /// Acquires block number locks in all partitions.

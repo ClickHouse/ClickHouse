@@ -91,7 +91,7 @@ static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
         throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 }
 
-size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const KeeperAccessPtr & zookeeper)
+size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     if (!isQuorumEnabled())
         return 0;
@@ -171,7 +171,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
 
-    KeeperAccessPtr zookeeper = KeeperAccess::createInstance(
+    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFailtInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,
         storage.getZooKeeper(),
@@ -279,7 +279,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         finishDelayedChunk(zookeeper);
 }
 
-void ReplicatedMergeTreeSink::finishDelayedChunk(const KeeperAccessPtr & zookeeper)
+void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     if (!delayed_chunk)
         return;
@@ -318,7 +318,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     /// NOTE: No delay in this case. That's Ok.
 
     assertSessionIsNotExpired(storage.getZooKeeper());
-    auto zookeeper = std::make_shared<KeeperAccess>(storage.getZooKeeper());
+    auto zookeeper = std::make_shared<ZooKeeperWithFailtInjection>(storage.getZooKeeper());
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
@@ -338,7 +338,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 }
 
 void ReplicatedMergeTreeSink::commitPart(
-    const KeeperAccessPtr & zookeeper,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
     DataPartStorageBuilderPtr builder,
@@ -693,11 +693,11 @@ void ReplicatedMergeTreeSink::onFinish()
     auto zookeeper = storage.getZooKeeper();
     /// todo: check this place, afaiu, it can be called after Generate apart of Consume
     assertSessionIsNotExpired(zookeeper);
-    finishDelayedChunk(std::make_shared<KeeperAccess>(zookeeper));
+    finishDelayedChunk(std::make_shared<ZooKeeperWithFailtInjection>(zookeeper));
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(
-    const KeeperAccessPtr & zookeeper,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
     const std::string & is_active_node_value,

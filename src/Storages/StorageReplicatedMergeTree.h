@@ -83,8 +83,8 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class KeeperAccess;
-using KeeperAccessPtr = std::shared_ptr<KeeperAccess>;
+class ZooKeeperWithFailtInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFailtInjection>;
 
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
@@ -713,7 +713,7 @@ private:
     /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
-        const KeeperAccessPtr & zookeeper,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
         const String & zookeeper_block_id_path = "",
         const String & zookeeper_path_prefix = "") const;
 
