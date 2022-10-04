@@ -610,4 +610,4 @@ def test_big_insert(cluster):
             else:
                 assert max_single_part_upload_size == block.size
             id += 1
-    assert checked  
+    assert checked
