@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
@@ -676,8 +677,30 @@ Block HashJoin::structureRightBlock(const Block & block) const
     return structured_block;
 }
 
+static void debugBlock(const Block & block, size_t line, const void * inst)
+{
+    size_t count = 0;
+    if (!block.has("t2.key"))
+    {
+        return;
+    }
+
+    auto col = block.getByName("t2.key").column;
+    for (size_t i = 0; i < col->size(); ++i)
+    {
+        if (col->get64(i) == 54)
+            count++;
+    }
+
+    if (count > 1)
+    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} [{}] AAA: {} | {} | {}", __FILE__, line, inst, count, block.dumpStructure(), StackTrace().toString()   );
+    }
+}
+
 bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 {
+    debugBlock(source_block, __LINE__, fmt::ptr(this));
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
@@ -1679,6 +1702,71 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+template <typename Mapped, typename Msg>
+static void debugRowRef(const Mapped & mapped, const Msg & msg)
+{
+    UNUSED(mapped);
+    UNUSED(msg);
+    if constexpr (std::is_same_v<Mapped, RowRefList>)
+    {
+        std::vector<String> ss;
+        std::set<const Block *> blocks;
+        auto it = mapped.begin();
+        while (it.ok())
+        {
+            ss.push_back(fmt::format("{}:{}", it->row_num, fmt::ptr(it->block)));
+            blocks.insert(it->block);
+            ++it;
+        }
+
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}", __FILE__, __LINE__, fmt::join(ss, ","));
+
+        for (const auto & block : blocks)
+        {
+            LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {} - {}", __FILE__, __LINE__,
+                fmt::ptr(block), block->dumpStructure());
+        }
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}", __FILE__, __LINE__, typeid(Mapped).name());
+    }
+}
+
+void HashJoin::debugKeys() const
+{
+    if (data)
+        return;
+
+    for (const auto & map : data->maps)
+    {
+        joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_)
+        {
+            auto cb = [this](const auto & rr) { debugRowRef(rr, fmt::ptr(this)); };
+
+            if (map_.key8)
+                map_.key8->forEachMapped(cb);
+            if (map_.key16)
+                map_.key16->forEachMapped(cb);
+            if (map_.key32)
+                map_.key32->forEachMapped(cb);
+            if (map_.key64)
+                map_.key64->forEachMapped(cb);
+            if (map_.key_string)
+                map_.key_string->forEachMapped(cb);
+            if (map_.key_fixed_string)
+                map_.key_fixed_string->forEachMapped(cb);
+            if (map_.keys128)
+                map_.keys128->forEachMapped(cb);
+            if (map_.keys256)
+                map_.keys256->forEachMapped(cb);
+            if (map_.hashed)
+                map_.hashed->forEachMapped(cb);
+        });
+    }
+
+}
+
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     for (const auto & onexpr : table_join->getClauses())
@@ -1948,7 +2036,7 @@ private:
     }
 };
 
-std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
+std::unique_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
                                                               const Block & result_sample_block,
                                                               UInt64 max_block_size) const
 {
@@ -1962,7 +2050,7 @@ std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left
         /// ... calculate `left_columns_count` ...
         size_t left_columns_count = left_sample_block.columns();
         auto non_joined = std::make_unique<NotJoinedHash<true>>(*this, max_block_size);
-        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
 
     }
     else
@@ -1970,7 +2058,7 @@ std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left
         size_t left_columns_count = left_sample_block.columns();
         assert(left_columns_count == result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedHash<false>>(*this, max_block_size);
-        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
     }
 }
 

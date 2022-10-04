@@ -46,7 +46,8 @@ class GraceHashJoin final : public IJoin
     class DelayedBlocks;
     class InMemoryJoin;
 
-    using Buckets = std::vector<std::shared_ptr<FileBucket>>;
+    using BucketPtr = std::shared_ptr<FileBucket>;
+    using Buckets = std::vector<BucketPtr>;
     using InMemoryJoinPtr = std::unique_ptr<InMemoryJoin>;
 
 public:
@@ -73,7 +74,7 @@ public:
 
     bool supportParallelJoin() const override { return true; }
 
-    std::shared_ptr<NotJoinedBlocks>
+    std::unique_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
@@ -94,7 +95,7 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_index, const Block & block);
     /// Rebuild @join after rehash: scatter the blocks in join and write parts that belongs to the other shards to disk.
-    void rehashInMemoryJoin(InMemoryJoinPtr & join, const BucketsSnapshot & snapshot, size_t bucket);
+    void rehashInMemoryJoin(InMemoryJoinPtr & join, const Buckets & buckets_snapshot, size_t bucket);
     /// Check that @join satisifes limits on rows/bytes in @table_join.
     bool fitsInMemory(InMemoryJoin * join) const;
 
@@ -108,7 +109,8 @@ private:
     ///
     /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
     /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    void rehashBuckets();
+    Buckets rehashBuckets();
+
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
 
@@ -126,12 +128,15 @@ private:
     size_t max_num_buckets;
     size_t max_block_size;
 
+    Names left_key_names;
+    Names right_key_names;
+
     InMemoryJoinPtr first_bucket;
 
     TemporaryDataOnDiskPtr tmp_data;
 
     Buckets buckets;
-    std::shared_mutex rehash_mutex;
+    mutable std::shared_mutex rehash_mutex;
 
     std::atomic<bool> started_reading_delayed_blocks{false};
 

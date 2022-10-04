@@ -11,14 +11,15 @@
 namespace DB
 {
 
-class Block;
-
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class TableJoin;
 class NotJoinedBlocks;
-class IDelayedJoinedBlocksStream;
+class IBlocksStream;
+
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 enum class JoinPipelineType
 {
@@ -79,17 +80,33 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
 
-    virtual std::shared_ptr<NotJoinedBlocks>
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
-
     /// Peek next stream of delayed joined blocks.
-    virtual std::unique_ptr<IDelayedJoinedBlocksStream> getDelayedBlocks(IDelayedJoinedBlocksStream * /*prev_cursor*/) { return nullptr; }
+    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size)
+    {
+        if (non_joined_returned.exchange(true))
+            return nullptr;
+
+        return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
+
+    /// TODO(vdimir@): make private
+    virtual std::unique_ptr<NotJoinedBlocks>
+        getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
 private:
     Block totals;
+
+    std::atomic_bool non_joined_returned = false;
 };
 
+class IBlocksStream
+{
+public:
+    /// Returns empty block on EOF
+    virtual Block next() = 0;
 
-using JoinPtr = std::shared_ptr<IJoin>;
+    virtual ~IBlocksStream() = default;
+};
 
 }

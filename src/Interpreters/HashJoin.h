@@ -186,7 +186,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(
+    std::unique_ptr<NotJoinedBlocks> getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
@@ -353,6 +353,8 @@ public:
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
+
+    void debugKeys() const;
 
 private:
     template<bool> friend class NotJoinedHash;

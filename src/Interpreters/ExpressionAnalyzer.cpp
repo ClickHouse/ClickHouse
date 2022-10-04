@@ -1017,6 +1017,12 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const auto & settings = context->getSettings();
 
     Block left_sample_block(left_sample_columns);
+    for (auto & column : left_sample_block)
+    {
+        if (!column.column)
+            column.column = column.type->createColumn();
+    }
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
 
     std::vector<String> tried_algorithms;

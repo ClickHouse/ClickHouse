@@ -116,7 +116,7 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoinedBlocks final
+class NotJoinedBlocks final : public IBlocksStream
 {
 public:
     using LeftToRightKeyRemap = std::unordered_map<String, String>;
@@ -138,7 +138,7 @@ public:
               size_t left_columns_count,
               const LeftToRightKeyRemap & left_to_right_key_remap);
 
-    Block read();
+    Block next() override;
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);
@@ -168,17 +168,6 @@ private:
     std::vector<std::pair<size_t, bool>> right_lowcard_changes;
 
     void setRightIndex(size_t right_pos, size_t result_position);
-};
-
-/// Iterator over delayed joined blocks.
-/// Used by GraceHashJoin which must accumulate all blocks from the left table before actual processing.
-class IDelayedJoinedBlocksStream
-{
-public:
-    virtual ~IDelayedJoinedBlocksStream() = default;
-
-    /// Returns empty block on EOF.
-    virtual Block next() = 0;
 };
 
 }

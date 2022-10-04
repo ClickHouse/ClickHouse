@@ -7,6 +7,7 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
+#include <fmt/format.h>
 
 #include <Common/logger_useful.h>
 
@@ -94,6 +95,7 @@ struct TemporaryFileStream::OutputWriter
         if (finalized)
             throw Exception("Cannot write to finalized stream", ErrorCodes::LOGICAL_ERROR);
         out_writer.write(block);
+        num_rows += block.rows();
     }
 
 
@@ -126,6 +128,8 @@ struct TemporaryFileStream::OutputWriter
     WriteBufferFromFile out_file_buf;
     CompressedWriteBuffer out_compressed_buf;
     NativeWriter out_writer;
+
+    std::atomic_size_t num_rows = 0;
 
     bool finalized = false;
 };
@@ -229,6 +233,7 @@ void TemporaryFileStream::updateAllocAndCheck()
     parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
+    stat.num_rows = out_writer->num_rows;
 }
 
 bool TemporaryFileStream::isFinalized() const
