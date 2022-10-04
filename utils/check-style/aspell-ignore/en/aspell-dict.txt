@@ -22,6 +22,7 @@ CentOS
 ClickHouse
 ClickHouse's
 Config
+ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -94,6 +95,7 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
+NYPD
 NuRaft
 Ok
 OpenSUSE
@@ -106,13 +108,13 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
-PrettyNoEscapes
-PrettySpace
-PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
+PrettyNoEscapes
 PrettyNoEscapesMonoBlock
+PrettySpace
 PrettySpaceMonoBlock
+PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
@@ -132,6 +134,7 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
+SelfManaged
 Stateful
 Submodules
 Subqueries
@@ -241,6 +244,7 @@ ddl
 deallocation
 debian
 decompressor
+denormalizing
 denormals
 deserialization
 deserialized
@@ -379,13 +383,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
-prettynoescapes
-prettyspace
-prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
+prettynoescapes
 prettynoescapesmonoblock
+prettyspace
 prettyspacemonoblock
+prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
