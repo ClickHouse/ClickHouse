@@ -74,7 +74,7 @@ public:
         auto * denominator_type = toNativeType<Denominator>(b);
 
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getElementType();
+        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getPointerElementType();
         auto * denominator_offset_ptr = b.CreateConstInBoundsGEP1_64(ty_aggregate_data_ptr, aggregate_data_ptr, denominator_offset);
         auto * denominator_ptr = b.CreatePointerCast(denominator_offset_ptr, denominator_type->getPointerTo());
 

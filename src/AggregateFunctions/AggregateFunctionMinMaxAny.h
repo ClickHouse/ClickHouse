@@ -201,7 +201,7 @@ public:
         static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
 
         auto * type = toNativeType<T>(builder);
-        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getElementType();
+        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getPointerElementType();
         auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(ty_aggregate_data_ptr, aggregate_data_ptr, value_offset_from_structure);
         auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
 
