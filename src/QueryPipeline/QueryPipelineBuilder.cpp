@@ -484,7 +484,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
     auto joined_header = JoiningTransform::transformHeader(left_header, join);
-    auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, num_streams + num_streams, delayed_ports_numbers);
+    auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
     if (collected_processors)
         collected_processors->emplace_back(delayed_processor);
     left->pipe.processors.emplace_back(delayed_processor);

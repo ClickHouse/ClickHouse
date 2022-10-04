@@ -81,7 +81,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
+    std::unique_ptr<IBlocksStream> non_joined_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);

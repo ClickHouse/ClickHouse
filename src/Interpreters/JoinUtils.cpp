@@ -597,7 +597,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     size_t num_cols = block.columns();
 
     /// Use non-standard initial value so as not to degrade hash map performance inside shard that uses the same CRC32 algorithm.
-    WeakHash32 hash(num_rows, 0x3d2738a3u);
+    WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
@@ -639,8 +639,9 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
 {
     if (num_shards == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
-    if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
+    UNUSED(scatterBlockByHashPow2);
+    // if (likely(isPowerOf2(num_shards)))
+    //     return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 
@@ -812,7 +813,7 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
     }
 }
 
-Block NotJoinedBlocks::read()
+Block NotJoinedBlocks::next()
 {
     Block result_block = result_sample_block.cloneEmpty();
     {

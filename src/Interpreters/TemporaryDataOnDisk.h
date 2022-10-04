@@ -113,6 +113,7 @@ public:
         /// Non-atomic because we don't allow to `read` or `write` into single file from multiple threads
         size_t compressed_size = 0;
         size_t uncompressed_size = 0;
+        size_t num_rows = 0;
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
@@ -151,3 +152,19 @@ private:
 };
 
 }
+
+template<>
+struct fmt::formatter<DB::TemporaryFileStream::Stat>
+{
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext & context)
+    {
+        return context.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(const DB::TemporaryFileStream::Stat & stat, FormatContext & context)
+    {
+        return fmt::format_to(context.out(), "{}/{} - {}", stat.compressed_size, stat.uncompressed_size, stat.num_rows);
+    }
+};

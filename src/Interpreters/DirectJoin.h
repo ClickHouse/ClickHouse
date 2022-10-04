@@ -42,7 +42,7 @@ public:
 
     virtual bool isFilled() const override { return true; }
 
-    virtual std::shared_ptr<NotJoinedBlocks>
+    virtual std::unique_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
         return nullptr;

@@ -161,7 +161,7 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
+std::unique_ptr<IBlocksStream> ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
