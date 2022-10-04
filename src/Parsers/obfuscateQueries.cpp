@@ -39,7 +39,7 @@ const std::unordered_set<std::string_view> keywords
     "ROLE",         "PROFILE",    "QUOTA",    "POLICY",   "ROW",       "GRANT",     "REVOKE",      "OPTION",     "ADMIN",       "EXCEPT",
     "REPLACE",      "IDENTIFIED", "HOST",     "NAME",     "READONLY",  "WRITABLE",  "PERMISSIVE",  "FOR",        "RESTRICTIVE", "RANDOMIZED",
     "INTERVAL",     "LIMITS",     "ONLY",     "TRACKING", "IP",        "REGEXP",    "ILIKE",       "DICTIONARY", "OFFSET",      "TRIM",
-    "LTRIM",        "RTRIM",      "BOTH",     "LEADING",  "TRAILING"
+    "LTRIM",        "RTRIM",      "BOTH",     "LEADING",  "TRAILING",  "CLEANUP"
 };
 
 const std::unordered_set<std::string_view> keep_words

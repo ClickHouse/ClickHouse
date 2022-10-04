@@ -4457,8 +4457,15 @@ bool StorageReplicatedMergeTree::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool with_cleanup,
     ContextPtr query_context)
 {
+    if (final && with_cleanup)
+    {
+        LOG_DEBUG(log, "[StorageReplicatedMergeTree::optimize] - WITH CLEANUP ");
+        // TODO: create a task to schedule with with_cleanup
+    }
+
     /// NOTE: exclusive lock cannot be used here, since this may lead to deadlock (see comments below),
     /// but it should be safe to use non-exclusive to avoid dropping parts that may be required for processing queue.
     auto table_lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);

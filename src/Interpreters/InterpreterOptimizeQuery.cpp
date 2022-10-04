@@ -75,7 +75,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
     }
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
+    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.with_cleanup, getContext());
 
     return {};
 }
