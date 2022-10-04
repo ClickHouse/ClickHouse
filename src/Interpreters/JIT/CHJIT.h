@@ -6,6 +6,7 @@
 
 #include <unordered_map>
 #include <atomic>
+#include <mutex>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
