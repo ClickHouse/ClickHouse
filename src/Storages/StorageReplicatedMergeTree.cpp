@@ -7639,17 +7639,30 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
 namespace
 {
 
+/// What is going on here?
+/// Actually we need this code because of flaws in hardlinks tracking. When we create child part during mutation we can hardlink some files from parent part, like
+/// all_0_0_0:
+///                     a.bin a.mrk2 columns.txt ...
+/// all_0_0_0_1:          ^     ^
+///                     a.bin a.mrk2 columns.txt
+/// So when we deleting all_0_0_0 it doesn't remove blobs for a.bin and a.mrk2 because all_0_0_0_1 use them.
+/// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this replica.
+/// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
+/// still need parent part.
 NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version)
 {
     NameSet files_not_to_remove;
 
     MergeTreePartInfo part_info = MergeTreePartInfo::fromPartName(part_info_str, format_version);
+    /// No mutations -- no hardlinks -- no issues
     if (part_info.mutation == 0)
         return files_not_to_remove;
 
-    auto parts_str = zookeeper_ptr->getChildren(zero_copy_part_path_prefix);
+    /// Getting all zero copy parts
+    Strings parts_str;
+    zookeeper_ptr->tryGetChildren(zero_copy_part_path_prefix, parts_str);
 
-
+    /// Parsing infos
     std::vector<MergeTreePartInfo> parts_infos;
     for (const auto & part_str : parts_str)
     {
@@ -7657,16 +7670,25 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
         parts_infos.push_back(parent_candidate_info);
     }
 
+    /// Sort is important. We need to find our closest parent, like:
+    /// for part all_0_0_0_64 we can have parents
+    /// all_0_0_0_6 < we need closes parent, not others
+    /// all_0_0_0_1
+    /// all_0_0_0
     std::sort(parts_infos.begin(), parts_infos.end());
 
+    /// In reverse order to process from bigger to smaller
     for (const auto & parent_candidate_info : parts_infos | std::views::reverse)
     {
         if (parent_candidate_info == part_info)
             continue;
 
+        /// We are mutation child of this parent
         if (part_info.isMutationChildOf(parent_candidate_info))
         {
-            String files_not_to_remove_str = zookeeper_ptr->get(fs::path(zero_copy_part_path_prefix) / parent_candidate_info.getPartName());
+            /// Get hardlinked files
+            String files_not_to_remove_str;
+            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / parent_candidate_info.getPartName(), files_not_to_remove_str);
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
             break;
         }
