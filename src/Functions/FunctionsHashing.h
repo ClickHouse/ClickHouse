@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -620,29 +621,38 @@ struct ImplXxHash64
 };
 
 
-#if USE_BLAKE3
 struct ImplBLAKE3
 {
-    static constexpr auto name = "blake3";
+    static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
+    #if !USE_BLAKE3
+    [[ noreturn ]]
+    #endif
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-        #if defined(MEMORY_SANITIZER)
-            auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
-            __msan_unpoison(out_char_data, length);
+        #if USE_BLAKE3
+            #if defined(MEMORY_SANITIZER)
+                auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+                __msan_unpoison(out_char_data, length);
+            #else
+                auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+            #endif
+            if (err_msg != nullptr)
+            {
+                auto err_st = std::string(err_msg);
+                blake3_free_char_pointer(err_msg);
+                throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
         #else
-            auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+            (void) begin;
+            (void) size;
+            (void) out_char_data;
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
         #endif
-        if (err_msg != nullptr)
-        {
-            auto err_st = std::string(err_msg);
-            blake3_free_char_pointer(err_msg);
-            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
     }
 };
-#endif
+
 
 
 template <typename Impl>
