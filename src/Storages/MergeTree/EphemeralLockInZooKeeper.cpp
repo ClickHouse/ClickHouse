@@ -20,6 +20,13 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
     path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
     if (path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("EphemeralLockInZooKeeper"),
+        "Path created: path={} path_prefix={} holder_path={}",
+        path,
+        path_prefix,
+        holder_path);
 }
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
@@ -89,17 +96,28 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
     catch (const zkutil::KeeperException & e)
     {
         if (Coordination::isHardwareError(e.code))
-            LOG_WARNING(
-                &Poco::Logger::get("~EphemeralLockInZooKeeper"),
+            LOG_DEBUG(
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
                 "ZooKeeper communication error during unlock: code={} message='{}'",
                 e.code,
                 e.message());
+        else if (e.code == Coordination::Error::ZNONODE)
+            /// To avoid additional round-trip for unlocking,
+            /// ephemeral node can be deleted explicitly as part of another multi op request to ZK
+            /// and marked as such via assumeUnlocked() if we got successful response.
+            /// But it's possible that the multi op request can be executed on server side, and client will not get response due to network issue.
+            /// In such case, assumeUnlocked() will not be called, so we'll get ZNONODE error here since the noded is already deleted
+            LOG_DEBUG(
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
+                "ZooKeeper node was already deleted: code={} message={}",
+                e.code,
+                e.message());
         else
-            tryLogCurrentException("~EphemeralLockInZooKeeper");
+            tryLogCurrentException("EphemeralLockInZooKeeper");
     }
     catch (...)
     {
-        tryLogCurrentException("~EphemeralLockInZooKeeper");
+        tryLogCurrentException("EphemeralLockInZooKeeper");
     }
 }
 
