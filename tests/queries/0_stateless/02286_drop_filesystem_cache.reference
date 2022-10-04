@@ -21,7 +21,7 @@ SELECT count() FROM system.filesystem_cache;
 SELECT * FROM test FORMAT Null;
 SELECT count() FROM system.filesystem_cache;
 1
-SYSTEM DROP FILESYSTEM CACHE './data'; -- { serverError 36 }
+SYSTEM DROP FILESYSTEM CACHE 'kek'; -- { serverError 36 }
 SELECT count() FROM system.filesystem_cache;
 1
 SELECT * FROM test FORMAT Null;
@@ -63,7 +63,7 @@ INSERT INTO test2 SELECT number, toString(number) FROM numbers(100);
 SELECT * FROM test2 FORMAT Null;
 SELECT count() FROM system.filesystem_cache;
 2
-SYSTEM DROP FILESYSTEM CACHE 's3_cache_2/';
+SYSTEM DROP FILESYSTEM CACHE 's3_cache_2';
 SELECT count() FROM system.filesystem_cache;
 0
 
@@ -90,7 +90,7 @@ SELECT count() FROM system.filesystem_cache;
 SELECT * FROM test FORMAT Null;
 SELECT count() FROM system.filesystem_cache;
 1
-SYSTEM DROP FILESYSTEM CACHE './data'; -- { serverError 36 }
+SYSTEM DROP FILESYSTEM CACHE 'kek'; -- { serverError 36 }
 SELECT count() FROM system.filesystem_cache;
 1
 SELECT * FROM test FORMAT Null;
@@ -132,7 +132,6 @@ INSERT INTO test2 SELECT number, toString(number) FROM numbers(100);
 SELECT * FROM test2 FORMAT Null;
 SELECT count() FROM system.filesystem_cache;
 2
-SYSTEM DROP FILESYSTEM CACHE 'local_cache_2/';
+SYSTEM DROP FILESYSTEM CACHE 'local_cache_2';
 SELECT count() FROM system.filesystem_cache;
 0
-

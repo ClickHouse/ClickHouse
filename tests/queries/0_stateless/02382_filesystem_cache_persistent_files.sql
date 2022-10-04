@@ -3,7 +3,7 @@
 -- { echo }
 
 SET enable_filesystem_cache_on_write_operations=0;
-
+SYSTEM DROP BACKGROUND FILESYSTEM CACHE DOWNLOAD;
 SYSTEM DROP FILESYSTEM CACHE;
 
 DROP TABLE IF EXISTS nopers;
