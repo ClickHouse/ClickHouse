@@ -35,11 +35,12 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
+            rustc \
+            cargo \
             zstd \
             file \
             pv \
     && apt-get clean
-
 
 RUN pip3 install numpy scipy pandas Jinja2
 

@@ -2,6 +2,7 @@
 slug: /en/operations/server-configuration-parameters/
 sidebar_position: 54
 sidebar_label: Server Configuration Parameters
+pagination_next: en/operations/server-configuration-parameters/settings
 ---
 
 # Server Configuration Parameters 
