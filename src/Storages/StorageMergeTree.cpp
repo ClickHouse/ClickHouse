@@ -1305,10 +1305,10 @@ bool StorageMergeTree::optimize(
             LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
     }
 
-    if (final && with_cleanup)
+    if (final && with_cleanup && this->merging_params.mode == MergingParams::Mode::Replacing)
     {
         LOG_DEBUG(log, "[StorageMergeTree::optimize] - WITH CLEANUP ");
-        // TODO: create a task to schedule with with_cleanup where we delete data with `is_deleted` to true and all previous version
+        // TODO: create a task to schedule with with_cleanup where we delete data from a ReplacingMergeTree table with `is_deleted` to true and all previous version
 
     }
     auto txn = local_context->getCurrentTransaction();
