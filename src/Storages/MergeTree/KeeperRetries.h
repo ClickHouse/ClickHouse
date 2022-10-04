@@ -56,7 +56,7 @@ public:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "{}/{}: succeeded after: iterations={} total_retries={}",
+                    "KeeperRetries: {}/{}: succeeded after: iterations={} total_retries={}",
                     retries_info.name,
                     name,
                     iteration_count,
@@ -143,6 +143,8 @@ public:
 
     void requestUnconditionalRetry() { unconditional_retry = true; }
 
+    bool isLastRetry() const { return retries_info.retry_count == retries_info.max_retries; }
+
 private:
     struct KeeperError
     {
@@ -173,7 +175,7 @@ private:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "{}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    "KeeperRetires: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,
                     header,
@@ -187,7 +189,7 @@ private:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "{}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    "KeeperRetires: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,
                     header,

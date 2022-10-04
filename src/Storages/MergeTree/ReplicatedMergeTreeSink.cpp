@@ -555,7 +555,6 @@ void ReplicatedMergeTreeSink::commitPart(
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
-
         if (multi_code == Coordination::Error::ZOK)
         {
             transaction.commit();
@@ -565,20 +564,34 @@ void ReplicatedMergeTreeSink::commitPart(
             if (block_number_lock)
                 block_number_lock->assumeUnlocked();
         }
-        else if (multi_code == Coordination::Error::ZCONNECTIONLOSS
-            || multi_code == Coordination::Error::ZOPERATIONTIMEOUT)
+        else if (Coordination::isHardwareError(multi_code))
         {
-            /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
-              *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-              */
-            transaction.commit();
-            storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+            if (!retries_ctl.isLastRetry())
+            {
+                /// We will try to add this part again on the new iteration as it's just a new part.
+                /// So remove it from storage parts set immediately and transfer state to temporary.
+                transaction.rollbackPartsToTemporaryState();
 
-            /// We do not know whether or not data has been inserted.
-            retries_ctl.setUserError(
-                ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-                "Unknown status, client must retry. Reason: {}",
-                Coordination::errorMessage(multi_code));
+                part->is_temp = true;
+                part->renameTo(temporary_part_relative_path, false, builder);
+                builder->commit();
+
+                retries_ctl.setKeeperError(multi_code, "");
+            }
+            else
+            {
+                /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
+                 *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
+                 */
+                transaction.commit();
+                storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+
+                /// We do not know whether or not data has been inserted.
+                retries_ctl.setUserError(
+                    ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Unknown status, client must retry. Reason: {}",
+                    Coordination::errorMessage(multi_code));
+            }
             return;
         }
         else if (Coordination::isUserError(multi_code))
@@ -629,18 +642,6 @@ void ReplicatedMergeTreeSink::commitPart(
                     Coordination::errorMessage(multi_code),
                     failed_op_path);
             }
-        }
-        else if (Coordination::isHardwareError(multi_code))
-        {
-            storage.unlockSharedData(*part);
-            transaction.rollback();
-            retries_ctl.setUserError(
-                ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                "Unrecoverable network error while adding block {} with ID '{}': {}",
-                block_number,
-                block_id,
-                Coordination::errorMessage(multi_code));
-            return;
         }
         else
         {

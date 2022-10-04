@@ -12,7 +12,6 @@ namespace DB
 class RandomFaultInjection
 {
 public:
-    RandomFaultInjection() : rndgen(0), distribution(.0) { }
     RandomFaultInjection(double probability, UInt64 seed_) : rndgen(seed_), distribution(probability) { }
 
     void beforeOperation()
@@ -39,8 +38,7 @@ class KeeperAccess
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
-    RandomFaultInjection random_fault_injection;
-    RandomFaultInjection * fault_policy = nullptr;
+    std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
     UInt64 calls_total = 0;
@@ -54,16 +52,15 @@ class KeeperAccess
         std::string name_,
         Poco::Logger * logger_ = nullptr)
         : keeper(keeper_)
-        , random_fault_injection(fault_injection_probability, fault_injection_seed)
         , name(std::move(name_))
         , logger(logger_)
         , seed(fault_injection_seed)
     {
         if (fault_injection_probability > .0)
-            fault_policy = &random_fault_injection;
+            fault_policy = std::make_unique<RandomFaultInjection>(fault_injection_probability, fault_injection_seed);
 
         if (unlikely(logger))
-            LOG_TRACE(logger, "KeeperAccess created: name={} seed={}", name, seed);
+            LOG_TRACE(logger, "KeeperAccess created: name={} seed={} fault_probability={}", name, seed, fault_injection_probability);
     }
 
 public:
@@ -204,20 +201,11 @@ private:
                     path,
                     e.code,
                     e.message());
-            throw;
-        }
-        catch (const Exception & e)
-        {
-            if (unlikely(logger))
-                LOG_TRACE(
-                    logger,
-                    "KeeperAccess call FAILED: seed={} func={} path={} code={} message={} ",
-                    seed,
-                    func_name,
-                    path,
-                    e.code(),
-                    e.message());
-            throw;
+
+            if constexpr (std::is_same_v<Coordination::Error, Result>)
+                return e.code;
+            else
+                throw;
         }
     }
 };

@@ -45,7 +45,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e != Coordination::Error::ZOK)
         {
-            if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            if (!responses.empty() && responses.front()->error == Coordination::Error::ZNODEEXISTS)
             {
                 return {};
             }
