@@ -322,6 +322,15 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 }
 
 
+VolumePtr StoragePolicy::tryGetVolumeByDisk(const DiskPtr & disk_ptr) const
+{
+    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
+    if (it == volume_index_by_disk_name.end())
+        return nullptr;
+    return getVolume(it->second);
+}
+
+
 void StoragePolicy::buildVolumeIndices()
 {
     for (size_t index = 0; index < volumes.size(); ++index)
