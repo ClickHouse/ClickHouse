@@ -7,6 +7,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -143,6 +144,7 @@ def create_restore_file(node, revision=None, bucket=None, path=None, detached=No
     node.exec_in_container(
         ["bash", "-c", "mkdir -p /var/lib/clickhouse/disks/s3/"], user="root"
     )
+
     node.exec_in_container(
         ["bash", "-c", "touch /var/lib/clickhouse/disks/s3/restore"], user="root"
     )
@@ -594,7 +596,8 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
 
     # Detach some partition.
     node.query("ALTER TABLE s3.test DETACH PARTITION '2020-01-07'")
-    wait_for_delete_empty_parts(node, "s3.test")
+    wait_for_delete_empty_parts(node, "s3.test", retry_count=120)
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
 
     node.query("ALTER TABLE s3.test FREEZE")
     revision = get_revision_counter(node, 1)
