@@ -83,6 +83,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool with_cleanup,
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
