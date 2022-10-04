@@ -343,12 +343,13 @@ void Planner::buildQueryPlanIfNeeded()
             settings.empty_result_for_aggregation_by_empty_set
                 || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && aggregation_analysis_result.aggregation_keys.empty()
                     && aggregation_analysis_result.group_by_with_constant_keys),
-            planner_context->getQueryContext()->getTemporaryVolume(),
+            planner_context->getQueryContext()->getTempDataOnDisk(),
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data,
             settings.compile_aggregate_expressions,
             settings.min_count_to_compile_aggregate_expression,
             settings.max_block_size,
+            settings.enable_software_prefetch_in_aggregation,
             /* only_merge */ false,
             stats_collecting_params
         );
@@ -478,7 +479,7 @@ void Planner::buildQueryPlanIfNeeded()
                     settings.max_bytes_before_remerge_sort,
                     settings.remerge_sort_lowered_memory_bytes_ratio,
                     settings.max_bytes_before_external_sort,
-                    query_context->getTemporaryVolume(),
+                    query_context->getTempDataOnDisk(),
                     settings.min_free_disk_space_for_temporary_data,
                     settings.optimize_sorting_by_input_stream_properties);
 
@@ -550,7 +551,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.max_bytes_before_remerge_sort,
             settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort,
-            planner_context->getQueryContext()->getTemporaryVolume(),
+            planner_context->getQueryContext()->getTempDataOnDisk(),
             settings.min_free_disk_space_for_temporary_data,
             settings.optimize_sorting_by_input_stream_properties);
 
