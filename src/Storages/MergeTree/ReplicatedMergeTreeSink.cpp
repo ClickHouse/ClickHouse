@@ -164,7 +164,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     const auto & settings = context->getSettingsRef();
-    keeper_retries_info = KeeperRetriesInfo(
+    keeper_retries_info = ZooKeeperRetriesInfo(
         "ReplicatedMergeTreeSink::consume",
         log,
         settings.insert_keeper_max_retries,

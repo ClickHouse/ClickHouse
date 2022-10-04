@@ -12,10 +12,10 @@ namespace ErrorCodes
     extern const int OK;
 }
 
-struct KeeperRetriesInfo
+struct ZooKeeperRetriesInfo
 {
-    KeeperRetriesInfo() = default;
-    KeeperRetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+    ZooKeeperRetriesInfo() = default;
+    ZooKeeperRetriesInfo(std::string name_, Poco::Logger * logger_, UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : name(std::move(name_))
         , logger(logger_)
         , max_retries(max_retries_)
@@ -32,10 +32,10 @@ struct KeeperRetriesInfo
     UInt64 retry_count = 0;
 };
 
-class KeeperRetriesControl
+class ZooKeeperRetriesControl
 {
 public:
-    KeeperRetriesControl(std::string name_, KeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_) { }
+    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_) { }
 
     bool canTry()
     {
@@ -202,7 +202,7 @@ private:
 
 
     std::string name;
-    KeeperRetriesInfo & retries_info;
+    ZooKeeperRetriesInfo & retries_info;
     Int64 iteration_count = -1;
     UserError user_error;
     KeeperError keeper_error;

@@ -62,7 +62,7 @@ public:
     }
 
 private:
-    KeeperRetriesInfo keeper_retries_info;
+    ZooKeeperRetriesInfo keeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
