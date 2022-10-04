@@ -868,7 +868,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto extension = src_storage_cluster.getTaskIteratorExtension(nullptr, local_context);
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    /// Select query is needed for pruining on virtual columns
+    auto extension = src_storage_cluster.getTaskIteratorExtension(
+        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
+        local_context);
 
     auto dst_cluster = getCluster();
 
@@ -939,6 +943,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
     StoragePtr src_storage;
 
+    /// Distributed write only works in the most trivial case INSERT ... SELECT
+    /// without any unions or joins on the right side
     if (select.list_of_selects->children.size() == 1)
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())

@@ -48,9 +48,6 @@ private:
     String uri;
     String format_name;
     String compression_method;
-
-    ClusterPtr cluster;
-    RemoteQueryExecutor::Extension extension;
 };
 
 
