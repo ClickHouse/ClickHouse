@@ -9,7 +9,7 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class NotJoinedBlocks;
-class IDelayedJoinedBlocksStream;
+class IBlocksStream;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -125,7 +125,7 @@ public:
 
 private:
     JoinPtr join;
-    std::unique_ptr<IDelayedJoinedBlocksStream> delayed_blocks;
+    std::unique_ptr<IBlocksStream> delayed_blocks;
     Chunk output_chunk;
     bool finished = false;
 };

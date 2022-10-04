@@ -91,7 +91,7 @@ public:
     }
 
     /// TODO(vdimir@): make private
-    virtual std::unique_ptr<NotJoinedBlocks>
+    virtual std::unique_ptr<IBlocksStream>
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
 private:

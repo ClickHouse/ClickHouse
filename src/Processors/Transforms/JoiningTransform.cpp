@@ -145,7 +145,7 @@ void JoiningTransform::work()
             }
         }
 
-        Block block = non_joined_blocks->read();
+        Block block = non_joined_blocks->next();
         if (!block)
         {
             process_non_joined = false;
@@ -342,29 +342,29 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
 void DelayedJoinedBlocksTransform::work()
 {
-    if (!delayed_blocks)
-    {
-        delayed_blocks = join->getDelayedBlocks(nullptr);
-    }
+//     if (!delayed_blocks)
+//     {
+//         delayed_blocks = join->getDelayedBlocks(nullptr);
+//     }
 
-    Block block;
-    while (!block && delayed_blocks)
-    {
-        block = delayed_blocks->next();
-        if (!block)
-            delayed_blocks = join->getDelayedBlocks(delayed_blocks.get());
-    }
+//     Block block;
+//     while (!block && delayed_blocks)
+//     {
+//         block = delayed_blocks->next();
+//         if (!block)
+//             delayed_blocks = join->getDelayedBlocks(delayed_blocks.get());
+//     }
 
-    if (!block)
-    {
-        assert(!delayed_blocks);
-        finished = true;
-        return;
-    }
+//     if (!block)
+//     {
+//         assert(!delayed_blocks);
+//         finished = true;
+//         return;
+//     }
 
-    // Add block to the output
-    auto rows = block.rows();
-    output_chunk.setColumns(block.getColumns(), rows);
+//     // Add block to the output
+//     auto rows = block.rows();
+//     output_chunk.setColumns(block.getColumns(), rows);
 }
 
 }
