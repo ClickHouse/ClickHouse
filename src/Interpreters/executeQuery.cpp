@@ -892,7 +892,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto progress_callback = context->getProgressCallback();
                     if (progress_callback)
                     {
-                        Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                        Progress p;
                         p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
                         progress_callback(p);
                     }
