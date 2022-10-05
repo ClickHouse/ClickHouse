@@ -37,26 +37,27 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 {
     auto caches = FileCacheFactory::instance().getAll();
 
-    for (const auto & [cache_base_path, cache_data] : caches)
+    for (const auto & [cache_name, cache_data] : caches)
     {
         const auto & cache = cache_data->cache;
         auto file_segments = cache->getSnapshot();
 
         for (const auto & file_segment : file_segments)
         {
-            res_columns[0]->insert(cache_base_path);
-            res_columns[1]->insert(
+            res_columns[0]->insert(cache_name);
+            res_columns[1]->insert(cache->getBasePath());
+            res_columns[2]->insert(
                 cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent()));
 
             const auto & range = file_segment->range();
-            res_columns[2]->insert(range.left);
-            res_columns[3]->insert(range.right);
-            res_columns[4]->insert(range.size());
-            res_columns[5]->insert(FileSegment::stateToString(file_segment->state()));
-            res_columns[6]->insert(file_segment->getHitsCount());
-            res_columns[7]->insert(file_segment->getRefCount());
-            res_columns[8]->insert(file_segment->getDownloadedSize());
-            res_columns[9]->insert(file_segment->isPersistent());
+            res_columns[3]->insert(range.left);
+            res_columns[4]->insert(range.right);
+            res_columns[5]->insert(range.size());
+            res_columns[6]->insert(FileSegment::stateToString(file_segment->state()));
+            res_columns[7]->insert(file_segment->getHitsCount());
+            res_columns[8]->insert(file_segment->getRefCount());
+            res_columns[9]->insert(file_segment->getDownloadedSize());
+            res_columns[10]->insert(file_segment->isPersistent());
         }
     }
 }

@@ -61,10 +61,10 @@ Pipe StorageSystemRemoteDataPaths::read(
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
             FileCachePtr cache;
-            auto cache_base_path = disk->supportsCache() ? disk->getCacheBasePath() : "";
+            auto cache_name = disk->supportsCache() ? disk->getCacheName() : "";
 
-            if (!cache_base_path.empty())
-                cache = FileCacheFactory::instance().get(cache_base_path);
+            if (!cache_name.empty())
+                cache = FileCacheFactory::instance().getByName(cache_name);
 
             for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {

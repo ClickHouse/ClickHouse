@@ -95,7 +95,7 @@ public:
     String disk;
     UInt64 seconds{};
 
-    String filesystem_cache_path;
+    String filesystem_cache_name;
 
     String backup_name;
 

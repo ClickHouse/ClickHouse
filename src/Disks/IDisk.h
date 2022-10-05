@@ -231,6 +231,8 @@ public:
 
     virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
+    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache name"); }
+
     virtual bool supportsCache() const { return false; }
 
     virtual NameSet getCacheLayersNames() const

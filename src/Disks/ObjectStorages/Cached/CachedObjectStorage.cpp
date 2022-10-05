@@ -182,7 +182,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
         && fs::path(object.absolute_path).extension() != ".tmp";
 
     auto path_key_for_cache = object.getPathKeyForCache();

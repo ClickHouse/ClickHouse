@@ -84,6 +84,7 @@ public:
 
     bool supportsCache() const override { return delegate->supportsCache(); }
     const String & getCacheBasePath() const override { return delegate->getCacheBasePath(); }
+    const String & getCacheName() const override { return delegate->getCacheName(); }
 
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
