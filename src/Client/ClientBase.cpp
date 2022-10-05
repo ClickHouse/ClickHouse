@@ -1,13 +1,11 @@
 #include <Client/ClientBase.h>
 
 #include <iostream>
-#include <iomanip>
 #include <filesystem>
 #include <map>
 #include <unordered_map>
 
 #include <Common/DateLUT.h>
-#include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
 #include <base/argsToConfig.h>
 #include <base/LineReader.h>
@@ -66,6 +64,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>

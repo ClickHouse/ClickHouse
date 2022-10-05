@@ -12,6 +12,9 @@
 #include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
+/// http://en.wikipedia.org/wiki/ANSI_escape_code
+#define CLEAR_TO_END_OF_LINE "\033[K"
+
 
 namespace
 {
@@ -59,7 +62,7 @@ void ProgressIndication::resetProgress()
     }
 }
 
-void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBuffer & message)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message)
 {
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
@@ -142,7 +145,7 @@ void ProgressIndication::writeFinalProgress()
         std::cout << ". ";
 }
 
-void ProgressIndication::writeProgress(WriteBuffer & message)
+void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 {
     std::lock_guard lock(progress_mutex);
 
@@ -160,7 +163,7 @@ void ProgressIndication::writeProgress(WriteBuffer & message)
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth();
+    size_t terminal_width = getTerminalWidth(message.getFD());
 
     if (!written_progress_chars)
     {
@@ -304,7 +307,7 @@ void ProgressIndication::writeProgress(WriteBuffer & message)
     message.next();
 }
 
-void ProgressIndication::clearProgressOutput(WriteBuffer & message)
+void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
 {
     if (written_progress_chars)
     {
