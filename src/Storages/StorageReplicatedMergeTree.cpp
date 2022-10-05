@@ -7456,7 +7456,8 @@ String StorageReplicatedMergeTree::getTableSharedID() const
         }
         else
         {
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID. It will resolve automatically when connection will be established");
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID for table {}. "
+                            "It will be resolve automatically when connection will be established", getStorageID().getNameForLogs());
         }
     }
 
