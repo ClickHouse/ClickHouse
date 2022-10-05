@@ -901,7 +901,7 @@ private:
 
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
-    bool tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    static bool tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
@@ -921,7 +921,7 @@ private:
 
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
-    void matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    static void matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
