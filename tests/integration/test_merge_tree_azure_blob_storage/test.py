@@ -4,8 +4,6 @@ import os
 
 import pytest
 
-pytestmark = pytest.mark.skip
-
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 
@@ -575,6 +573,8 @@ def test_big_insert(cluster):
     create_table(node, TABLE_NAME)
     azure_query(
         node,
-        f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(5000000)",
+        f"INSERT INTO {TABLE_NAME} SELECT '2020-01-03', number, toString(number) FROM numbers(1000000)",
     )
-    assert int(azure_query(node, f"SELECT count() FROM {TABLE_NAME}")) == 5000000
+    assert azure_query(node, f"SELECT * FROM {TABLE_NAME} ORDER BY id") == node.query(
+        "SELECT '2020-01-03', number, toString(number) FROM numbers(1000000)"
+    )
