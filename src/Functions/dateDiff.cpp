@@ -33,6 +33,30 @@ namespace ErrorCodes
 namespace
 {
 
+struct ToExtendedRelativeDayNumImpl
+{
+    static constexpr auto name = "toExtendedRelativeDayNum";
+
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayNum(t);
+    }
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayNum(static_cast<time_t>(t));
+    }
+    static inline Int32 execute(Int32 d, const DateLUTImpl &)
+    {
+        return static_cast<ExtendedDayNum>(d);
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
+    {
+        return static_cast<DayNum>(d);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -113,8 +137,9 @@ public:
         else if (unit == "week" || unit == "wk" || unit == "ww")
             dispatchForColumns<ToRelativeWeekNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hh")
+            // dispatchForColumns<ToRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToExtendedRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "hour" || unit == "hh" || unit == "h")
             dispatchForColumns<ToRelativeHourNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
             dispatchForColumns<ToRelativeMinuteNumImpl>(x, y, timezone_x, timezone_y, res->getData());
