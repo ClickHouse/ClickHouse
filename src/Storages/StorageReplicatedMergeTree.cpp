@@ -7672,7 +7672,7 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
 
     /// Sort is important. We need to find our closest parent, like:
     /// for part all_0_0_0_64 we can have parents
-    /// all_0_0_0_6 < we need closes parent, not others
+    /// all_0_0_0_6 < we need the closest parent, not others
     /// all_0_0_0_1
     /// all_0_0_0
     std::sort(parts_infos.begin(), parts_infos.end());
