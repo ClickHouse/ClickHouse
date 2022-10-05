@@ -38,7 +38,7 @@ public:
     void reinitialize()
     {
         auto avail_out = stream.avail_out;
-        auto next_out = stream.next_out;
+        auto * next_out = stream.next_out;
 
         int ret = BZ2_bzDecompressEnd(&stream);
 
