@@ -1241,19 +1241,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (const auto & [_, disk_ptr] : getContext()->getDisksMap())
+        for (const auto & [disk_name, disk_ptr] : getContext()->getDisksMap())
         {
             /// In composable cache with the underlying source disk there might the following structure:
             /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
             /// In configuration file each of these layers has a different name, but data path
             /// (getPath() result) is the same. We need to take it into account here.
-            if (disk_ptr->supportsCache())
+            if (disk_ptr->supportsCache() && defined_disk_names.contains(disk_ptr->getName()))
             {
-                if (defined_disk_names.contains(disk_ptr->getName()))
-                {
-                    auto caches = disk_ptr->getCacheLayersNames();
-                    disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
-                }
+                auto caches = disk_ptr->getCacheLayersNames();
+                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
+                LOG_TEST(log, "Cache layers for cache disk `{}`, inner disk `{}`: {}",
+                         disk_name, disk_ptr->getName(), fmt::join(caches, ", "));
             }
         }
 
@@ -1272,8 +1271,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     {
                         throw Exception(
                             ErrorCodes::UNKNOWN_DISK,
-                            "Part {} ({}) was found on disk {} which is not defined in the storage policy",
-                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name));
+                            "Part {} ({}) was found on disk {} which is not defined in the storage policy (defined disks: {}, wrapped disks: {})",
+                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name),
+                            fmt::join(defined_disk_names, ", "), fmt::join(disk_names_wrapped_in_cache, ", "));
                     }
                 }
             }
@@ -3210,7 +3210,20 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     modifyPartState(part, DataPartState::Active);
 }
 
-void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
+
+void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part_to_detach, const String & prefix)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (prefix.empty())
+        LOG_INFO(log, "Cloning part {} to {} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
+    else
+        LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
+
+    part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
+    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
+}
+
+void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
 {
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), part_to_detach->name);
@@ -3508,8 +3521,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, ContextPtr q
         k_inactive = static_cast<ssize_t>(inactive_parts_count_in_partition) - static_cast<ssize_t>(settings->inactive_parts_to_delay_insert);
     }
 
-    auto parts_to_delay_insert = query_settings.parts_to_delay_insert.changed ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
-    auto parts_to_throw_insert = query_settings.parts_to_throw_insert.changed ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
+    auto parts_to_delay_insert = query_settings.parts_to_delay_insert ? query_settings.parts_to_delay_insert : settings->parts_to_delay_insert;
+    auto parts_to_throw_insert = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
 
     if (parts_count_in_partition >= parts_to_throw_insert)
     {

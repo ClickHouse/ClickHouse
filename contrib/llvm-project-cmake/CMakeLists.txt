@@ -14,7 +14,7 @@ endif()
 # TODO: Enable shared library build
 # TODO: Enable compilation on AArch64
 
-set (LLVM_VERSION "13.0.0bundled")
+set (LLVM_VERSION "14.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
