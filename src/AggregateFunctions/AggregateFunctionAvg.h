@@ -164,8 +164,10 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
-        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * ty_aggregate_data_dst_ptr = llvm::cast<llvm::PointerType>(aggregate_data_dst_ptr->getType()->getScalarType())->getElementType();
+        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(ty_aggregate_data_dst_ptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * ty_aggregate_data_src_ptr = llvm::cast<llvm::PointerType>(aggregate_data_src_ptr->getType()->getScalarType())->getElementType();
+        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(ty_aggregate_data_src_ptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
@@ -184,7 +186,8 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getElementType();
+        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(ty_aggregate_data_ptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
 
         auto * double_numerator = nativeCast<Numerator>(b, numerator_value, b.getDoubleTy());
@@ -311,7 +314,8 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getElementType();
+        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(ty_aggregate_data_ptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
         auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
         b.CreateStore(denominator_value_updated, denominator_ptr);
     }
