@@ -15,6 +15,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
 
+
 namespace po = boost::program_options;
 
 
@@ -38,6 +39,7 @@ enum MultiQueryProcessingStage
 void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
+class WriteBufferFromFileDescriptor;
 
 class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
@@ -221,7 +223,7 @@ protected:
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
-    std::unique_ptr<WriteBuffer> tty_buf;
+    std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

@@ -9,14 +9,11 @@
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
-
 
 namespace DB
 {
 
-class WriteBuffer;
+class WriteBufferFromFileDescriptor;
 
 struct ThreadEventData
 {
@@ -34,8 +31,8 @@ class ProgressIndication
 {
 public:
     /// Write progress bar.
-    void writeProgress(WriteBuffer & message);
-    void clearProgressOutput(WriteBuffer & message);
+    void writeProgress(WriteBufferFromFileDescriptor & message);
+    void clearProgressOutput(WriteBufferFromFileDescriptor & message);
 
     /// Write summary.
     void writeFinalProgress();
@@ -54,7 +51,7 @@ public:
     /// In some cases there is a need to update progress value, when there is no access to progress_inidcation object.
     /// In this case it is added via context.
     /// `write_progress_on_update` is needed to write progress for loading files data via pipe in non-interactive mode.
-    void setFileProgressCallback(ContextMutablePtr context, WriteBuffer & message);
+    void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message);
 
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
