@@ -1977,9 +1977,12 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-        std::vector<std::future<Coordination::ListResponse>> lock_futures;
+        std::vector<std::string> paths;
+        paths.reserve(partitions.size());
         for (const String & partition : partitions)
-            lock_futures.push_back(zookeeper->asyncGetChildren(fs::path(queue.zookeeper_path) / "block_numbers" / partition));
+            paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
+
+        auto locks_children = zookeeper->getChildren(paths);
 
         struct BlockInfoInZooKeeper
         {
@@ -1992,7 +1995,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         std::vector<BlockInfoInZooKeeper> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
-            Strings partition_block_numbers = lock_futures[i].get().names;
+            Strings partition_block_numbers = locks_children[i].names;
             for (const String & entry : partition_block_numbers)
             {
                 /// TODO: cache block numbers that are abandoned.

@@ -41,5 +41,22 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionXxHash64>();
 
     factory.registerFunction<FunctionWyHash64>();
+
+
+#if USE_BLAKE3
+    factory.registerFunction<FunctionBLAKE3>(
+    {
+        R"(
+Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
+This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
+The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
+It returns a BLAKE3 hash as a byte array with type FixedString(32).
+)",
+        Documentation::Examples{
+            {"hash", "SELECT hex(blake3('ABC'))"}},
+        Documentation::Categories{"Hash"}
+    },
+    FunctionFactory::CaseSensitive);
+#endif
 }
 }

@@ -85,6 +85,9 @@ public:
 
     VolumePtr tryGetVolumeByName(const String & volume_name) const override;
 
+    /// Finds a volume which contains a specified disk.
+    VolumePtr tryGetVolumeByDisk(const DiskPtr & disk_ptr) const override;
+
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
 
