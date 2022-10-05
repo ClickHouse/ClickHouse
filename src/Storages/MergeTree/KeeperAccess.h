@@ -199,6 +199,8 @@ private:
                     e.code,
                     e.message());
 
+            keeper->finalize(e.message());
+
             if constexpr (std::is_same_v<Coordination::Error, Result>)
                 return e.code;
             else
