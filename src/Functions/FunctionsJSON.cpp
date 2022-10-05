@@ -73,10 +73,7 @@ concept HasMemberReserve = requires (T t)
 
 static Int64 adjustIndex(Int64 index, UInt64 array_size)
 {
-    if (index == 0)
-        throw Exception("Array indices are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
-
-    return index > 0 ? index - 1 : index + array_size;
+    return index >= 0 ? index - 1 : index + array_size;
 }
 
 /// Functions to parse JSONs and extract values from it.
@@ -250,7 +247,9 @@ public:
                 return false;
 
             auto object = element.getObject();
-            object.find(key, element);
+            if (!object.find(key, element))
+                return false;
+
             last_key = key;
             return true;
         }
@@ -682,10 +681,12 @@ public:
                 "Function {} requires at least one argument", Name::name);
 
         const auto & first_column = arguments[0];
-        bool is_string = isString(first_column.type);
-        bool is_object = isObject(first_column.type);
+        auto first_type_base = removeNullable(removeLowCardinality(first_column.type));
 
-        if (!is_string && !is_object)
+        bool is_string = isString(first_type_base);
+        bool is_object = isObject(first_type_base);
+
+        if (!is_string && !is_object && !isNothing(first_type_base))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The first argument of function {} should be a string containing JSON or Object, illegal type: {}",
                 Name::name, first_column.type->getName());
