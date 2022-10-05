@@ -1,5 +1,8 @@
+from email.errors import HeaderParseError
 import logging
 import os
+import csv
+import shutil
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -19,6 +22,21 @@ S3_DATA = [
 
 def create_buckets_s3(cluster):
     minio = cluster.minio_client
+
+    for file_number in range(100):
+        file_name = f"data/generated/file_{file_number}.csv"
+        os.makedirs(os.path.join(SCRIPT_DIR, "data/generated/"), exist_ok=True)
+        S3_DATA.append(file_name)
+        with open(os.path.join(SCRIPT_DIR, file_name), "w+", encoding="utf-8") as f:
+            # a String, b UInt64
+            data = []
+
+            for number in range(100):
+                data.append([str(number) * 10, number])
+
+            writer = csv.writer(f)
+            writer.writerows(data)
+
     for file in S3_DATA:
         minio.fput_object(
             bucket_name=cluster.minio_bucket,
@@ -61,6 +79,7 @@ def started_cluster():
 
         yield cluster
     finally:
+        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"))
         cluster.shutdown()
 
 
@@ -238,17 +257,9 @@ def test_distributed_insert_select(started_cluster):
         """
     )
 
-    for file_number in range(100):
-        first_replica_first_shard.query(
-            f"""
-        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{file_number}', 10), number from numbers_mt(100);
-            """
-        )
-
     first_replica_first_shard.query(
         """
-    INSERT INTO insert_select_distributed SELECT * FROM s3Cluster(
+    INSERT INTO insert_select_distributed SETTINGS insert_distributed_sync=1 SELECT * FROM s3Cluster(
         'cluster_simple',
         'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
     ) SETTINGS parallel_distributed_insert_select=1, insert_distributed_sync=1;
@@ -312,14 +323,6 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         replica.query(
             """
             SYSTEM STOP MERGES;
-            """
-        )
-
-    for file_number in range(100):
-        first_replica_first_shard.query(
-            f"""
-        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{file_number}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
-        SELECT repeat('{file_number}', 10), number from numbers_mt(100);
             """
         )
 
