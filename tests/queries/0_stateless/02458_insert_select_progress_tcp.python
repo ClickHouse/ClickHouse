@@ -181,22 +181,32 @@ class Progress():
     def __str__(self):
         return json.dumps(self.__dict__)
 
-def readProgress(s, progress):
+    def __bool__(self):
+        return (
+            self.read_rows > 0 or
+            self.read_bytes > 0 or
+            self.total_rows_to_read > 0 or
+            self.written_rows > 0 or
+            self.written_bytes > 0)
+
+def readProgress(s):
     packet_type = readVarUInt(s)
     if packet_type == 2:  # Exception
         raise RuntimeError(readException(s))
 
     if packet_type == 5:  # End stream
-        return False
+        return None
 
     assertPacket(packet_type, 3)  # Progress
+
+    progress = Progress()
     progress.read_rows += readVarUInt(s)
     progress.read_bytes += readVarUInt(s)
     progress.total_rows_to_read += readVarUInt(s)
 
     progress.written_rows += readVarUInt(s)
     progress.written_bytes += readVarUInt(s)
-    return True
+    return progress
 
 def readException(s):
     code = readUInt32(s)
@@ -213,15 +223,20 @@ def main():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
-        sendQuery(s, 'insert into insert_select_progress_tcp select * from numbers(1000000)')
+        # For 1 second sleep and 1000ms of interactive_delay we definitelly should have non zero progress packet.
+        # NOTE: interactive_delay=0 cannot be used since in this case CompletedPipelineExecutor will not call cancelled callback.
+        sendQuery(s, "insert into function null('_ Int') select sleep(1) from numbers(2) settings max_block_size=1, interactive_delay=1000")
 
         # external tables
         sendEmptyBlock(s)
 
-        query_progress = Progress()
-        while readProgress(s, query_progress):
-            pass
-        print(f'{query_progress}')
+        while True:
+            progress = readProgress(s)
+            if progress is None:
+                break
+            # Print only non empty progress packets, eventually we should have 3 of them
+            if progress:
+                print(progress)
 
         s.close()
 
