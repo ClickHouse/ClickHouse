@@ -177,6 +177,10 @@ private:
         try
         {
             ++calls_total;
+            if (!keeper)
+                throw zkutil::KeeperException(
+                    "Session is considered to be expired due to fault injection", Coordination::Error::ZSESSIONEXPIRED);
+
             if (unlikely(fault_policy))
                 fault_policy->beforeOperation();
             Result res = operation();
@@ -199,7 +203,7 @@ private:
                     e.code,
                     e.message());
 
-            keeper->finalize(e.message());
+            keeper.reset();
 
             if constexpr (std::is_same_v<Coordination::Error, Result>)
                 return e.code;
