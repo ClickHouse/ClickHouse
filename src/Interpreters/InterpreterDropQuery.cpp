@@ -235,7 +235,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             /// Check dependencies before shutting table down
             if (context_->getSettingsRef().check_table_dependencies)
-                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id);
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
 
             table->flushAndShutdown();
 
