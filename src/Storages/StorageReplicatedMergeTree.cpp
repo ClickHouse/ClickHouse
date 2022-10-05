@@ -5228,7 +5228,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, c
 }
 
 
-bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) const
+bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const
 {
     {
         std::lock_guard lock(existing_nodes_cache_mutex);
@@ -5236,7 +5236,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
             return true;
     }
 
-    bool res = getZooKeeper()->exists(path);
+    bool res = zookeeper->exists(path);
 
     if (res)
     {
@@ -5263,7 +5263,7 @@ std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBloc
     String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
     String partition_path = fs::path(block_numbers_path) / partition_id;
 
-    if (!existsNodeCached(partition_path))
+    if (!existsNodeCached(zookeeper, partition_path))
     {
         Coordination::Requests ops;
         ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));

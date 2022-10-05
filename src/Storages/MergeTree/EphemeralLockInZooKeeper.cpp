@@ -54,6 +54,10 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         {
             if (!responses.empty() && responses.front()->error == Coordination::Error::ZNODEEXISTS)
             {
+                LOG_DEBUG(
+                    &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                    "Deduplication path already exists: deduplication_path={}",
+                    deduplication_path);
                 return {};
             }
             else

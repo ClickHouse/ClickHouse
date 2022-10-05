@@ -77,7 +77,7 @@ public:
         sleepForMilliseconds(retries_info.curr_backoff_ms);
         retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
 
-        /// reset the flag, will set to false in case of error
+        /// reset the flag, it will be set to false in case of error
         iteration_succeeded = true;
 
         return true;
@@ -121,6 +121,19 @@ public:
 
     void setUserError(int code, std::string message)
     {
+        if (retries_info.logger)
+            LOG_TRACE(
+                retries_info.logger,
+                "KeeperRetires: {}/{}: setUserError: error={} message={}",
+                retries_info.name,
+                name,
+                user_error.code,
+                user_error.message);
+
+        /// if current iteration is already failed, keep initial error
+        if (!iteration_succeeded)
+            return;
+
         iteration_succeeded = false;
         user_error.code = code;
         user_error.message = std::move(message);
@@ -135,6 +148,19 @@ public:
 
     void setKeeperError(Coordination::Error code, std::string message)
     {
+        if (retries_info.logger)
+            LOG_TRACE(
+                retries_info.logger,
+                "KeeperRetires: {}/{}: setKeeperError: error={} message={}",
+                retries_info.name,
+                name,
+                keeper_error.code,
+                keeper_error.message);
+
+        /// if current iteration is already failed, keep initial error
+        if (!iteration_succeeded)
+            return;
+
         iteration_succeeded = false;
         keeper_error.code = code;
         keeper_error.message = std::move(message);
