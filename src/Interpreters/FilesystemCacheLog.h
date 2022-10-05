@@ -13,14 +13,21 @@
 namespace DB
 {
 ///
-/// -------- Column --------- Type ------
-/// |  event_date         |  DateTime   |
-/// |  event_time         |  UInt64     |
-/// |  query_id           |  String     |
-/// |  remote_file_path   |  String     |
-/// |  segment_range      |  Tuple      |
-/// |  read_type          |  String     |
-/// -------------------------------------
+/// -------- Column --------------- Type ------
+/// |  event_date              |  Date       |
+/// |  event_time              |  DateTime   |
+/// |  query_id                |  String     |
+/// |  source_file_path        |  String     |
+/// |  file_segment_range      |  Tuple      |
+/// |  total_requested_range   |  Tuple      |
+/// |  size                    |  UInt64     |
+/// |  read_type               |  String     |
+/// |  download_start_time     |  DateTime   |
+/// |  download_end_time       |  DateTime   |
+/// |  read_from_cache_attempted  Bool       |
+/// |  ProfileEvents           |  Map        |
+/// |  read_buffer_id          |  String     |
+/// -------------------------------------------
 ///
 struct FilesystemCacheLogElement
 {
@@ -36,11 +43,12 @@ struct FilesystemCacheLogElement
 
     String query_id;
     String source_file_path;
-
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
     CacheType cache_type{};
     size_t file_segment_size;
+    time_t download_start_time{};
+    time_t download_end_time{};
     bool read_from_cache_attempted;
     String read_buffer_id;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;

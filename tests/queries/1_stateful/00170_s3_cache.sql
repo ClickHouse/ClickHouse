@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings
+-- Tags: no-parallel
 
 -- { echo }
 

@@ -23,6 +23,7 @@ FROM
 INNER JOIN
     system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path
+WHERE cache_name = 's3_cache_small'
 ORDER BY file, cache, size;
 
 DROP TABLE IF EXISTS test;
@@ -32,10 +33,10 @@ SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 SELECT * FROM test FORMAT Null;
 
-SELECT sum(size) FROM system.filesystem_cache;
+SELECT sum(size) FROM system.filesystem_cache WHERE cache_name = 's3_cache_small';
 
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
-SELECT count() FROM system.filesystem_cache;
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE cache_name = 's3_cache_small';
+SELECT count() FROM system.filesystem_cache WHERE cache_name = 's3_cache_small';
 
 SELECT extract(local_path, '.*/([\w.]+)') as file, extract(cache_path, '.*/([\w.]+)') as cache, size
 FROM
@@ -46,6 +47,7 @@ FROM
 INNER JOIN
     system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path
+WHERE cache_name = 's3_cache_small'
 ORDER BY file, cache, size;
 
 DROP TABLE IF EXISTS test2;
@@ -55,10 +57,10 @@ SYSTEM STOP MERGES test2;
 INSERT INTO test2 SELECT number, toString(number) FROM numbers(100000);
 SELECT * FROM test2 FORMAT Null;
 
-SELECT sum(size) FROM system.filesystem_cache;
+SELECT sum(size) FROM system.filesystem_cache WHERE cache_name = 's3_cache_small';
 
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
-SELECT count() FROM system.filesystem_cache;
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE cache_name = 's3_cache_small';
+SELECT count() FROM system.filesystem_cache WHERE cache_name = 's3_cache_small';
 
 SELECT extract(local_path, '.*/([\w.]+)') as file, extract(cache_path, '.*/([\w.]+)') as cache, size
 FROM
@@ -69,6 +71,7 @@ FROM
 INNER JOIN
     system.filesystem_cache AS caches
 ON data_paths.cache_path = caches.cache_path
+WHERE cache_name = 's3_cache_small'
 ORDER BY file, cache, size;
 
 DROP TABLE test;

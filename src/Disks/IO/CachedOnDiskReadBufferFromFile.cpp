@@ -85,7 +85,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
-    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type)
+    const FileSegment::Range & file_segment_range, CachedOnDiskReadBufferFromFile::ReadType type, const FileSegment::Stat & stat)
 {
     FilesystemCacheLogElement elem
     {
@@ -95,6 +95,8 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .file_segment_range = { file_segment_range.left, file_segment_range.right },
         .requested_range = { first_offset, read_until_position },
         .file_segment_size = file_segment_range.size(),
+        .download_start_time = stat.download_start_time,
+        .download_end_time = stat.download_end_time,
         .read_from_cache_attempted = true,
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
@@ -508,9 +510,6 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 {
     LOG_TEST(log, "Completed segment: {}", (*current_file_segment_it)->range().toString());
 
-    if (enable_logging)
-        appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
-
     auto file_segment_it = current_file_segment_it++;
     auto & file_segment = *file_segment_it;
 
@@ -526,7 +525,11 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
     /// Do not hold pointer to file segment if it is not needed anymore
     /// so can become releasable and can be evicted from cache.
-    file_segment->complete();
+    auto stat = file_segment->complete();
+
+    if (enable_logging)
+        appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type, stat);
+
     file_segments_holder->file_segments.erase(file_segment_it);
 
     if (current_file_segment_it == file_segments_holder->file_segments.end())
@@ -547,7 +550,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
         && file_segments_holder
         && current_file_segment_it != file_segments_holder->file_segments.end())
     {
-        appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
+        appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type, (*current_file_segment_it)->getStat());
     }
 }
 

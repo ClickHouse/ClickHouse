@@ -807,6 +807,9 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
     {
         std::unique_lock segment_lock(mutex);
 
+        if (downloaded_size == 0)
+            stat.download_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
         if (background_download && background_download->is_cancelled)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Background download was cancelled");
 
@@ -852,17 +855,32 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
 
     cache_writer->write(from, size);
 
-    std::unique_lock download_lock(download_mutex);
+    {
+        std::lock_guard download_lock(download_mutex);
+        cache_writer->next();
+        downloaded_size += size;
+    }
 
-    cache_writer->next();
-
-    downloaded_size += size;
-
-    download_lock.unlock();
+    if (downloaded_size == range().size())
+    {
+        std::lock_guard segment_lock(mutex);
+        stat.download_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    }
 
 #ifndef NDEBUG
     chassert(getFirstNonDownloadedOffset() == offset + size);
 #endif
+}
+
+FileSegment::Stat FileSegment::getStat() const
+{
+    std::unique_lock segment_lock(mutex);
+    return getStatUnlocked(segment_lock);
+}
+
+FileSegment::Stat FileSegment::getStatUnlocked(std::unique_lock<std::mutex> & /* segment_lock */) const
+{
+    return stat;
 }
 
 FileSegment::State FileSegment::wait()
@@ -1077,10 +1095,11 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     cv.notify_all();
 }
 
-void FileSegment::complete()
+FileSegment::Stat FileSegment::complete()
 {
     std::lock_guard cache_lock(cache->mutex);
     completeWithoutStateUnlocked(cache_lock);
+    return stat;
 }
 
 void FileSegment::completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock)
@@ -1165,6 +1184,9 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
                     * it only when nobody needs it.
                     */
                     setDownloadStateUnlocked(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, segment_lock);
+
+                    if (stat.download_start_time)
+                        stat.download_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
                     /// Resize this file segment by creating a copy file segment with DOWNLOADED state,
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
@@ -1301,6 +1323,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(segment_lock);
     snapshot->download_state = file_segment->download_state;
     snapshot->is_persistent = file_segment->isPersistent();
+    snapshot->stat = file_segment->getStatUnlocked(segment_lock);
 
     return snapshot;
 }

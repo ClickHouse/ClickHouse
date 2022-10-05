@@ -210,7 +210,14 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-    void complete();
+    struct Stat
+    {
+        time_t download_start_time;
+        time_t download_end_time;
+    };
+    Stat complete();
+
+    Stat getStat() const;
 
     /// Complete file segment's part which was last written.
     void completePartAndResetDownloader();
@@ -258,6 +265,7 @@ private:
 
     void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
+    Stat getStatUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     void completePartAndResetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
@@ -311,6 +319,8 @@ private:
     bool is_persistent;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
+
+    Stat stat;
 
     class BackgroundDownload;
     mutable std::unique_ptr<BackgroundDownload> background_download;

@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
@@ -42,6 +43,8 @@ NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
         {"total_requested_range", std::make_shared<DataTypeTuple>(types)},
         {"size", std::make_shared<DataTypeUInt64>()},
         {"read_type", std::make_shared<DataTypeString>()},
+        {"download_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"download_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
         {"read_buffer_id", std::make_shared<DataTypeString>()},
@@ -62,6 +65,14 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(Tuple{requested_range.first, requested_range.second});
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
+    if (download_start_time)
+        columns[i++]->insert(download_start_time);
+    else
+        columns[i++]->insertDefault();
+    if (download_end_time)
+        columns[i++]->insert(download_end_time);
+    else
+        columns[i++]->insertDefault();
     columns[i++]->insert(read_from_cache_attempted);
 
     if (profile_counters)
