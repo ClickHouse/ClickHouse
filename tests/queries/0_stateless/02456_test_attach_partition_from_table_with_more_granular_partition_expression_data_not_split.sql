@@ -10,6 +10,8 @@ SET send_logs_level='error';
 ALTER TABLE destination ATTACH PARTITION '20100302' FROM source;
 SET send_logs_level='warning';
 
+-- `echoOn` helps to distinguish the output from both queries
+-- { echoOn }
+
 SELECT * FROM source;
-SELECT 1;
 SELECT * FROM destination;

@@ -1,5 +1,8 @@
+-- { echoOn }
+
+SELECT * FROM source;
 2010-03-02 02:01:01
 2010-03-02 02:01:03
-1
+SELECT * FROM destination;
 2010-03-02 02:01:01
 2010-03-02 02:01:03
