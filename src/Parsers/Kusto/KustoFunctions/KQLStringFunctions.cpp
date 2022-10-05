@@ -534,17 +534,21 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     const String delimiter = getConvertedArgument(fn_name, pos);
-
+    auto split_res = std::format("empty({0}) ? splitByString(' ' , {1}) : splitByString({0} , {1})", delimiter, source);
     int requested_index = -1;
+
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        requested_index = std::stoi(getConvertedArgument(fn_name, pos));
+        auto arg = getConvertedArgument(fn_name, pos);
+        // remove space between minus and value
+        arg.erase(remove_if(arg.begin(), arg.end(), isspace), arg.end());
+        requested_index = std::stoi(arg);
+        requested_index += 1;
+        out = std::format("multiIf(length({0}) >= {1} AND {1} > 0 , arrayPushBack([],arrayElement({0}, {1})) , {1}=0 ,{0} , arrayPushBack([] ,arrayElement(NULL,1)))", split_res, requested_index);
     }
-
-    out = "splitByString(" + delimiter + ", " + source + ")";
-    if (requested_index >= 0)
-        out = "arrayPushBack([],arrayElement(" + out + ", " + std::to_string(requested_index + 1) + "))";
+    else
+        out = split_res;
     return true;
 }
 
