@@ -94,6 +94,7 @@ function configure
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
+    cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 
     cat > db/config.d/core.xml <<EOL
 <clickhouse>
@@ -240,6 +241,7 @@ quit
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
+        --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \

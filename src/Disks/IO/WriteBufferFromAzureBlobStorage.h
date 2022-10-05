@@ -48,6 +48,7 @@ private:
     const WriteSettings write_settings;
 
     AzureClientPtr blob_container_client;
+    std::vector<std::string> block_ids;
 };
 
 }
