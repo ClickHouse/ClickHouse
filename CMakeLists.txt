@@ -495,7 +495,7 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-option(ENABLE_EXTERNAL_OPENSSL "Provide the user to allow building of OpenSSL library. By default, uses in-house ClickHouse BoringSSL. It is not recommended and may be insecure" OFF)
+option(ENABLE_EXTERNAL_OPENSSL "This option is insecure and not recommended for any occasions. If it is enabled, it allows building with alternative OpenSSL library. By default, ClickHouse is using BoringSSL, which is better. Do not use this option." OFF)
 
 message (STATUS "ENABLE_EXTERNAL_OPENSSL: ${ENABLE_EXTERNAL_OPENSSL}")
 if (NOT ENABLE_EXTERNAL_OPENSSL)
