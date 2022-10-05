@@ -28,18 +28,30 @@ public:
 
     using Caches = std::list<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, Caches::iterator>;
+    using CacheByPath = std::unordered_map<std::string, Caches::iterator>;
 
     static FileCacheFactory & instance();
 
     FileCachePtr getOrCreate(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
 
-    CacheByName getAll();
+    FileCachePtr create(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
+
+    Caches getAll();
+
+    CacheByName getAllByName();
 
     const FileCacheData & getByName(const std::string & cache_name);
+
+    std::optional<FileCacheData> tryGetByName(const std::string & cache_name);
 
 private:
     std::mutex mutex;
     Caches caches;
+
+    /// Caches by path have unique FileCache objects,
+    /// but caches by name can have the same FileCache object.
+    /// This is needed to allow sharing caches between disks.
+    CacheByPath caches_by_path;
     CacheByName caches_by_name;
 };
 

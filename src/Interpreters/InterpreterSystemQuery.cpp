@@ -332,8 +332,8 @@ BlockIO InterpreterSystemQuery::execute()
             if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
+                for (const auto & [cache, _] : caches)
+                    cache->removeIfReleasable();
             }
             else
             {

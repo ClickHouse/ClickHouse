@@ -613,10 +613,10 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     {
         auto caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache_data] : caches)
+        for (const auto & [cache, _] : caches)
         {
-            new_values["FilesystemCacheBytes"] = cache_data->cache->getUsedCacheSize();
-            new_values["FilesystemCacheFiles"] = cache_data->cache->getFileSegmentsNum();
+            new_values["FilesystemCacheBytes"] = cache->getUsedCacheSize();
+            new_values["FilesystemCacheFiles"] = cache->getFileSegmentsNum();
         }
     }
 

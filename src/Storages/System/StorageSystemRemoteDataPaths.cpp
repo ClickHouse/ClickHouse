@@ -64,7 +64,7 @@ Pipe StorageSystemRemoteDataPaths::read(
             auto cache_name = disk->supportsCache() ? disk->getCacheName() : "";
 
             if (!cache_name.empty())
-                cache = FileCacheFactory::instance().getByName(cache_name);
+                cache = FileCacheFactory::instance().getByName(cache_name).cache;
 
             for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {
@@ -72,7 +72,7 @@ Pipe StorageSystemRemoteDataPaths::read(
                 {
                     col_disk_name->insert(disk_name);
                     col_base_path->insert(disk->getPath());
-                    col_cache_base_path->insert(cache_base_path);
+                    col_cache_base_path->insert(cache->getBasePath());
                     col_local_path->insert(local_path);
                     col_remote_path->insert(object.absolute_path);
                     col_size->insert(object.bytes_size);
