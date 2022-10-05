@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SYNTAX_ERROR;
 }
 
 bool ArrayConcat::convertImpl(String & out, IParser::Pos & pos)
@@ -270,15 +271,16 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
     if (function_name.empty())
         return false;
 
-    const auto value = getArgument(function_name, pos);
-    const auto count = getArgument(function_name, pos);
+    String value = getArgument(function_name, pos);
+    String count = getArgument(function_name, pos);
+    
+    value.erase(remove(value.begin(), value.end(), ' '), value.end());
+    count.erase(remove(count.begin(), count.end(), ' '), count.end());
 
     if(count.empty())
-        return false;
-    else if(!(count[0] >= '0' && count[0] <= '9'))
-        out = "toString(NULL)";
+        throw Exception("number of arguments do not match in function: " + function_name, ErrorCodes::SYNTAX_ERROR);
     else
-        out = std::format("arrayWithConstant({1}, {0})", value, count);
+        out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
 
     return true;
 }
