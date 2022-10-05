@@ -1010,7 +1010,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
-//        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
         checksums = checkDataPart(shared_from_this(), false);
         data_part_storage->writeChecksums(checksums, {});
