@@ -1,5 +1,9 @@
-DROP TABLE IF EXISTS v1;
 DROP TABLE IF EXISTS Catalog;
+DROP TABLE IF EXISTS v1;
+DROP TABLE IF EXISTS v2;
+DROP TABLE IF EXISTS v3;
+DROP TABLE IF EXISTS system.Catalog;
+DROP TABLE IF EXISTS system.v1;
 
 CREATE TABLE Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory;
 
@@ -34,11 +38,6 @@ SELECT Price FROM v3(price=10);
 
 CREATE VIEW v4 AS SELECT * FROM Catalog WHERE Price={price:UInt64} AND Quantity={price:UInt64}; -- {serverError BAD_ARGUMENTS}
 
-DROP TABLE v1;
-DROP TABLE v2;
-DROP TABLE v3;
-DROP TABLE Catalog;
-
 CREATE TABLE system.Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = Memory;
 
 INSERT INTO system.Catalog VALUES ('Pen', 10, 3);
@@ -49,5 +48,9 @@ CREATE VIEW system.v1 AS SELECT * FROM system.Catalog WHERE Price={price:UInt64}
 SELECT Price FROM system.v1(price=20);
 SELECT Price FROM `system.v1`(price=20); -- { serverError UNKNOWN_FUNCTION }
 
-DROP TABLE system.v1;
+DROP TABLE Catalog;
+DROP TABLE v1;
+DROP TABLE v2;
+DROP TABLE v3;
 DROP TABLE system.Catalog;
+DROP TABLE system.v1;
