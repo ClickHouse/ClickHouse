@@ -4180,6 +4180,7 @@ void StorageReplicatedMergeTree::startupImpl()
         /// And this is just a callback
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
+            LOG_TEST(log, "Received event for expired session. Waking up restarting thread");
             restarting_thread.start();
         });
 
