@@ -42,7 +42,7 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int unco
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size)
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     DiskPtr disk;
     if (max_file_size > 0)
@@ -57,7 +57,7 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, Cu
         disk = volume->getDisk();
     }
 
-    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
 
     std::lock_guard lock(mutex);
     TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
@@ -97,7 +97,6 @@ struct TemporaryFileStream::OutputWriter
         out_writer.write(block);
         num_rows += block.rows();
     }
-
 
     void finalize()
     {
@@ -161,7 +160,7 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
-    , out_writer(std::make_unique<OutputWriter>(file->path(), header))
+    , out_writer(std::make_unique<OutputWriter>(file->getPath(), header))
 {
 }
 
@@ -208,7 +207,7 @@ Block TemporaryFileStream::read()
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(file->path(), header);
+        in_reader = std::make_unique<InputReader>(file->getPath(), header);
     }
 
     Block block = in_reader->read();
@@ -230,7 +229,7 @@ void TemporaryFileStream::updateAllocAndCheck()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
-            file->path(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
+            file->getPath(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
     parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
