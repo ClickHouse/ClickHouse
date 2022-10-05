@@ -118,8 +118,11 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeBackQuotedString(name, warning);
         }
 
-        writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-        LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));
+        if (index > 0)
+        {
+            writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
+            LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));
+        }
     }
 
     return result;
