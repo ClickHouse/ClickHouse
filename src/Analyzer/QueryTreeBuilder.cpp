@@ -440,7 +440,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
                     const auto * lambda_argument_identifier = lambda_argument->as<ASTIdentifier>();
 
                     if (!lambda_argument_identifier)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Lambda {} argument is not identifier",
                             function->formatForErrorMessage());
 
