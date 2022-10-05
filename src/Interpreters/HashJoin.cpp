@@ -1669,71 +1669,6 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
-template <typename Mapped, typename Msg>
-static void debugRowRef(const Mapped & mapped, const Msg & msg)
-{
-    UNUSED(mapped);
-    UNUSED(msg);
-    if constexpr (std::is_same_v<Mapped, RowRefList>)
-    {
-        std::vector<String> ss;
-        std::set<const Block *> blocks;
-        auto it = mapped.begin();
-        while (it.ok())
-        {
-            ss.push_back(fmt::format("{}:{}", it->row_num, fmt::ptr(it->block)));
-            blocks.insert(it->block);
-            ++it;
-        }
-
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}", __FILE__, __LINE__, fmt::join(ss, ","));
-
-        for (const auto & block : blocks)
-        {
-            LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {} - {}", __FILE__, __LINE__,
-                fmt::ptr(block), block->dumpStructure());
-        }
-    }
-    else
-    {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}", __FILE__, __LINE__, typeid(Mapped).name());
-    }
-}
-
-void HashJoin::debugKeys() const
-{
-    if (data)
-        return;
-
-    for (const auto & map : data->maps)
-    {
-        joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_)
-        {
-            auto cb = [this](const auto & rr) { debugRowRef(rr, fmt::ptr(this)); };
-
-            if (map_.key8)
-                map_.key8->forEachMapped(cb);
-            if (map_.key16)
-                map_.key16->forEachMapped(cb);
-            if (map_.key32)
-                map_.key32->forEachMapped(cb);
-            if (map_.key64)
-                map_.key64->forEachMapped(cb);
-            if (map_.key_string)
-                map_.key_string->forEachMapped(cb);
-            if (map_.key_fixed_string)
-                map_.key_fixed_string->forEachMapped(cb);
-            if (map_.keys128)
-                map_.keys128->forEachMapped(cb);
-            if (map_.keys256)
-                map_.keys256->forEachMapped(cb);
-            if (map_.hashed)
-                map_.hashed->forEachMapped(cb);
-        });
-    }
-
-}
-
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     for (const auto & onexpr : table_join->getClauses())
@@ -2049,7 +1984,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks()
 {
-    BlocksList right_blocks = std::move(data->blocks);
+    BlocksList right_blocks = data->blocks;
     BlocksList restored_blocks;
 
     /// names to positions optimization

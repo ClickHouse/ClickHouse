@@ -36,24 +36,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-    void dumpBlock(const Block & block, size_t src_line, String msg, ContextPtr context)
-    {
-        UNUSED(dumpBlock);
-
-        WriteBufferFromOwnString out;
-        auto output_format = context->getOutputFormat("PrettyCompactMonoBlock", out, block);
-        formatBlock(output_format, block);
-        auto block_string = out.str();
-
-        Strings block_lines;
-        splitInto<'\n'>(block_lines, block_string);
-        for (auto & line : block_lines)
-            line = "XXXX: " + line;
-
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} dumpBlock {}:\n{}", __FILE__, src_line, msg, fmt::join(block_lines, "\n"));
-    }
-
     class AccumulatedBlockReader
     {
     public:
@@ -532,6 +514,21 @@ std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks()
 
     while (current_bucket->finished() || current_bucket->empty())
     {
+        if (!current_bucket->empty())
+        {
+            /// can't destroy hash_join because it still can be used by some `DelayedBlocks` instances
+            auto right_blocks = hash_join->releaseJoinedBlocks();
+            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_blocks, buckets.size());
+
+            for (size_t i = 0; i < blocks.size(); ++i)
+            {
+                if (blocks[i].rows() == 0 || i == bucket_idx)
+                    continue;
+
+                buckets[i]->addRightBlock(blocks[i]);
+            }
+        }
+
         bucket_idx++;
 
         current_bucket = nullptr;
@@ -572,23 +569,6 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
     return std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row);
 }
 
-void GraceHashJoin::rehashInMemoryJoin(const Buckets & buckets_snapshot, size_t bucket_index)
-{
-    auto right_blocks = hash_join->releaseJoinedBlocks();
-    hash_join = makeInMemoryJoin();
-
-    for (const Block & block : right_blocks)
-    {
-        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
-        hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
-        for (size_t i = 1; i < buckets_snapshot.size(); ++i)
-        {
-            if (i != bucket_index && blocks[i].rows())
-                buckets_snapshot[i]->addRightBlock(blocks[i]);
-        }
-    }
-}
-
 void GraceHashJoin::addJoinedBlockImpl(Block block)
 {
     Buckets buckets_snapshot = getCurrentBuckets();
@@ -600,24 +580,25 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
     {
         std::lock_guard lock(hash_join_mutex);
 
-
-        hash_join->addJoinedBlock(blocks[bucket_index], /*check_limits=*/false);
+        hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
         bool overflow = !fitsInMemory();
 
-        Block to_write;
         if (overflow)
         {
-            blocks.erase(blocks.begin() + bucket_index);
-            to_write = concatenateBlocks(blocks);
+            auto right_blocks = hash_join->releaseJoinedBlocks();
+            right_blocks.pop_back();
+
+            for (const auto & right_block : right_blocks)
+                blocks.push_back(right_block);
         }
 
         while (overflow)
         {
             buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
-            rehashInMemoryJoin(buckets_snapshot, bucket_index);
 
-            blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
-
+            blocks = JoinCommon::scatterBlockByHash(right_key_names, blocks, buckets_snapshot.size());
+            hash_join = makeInMemoryJoin();
+            hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
             overflow = !fitsInMemory();
         }
     }

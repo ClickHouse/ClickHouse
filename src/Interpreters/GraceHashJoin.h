@@ -96,8 +96,6 @@ private:
     /// Create new bucket at the end of @destination.
     void addBucket(Buckets & destination);
 
-    void rehashInMemoryJoin(const Buckets & buckets_snapshot, size_t bucket_index);
-
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
     ///
