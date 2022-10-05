@@ -1,10 +1,9 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TransactionLog.h>
