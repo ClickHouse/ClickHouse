@@ -47,7 +47,7 @@ SELECT last_day(date_value), LAST_DAY(date_value);
 
 -- boundaries
 WITH
-    toDate('1070-01-01') AS date_value,
+    toDate('1970-01-01') AS date_value,
     toDateTime('1970-01-01 11:22:33') AS date_time_value,
     toDateTime64('1900-01-01 11:22:33', 3) AS date_time_64_value
 SELECT toLastDayOfMonth(date_value), toLastDayOfMonth(date_time_value), toLastDayOfMonth(date_time_64_value)
