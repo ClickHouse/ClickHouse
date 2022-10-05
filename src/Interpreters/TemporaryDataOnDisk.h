@@ -71,21 +71,21 @@ protected:
 class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 {
     friend class TemporaryFileStream; /// to allow it to call `deltaAllocAndCheck` to account data
+
 public:
     using TemporaryDataOnDiskScope::StatAtomic;
 
     explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-        : TemporaryDataOnDiskScope(std::move(parent_), 0)
+        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
     {}
+
     explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
-        : TemporaryDataOnDiskScope(std::move(parent_), 0)
+        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
         , current_metric_scope(metric_scope)
     {}
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size = 0);
-
-    TemporaryFileStream & createStream(const Block & header) { return createStream(header, current_metric_scope); }
+    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -124,7 +124,7 @@ public:
 
     Block read();
 
-    const String & path() const { return file->getPath(); }
+    const String path() const { return file->getPath(); }
     Block getHeader() const { return header; }
 
     /// Read finished and file released
@@ -154,19 +154,3 @@ private:
 };
 
 }
-
-template<>
-struct fmt::formatter<DB::TemporaryFileStream::Stat>
-{
-    template<typename ParseContext>
-    constexpr auto parse(ParseContext & context)
-    {
-        return context.begin();
-    }
-
-    template<typename FormatContext>
-    auto format(const DB::TemporaryFileStream::Stat & stat, FormatContext & context)
-    {
-        return fmt::format_to(context.out(), "{}/{} - {}", stat.compressed_size, stat.uncompressed_size, stat.num_rows);
-    }
-};

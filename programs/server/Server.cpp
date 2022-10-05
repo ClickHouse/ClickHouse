@@ -979,10 +979,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
+        std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        std::string temporary_policy = config().getString("tmp_policy", "");
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }

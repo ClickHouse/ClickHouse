@@ -444,7 +444,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Script to release a new ClickHouse version, requires `git` and "
-        "`gh` (github-cli) commands",
+        "`gh` (github-cli) commands "
+        "!!! LAUNCH IT ONLY FROM THE MASTER BRANCH !!!",
     )
 
     parser.add_argument(
@@ -468,10 +469,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--type",
-        default="minor",
+        required=True,
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
-        help="a release type, new branch is created only for 'major' and 'minor'",
+        help="a release type to bump the major.minor.patch version part, "
+        "new branch is created only for 'major' and 'minor'",
     )
     parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(

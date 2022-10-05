@@ -65,6 +65,11 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     execWithRetry([this](){ next(); }, DEFAULT_RETRY_NUM);
+
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, DEFAULT_RETRY_NUM);
+
+    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
@@ -78,7 +83,6 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     size_t current_size = 0;
-    std::vector<std::string> block_ids;
 
     while (current_size < total_size)
     {
@@ -91,9 +95,6 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
         current_size += part_len;
         LOG_TRACE(log, "Staged block (id: {}) of size {} (written {}/{}, blob path: {}).", block_id, part_len, current_size, total_size, blob_path);
     }
-
-    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, DEFAULT_RETRY_NUM);
-    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
 
     if (write_settings.remote_throttler)
         write_settings.remote_throttler->add(total_size);
