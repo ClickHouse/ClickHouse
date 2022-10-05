@@ -127,14 +127,16 @@ public:
     const String & path() const { return file->getPath(); }
     Block getHeader() const { return header; }
 
+    /// Read finished and file released
+    bool isEof() const;
+
     ~TemporaryFileStream();
 
 private:
     void updateAllocAndCheck();
 
-    /// Finalize everything, close reader and writer, delete file
-    void finalize();
-    bool isFinalized() const;
+    /// Release everything, close reader and writer, delete file
+    void release();
 
     TemporaryDataOnDisk * parent;
 

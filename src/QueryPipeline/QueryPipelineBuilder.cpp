@@ -454,37 +454,44 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
-    DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
-    std::vector<OutputPort*> joined_output_ports;
+    std::vector<OutputPort *> joined_output_ports;
 
     const Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto joining = std::make_shared<JoiningTransform>(left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
-        // Process delayed joined blocks when all JoiningTransform are finished.
-        auto delayed = std::make_shared<DelayedJoinedBlocksTransform>(left_header, join);
+        auto joining = std::make_shared<JoiningTransform>(
+            left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
+
         ++lit;
         ++rit;
 
         joined_output_ports.push_back(&joining->getOutputs().front());
-        joined_output_ports.push_back(&delayed->getOutputs().front());
-        delayed_ports_numbers.push_back(joined_output_ports.size() - 1);
 
         if (collected_processors)
-        {
             collected_processors->emplace_back(joining);
-            collected_processors->emplace_back(delayed);
-        }
+
         left->pipe.processors.emplace_back(std::move(joining));
+    }
+
+    DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        // Process delayed joined blocks when all JoiningTransform are finished.
+        auto delayed = std::make_shared<DelayedJoinedBlocksTransform>(left_header, join);
+        joined_output_ports.push_back(&delayed->getOutputs().front());
         left->pipe.processors.emplace_back(std::move(delayed));
+        if (collected_processors)
+            collected_processors->emplace_back(delayed);
+        delayed_ports_numbers.push_back(joined_output_ports.size() - 1);
     }
 
     // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
     auto joined_header = JoiningTransform::transformHeader(left_header, join);
     auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
+
     if (collected_processors)
         collected_processors->emplace_back(delayed_processor);
     left->pipe.processors.emplace_back(delayed_processor);
