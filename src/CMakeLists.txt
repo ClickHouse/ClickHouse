@@ -368,8 +368,6 @@ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
-        PRIVATE
-            ${EXECINFO_LIBRARIES}
         PUBLIC
             boost::program_options
             boost::system
@@ -578,6 +576,10 @@ if (TARGET ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
+
+if (TARGET ch_contrib::annoy)
+    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
+endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 

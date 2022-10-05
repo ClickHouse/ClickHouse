@@ -209,7 +209,7 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
     }
 }
 catch (...)
@@ -971,7 +971,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         std::string tmp_path = config().getString("tmp_path", path / "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -1118,7 +1119,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
 
             double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
-            size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+            size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
@@ -1381,7 +1382,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reload();
+        access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -1391,7 +1392,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Lower cache size on low-memory systems.
     double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
-    size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
+    size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
@@ -1417,8 +1418,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             settings.async_insert_threads,
-            settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+            settings.async_insert_cleanup_timeout_ms));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1530,6 +1530,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before the loading of the tables.
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
+
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
@@ -1597,7 +1618,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability)
+        if (total_memory_tracker_sample_probability > 0.0)
         {
             total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
         }
@@ -1626,20 +1647,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
-    }
 
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
@@ -1705,8 +1712,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
-        if (dns_cache_updater)
-            dns_cache_updater->start();
 
         {
             LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",

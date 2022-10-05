@@ -17,6 +17,7 @@ public:
 
 protected:
     bool processWithFuzzing(const String & full_query) override;
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
     void connect() override;
 
