@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 DROP TABLE IF EXISTS test;
 
 EXPLAIN SYNTAX
