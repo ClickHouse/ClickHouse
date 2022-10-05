@@ -218,8 +218,9 @@ public:
             {
                 bool added_to_column = false;
 
-                ObjectIterator iterator(type_tuple, column_tuple, i);
+                ObjectIterator iterator(type_tuple, column_tuple, col_json_const ? 0 : i);
                 bool moves_ok = performMoves(arguments, i, moves, iterator);
+
                 if (moves_ok)
                     added_to_column = impl.insertResultToColumn(*to, iterator);
 
@@ -738,6 +739,18 @@ struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
 struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
 
+static bool isDummyTuple(const IDataType & type)
+{
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
+    if (!type_tuple || !type_tuple->haveExplicitNames())
+        return false;
+
+    const auto & tuple_names = type_tuple->getElementNames();
+    return tuple_names.size() == 1
+        && tuple_names[0] == ColumnObject::COLUMN_NAME_DUMMY
+        && isUInt8(type_tuple->getElement(0));
+}
+
 template <typename Iterator>
 class JSONHasImpl
 {
@@ -825,6 +838,9 @@ public:
         const auto * column_tuple = typeid_cast<const ColumnTuple *>(iterator.getColumn().get());
         if (column_tuple)
         {
+            if (isDummyTuple(*iterator.getType()))
+                return false;
+
             UInt64 size = column_tuple->getColumns().size();
             to_vec.insertValue(size);
             return true;
@@ -1078,7 +1094,12 @@ public:
         auto & to_offsets = to_string.getOffsets();
 
         WriteBufferFromVector buf(to_chars, AppendModeTag{});
-        serialization->serializeTextJSON(*column, row, buf, formatSettings());
+
+        if (isDummyTuple(*type))
+            writeString("{}", buf);
+        else
+            serialization->serializeTextJSON(*column, row, buf, formatSettings());
+
         writeChar(0, buf);
         buf.finalize();
         to_offsets.push_back(to_chars.size());
@@ -1293,13 +1314,21 @@ struct JSONExtractTree
         bool insertResultToColumn(IColumn & dest, const Iterator & iterator) override
         {
             const auto & element = iterator.getElement();
-            if (!element.isDouble())
-                return false;
-
             const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-            auto result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale());
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
-            return true;
+
+            DecimalType result{};
+            bool converted = false;
+            if (element.isDouble())
+                converted = tryConvertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale(), result);
+            else if (element.isInt64())
+                converted = tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), type->getScale(), result);
+            else if (element.isUInt64())
+                converted = tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), type->getScale(), result);
+
+            if (converted)
+                assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
+
+            return converted;
         }
 
     private:
@@ -1315,25 +1344,22 @@ struct JSONExtractTree
         bool insertResultToColumn(IColumn & dest, const Iterator & iterator) override
         {
             const auto * decimal_type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
+            const auto & from = iterator.getColumn();
+
             DecimalType result{};
+            bool converted = false;
 
-            if (const auto * column_float_32 = typeid_cast<const ColumnVector<Float32> *>(iterator.getColumn().get()))
-            {
-                result = convertToDecimal<DataTypeNumber<Float32>, DataTypeDecimal<DecimalType>>(
-                    column_float_32->getData()[iterator.getRow()], decimal_type->getScale());
-            }
-            else if (const auto * column_float_64 = typeid_cast<const ColumnVector<Float32> *>(iterator.getColumn().get()))
-            {
-                result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(
-                    column_float_64->getData()[iterator.getRow()], decimal_type->getScale());
-            }
-            else
-            {
-                return false;
-            }
+        #define DISPATCH(TYPE) \
+            if (const auto * from_vec = typeid_cast<const ColumnVector<TYPE> *>(from.get())) \
+                converted = tryConvertToDecimal<DataTypeNumber<TYPE>, DataTypeDecimal<DecimalType>>( \
+                    from_vec->getData()[iterator.getRow()], decimal_type->getScale(), result);
+        FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+        #undef DISPATCH
 
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
-            return true;
+            if (converted)
+                assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
+
+            return converted;
         }
 
     private:
