@@ -512,6 +512,9 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     /// NOTE: You can use one of the following to configure the behaviour additionally:
     /// - SKIM_DEFAULT_OPTIONS
     /// - FZF_DEFAULT_OPTS
+    ///
+    /// And also note, that fzf and skim is 95% compatible (at least option
+    /// that is used here)
     std::string fuzzy_finder_command = fmt::format(
         "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
         fuzzy_finder, history_file.getPath(), output_file.getPath());
