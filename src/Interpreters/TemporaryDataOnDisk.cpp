@@ -176,6 +176,9 @@ void TemporaryFileStream::write(const Block & block)
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 {
+    if (isWriteFinished())
+        return stat;
+
     if (out_writer)
     {
         out_writer->finalize();
@@ -200,7 +203,7 @@ Block TemporaryFileStream::read()
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
 
-    if (isFinalized())
+    if (isEof())
         return {};
 
     if (!in_reader)
@@ -212,7 +215,7 @@ Block TemporaryFileStream::read()
     if (!block)
     {
         /// finalize earlier to release resources, do not wait for the destructor
-        this->finalize();
+        this->release();
     }
     return block;
 }
@@ -236,12 +239,12 @@ void TemporaryFileStream::updateAllocAndCheck()
     stat.num_rows = out_writer->num_rows;
 }
 
-bool TemporaryFileStream::isFinalized() const
+bool TemporaryFileStream::isEof() const
 {
     return file == nullptr;
 }
 
-void TemporaryFileStream::finalize()
+void TemporaryFileStream::release()
 {
     if (file)
     {
@@ -263,7 +266,7 @@ TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        finalize();
+        release();
     }
     catch (...)
     {

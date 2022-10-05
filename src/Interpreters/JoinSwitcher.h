@@ -69,10 +69,9 @@ public:
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    std::unique_ptr<IBlocksStream> getDelayedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) override
+    std::unique_ptr<IBlocksStream> getDelayedBlocks() override
     {
-        return join->getDelayedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return join->getDelayedBlocks();
     }
 
 private:

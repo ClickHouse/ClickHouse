@@ -44,13 +44,14 @@ class GraceHashJoin final : public IJoin
 {
     class FileBucket;
     class DelayedBlocks;
-    class InMemoryJoin;
+    using InMemoryJoin = HashJoin;
 
-    using BucketPtr = std::shared_ptr<FileBucket>;
-    using Buckets = std::vector<BucketPtr>;
-    using InMemoryJoinPtr = std::unique_ptr<InMemoryJoin>;
+    using InMemoryJoinPtr = std::shared_ptr<InMemoryJoin>;
 
 public:
+    using BucketPtr = std::shared_ptr<FileBucket>;
+    using Buckets = std::vector<BucketPtr>;
+
     GraceHashJoin(
         ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
         const Block & left_sample_block_, const Block & right_sample_block_,
@@ -66,7 +67,6 @@ public:
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
@@ -79,38 +79,31 @@ public:
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
-    std::unique_ptr<IBlocksStream> getDelayedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) override;
+    std::unique_ptr<IBlocksStream> getDelayedBlocks() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:
-    /// Split block into multiple shards by hash.
-    template <bool right>
-    Blocks scatterBlock(const Block & block, size_t shards) const;
-
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin();
-    /// Read right table blocks from @bucket to the @join. Calls @rehash on overflow.
-    void fillInMemoryJoin(InMemoryJoinPtr & join, FileBucket * bucket);
+
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addJoinedBlockImpl(InMemoryJoinPtr & join, size_t bucket_index, const Block & block);
-    /// Rebuild @join after rehash: scatter the blocks in join and write parts that belongs to the other shards to disk.
-    void rehashInMemoryJoin(InMemoryJoinPtr & join, const Buckets & buckets_snapshot, size_t bucket);
+    void addJoinedBlockImpl(Block block);
+
     /// Check that @join satisifes limits on rows/bytes in @table_join.
-    bool fitsInMemory(InMemoryJoin * join) const;
+    bool fitsInMemory() const;
 
     /// Create new bucket at the end of @destination.
-    void addBucket(Buckets & destination, const FileBucket * parent);
-    /// Read and join left table block. Called by DelayedBlocks itself (see @DelayedBlocks::next).
-    Block joinNextBlockInBucket(DelayedBlocks & iterator);
+    void addBucket(Buckets & destination);
+
+    void rehashInMemoryJoin(const Buckets & buckets_snapshot, size_t bucket_index);
 
     /// Increase number of buckets to match desired_size.
     /// Called when HashJoin in-memory table for one bucket exceeds the limits.
     ///
     /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
     /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    Buckets rehashBuckets();
+    Buckets rehashBuckets(size_t to_size);
 
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
@@ -132,12 +125,16 @@ private:
     Names left_key_names;
     Names right_key_names;
 
-    InMemoryJoinPtr first_bucket;
-
     TemporaryDataOnDiskPtr tmp_data;
 
     Buckets buckets;
     mutable std::shared_mutex rehash_mutex;
+
+    FileBucket * current_bucket = nullptr;
+    mutable std::mutex current_bucket_mutex;
+
+    InMemoryJoinPtr hash_join;
+    mutable std::mutex hash_join_mutex;
 
     std::atomic<bool> started_reading_delayed_blocks{false};
 

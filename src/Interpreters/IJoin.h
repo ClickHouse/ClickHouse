@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -81,32 +82,43 @@ public:
     virtual bool supportParallelJoin() const { return false; }
 
     /// Peek next stream of delayed joined blocks.
-    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size)
+    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks()
     {
-        if (non_joined_returned.exchange(true))
-            return nullptr;
-
-        return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return nullptr;
     }
 
-    /// TODO(vdimir@): make private
     virtual std::unique_ptr<IBlocksStream>
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
 private:
     Block totals;
-
-    std::atomic_bool non_joined_returned = false;
 };
 
 class IBlocksStream
 {
 public:
     /// Returns empty block on EOF
-    virtual Block next() = 0;
+    Block next()
+    {
+        if (finished)
+            return {};
+
+        if (Block res = nextImpl())
+            return res;
+
+        finished = true;
+        return {};
+    }
 
     virtual ~IBlocksStream() = default;
+
+    bool isFinished() const { return finished; }
+
+protected:
+    virtual Block nextImpl() = 0;
+
+    bool finished = false;
+
 };
 
 }

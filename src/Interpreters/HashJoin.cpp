@@ -225,8 +225,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
-
     if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
@@ -242,15 +240,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     {
         /// required right keys concept does not work well if multiple disjuncts, we need all keys
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
-    }
-
-    LOG_TRACE(log, "Columns to add: [{}], required right [{}]",
-              sample_block_with_columns_to_add.dumpStructure(), fmt::join(required_right_keys.getNames(), ", "));
-    {
-        std::vector<String> log_text;
-        for (const auto & clause : table_join->getClauses())
-            log_text.push_back(clause.formatDebug());
-        LOG_TRACE(log, "Joining on: {}", fmt::join(log_text, " | "));
     }
 
     JoinCommon::convertToFullColumnsInplace(right_table_keys);
@@ -305,7 +294,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     for (auto & maps : data->maps)
         dataMapInit(maps);
 
-    LOG_DEBUG(log, "Join type: {}, kind: {}, strictness: {}", data->type, kind, strictness);
+    LOG_TRACE(log, "Join type: {}, kind: {}, strictness: {}", data->type, kind, strictness);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -677,30 +666,8 @@ Block HashJoin::structureRightBlock(const Block & block) const
     return structured_block;
 }
 
-static void debugBlock(const Block & block, size_t line, const void * inst)
-{
-    size_t count = 0;
-    if (!block.has("t2.key"))
-    {
-        return;
-    }
-
-    auto col = block.getByName("t2.key").column;
-    for (size_t i = 0; i < col->size(); ++i)
-    {
-        if (col->get64(i) == 54)
-            count++;
-    }
-
-    if (count > 1)
-    {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} [{}] AAA: {} | {} | {}", __FILE__, line, inst, count, block.dumpStructure(), StackTrace().toString()   );
-    }
-}
-
 bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 {
-    debugBlock(source_block, __LINE__, fmt::ptr(this));
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))

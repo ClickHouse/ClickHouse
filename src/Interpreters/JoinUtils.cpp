@@ -645,6 +645,38 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 
+template<typename T>
+static Blocks scatterBlockByHashForList(const Strings & key_columns_names, const T & blocks, size_t num_shards)
+{
+    std::vector<Blocks> scattered_blocks(num_shards);
+    for (const auto & block : blocks)
+    {
+        if (block.rows() == 0)
+            continue;
+        auto scattered = scatterBlockByHash(key_columns_names, block, num_shards);
+        for (size_t i = 0; i < num_shards; ++i)
+            scattered_blocks[i].emplace_back(std::move(scattered[i]));
+    }
+
+    Blocks result;
+    result.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        result.emplace_back(concatenateBlocks(scattered_blocks[i]));
+    }
+    return result;
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards)
+{
+    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards)
+{
+    return scatterBlockByHashForList(key_columns_names, blocks, num_shards);
+}
+
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
     return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
@@ -813,7 +845,7 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
     }
 }
 
-Block NotJoinedBlocks::next()
+Block NotJoinedBlocks::nextImpl()
 {
     Block result_block = result_sample_block.cloneEmpty();
     {

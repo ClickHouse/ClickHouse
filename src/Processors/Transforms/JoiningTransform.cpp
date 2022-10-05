@@ -136,7 +136,7 @@ void JoiningTransform::work()
                 return;
             }
 
-            non_joined_blocks = join->getDelayedBlocks(
+            non_joined_blocks = join->getNonJoinedBlocks(
                 inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
             if (!non_joined_blocks)
             {
@@ -342,29 +342,29 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
 void DelayedJoinedBlocksTransform::work()
 {
-//     if (!delayed_blocks)
-//     {
-//         delayed_blocks = join->getDelayedBlocks(nullptr);
-//     }
+    if (!delayed_blocks)
+    {
+        delayed_blocks = join->getDelayedBlocks();
+    }
 
-//     Block block;
-//     while (!block && delayed_blocks)
-//     {
-//         block = delayed_blocks->next();
-//         if (!block)
-//             delayed_blocks = join->getDelayedBlocks(delayed_blocks.get());
-//     }
+    Block block;
+    while (!block && delayed_blocks)
+    {
+        block = delayed_blocks->next();
+        if (!block)
+            delayed_blocks = join->getDelayedBlocks();
+    }
 
-//     if (!block)
-//     {
-//         assert(!delayed_blocks);
-//         finished = true;
-//         return;
-//     }
+    if (!block)
+    {
+        assert(!delayed_blocks);
+        finished = true;
+        return;
+    }
 
-//     // Add block to the output
-//     auto rows = block.rows();
-//     output_chunk.setColumns(block.getColumns(), rows);
+    // Add block to the output
+    auto rows = block.rows();
+    output_chunk.setColumns(block.getColumns(), rows);
 }
 
 }

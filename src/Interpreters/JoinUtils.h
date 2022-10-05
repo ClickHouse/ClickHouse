@@ -107,6 +107,8 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
+Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
@@ -138,7 +140,7 @@ public:
               size_t left_columns_count,
               const LeftToRightKeyRemap & left_to_right_key_remap);
 
-    Block next() override;
+    Block nextImpl() override;
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);
