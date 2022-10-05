@@ -10,7 +10,6 @@
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
 #include <format>
-#include <string>
 
 namespace DB
 {
