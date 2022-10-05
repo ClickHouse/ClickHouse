@@ -233,6 +233,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             else
                 table->checkTableCanBeDropped();
 
+            /// Check dependencies before shutting table down
+            if (context_->getSettingsRef().check_table_dependencies)
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id);
+
             table->flushAndShutdown();
 
             TableExclusiveLockHolder table_lock;
