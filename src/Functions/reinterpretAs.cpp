@@ -317,11 +317,21 @@ private:
             StringRef data = src.getDataAt(i);
 
             /// Cut trailing zero bytes.
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            size_t index = 0;
+            while (index < data.size && data.data[index] == 0)
+                    index++;
+            data.size -= index;
+#else
             while (data.size && data.data[data.size - 1] == 0)
                 --data.size;
-
+#endif
             data_to.resize(offset + data.size + 1);
-            memcpy(&data_to[offset], data.data, data.size);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            reverseMemcpy(&data_to[offset], data.data+index, data.size);
+#else
+            memcpy(&data_to[offset],data.data, data.size);
+#endif
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
