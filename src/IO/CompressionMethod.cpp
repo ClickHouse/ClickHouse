@@ -57,24 +57,22 @@ std::string toContentEncodingName(CompressionMethod method)
 
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 {
-    /// If client supports brotli - it's preferred.
-    /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-    /// NOTE parsing of the list of methods is slightly incorrect.
+    /// The compression methods are ordered from most to least preferred.
 
-    if (std::string::npos != list.find("br"))
+    if (std::string::npos != list.find("zstd"))
+        return CompressionMethod::Zstd;
+    else if (std::string::npos != list.find("br"))
         return CompressionMethod::Brotli;
+    else if (std::string::npos != list.find("lz4"))
+        return CompressionMethod::Lz4;
+    else if (std::string::npos != list.find("snappy"))
+        return CompressionMethod::Snappy;
     else if (std::string::npos != list.find("gzip"))
         return CompressionMethod::Gzip;
     else if (std::string::npos != list.find("deflate"))
         return CompressionMethod::Zlib;
     else if (std::string::npos != list.find("xz"))
         return CompressionMethod::Xz;
-    else if (std::string::npos != list.find("zstd"))
-        return CompressionMethod::Zstd;
-    else if (std::string::npos != list.find("lz4"))
-        return CompressionMethod::Lz4;
-    else if (std::string::npos != list.find("snappy"))
-        return CompressionMethod::Snappy;
     else if (std::string::npos != list.find("bz2"))
         return CompressionMethod::Bzip2;
     else
