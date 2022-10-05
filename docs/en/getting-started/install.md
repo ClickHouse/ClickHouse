@@ -89,6 +89,8 @@ ClickHouse is developed primarily for the Linux family of operating systems. The
 
 ## Self-Managed Install
 
+### Available Installation Options {#available-installation-options}
+
 ### From DEB Packages {#install-from-deb-packages}
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
