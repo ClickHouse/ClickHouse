@@ -180,3 +180,42 @@ def test_trivial_alter_in_partition_replicated_merge_tree(started_cluster):
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
         node2.query("DROP TABLE IF EXISTS {}".format(name))
+
+
+def test_alter_in_partition_merge_tree(started_cluster):
+    try:
+        data = []
+
+        name = "test_alter_in_partition_merge_tree"
+        node1.query(f"DROP TABLE IF EXISTS {name}")
+        node1.query(f"CREATE TABLE {name} (p Int64, x Int64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY p")
+
+        for p in range(50):
+            node1.query(f"INSERT INTO {name} VALUES " + ", ".join((f"({p}, {i})" for i in range(p+1))))
+            data.append(list(range(p+1)))
+
+        for p in range(50):
+            if p % 11:
+                node1.query(f"ALTER TABLE {name} UPDATE x = x + {p % 2} IN PARTITION {p} WHERE 1")
+                data[p] = [x + (p % 2) for x in data[p]]
+
+            elif p % 13 == 12:
+                node1.query(f"ALTER TABLE {name} UPDATE x = x / (x - x) IN PARTITION {p} WHERE 1")
+
+            elif p % 23 == 22:
+                node1.restart_clickhouse(kill=True)
+
+            else:
+                node1.query(f"ALTER TABLE {name} UPDATE x = x + {p % 2} WHERE 1")
+                data = [[x + (p % 2) for x in y] for y in data]
+
+        for p in range(50, 100):
+            node1.query(f"INSERT INTO {name} VALUES " + ", ".join((f"({p}, {i})" for i in range(p+1))))
+            data.append(list(range(p+1)))
+
+        node1.query(f"ALTER TABLE {name} UPDATE x = x IN PARTITION -1 WHERE 1 SETTINGS mutations_sync = 2")
+
+        assert node1.query(f"SELECT sum(x) FROM {name}").splitlines() == [str(sum((y for x in data for y in x)))]
+
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {name}")
