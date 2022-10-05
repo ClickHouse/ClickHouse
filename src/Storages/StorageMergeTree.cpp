@@ -790,6 +790,7 @@ std::optional<UInt64> StorageMergeTree::getPartitionSpecificMutationVersion(cons
 
 void StorageMergeTree::loadMutations()
 {
+    std::optional<UInt64> max_storage_wide_mutation_id;
     for (const auto & disk : getDisks())
     {
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -820,12 +821,32 @@ void StorageMergeTree::loadMutations()
                 auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
+
+                if (entry.partition_id)
+                {
+                    if (auto last_mutation = last_mutation_by_partition[*entry.partition_id]; last_mutation < block_number)
+                    {
+                        last_mutation = block_number;
+                    }
+                }
+                else
+                {
+                    max_storage_wide_mutation_id.emplace(block_number);
+                }
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
                 disk->removeFile(it->path());
             }
         }
+    }
+
+    if (max_storage_wide_mutation_id)
+    {
+        std::erase_if(last_mutation_by_partition, [&] (const auto & item)
+        {
+            return item.second < *max_storage_wide_mutation_id;
+        });
     }
 
     if (!current_mutations_by_version.empty())
