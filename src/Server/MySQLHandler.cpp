@@ -23,7 +23,7 @@
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
