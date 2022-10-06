@@ -115,7 +115,7 @@ void ASTSelectWithUnionQuery::setHasQueryParameters()
     }
 }
 
-void ASTSelectWithUnionQuery::clearAllowQueryParameters()
+void ASTSelectWithUnionQuery::clearAllowQueryParameters() // NOLINT
 {
     if (!list_of_selects)
         return;
