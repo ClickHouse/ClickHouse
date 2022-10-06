@@ -159,9 +159,9 @@
 #    define TSA_REQUIRES_SHARED(...)
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
 
-#    define TSA_SUPPRESS_WARNING_FOR_READ(x)
-#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x)
-#    define TSA_READ_ONE_THREAD(x)
+#    define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() -> const auto & { return (x); }())
+#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() -> auto & { return (x); }())
+#    define TSA_READ_ONE_THREAD(x) TSA_SUPPRESS_WARNING_FOR_READ(x)
 #endif
 
 /// A template function for suppressing warnings about unused variables or function results.
