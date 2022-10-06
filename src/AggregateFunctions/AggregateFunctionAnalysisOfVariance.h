@@ -22,29 +22,15 @@ class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceM
 
 class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataHelper<AggregateFunctionAnalysisOfVarianceData, AggregateFunctionAnalysisOfVariance>
 {
-private:
-    size_t n_groups_;
-
 public:
-    explicit AggregateFunctionAnalysisOfVariance(const DataTypes & arguments, const Array & params) : IAggregateFunctionDataHelper(arguments, params) {
-        size_t n_groups = params.at(0).safeGet<UInt64>();
-        n_groups_ = n_groups;
-    }
+    explicit AggregateFunctionAnalysisOfVariance(const DataTypes & arguments, const Array & params)
+    : IAggregateFunctionDataHelper(arguments, params)
+    {}
 
     DataTypePtr getReturnType() const override
     {
-        DataTypes types
-        {
-            std::make_shared<DataTypeNumber<Float64>>(),
-            std::make_shared<DataTypeNumber<Float64>>()
-        };
-
-        Strings names
-        {
-            "f_statistic",
-            "p_value"
-        };
-
+        DataTypes types {std::make_shared<DataTypeNumber<Float64>>(), std::make_shared<DataTypeNumber<Float64>>() };
+        Strings names {"f_statistic", "p_value"};
         return std::make_shared<DataTypeTuple>(
             std::move(types),
             std::move(names)
@@ -57,12 +43,12 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        data(place).add(columns[0]->getFloat64(row_num), columns[1]->getUInt(row_num), n_groups_);
+        data(place).add(columns[0]->getFloat64(row_num), columns[1]->getUInt(row_num));
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).merge(data(rhs), n_groups_);
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

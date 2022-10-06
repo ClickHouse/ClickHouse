@@ -478,58 +478,64 @@ struct ZTestMoments
 };
 
 template <typename T>
-struct AnalysisOfVarianceMoments {
-    size_t n_groups = 0;
+struct AnalysisOfVarianceMoments
+{
+    size_t n{0};
     std::vector<T> xs1{};
     std::vector<T> xs2{};
-    T x1{};
     std::vector<T> ns{};
-    T n{};
 
-    void validateSize(size_t num) {
-        if (n_groups != num) {
-            n_groups = num;
-            xs1.resize(n_groups);
-            xs2.resize(n_groups);
-            ns.resize(n_groups);
-        }
+    void resizeIfNeeded(size_t group_number)
+    {
+        auto possible_size = ++group_number;
+        if (xs1.size() >= possible_size)
+            return;
+
+        xs1.resize(possible_size);
+        xs2.resize(possible_size);
+        ns.resize(possible_size);
     }
 
-    void add(T value, size_t group, size_t num)
+    void add(T value, size_t group)
     {
-        validateSize(num);
+        resizeIfNeeded(group);
+        ++n;
         xs1[group] += value;
         xs2[group] += value * value;
-        x1 += value;
-        ++ns[group];
-        ++n;
+        ns[group] += 1;
     }
 
-    void merge(const AnalysisOfVarianceMoments & rhs, size_t num)
+    void merge(const AnalysisOfVarianceMoments & rhs)
     {
-        validateSize(num);
-        for (size_t i = 0; i < n_groups; i++) {
+        resizeIfNeeded(rhs.xs1.size());
+        for (size_t i = 0; i < rhs.xs1.size(); ++i)
+        {
             xs1[i] += rhs.xs1[i];
             xs2[i] += rhs.xs2[i];
             ns[i] += rhs.ns[i];
         }
         n += rhs.n;
-        x1 += rhs.x1;
     }
 
     void write(WriteBuffer & buf) const
     {
-        writePODBinary(*this, buf);
+        writeIntBinary(n,  buf);
+        writeVectorBinary(xs1, buf);
+        writeVectorBinary(xs2,  buf);
+        writeVectorBinary(ns, buf);
     }
 
     void read(ReadBuffer & buf)
     {
-        readPODBinary(*this, buf);
+        readIntBinary(n, buf);
+        readVectorBinary(xs1, buf);
+        readVectorBinary(xs2,  buf);
+        readVectorBinary(ns, buf);
     }
 
-    Float64 getMean() const
+    Float64 getMeanAll() const
     {
-        return x1 / n;
+        return std::accumulate(xs1.begin(), xs1.end(), 0) / n;
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -540,8 +546,9 @@ struct AnalysisOfVarianceMoments {
     Float64 getBetweenGroupsVariation() const
     {
         Float64 res = 0;
-        auto mean = getMean();
-        for (size_t i = 0; i < n_groups; i++) {
+        auto mean = getMeanAll();
+        for (size_t i = 0; i < xs1.size(); i++)
+        {
             auto group_mean = getMeanGroup(i);
             res += ns[i] * (group_mean - mean) * (group_mean - mean);
         }
@@ -551,7 +558,8 @@ struct AnalysisOfVarianceMoments {
     Float64 getWithinGroupsVariation() const
     {
         Float64 res = 0;
-        for (size_t i = 0; i < n_groups; i++) {
+        for (size_t i = 0; i < xs1.size(); i++)
+        {
             auto group_mean = getMeanGroup(i);
             res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
@@ -560,12 +568,14 @@ struct AnalysisOfVarianceMoments {
 
     Float64 getFStatistic() const
     {
-        return (getBetweenGroupsVariation() / (n_groups - 1)) / (getWithinGroupsVariation() / (n - n_groups));
+        const auto k = xs1.size();
+        return (getBetweenGroupsVariation() / (k - 1)) / (getWithinGroupsVariation() / (n - k));
     }
 
     Float64 getPValue() const
     {
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(n_groups - 1, n - n_groups), getFStatistic());
+        const auto k = xs1.size();
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), getFStatistic());
     }
 };
 

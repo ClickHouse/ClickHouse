@@ -10,10 +10,8 @@ namespace
 
     AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
     {
+        assertNoParameters(name, parameters);
         assertBinary(name, arguments);
-
-        if (parameters.size() != 1)
-            throw Exception("Aggregate function " + name + " requires one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isNumber(arguments[0]) || !isNumber(arguments[1]))
             throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);

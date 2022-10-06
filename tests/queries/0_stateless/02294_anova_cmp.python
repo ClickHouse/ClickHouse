@@ -45,7 +45,7 @@ def test_anova():
         rvs.append(np.round(stats.norm.rvs(loc=loc, scale=scale, size=size), 2))
         loc += 5
     f_stat, p_value = scipy_anova(rvs)
-    test_and_check("anova(%u)" % n_groups, rvs, n_groups, f_stat, p_value)
+    test_and_check("anova", rvs, n_groups, f_stat, p_value)
 
     n_groups = 6
     rvs = []
@@ -55,7 +55,7 @@ def test_anova():
     for i in range(n_groups):
         rvs.append(np.round(stats.norm.rvs(loc=loc, scale=scale, size=size), 2))
     f_stat, p_value = scipy_anova(rvs)
-    test_and_check("anova(%u)" % n_groups, rvs, n_groups, f_stat, p_value)
+    test_and_check("anova", rvs, n_groups, f_stat, p_value)
 
     n_groups = 10
     rvs = []
@@ -68,7 +68,7 @@ def test_anova():
         scale += 2
         size += 100
     f_stat, p_value = scipy_anova(rvs)
-    test_and_check("anova(%u)" % n_groups, rvs, n_groups, f_stat, p_value)
+    test_and_check("anova", rvs, n_groups, f_stat, p_value)
 
     n_groups = 20
     rvs = []
@@ -79,7 +79,7 @@ def test_anova():
         rvs.append(np.round(stats.norm.rvs(loc=loc, scale=scale, size=size), 2))
         size -= 50
     f_stat, p_value = scipy_anova(rvs)
-    test_and_check("anova(%u)" % n_groups, rvs, n_groups, f_stat, p_value)
+    test_and_check("anova", rvs, n_groups, f_stat, p_value)
 
 
 if __name__ == "__main__":
