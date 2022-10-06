@@ -106,6 +106,7 @@ nan
 ['asd','asd','asd']
 [86400,86400,86400]
 [true,true,true]
+[NULL]
 -- set_difference()
 []
 []
