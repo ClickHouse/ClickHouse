@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>

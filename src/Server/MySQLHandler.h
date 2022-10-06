@@ -9,7 +9,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
