@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
 template <typename T>
