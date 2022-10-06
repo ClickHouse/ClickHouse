@@ -8,7 +8,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <IO/ReadHelpers.h>

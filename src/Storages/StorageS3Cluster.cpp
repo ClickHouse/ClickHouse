@@ -1,6 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
