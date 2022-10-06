@@ -224,6 +224,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
+    LOG_DEBUG(log, "HashJoin. Datatype: {}, kind: {}, strictness: {}", data->type, kind, strictness);
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
     if (isCrossOrComma(kind))
@@ -303,8 +304,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     for (auto & maps : data->maps)
         dataMapInit(maps);
-
-    LOG_DEBUG(log, "Join type: {}, kind: {}, strictness: {}", data->type, kind, strictness);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)

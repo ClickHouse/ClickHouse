@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>
