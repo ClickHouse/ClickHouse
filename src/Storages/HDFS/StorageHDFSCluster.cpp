@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include "Interpreters/Context_fwd.h"
 
 #if USE_HDFS

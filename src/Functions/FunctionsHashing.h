@@ -7,8 +7,7 @@
 #include <MurmurHash3.h>
 #include <wyhash.h>
 
-#include "config_functions.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_BLAKE3
 #    include <blake3.h>
