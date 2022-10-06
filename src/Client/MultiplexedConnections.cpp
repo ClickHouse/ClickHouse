@@ -411,6 +411,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         /// And we also check if read_list is still empty just in case.
         if (n <= 0 || read_list.empty())
         {
+            const auto & addresses = dumpAddressesUnlocked();
             for (ReplicaState & state : replica_states)
             {
                 Connection * connection = state.connection;
@@ -423,7 +424,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Timeout ({} ms) exceeded while reading from {}",
                 timeout.totalMilliseconds(),
-                dumpAddressesUnlocked());
+                addresses);
         }
     }
 
