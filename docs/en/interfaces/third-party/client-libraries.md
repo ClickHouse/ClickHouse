@@ -7,7 +7,7 @@ sidebar_label: Client Libraries
 # Client Libraries from Third-party Developers
 
 :::warning
-ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their qualities.
 :::
 
 -   Python
