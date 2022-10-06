@@ -538,10 +538,10 @@ bool SubString::convertImpl(String & out,IParser::Pos & pos)
         if(startingIndex.empty())
             throw Exception("number of arguments do not match in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
         else
-            out = "substr("+ source + ", " + "((" + startingIndex + "% (toInt64(length(" + source + ")) AS n)  + n) % n)  + 1, " + length + ")";
+            out = "if(toInt64(length(" + source + ")) <= 0, '', substr("+ source + ", " + "((" + startingIndex + "% toInt64(length(" + source + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
     }
     else
-        out = "substr("+ source + "," + "((" + startingIndex + "% (toInt64(length(" + source + ")) AS n)  + n) % n) + 1)";
+        out = "if(toInt64(length(" + source + ")) <= 0, '', substr("+ source + "," + "((" + startingIndex + "% toInt64(length(" + source + ")) + toInt64(length(" + source + "))) % toInt64(length(" + source + "))) + 1))";
 
     return true;
 }
