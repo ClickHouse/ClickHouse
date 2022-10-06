@@ -13,7 +13,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER

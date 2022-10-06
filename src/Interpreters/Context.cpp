@@ -2665,6 +2665,16 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->cache_log;
 }
 
+std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->asynchronous_insert_log;
+}
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
