@@ -274,6 +274,10 @@ GraceHashJoin::GraceHashJoin(
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
 
+}
+
+void GraceHashJoin::initBuckets()
+{
     const auto & settings = context->getSettingsRef();
 
     size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, 1024 * 1024));
@@ -302,6 +306,9 @@ GraceHashJoin::~GraceHashJoin() = default;
 
 bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 {
+    if (current_bucket == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
+
     Block materialized = materializeBlock(block);
     addJoinedBlockImpl(materialized);
     return true;
@@ -360,8 +367,10 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 {
     if (need_left_sample_block.exchange(false))
     {
-        output_sample_block = left_sample_block.cloneEmpty();
+        left_sample_block = block.cloneEmpty();
+        output_sample_block = block.cloneEmpty();
         hash_join->joinBlock(output_sample_block, not_processed);
+        initBuckets();
     }
 
     if (block.rows() == 0)

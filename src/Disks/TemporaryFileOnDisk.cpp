@@ -13,6 +13,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
     : TemporaryFileOnDisk(disk_, "")
 {}
@@ -61,7 +66,7 @@ TemporaryFileOnDisk::~TemporaryFileOnDisk()
 
         if (!disk->exists(relative_path))
         {
-            LOG_WARNING(&Poco::Logger::get("TemporaryFileOnDisk"), "Temorary path '{}' does not exist in '{}'", relative_path, disk->getPath());
+            LOG_WARNING(&Poco::Logger::get("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
             return;
         }
 
