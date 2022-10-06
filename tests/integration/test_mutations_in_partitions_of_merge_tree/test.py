@@ -125,7 +125,7 @@ def test_alter_in_partition_merge_tree_invalid_valid_valid(started_cluster):
         node1.query(f"DROP TABLE IF EXISTS {name}")
 
 
-def test_alter_in_partition_merge_tree(started_cluster):
+def test_alter_in_partition_merge_tree_updates_with_errors(started_cluster):
     try:
         name = "test_alter_in_partition_merge_tree"
         node1.query(f"DROP TABLE IF EXISTS {name}")
