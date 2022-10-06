@@ -134,13 +134,22 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    buffer << ", is_subquery: " << is_subquery;
-    buffer << ", is_cte: " << is_cte;
-    buffer << ", is_distinct: " << is_distinct;
-    buffer << ", is_limit_with_ties: " << is_limit_with_ties;
-    buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
+    if (is_subquery)
+        buffer << ", is_subquery: " << is_subquery;
 
-    std::string group_by_type = "ordinary";
+    if (is_cte)
+        buffer << ", is_cte: " << is_cte;
+
+    if (is_distinct)
+        buffer << ", is_distinct: " << is_distinct;
+
+    if (is_limit_with_ties)
+        buffer << ", is_limit_with_ties: " << is_limit_with_ties;
+
+    if (is_group_by_with_totals)
+        buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
+
+    std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
     else if (is_group_by_with_cube)
@@ -148,7 +157,8 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     else if (is_group_by_with_grouping_sets)
         group_by_type = "grouping_sets";
 
-    buffer << ", group_by_type: " << group_by_type;
+    if (!group_by_type.empty())
+        buffer << ", group_by_type: " << group_by_type;
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;

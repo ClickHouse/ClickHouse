@@ -84,7 +84,7 @@ public:
         else
         {
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Function {} is supported only if second argument is constant or table expression",
+                "Function '{}' is supported only if second argument is constant or table expression",
                 function_node->getFunctionName());
         }
     }
