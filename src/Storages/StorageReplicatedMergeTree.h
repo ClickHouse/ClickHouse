@@ -4,6 +4,7 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -138,6 +139,8 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+
+    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -280,7 +283,7 @@ public:
     /// Return false if data is still used by another node
     static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         std::string disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String & zookeeper_path_old);
+        const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
     DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -482,6 +485,8 @@ private:
 
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
+
+    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;

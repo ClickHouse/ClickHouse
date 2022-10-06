@@ -16,7 +16,7 @@
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -53,6 +53,30 @@ std::string toContentEncodingName(CompressionMethod method)
             return "";
     }
     __builtin_unreachable();
+}
+
+CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
+{
+    /// The compression methods are ordered from most to least preferred.
+
+    if (std::string::npos != list.find("zstd"))
+        return CompressionMethod::Zstd;
+    else if (std::string::npos != list.find("br"))
+        return CompressionMethod::Brotli;
+    else if (std::string::npos != list.find("lz4"))
+        return CompressionMethod::Lz4;
+    else if (std::string::npos != list.find("snappy"))
+        return CompressionMethod::Snappy;
+    else if (std::string::npos != list.find("gzip"))
+        return CompressionMethod::Gzip;
+    else if (std::string::npos != list.find("deflate"))
+        return CompressionMethod::Zlib;
+    else if (std::string::npos != list.find("xz"))
+        return CompressionMethod::Xz;
+    else if (std::string::npos != list.find("bz2"))
+        return CompressionMethod::Bzip2;
+    else
+        return CompressionMethod::None;
 }
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)
