@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include <Common/ProfileEvents.h>
 #include "IO/ParallelReadBuffer.h"
 #include "IO/IOThreadPool.h"
@@ -508,7 +508,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     LOG_TRACE(
         log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
 
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner(IOThreadPool::get()), download_thread_num);
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
 }
 
 String StorageS3Source::getName() const
@@ -617,7 +617,7 @@ public:
                 s3_configuration_.rw_settings,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
-                threadPoolCallbackRunner(IOThreadPool::get()),
+                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"),
                 context->getWriteSettings()),
             compression_method,
             3);

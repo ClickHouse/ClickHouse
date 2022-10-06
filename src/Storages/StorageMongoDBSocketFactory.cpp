@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
