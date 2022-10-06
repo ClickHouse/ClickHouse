@@ -84,6 +84,7 @@ public:
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:
+    void initBuckets();
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin();
 
