@@ -72,8 +72,8 @@ public:
         }
 
         /// retries
-        logLastError("retry due to error");
         ++retries_info.retry_count;
+        logLastError("will retry due to error");
         sleepForMilliseconds(retries_info.curr_backoff_ms);
         retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
 
@@ -127,8 +127,8 @@ public:
                 "KeeperRetires: {}/{}: setUserError: error={} message={}",
                 retries_info.name,
                 name,
-                user_error.code,
-                user_error.message);
+                code,
+                message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -154,8 +154,8 @@ public:
                 "KeeperRetires: {}/{}: setKeeperError: error={} message={}",
                 retries_info.name,
                 name,
-                keeper_error.code,
-                keeper_error.message);
+                code,
+                message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -169,7 +169,9 @@ public:
 
     void requestUnconditionalRetry() { unconditional_retry = true; }
 
-    bool isLastRetry() const { return retries_info.retry_count == retries_info.max_retries; }
+    bool isLastRetry() const { return retries_info.retry_count >= retries_info.max_retries; }
+
+    bool isRetry() const { return retries_info.retry_count > 0; }
 
 private:
     struct KeeperError

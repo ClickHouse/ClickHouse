@@ -6963,7 +6963,7 @@ CancellationCode StorageReplicatedMergeTree::killPartMoveToShard(const UUID & ta
 
 void StorageReplicatedMergeTree::getCommitPartOps(
     Coordination::Requests & ops,
-    MutableDataPartPtr & part,
+    const DataPartPtr & part,
     const String & block_id_path) const
 {
     const String & part_name = part->name;

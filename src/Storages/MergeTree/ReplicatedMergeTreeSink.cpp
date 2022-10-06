@@ -354,11 +354,38 @@ void ReplicatedMergeTreeSink::commitPart(
     constexpr size_t max_iterations = 10;
 
     bool is_already_existing_part = false;
+    bool part_committed_locally_but_zookeeper = false;
 
     ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
+
+        /// if we are in retry, check if last iteration was actually successful
+        /// we could get network error on lastest keeper operation in iteration
+        /// but operation could be completed by keeper server
+        if (retries_ctl.isRetry())
+        {
+            if (part_committed_locally_but_zookeeper)
+            {
+                /// FIXME: if retries will be exhaused by exists() call then we'll never enque part for check i.e.:
+                //     storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+
+                /// check that info about the part was actually written in zk
+                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name))
+                {
+                    /// check that we've created this block
+                    if (storage.getActiveContainingPart(part->name))
+                    {
+                        LOG_DEBUG(
+                            log, "Part was successfully committed on previous iteration, no retry is necessary: part_id={}", part->name);
+                        return;
+                    }
+                }
+            }
+        }
+
+        part_committed_locally_but_zookeeper = false;
 
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
@@ -468,6 +495,8 @@ void ReplicatedMergeTreeSink::commitPart(
         {
             is_already_existing_part = true;
 
+            /// TODO: looks unclear, - if deduplication is off then block_id will be empty, - so what will happened here then?
+
             /// This block was already written to some replica. Get the part name for it.
             /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
             existing_part_name = zookeeper->get(storage.zookeeper_path + "/blocks/" + block_id);
@@ -566,32 +595,19 @@ void ReplicatedMergeTreeSink::commitPart(
         }
         else if (Coordination::isHardwareError(multi_code))
         {
-            if (!retries_ctl.isLastRetry())
-            {
-                /// We will try to add this part again on the new iteration as it's just a new part.
-                /// So remove it from storage parts set immediately and transfer state to temporary.
-                transaction.rollbackPartsToTemporaryState();
-
-                part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false, builder);
-                builder->commit();
-
-                retries_ctl.setKeeperError(multi_code, "");
-            }
-            else
-            {
-                /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
-                 *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-                 */
-                transaction.commit();
+            /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
+             *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
+             */
+            transaction.commit();
+            part_committed_locally_but_zookeeper = true;
+            if (retries_ctl.isLastRetry())
                 storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
-                /// We do not know whether or not data has been inserted.
-                retries_ctl.setUserError(
-                    ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-                    "Unknown status, client must retry. Reason: {}",
-                    Coordination::errorMessage(multi_code));
-            }
+            /// We do not know whether or not data has been inserted.
+            retries_ctl.setUserError(
+                ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                "Unknown status, client must retry. Reason: {}",
+                Coordination::errorMessage(multi_code));
             return;
         }
         else if (Coordination::isUserError(multi_code))
