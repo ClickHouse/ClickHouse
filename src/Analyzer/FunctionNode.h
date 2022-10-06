@@ -143,16 +143,16 @@ public:
         return result_type != nullptr && (function != nullptr || aggregate_function != nullptr);
     }
 
-    /// Is window function
+    /// Is function node window function
     bool isWindowFunction() const
     {
-        return isAggregateFunction() && getWindowNode() != nullptr;
+        return getWindowNode() != nullptr;
     }
 
-    /// Is function node resolved as aggregate function
+    /// Is function node aggregate function
     bool isAggregateFunction() const
     {
-        return aggregate_function != nullptr;
+        return aggregate_function != nullptr && !isWindowFunction();
     }
 
     /// Is function node ordinary function

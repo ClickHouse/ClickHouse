@@ -9,6 +9,12 @@ CREATE TABLE test_table
 
 INSERT INTO test_table VALUES (0, 'Value');
 
+DROP TABLE IF EXISTS test_table_in;
+CREATE TABLE test_table_in
+(
+    id UInt64
+) ENGINE=TinyLog;
+
 DROP TABLE IF EXISTS test_table_compound;
 CREATE TABLE test_table_compound
 (
@@ -142,9 +148,25 @@ SELECT '--';
 
 DESCRIBE (SELECT plus(test_table.id AS a, test_table.id), plus(id, id AS b), plus(b, b), plus(test_table.id, test_table.id) FROM test_table);
 
-SELECT '--Fix';
+SELECT '--';
 
 DESCRIBE (SELECT test_table.* REPLACE id + (id AS id_alias) AS id, id_alias FROM test_table);
+
+SELECT 'Matcher';
+
+DESCRIBE (SELECT * FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT test_table.* FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT 1 AS id, 2 AS value, * FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT 1 AS id, 2 AS value, * FROM test_table AS t1);
 
 SELECT 'Lambda';
 
@@ -230,6 +252,10 @@ SELECT 'Standalone lambda';
 
 DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
 
+SELECT '--';
+
+DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS value, value FROM test_table);
+
 SELECT 'Subquery';
 
 DESCRIBE (SELECT (SELECT 1), (SELECT 2), (SELECT 3) AS a, (SELECT 4));
@@ -241,6 +267,118 @@ DESCRIBE (SELECT arrayMap(x -> (SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS
 SELECT '--';
 
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b);
+
+SELECT 'Window functions';
+
+DESCRIBE (SELECT count() OVER ());
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER () AS window_function);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN CURRENT ROW AND CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC RANGE CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC RANGE BETWEEN CURRENT ROW AND CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY (id AS id_alias), (value AS value_alias) ORDER BY id ASC, value DESC ROWS CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY (id AS id_alias) ASC, (value AS value_alias) DESC ROWS CURRENT ROW) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN 1 + 1 PRECEDING AND 2 + 2 FOLLOWING) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY toNullable(id) NULLS FIRST) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY toNullable(id) NULLS LAST) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY value COLLATE 'EN') FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM 1 TO 5 STEP 1) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM 1 + 1 TO 6 STEP 1 + 1) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM ((1 + 1) AS from) TO (6 AS to) STEP ((1 + 1) AS step)) FROM test_table);
+
+SELECT 'Window functions WINDOW';
+
+DESCRIBE (SELECT count() OVER window_name FROM test_table WINDOW window_name AS (PARTITION BY id));
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER window_name FROM test_table WINDOW window_name AS (PARTITION BY id ORDER BY value));
+
+SELECT '--';
+
+DESCRIBE (SELECT count() OVER (window_name ORDER BY id) FROM test_table WINDOW window_name AS (PARTITION BY id));
+
+SELECT 'IN function';
+
+DESCRIBE (SELECT id IN (SELECT 1) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT id IN (SELECT id FROM test_table_in) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT id IN test_table_in FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN (SELECT id FROM test_table_in_cte) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN test_table_in_cte FROM test_table);
 
 SELECT 'Joins';
 
@@ -331,9 +469,46 @@ SELECT '--';
 DESCRIBE (SELECT t1.id, t1.value, t1.value_join_1, t2.id, t2.value, t2.value_join_2, t3.id, t3.value, t3.value_join_3
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 ON t2.id = t3.id);
 
+SELECT 'Joins USING';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id));
+
+SELECT '--';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value));
+
+SELECT '--';
+
+DESCRIBE (SELECT id, t1.id, t1.value, t2.id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id));
+
+SELECT '--';
+
+DESCRIBE (SELECT id, value, t1.id, t1.value, t2.id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value));
+
+SELECT 'Multiple Joins USING';
+
+SELECT '--';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING (id));
+
+SELECT '--';
+
+DESCRIBE (SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value) INNER JOIN test_table_join_3 AS t3 USING (id, value));
+
+SELECT '--';
+
+DESCRIBE (SELECT id, t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING (id));
+
+SELECT '--';
+
+DESCRIBE (SELECT id, value, t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value) INNER JOIN test_table_join_3 AS t3 USING (id, value));
+
 -- { echoOff }
 
 DROP TABLE test_table_join_1;
 DROP TABLE test_table_join_2;
+DROP TABLE test_table_join_3;
 DROP TABLE test_table;
 DROP TABLE test_table_compound;

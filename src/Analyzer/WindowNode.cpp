@@ -94,7 +94,9 @@ void WindowNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    buffer << ", parent_window_name: " << parent_window_name;
+    if (!parent_window_name.empty())
+        buffer << ", parent_window_name: " << parent_window_name;
+
     buffer << ", frame_type: " << window_frame.type;
 
     auto window_frame_bound_type_to_string = [](WindowFrame::BoundaryType boundary_type, bool boundary_preceding)

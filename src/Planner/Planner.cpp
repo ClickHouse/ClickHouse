@@ -75,12 +75,11 @@ namespace ErrorCodes
 /** ClickHouse query planner.
   *
   * TODO: Support JOIN with JOIN engine.
+  * TODO: Support VIEWs.
   * TODO: JOIN drop unnecessary columns after ON, USING section
-  * TODO: Support display names
   * TODO: Support RBAC. Support RBAC for ALIAS columns
   * TODO: Support distributed query processing
   * TODO: Support PREWHERE
-  * TODO: Support ORDER BY
   * TODO: Support DISTINCT
   * TODO: Support trivial count optimization
   * TODO: Support projections
@@ -89,7 +88,7 @@ namespace ErrorCodes
   * TODO: Support max streams
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
-  * TODO: Support Key Condition
+  * TODO: Support Key Condition. Support indexes for IN function.
   */
 
 namespace

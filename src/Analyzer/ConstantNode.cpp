@@ -18,7 +18,7 @@ namespace DB
 
 ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
     : constant_value(std::move(constant_value_))
-    , value_string_dump(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
+    , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
 {
 }
 
@@ -44,7 +44,7 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-    return *constant_value == *rhs_typed.constant_value && value_string_dump == rhs_typed.value_string_dump;
+    return *constant_value == *rhs_typed.constant_value && value_string == rhs_typed.value_string;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
@@ -53,8 +53,8 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(type_name.size());
     hash_state.update(type_name);
 
-    hash_state.update(value_string_dump.size());
-    hash_state.update(value_string_dump);
+    hash_state.update(value_string.size());
+    hash_state.update(value_string);
 }
 
 ASTPtr ConstantNode::toASTImpl() const

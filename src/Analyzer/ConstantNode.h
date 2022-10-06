@@ -35,6 +35,12 @@ public:
         return constant_value->getValue();
     }
 
+    /// Get constant value string representation
+    const String & getValueStringRepresentation() const
+    {
+        return value_string;
+    }
+
     ConstantValuePtr getConstantValueOrNull() const override
     {
         return constant_value;
@@ -47,7 +53,7 @@ public:
 
     String getName() const override
     {
-        return value_string_dump;
+        return value_string;
     }
 
     DataTypePtr getResultType() const override
@@ -68,7 +74,7 @@ protected:
 
 private:
     ConstantValuePtr constant_value;
-    String value_string_dump;
+    String value_string;
 };
 
 }

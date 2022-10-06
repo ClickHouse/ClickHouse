@@ -141,8 +141,6 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    ApplyColumnTransformerNode() = default;
-
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
     static constexpr size_t expression_child_index = 0;
 };

@@ -187,10 +187,8 @@ namespace ErrorCodes
   * Identifier first part value bound to test_table column value, but nested identifier part cannot be resolved from it,
   * lookup should not be continued, and exception must be thrown because if lookup continues identifier can be resolved from parent scope.
   *
-  * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Update exception messages
   * TODO: JOIN TREE subquery constant columns
-  * TODO: Column name qualifications
   * TODO: Table identifiers with optional UUID.
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
@@ -207,7 +205,7 @@ enum class IdentifierLookupContext : uint8_t
 {
     EXPRESSION = 0,
     FUNCTION,
-    TABLE,
+    TABLE_EXPRESSION,
 };
 
 const char * toString(IdentifierLookupContext identifier_lookup_context)
@@ -216,7 +214,7 @@ const char * toString(IdentifierLookupContext identifier_lookup_context)
     {
         case IdentifierLookupContext::EXPRESSION: return "EXPRESSION";
         case IdentifierLookupContext::FUNCTION: return "FUNCTION";
-        case IdentifierLookupContext::TABLE: return "TABLE";
+        case IdentifierLookupContext::TABLE_EXPRESSION: return "TABLE_EXPRESSION";
     }
 }
 
@@ -226,7 +224,7 @@ const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context
     {
         case IdentifierLookupContext::EXPRESSION: return "expression";
         case IdentifierLookupContext::FUNCTION: return "function";
-        case IdentifierLookupContext::TABLE: return "table";
+        case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
 }
 
@@ -248,9 +246,9 @@ struct IdentifierLookup
         return lookup_context == IdentifierLookupContext::FUNCTION;
     }
 
-    bool isTableLookup() const
+    bool isTableExpressionLookup() const
     {
-        return lookup_context == IdentifierLookupContext::TABLE;
+        return lookup_context == IdentifierLookupContext::TABLE_EXPRESSION;
     }
 
     String dump() const
@@ -501,15 +499,132 @@ private:
     std::unordered_map<std::string, size_t> alias_name_to_expressions_size;
 };
 
+/** Projection names is name of query tree node that is used in projection part of query node.
+  * Example: SELECT id FROM test_table;
+  * `id` is projection name of column node
+  *
+  * Example: SELECT id AS id_alias FROM test_table;
+  * `id_alias` is projection name of column node
+  *
+  * Calculation of projection names is done during expression nodes resolution. This is done this way
+  * because after identifier node is resolved we lose information about identifier name. We could
+  * potentially save this information in query tree node itself, but that would require to clone it in some cases.
+  * Example: SELECT big_scalar_subquery AS a, a AS b, b AS c;
+  * All 3 nodes in projection are the same big_scalar_subquery, but they have different projection names.
+  * If we want to save it in query tree node, we have to clone subquery node that could lead to performance degradation.
+  *
+  * Possible solution is to separate query node metadata and query node content. So only node metadata could be cloned
+  * if we want to change projection name. This solution does not seem to be easy for client of query tree because projection
+  * name will be part of interface. If we potentially could hide projection names calculation in analyzer without introducing additional
+  * changes in query tree structure that would be preferable.
+  *
+  * Currently each resolve method returns projection names array. Resolve method must compute projection names of node.
+  * If node is resolved as list node this is case for `untuple` function or `matcher` result projection names array must contain projection names
+  * for result nodes.
+  * If node is not resolved as list node, projection names array contain single projection name for node.
+  *
+  * Rules for projection names:
+  * 1. If node has alias. It is node projection name.
+  * Except scenario where `untuple` function has alias. Example: SELECT untuple(expr) AS alias, alias.
+  *
+  * 2. For constant it is constant value string representation.
+  *
+  * 3. For identifier:
+  * If identifier is resolved from JOIN TREE, we want to remove additional identifier qualifications.
+  * Example: SELECT default.test_table.id FROM test_table.
+  * Result projection name is `id`.
+  *
+  * Example: SELECT t1.id FROM test_table_1 AS t1, test_table_2 AS t2
+  * In example both test_table_1, test_table_2 have `id` column.
+  * In such case projection name is `t1.id` because if additional qualification is removed then column projection name `id` will be ambiguous.
+  *
+  * Example: SELECT default.test_table_1.id FROM test_table_1 AS t1, test_table_2 AS t2
+  * In such case projection name is `test_table_1.id` because we remove unnecessary database qualification, but table name qualification cannot be removed
+  * because otherwise column projection name `id` will be ambiguous.
+  *
+  * If identifier is not resolved from JOIN TREE. Identifier name is projection name.
+  * Except scenario where `untuple` function resolved using identifier. Example: SELECT untuple(expr) AS alias, alias.
+  * Example: SELECT sum(1, 1) AS value, value.
+  * In such case both nodes have `value` projection names.
+  *
+  * Example: SELECT id AS value, value FROM test_table.
+  * In such case both nodes have have `value` projection names.
+  *
+  * Special case is `untuple` function. If `untuple` function specified with alias, then result nodes will have alias.tuple_column_name projection names.
+  * Example: SELECT cast(tuple(1), 'Tuple(id UInt64)') AS value, untuple(value) AS a;
+  * Result projection names are `value`, `a.id`.
+  *
+  * If `untuple` function does not have alias then result nodes will have `tupleElement(untuple_expression_projection_name, 'tuple_column_name') projection names.
+  *
+  * Example: SELECT cast(tuple(1), 'Tuple(id UInt64)') AS value, untuple(value);
+  * Result projection names are `value`, `tupleElement(value, 'id')`;
+  *
+  * 4. For function:
+  * Projection name consists from function_name(parameters_projection_names)(arguments_projection_names).
+  * Additionally if function is window function. Window node projection name is used with OVER clause.
+  * Example: function_name (parameters_names)(argument_projection_names) OVER window_name;
+  * Example: function_name (parameters_names)(argument_projection_names) OVER (PARTITION BY id ORDER BY id).
+  * Example: function_name (parameters_names)(argument_projection_names) OVER (window_name ORDER BY id).
+  *
+  * 5. For lambda:
+  * If it is standalone lambda that returns single expression, function projection name is used.
+  * Example: WITH (x -> x + 1) AS lambda SELECT lambda(1).
+  * Projection name is `lambda(1)`.
+  *
+  * If is it standalone lambda that returns list, projection names of list nodes are used.
+  * Example: WITH (x -> *) AS lambda SELECT lambda(1) FROM test_table;
+  * If test_table has two columns `id`, `value`. Then result projection names are `id`, `value`.
+  *
+  * If lambda is argument of function.
+  * Then projection name consists from lambda(tuple(lambda_arguments)(lambda_body_projection_name));
+  *
+  * 6. For matcher:
+  * Matched nodes projection names are used as matcher projection names.
+  *
+  * Matched nodes must be qualified if needed.
+  * Example: SELECT * FROM test_table_1 AS t1, test_table_2 AS t2.
+  * In example table test_table_1 and test_table_2 both have `id`, `value` columns.
+  * Matched nodes after unqualified matcher resolve must be qualified to avoid ambiguous projection names.
+  * Result projection names must be `t1.id`, `t1.value`, `t2.id`, `t2.value`.
+  *
+  * There are special cases
+  * 1. For lambda inside APPLY matcher transformer:
+  * Example: SELECT * APPLY x -> toString(x) FROM test_table.
+  * In such case lambda argument projection name `x` will be replaced by matched node projection name.
+  * If table has two columns `id` and `value`. Then result projection names are `toString(id)`, `toString(value)`;
+  *
+  * 2. For unqualified matcher when JOIN tree contains JOIN with USING.
+  * Example: SELECT * FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING(id);
+  * Result projection names must be `id`, `t1.value`, `t2.value`.
+  *
+  * 7. For subquery:
+  * For subquery projection name consists of `_subquery_` prefix and implementation specific unique number suffix.
+  * Example: SELECT (SELECT 1), (SELECT 1 UNION DISTINCT SELECT 1);
+  * Result projection name can be `_subquery_1`, `subquery_2`;
+  *
+  * 8. For table:
+  * Table node can be used in expression context only as right argument of IN function. In that case identifier is used
+  * as table node projection name.
+  * Example: SELECT id IN test_table FROM test_table;
+  * Result projection name is `in(id, test_table)`.
+  */
+using ProjectionName = String;
+using ProjectionNames = std::vector<ProjectionName>;
+constexpr auto PROJECTION_NAME_PLACEHOLDER = "__projection_name_placeholder";
+
 struct IdentifierResolveScope
 {
     /// Construct identifier resolve scope using scope node, and parent scope
     IdentifierResolveScope(QueryTreeNodePtr scope_node_, IdentifierResolveScope * parent_scope_)
         : scope_node(std::move(scope_node_))
         , parent_scope(parent_scope_)
-    {}
+    {
+        if (parent_scope)
+            subquery_depth = parent_scope->subquery_depth;
+    }
 
     QueryTreeNodePtr scope_node;
+
     IdentifierResolveScope * parent_scope = nullptr;
 
     /// Identifier lookup to result
@@ -548,20 +663,11 @@ struct IdentifierResolveScope
     /// Current scope expression
     std::unordered_set<IdentifierLookup, IdentifierLookupHash> non_cached_identifier_lookups_during_expression_resolve;
 
-    /// Allow to check parent scopes if identifier cannot be resolved in current scope
-    bool allow_to_check_parent_scopes = true;
+    /// Table expression node to data
+    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
-
-    /// Table expression node to data cache
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
-
-    /// Stage when names for projection are calculated
-    bool projection_names_calculation_stage = false;
-
-    /// Node to projection name
-    std::unordered_map<QueryTreeNodePtr, std::string> node_to_projection_name;
 
     /// Subquery depth
     size_t subquery_depth = 0;
@@ -645,6 +751,10 @@ struct IdentifierResolveScope
         for (const auto & [cte_name, node] : cte_name_to_query_node)
             buffer << "CTE name " << cte_name << " node " << node->formatASTForErrorMessage() << '\n';
 
+        buffer << "WINDOW name to window node table size " << window_name_to_window_node.size() << '\n';
+        for (const auto & [window_name, node] : window_name_to_window_node)
+            buffer << "CTE name " << window_name << " node " << node->formatASTForErrorMessage() << '\n';
+
         buffer << "Nodes with duplicated aliases size " << nodes_with_duplicated_aliases.size() << '\n';
         for (const auto & node : nodes_with_duplicated_aliases)
             buffer << "Alias name " << node->getAlias() << " node " << node->formatASTForErrorMessage() << '\n';
@@ -652,8 +762,20 @@ struct IdentifierResolveScope
         buffer << "Expression resolve process stack " << '\n';
         expressions_in_resolve_process_stack.dump(buffer);
 
-        buffer << "Allow to check parent scopes " << allow_to_check_parent_scopes << '\n';
-        // buffer << "Parent scope " << parent_scope << '\n';
+        buffer << "Table expressions in resolve process size " << table_expressions_in_resolve_process.size() << '\n';
+        for (const auto & node : table_expressions_in_resolve_process)
+            buffer << "Table expression " << node->formatASTForErrorMessage() << '\n';
+
+        buffer << "Non cached identifier lookups during expression resolve " << non_cached_identifier_lookups_during_expression_resolve.size() << '\n';
+        for (const auto & identifier_lookup : non_cached_identifier_lookups_during_expression_resolve)
+            buffer << "Identifier lookup " << identifier_lookup.dump() << '\n';
+
+        buffer << "Table expression node to data " << table_expression_node_to_data.size() << '\n';
+        for (const auto & [table_expression_node, table_expression_data] : table_expression_node_to_data)
+            buffer << "Table expression node " << table_expression_node->formatASTForErrorMessage() << " data " << table_expression_data.dump() << '\n';
+
+        buffer << "Use identifier lookup to result cache " << use_identifier_lookup_to_result_cache << '\n';
+        buffer << "Subquery depth " << subquery_depth << '\n';
     }
 
     [[maybe_unused]] String dump() const
@@ -879,9 +1001,27 @@ private:
 
     QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunction(const std::string & function_name);
 
-    void evaluateScalarSubquery(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
+    void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth);
 
     void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+
+    static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
+        const ProjectionNames & parameters_projection_names,
+        const ProjectionNames & arguments_projection_names);
+
+    static ProjectionName calculateWindowProjectionName(const QueryTreeNodePtr & window_node,
+        const QueryTreeNodePtr & parent_window_node,
+        const String & parent_window_name,
+        const ProjectionNames & partition_by_projection_names,
+        const ProjectionNames & order_by_projection_names,
+        const ProjectionName & frame_begin_offset_projection_name,
+        const ProjectionName & frame_end_offset_projection_name);
+
+    static ProjectionName calculateSortColumnProjectionName(const QueryTreeNodePtr & sort_column_node,
+        const ProjectionName & sort_expression_projection_name,
+        const ProjectionName & fill_from_expression_projection_name,
+        const ProjectionName & fill_to_expression_projection_name,
+        const ProjectionName & fill_step_expression_projection_name);
 
     static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
@@ -896,6 +1036,8 @@ private:
     QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier);
 
     QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+
+    static bool tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings = {});
 
@@ -921,31 +1063,31 @@ private:
 
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
-    static void matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+    ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
-    void resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
+    ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
-    void resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
+    ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
 
-    void resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
+    ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
 
-    void resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+    ProjectionNames resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
-    void resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
 
-    void resolveSortColumnsNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
+    ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
     void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
-
-    String calculateProjectionNodeDisplayName(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
     NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
 
@@ -967,6 +1109,16 @@ private:
 
     /// Array join expressions counter
     size_t array_join_expressions_counter = 0;
+
+    /// Subquery counter
+    size_t subquery_counter = 0;
+
+    /// Global expression node to projection name map
+    std::unordered_map<QueryTreeNodePtr, ProjectionName> node_to_projection_name;
+
+    /// Global resolve expression node to projection names map
+    std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
+
 };
 
 /// Utility functions implementation
@@ -1011,7 +1163,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunction(const std
 }
 
 /// Evaluate scalar subquery and perform constant folding.
-void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node, size_t subquery_depth)
+void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size_t subquery_depth)
 {
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
@@ -1144,6 +1296,182 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             scope.scope_node->formatASTForErrorMessage());
 }
 
+ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
+    const ProjectionNames & arguments_projection_names)
+{
+    const auto & function_node_typed = function_node->as<FunctionNode &>();
+
+    WriteBufferFromOwnString buffer;
+    buffer << function_node_typed.getFunctionName();
+
+    if (!parameters_projection_names.empty())
+    {
+        buffer << '(';
+
+        size_t function_parameters_projection_names_size = parameters_projection_names.size();
+        for (size_t i = 0; i < function_parameters_projection_names_size; ++i)
+        {
+            buffer << parameters_projection_names[i];
+
+            if (i + 1 != function_parameters_projection_names_size)
+                buffer << ", ";
+        }
+
+        buffer << ')';
+    }
+
+    buffer << '(';
+
+    size_t function_arguments_projection_names_size = arguments_projection_names.size();
+    for (size_t i = 0; i < function_arguments_projection_names_size; ++i)
+    {
+        buffer << arguments_projection_names[i];
+
+        if (i + 1 != function_arguments_projection_names_size)
+            buffer << ", ";
+    }
+
+    buffer << ')';
+
+    return buffer.str();
+}
+
+ProjectionName QueryAnalyzer::calculateWindowProjectionName(const QueryTreeNodePtr & window_node,
+    const QueryTreeNodePtr & parent_window_node,
+    const String & parent_window_name,
+    const ProjectionNames & partition_by_projection_names,
+    const ProjectionNames & order_by_projection_names,
+    const ProjectionName & frame_begin_offset_projection_name,
+    const ProjectionName & frame_end_offset_projection_name)
+{
+    const auto & window_node_typed = window_node->as<WindowNode &>();
+    const auto & window_frame = window_node_typed.getWindowFrame();
+
+    bool parent_window_node_has_partition_by = false;
+    bool parent_window_node_has_order_by = false;
+
+    if (parent_window_node)
+    {
+        const auto & parent_window_node_typed = parent_window_node->as<WindowNode &>();
+        parent_window_node_has_partition_by = parent_window_node_typed.hasPartitionBy();
+        parent_window_node_has_order_by = parent_window_node_typed.hasOrderBy();
+    }
+
+    WriteBufferFromOwnString buffer;
+
+    if (!parent_window_name.empty())
+        buffer << parent_window_name;
+
+    if (!partition_by_projection_names.empty() && !parent_window_node_has_partition_by)
+    {
+        if (!parent_window_name.empty())
+            buffer << ' ';
+
+        buffer << "PARTITION BY ";
+
+        size_t partition_by_projection_names_size = partition_by_projection_names.size();
+        for (size_t i = 0; i < partition_by_projection_names_size; ++i)
+        {
+            buffer << partition_by_projection_names[i];
+            if (i + 1 != partition_by_projection_names_size)
+                buffer << ", ";
+        }
+    }
+
+    if (!order_by_projection_names.empty() && !parent_window_node_has_order_by)
+    {
+        if (!partition_by_projection_names.empty() || !parent_window_name.empty())
+            buffer << ' ';
+
+        buffer << "ORDER BY ";
+
+        size_t order_by_projection_names_size = order_by_projection_names.size();
+        for (size_t i = 0; i < order_by_projection_names_size; ++i)
+        {
+            buffer << order_by_projection_names[i];
+            if (i + 1 != order_by_projection_names_size)
+                buffer << ", ";
+        }
+    }
+
+    if (!window_frame.is_default)
+    {
+        if (!partition_by_projection_names.empty() || !order_by_projection_names.empty() || !parent_window_name.empty())
+            buffer << ' ';
+
+        buffer << window_frame.type << " BETWEEN ";
+        if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
+        {
+            buffer << "CURRENT ROW";
+        }
+        else if (window_frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            buffer << "UNBOUNDED";
+            buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+        else
+        {
+            buffer << frame_begin_offset_projection_name;
+            buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+
+        buffer << " AND ";
+
+        if (window_frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            buffer << "CURRENT ROW";
+        }
+        else if (window_frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            buffer << "UNBOUNDED";
+            buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+        else
+        {
+            buffer << frame_end_offset_projection_name;
+            buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
+        }
+    }
+
+    return buffer.str();
+}
+
+ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeNodePtr & sort_column_node, const ProjectionName & sort_expression_projection_name,
+    const ProjectionName & fill_from_expression_projection_name, const ProjectionName & fill_to_expression_projection_name, const ProjectionName & fill_step_expression_projection_name)
+{
+    auto & sort_node_typed = sort_column_node->as<SortNode &>();
+
+    WriteBufferFromOwnString sort_column_projection_name_buffer;
+    sort_column_projection_name_buffer << sort_expression_projection_name;
+
+    auto sort_direction = sort_node_typed.getSortDirection();
+    sort_column_projection_name_buffer << (sort_direction == SortDirection::ASCENDING ? " ASC" : " DESC");
+
+    auto nulls_sort_direction = sort_node_typed.getNullsSortDirection();
+
+    if (nulls_sort_direction)
+        sort_column_projection_name_buffer << " NULLS " << (nulls_sort_direction == sort_direction ? "LAST" : "FIRST");
+
+    if (auto collator = sort_node_typed.getCollator())
+        sort_column_projection_name_buffer << " COLLATE " << collator->getLocale();
+
+    if (sort_node_typed.withFill())
+    {
+        sort_column_projection_name_buffer << " WITH FILL";
+
+        if (sort_node_typed.hasFillFrom())
+            sort_column_projection_name_buffer << " FROM " << fill_from_expression_projection_name;
+
+        if (sort_node_typed.hasFillTo())
+            sort_column_projection_name_buffer << " TO " << fill_to_expression_projection_name;
+
+        if (sort_node_typed.hasFillStep())
+            sort_column_projection_name_buffer << " STEP " << fill_step_expression_projection_name;
+    }
+
+    return sort_column_projection_name_buffer.str();
+}
+
 void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
 {
     const auto limit_offset_constant_value = expression_node->getConstantValueOrNull();
@@ -1228,14 +1556,15 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 
     auto & parent_window_node_typed = parent_window_node->as<WindowNode &>();
 
-    // If an existing_window_name is specified it must refer to an earlier
-    // entry in the WINDOW list; the new window copies its partitioning clause
-    // from that entry, as well as its ordering clause if any. In this case
-    // the new window cannot specify its own PARTITION BY clause, and it can
-    // specify ORDER BY only if the copied window does not have one. The new
-    // window always uses its own frame clause; the copied window must not
-    // specify a frame clause.
-    // -- https://www.postgresql.org/docs/current/sql-select.html
+    /** If an existing_window_name is specified it must refer to an earlier
+      * entry in the WINDOW list; the new window copies its partitioning clause
+      * from that entry, as well as its ordering clause if any. In this case
+      * the new window cannot specify its own PARTITION BY clause, and it can
+      * specify ORDER BY only if the copied window does not have one. The new
+      * window always uses its own frame clause; the copied window must not
+      * specify a frame clause.
+      * https://www.postgresql.org/docs/current/sql-select.html
+      */
     if (window_node_typed.hasPartitionBy())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1373,7 +1702,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
     if (identifier_lookup.isExpressionLookup() && node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::CONSTANT
         && node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
         return {};
-    else if (identifier_lookup.isTableLookup() && node_type != QueryTreeNodeType::TABLE && node_type != QueryTreeNodeType::TABLE_FUNCTION &&
+    else if (identifier_lookup.isTableExpressionLookup() && node_type != QueryTreeNodeType::TABLE && node_type != QueryTreeNodeType::TABLE_FUNCTION &&
         node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION)
         return {};
     else if (identifier_lookup.isFunctionLookup() && node_type != QueryTreeNodeType::LAMBDA)
@@ -1391,6 +1720,29 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
     }
 
     return it->second;
+}
+
+bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+{
+    const auto & identifier_bind_part = identifier_lookup.identifier.front();
+
+    auto get_alias_name_to_node_map = [&]() -> std::unordered_map<std::string, QueryTreeNodePtr> &
+    {
+        if (identifier_lookup.isExpressionLookup())
+            return scope.alias_name_to_expression_node;
+        else if (identifier_lookup.isFunctionLookup())
+            return scope.alias_name_to_lambda_node;
+
+        return scope.alias_name_to_table_expression_node;
+    };
+
+    auto & alias_name_to_node_map = get_alias_name_to_node_map();
+    auto it = alias_name_to_node_map.find(identifier_bind_part);
+
+    if (it == alias_name_to_node_map.end())
+        return false;
+
+    return true;
 }
 
 /** Resolve identifier from scope aliases.
@@ -1481,13 +1833,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         return {};
     }
 
-    scope.expressions_in_resolve_process_stack.pushNode(it->second);
-
     auto node_type = it->second->getNodeType();
 
     /// Resolve expression if necessary
     if (node_type == QueryTreeNodeType::IDENTIFIER)
     {
+        scope.expressions_in_resolve_process_stack.pushNode(it->second);
+
         auto & alias_identifier_node = it->second->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
@@ -1505,26 +1857,17 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
             scope.alias_name_to_lambda_node.erase(identifier_bind_part);
         else if (identifier_lookup.isFunctionLookup() && it->second)
             scope.alias_name_to_expression_node.erase(identifier_bind_part);
+
+        scope.expressions_in_resolve_process_stack.popNode();
     }
     else if (node_type == QueryTreeNodeType::FUNCTION)
     {
-        resolveFunction(it->second, scope);
+        resolveExpressionNode(it->second, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
     else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
-        IdentifierResolveScope subquery_scope(it->second, &scope /*parent_scope*/);
-        subquery_scope.subquery_depth = scope.subquery_depth + 1;
-
-        if (node_type == QueryTreeNodeType::QUERY)
-            resolveQuery(it->second, subquery_scope);
-        else if (node_type == QueryTreeNodeType::UNION)
-            resolveUnion(it->second, subquery_scope);
-
-        if (identifier_lookup.isExpressionLookup())
-            evaluateScalarSubquery(it->second, subquery_scope.subquery_depth);
+        resolveExpressionNode(it->second, scope, false /*allow_lambda_expression*/, identifier_lookup.isTableExpressionLookup() /*allow_table_expression*/);
     }
-
-    scope.expressions_in_resolve_process_stack.popNode();
 
     QueryTreeNodePtr result = it->second;
 
@@ -1610,7 +1953,7 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpression(const IdentifierLookup & 
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    if (identifier_lookup.isTableLookup())
+    if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
         if (parts_size != 1 && parts_size != 2)
@@ -1663,7 +2006,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
-    if (identifier_lookup.isTableLookup())
+    if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
         if (parts_size != 1 && parts_size != 2)
@@ -1724,7 +2067,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 scope.scope_node->formatASTForErrorMessage());
 
         QueryTreeNodePtr result_expression = result_column;
-        bool projection_name_clone_is_needed = true;
+        bool clone_is_needed = true;
 
         if (!match_full_identifier && compound_identifier)
         {
@@ -1733,54 +2076,51 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
             auto tuple_element_result = wrapExpressionNodeInTupleElement(result_expression, identifier_view);
             resolveFunction(tuple_element_result, scope);
             result_expression = std::move(tuple_element_result);
-            projection_name_clone_is_needed = false;
+            clone_is_needed = false;
         }
 
-        if (scope.projection_names_calculation_stage && scope.table_expression_node_to_data.size() > 1)
+        if (clone_is_needed)
+            result_expression = result_expression->clone();
+
+        auto qualified_identifier = identifier;
+        for (size_t i = 0; i < identifier_column_qualifier_parts; ++i)
         {
-            if (projection_name_clone_is_needed)
-                result_expression = result_expression->clone();
+            auto qualified_identifier_with_removed_part = qualified_identifier;
+            qualified_identifier_with_removed_part.popFirst();
 
-            auto qualified_identifier = identifier;
-            for (size_t i = 0; i < identifier_column_qualifier_parts; ++i)
+            if (qualified_identifier_with_removed_part.empty())
+                break;
+
+            if (context->getSettingsRef().prefer_column_name_to_alias
+                && scope.alias_name_to_expression_node.contains(qualified_identifier_with_removed_part[0]))
+                break;
+
+            bool can_remove_qualificator = true;
+
+            for (auto & table_expression_to_check_data : scope.table_expression_node_to_data)
             {
-                auto qualified_identifier_with_removed_part = qualified_identifier;
-                qualified_identifier_with_removed_part.popFirst();
+                const auto & table_expression_to_check = table_expression_to_check_data.first;
+                if (table_expression_to_check.get() == table_expression_node.get())
+                    continue;
 
-                if (qualified_identifier_with_removed_part.empty())
-                    break;
+                IdentifierLookup column_identifier_lookup{qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
+                bool can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(column_identifier_lookup, table_expression_to_check, scope);
 
-                if (context->getSettingsRef().prefer_column_name_to_alias
-                    && scope.alias_name_to_expression_node.contains(qualified_identifier_with_removed_part[0]))
-                    break;
-
-                bool can_remove_qualificator = true;
-
-                for (auto & table_expression_to_check_data : scope.table_expression_node_to_data)
+                if (can_bind_identifier_to_table_expression)
                 {
-                    const auto & table_expression_to_check = table_expression_to_check_data.first;
-                    if (table_expression_to_check.get() == table_expression_node.get())
-                        continue;
-
-                    IdentifierLookup column_identifier_lookup {qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
-                    bool can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(column_identifier_lookup, table_expression_to_check, scope);
-
-                    if (can_bind_identifier_to_table_expression)
-                    {
-                        can_remove_qualificator = false;
-                        break;
-                    }
-                }
-
-                if (!can_remove_qualificator)
+                    can_remove_qualificator = false;
                     break;
-
-                qualified_identifier = std::move(qualified_identifier_with_removed_part);
+                }
             }
 
-            auto qualified_identifier_full_name = qualified_identifier.getFullName();
-            scope.node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
+            if (!can_remove_qualificator)
+                break;
+
+            qualified_identifier = std::move(qualified_identifier_with_removed_part);
         }
+
+        auto qualified_identifier_full_name = qualified_identifier.getFullName();
+        node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
 
         return result_expression;
     };
@@ -2058,9 +2398,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const Identifie
   */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    if (!scope.allow_to_check_parent_scopes)
-        return {};
-
     bool initial_scope_is_query = scope.scope_node->getNodeType() == QueryTreeNodeType::QUERY;
     bool initial_scope_is_expression = !initial_scope_is_query;
 
@@ -2103,7 +2440,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
               * During child scope table identifier resolve a, table node test_table with alias a from parent scope
               * is invalid.
               */
-            if (identifier_lookup.isTableLookup() && !is_cte)
+            if (identifier_lookup.isTableExpressionLookup() && !is_cte)
                 continue;
 
             if (is_cte)
@@ -2227,7 +2564,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         }
     }
 
-    if (!resolve_result.resolved_identifier && identifier_lookup.isTableLookup())
+    if (!resolve_result.resolved_identifier && identifier_lookup.isTableExpressionLookup())
     {
         auto cte_query_node_it = scope.cte_name_to_query_node.find(identifier_lookup.identifier.getFullName());
         if (cte_query_node_it != scope.cte_name_to_query_node.end())
@@ -2249,7 +2586,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
     /// Try to resolve table identifier from database catalog
 
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableLookup())
+    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
         resolve_result.resolved_identifier = tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier);
 
@@ -2269,37 +2606,44 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
-
-void QueryAnalyzer::matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names,
+/** Qualify matched columns projection names for unqualified matcher or qualified matcher resolved nodes
+  *
+  * Example: SELECT * FROM test_table AS t1, test_table AS t2;
+  */
+void QueryAnalyzer::qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names,
     const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
-    if (!scope.projection_names_calculation_stage || scope.table_expression_node_to_data.size() < 2)
-        return;
-
-    std::vector<std::string> qualify_identifier_parts;
+    /// Build additional column qualification parts array
+    std::vector<std::string> additional_column_qualification_parts;
 
     if (table_expression_node->hasAlias())
-        qualify_identifier_parts = {table_expression_node->getAlias()};
+        additional_column_qualification_parts = {table_expression_node->getAlias()};
     else if (auto * table_node = table_expression_node->as<TableNode>())
-        qualify_identifier_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
+        additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
 
-    size_t qualify_identifier_parts_size = qualify_identifier_parts.size();
+    size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
+
+    /** For each matched column node iterate over additional column qualifications and apply them if column needs to be qualified.
+      * To check if column needs to be qualified we check if column name can bind to any other table expression in scope or to scope aliases.
+      */
+    std::vector<std::string> column_qualified_identifier_parts;
 
     for (auto & [column_node, column_name] : matched_nodes_with_column_names)
     {
-        std::vector<std::string> column_qualified_identifier_parts = Identifier(column_name).getParts();
+        column_qualified_identifier_parts = Identifier(column_name).getParts();
 
-        for (size_t i = 0; i < qualify_identifier_parts_size; ++i)
+        /// Iterate over additional column qualifications and apply them if needed
+        for (size_t i = 0; i < additional_column_qualification_parts_size; ++i)
         {
             bool need_to_qualify = false;
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
+            IdentifierLookup lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
 
             for (auto & table_expression_data : scope.table_expression_node_to_data)
             {
                 if (table_expression_data.first.get() == table_expression_node.get())
                     continue;
 
-                IdentifierLookup lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
                 if (tryBindIdentifierToTableExpression(lookup, table_expression_data.first, scope))
                 {
                     need_to_qualify = true;
@@ -2307,10 +2651,18 @@ void QueryAnalyzer::matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNod
                 }
             }
 
+            if (tryBindIdentifierToAliases(lookup, scope))
+                need_to_qualify = true;
+
             if (need_to_qualify)
             {
-                size_t part_index_to_use_for_qualification = qualify_identifier_parts_size - i - 1;
-                const auto & part_to_use = qualify_identifier_parts[part_index_to_use_for_qualification];
+                /** Add last qualification part that was not used into column qualified identifier.
+                  * If additional column qualification parts consists from [database_name, table_name].
+                  * On first iteration if column is needed to be qualified to qualify it with table_name.
+                  * On second iteration if column is needed to be qualified to qualify it with database_name.
+                  */
+                size_t part_index_to_use_for_qualification = additional_column_qualification_parts_size - i - 1;
+                const auto & part_to_use = additional_column_qualification_parts[part_index_to_use_for_qualification];
                 column_qualified_identifier_parts.insert(column_qualified_identifier_parts.begin(), part_to_use);
             }
             else
@@ -2319,7 +2671,7 @@ void QueryAnalyzer::matcherQualifyColumnsForProjectionNamesIfNeeded(QueryTreeNod
             }
         }
 
-        scope.node_to_projection_name.emplace(column_node, Identifier(column_qualified_identifier_parts).getFullName());
+        node_to_projection_name.emplace(column_node, Identifier(column_qualified_identifier_parts).getFullName());
     }
 }
 
@@ -2360,7 +2712,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         const auto & element_names = tuple_data_type->getElementNames();
 
-        auto matcher_qualified_identifier_copy = matcher_node_typed.getQualifiedIdentifier();
+        auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
         for (const auto & element_name : element_names)
         {
             if (!matcher_node_typed.isMatchingColumn(element_name))
@@ -2373,12 +2725,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             QueryTreeNodePtr function_query_node = tuple_element_function;
             resolveFunction(function_query_node, scope);
 
-            if (scope.projection_names_calculation_stage)
-            {
-                matcher_qualified_identifier_copy.push_back(element_name);
-                scope.node_to_projection_name.emplace(function_query_node, matcher_qualified_identifier_copy.getFullName());
-                matcher_qualified_identifier_copy.pop_back();
-            }
+            qualified_matcher_element_identifier.push_back(element_name);
+            node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+            qualified_matcher_element_identifier.pop_back();
 
             matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
         }
@@ -2386,13 +2735,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         return matched_expression_nodes_with_column_names;
     }
 
-    /// Try to resolve unqualified matcher for table expression
+    /// Try to resolve qualified matcher for table expression
 
     IdentifierResolveSettings identifier_resolve_settings;
     identifier_resolve_settings.allow_to_check_cte = false;
     identifier_resolve_settings.allow_to_check_database_catalog = false;
 
-    auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE};
+    auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
 
@@ -2438,7 +2787,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             matched_expression_nodes_with_column_names.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node), column_name);
     }
 
-    matcherQualifyColumnsForProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression_node, scope);
+    qualifyMatchedColumnsProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression_node, scope);
 
     return matched_expression_nodes_with_column_names;
 }
@@ -2453,20 +2802,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     /** There can be edge case if matcher is inside lambda expression.
       * Try to find parent query expression using parent scopes.
       */
-    IQueryTreeNode * scope_node = scope.scope_node.get();
-    auto * scope_query_node = scope_node->as<QueryNode>();
-
-    while (!scope_query_node)
-    {
-        if (!scope.parent_scope)
-            break;
-
-        scope_node = scope.parent_scope->scope_node.get();
-        scope_query_node = scope_node->as<QueryNode>();
-    }
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
 
     /// If there are no parent query scope or query scope does not have join tree
-    if (!scope_query_node || !scope_query_node->getJoinTree())
+    if (!nearest_query_scope_query_node || !nearest_query_scope_query_node->getJoinTree())
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Unqualified matcher {} cannot be resolved. There are no table sources. In scope {}",
@@ -2482,7 +2822,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
       * expressions that have same names as columns in USING clause must be skipped.
       */
 
-    auto table_expressions_stack = buildTableExpressionsStack(scope_query_node->getJoinTree());
+    auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope_query_node->getJoinTree());
     std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
 
     for (auto & table_expression : table_expressions_stack)
@@ -2499,9 +2839,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         if (join_node)
         {
             size_t table_expressions_column_nodes_with_names_stack_size = table_expressions_column_nodes_with_names_stack.size();
-            if (table_expressions_column_nodes_with_names_stack_size != 2)
+            if (table_expressions_column_nodes_with_names_stack_size < 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected 2 table expressions on stack before JOIN processing. Actual {}",
+                    "Expected at least 2 table expressions on stack before JOIN processing. Actual {}",
                     table_expressions_column_nodes_with_names_stack_size);
 
             auto right_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
@@ -2613,7 +2953,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), table_expression_column.name);
         }
 
-        matcherQualifyColumnsForProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression, scope);
+        qualifyMatchedColumnsProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression, scope);
+
+        for (auto & [matched_node, column_name] : matched_expression_nodes_with_column_names)
+        {
+            auto node_projection_name_it = node_to_projection_name.find(matcher_node);
+            if (node_projection_name_it != node_to_projection_name.end())
+                column_name = node_projection_name_it->second;
+        }
+
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
     }
 
@@ -2635,7 +2983,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
   * 2. Apply column transformers to matched expression nodes. For strict column transformers save used column names.
   * 3. Validate strict column transformers.
   */
-QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
@@ -2660,11 +3008,21 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
     };
 
     ListNodePtr list = std::make_shared<ListNode>();
+    ProjectionNames result_projection_names;
+    ProjectionNames node_projection_names;
 
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
         bool replace_transformer_was_used = false;
+        bool execute_apply_transformer = false;
+        bool execute_replace_transformer = false;
+
+        auto projection_name_it = node_to_projection_name.find(node);
+        if (projection_name_it != node_to_projection_name.end())
+            result_projection_names.push_back(projection_name_it->second);
+        else
+            result_projection_names.push_back(column_name);
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
@@ -2677,24 +3035,8 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                 {
                     auto lambda_expression_to_resolve = expression_node->clone();
                     IdentifierResolveScope lambda_scope(expression_node, &scope /*parent_scope*/);
-                    resolveLambda(lambda_expression_to_resolve, {node}, lambda_scope);
+                    node_projection_names = resolveLambda(lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
-
-                    if (auto * lambda_list_node_result = lambda_expression_to_resolve_typed.getExpression()->as<ListNode>())
-                    {
-                        auto & lambda_list_node_result_nodes = lambda_list_node_result->getNodes();
-                        size_t lambda_list_node_result_nodes_size = lambda_list_node_result->getNodes().size();
-
-                        if (lambda_list_node_result_nodes_size != 1)
-                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Lambda in APPLY transformer {} resolved as list node with size {}. Expected 1. In scope {}",
-                            apply_transformer->formatASTForErrorMessage(),
-                            lambda_list_node_result_nodes_size,
-                            scope.scope_node->formatASTForErrorMessage());
-
-                        lambda_expression_to_resolve_typed.getExpression() = lambda_list_node_result_nodes[0];
-                    }
-
                     node = lambda_expression_to_resolve_typed.getExpression();
                 }
                 else if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
@@ -2702,7 +3044,7 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                     auto function_to_resolve_untyped = expression_node->clone();
                     auto & function_to_resolve_typed = function_to_resolve_untyped->as<FunctionNode &>();
                     function_to_resolve_typed.getArguments().getNodes().push_back(node);
-                    resolveFunction(function_to_resolve_untyped, scope);
+                    node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
                     node = function_to_resolve_untyped;
                 }
                 else
@@ -2712,6 +3054,8 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                         transformer->formatASTForErrorMessage(),
                         scope.scope_node->formatASTForErrorMessage());
                 }
+
+                execute_apply_transformer = true;
             }
             else if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
             {
@@ -2742,12 +3086,41 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                     add_strict_transformer_column_name(replace_transformer, column_name);
 
                 node = replace_expression->clone();
-                resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                execute_replace_transformer = true;
+            }
+
+            if (execute_apply_transformer || execute_replace_transformer)
+            {
+                if (auto * node_list = node->as<ListNode>())
+                {
+                    auto & node_list_nodes = node_list->getNodes();
+                    size_t node_list_nodes_size = node_list_nodes.size();
+
+                    if (node_list_nodes_size != 1)
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "{} transformer {} resolved as list node with size {}. Expected 1. In scope {}",
+                            execute_apply_transformer ? "APPLY" : "REPLACE",
+                            transformer->formatASTForErrorMessage(),
+                            node_list_nodes_size,
+                            scope.scope_node->formatASTForErrorMessage());
+
+                    node = node_list_nodes[0];
+                }
+
+                if (node_projection_names.size() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual {}", node_projection_names.size());
+
+                result_projection_names.back() = std::move(node_projection_names[0]);
+                node_to_projection_name.emplace(node, result_projection_names.back());
+                node_projection_names.clear();
             }
         }
 
         if (node)
             list->getNodes().push_back(node);
+        else
+            result_projection_names.pop_back();
     }
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
@@ -2816,7 +3189,9 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
             non_matched_column_names_buffer.str());
     }
 
-    return list;
+    matcher_node = std::move(list);
+
+    return result_projection_names;
 }
 
 /** Resolve window function window node.
@@ -2833,19 +3208,18 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
   * If window node has frame begin OFFSET or frame end OFFSET specified, they are resolved, and window node frame constants are updated.
   * Window node frame is validated.
   */
-void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     std::string parent_window_name;
     auto * identifier_node = node->as<IdentifierNode>();
 
+    ProjectionName result_projection_name;
+    QueryTreeNodePtr parent_window_node;
+
     if (identifier_node)
-    {
         parent_window_name = identifier_node->getIdentifier().getFullName();
-    }
     else if (auto * window_node = node->as<WindowNode>())
-    {
         parent_window_name = window_node->getParentWindowName();
-    }
 
     if (!parent_window_name.empty())
     {
@@ -2863,21 +3237,38 @@ void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScop
                 parent_window_name,
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
 
+        parent_window_node = window_node_it->second;
+
         if (identifier_node)
-            node = window_node_it->second->clone();
+        {
+            node = parent_window_node->clone();
+            result_projection_name = parent_window_name;
+        }
         else
-            mergeWindowWithParentWindow(node, window_node_it->second, scope);
+        {
+            mergeWindowWithParentWindow(node, parent_window_node, scope);
+        }
     }
 
     auto & window_node = node->as<WindowNode &>();
-
     window_node.setParentWindowName({});
-    resolveExpressionNodeList(window_node.getPartitionByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    resolveSortColumnsNodeList(window_node.getOrderByNode(), scope);
+
+    ProjectionNames partition_by_projection_names = resolveExpressionNodeList(window_node.getPartitionByNode(),
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/);
+
+    ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
+
+    ProjectionNames frame_begin_offset_projection_names;
+    ProjectionNames frame_end_offset_projection_names;
 
     if (window_node.hasFrameBeginOffset())
     {
-        resolveExpressionNode(window_node.getFrameBeginOffsetNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        frame_begin_offset_projection_names = resolveExpressionNode(window_node.getFrameBeginOffsetNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
 
         const auto window_frame_begin_constant_value = window_node.getFrameBeginOffsetNode()->getConstantValueOrNull();
         if (!window_frame_begin_constant_value || !isNativeNumber(removeNullable(window_frame_begin_constant_value->getType())))
@@ -2887,11 +3278,18 @@ void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScop
                 scope.scope_node->formatASTForErrorMessage());
 
         window_node.getWindowFrame().begin_offset = window_frame_begin_constant_value->getValue();
+        if (frame_begin_offset_projection_names.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Window FRAME begin offset expected 1 projection name. Actual {}",
+                frame_begin_offset_projection_names.size());
     }
 
     if (window_node.hasFrameEndOffset())
     {
-        resolveExpressionNode(window_node.getFrameEndOffsetNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        frame_end_offset_projection_names = resolveExpressionNode(window_node.getFrameEndOffsetNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
 
         const auto window_frame_end_constant_value = window_node.getFrameEndOffsetNode()->getConstantValueOrNull();
         if (!window_frame_end_constant_value || !isNativeNumber(removeNullable(window_frame_end_constant_value->getType())))
@@ -2901,14 +3299,33 @@ void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScop
                 scope.scope_node->formatASTForErrorMessage());
 
         window_node.getWindowFrame().end_offset = window_frame_end_constant_value->getValue();
+        if (frame_end_offset_projection_names.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Window FRAME begin offset expected 1 projection name. Actual {}",
+                frame_end_offset_projection_names.size());
     }
 
     window_node.getWindowFrame().checkValid();
+
+    if (result_projection_name.empty())
+    {
+        result_projection_name = calculateWindowProjectionName(node,
+            parent_window_node,
+            parent_window_name,
+            partition_by_projection_names,
+            order_by_projection_names,
+            frame_begin_offset_projection_names.empty() ? "" : frame_begin_offset_projection_names.front(),
+            frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
+    }
+
+    return result_projection_name;
 }
 
 /** Resolve lambda function.
   * This function modified lambda_node during resolve. It is caller responsibility to clone lambda before resolve
   * if it is needed for later use.
+  *
+  * Lambda body expression result projection names is used as lambda projection names.
   *
   * Lambda expression can be resolved into list node. It is caller responsibility to handle it properly.
   *
@@ -2924,7 +3341,7 @@ void QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierResolveScop
   * 5. Resolve lambda body expression.
   * 6. Deregister lambda from lambdas in resolve process.
   */
-void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope)
 {
     auto & lambda = lambda_node->as<LambdaNode &>();
     auto & lambda_arguments_nodes = lambda.getArguments().getNodes();
@@ -2986,9 +3403,11 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
     lambda.getArgumentsNode() = std::move(lambda_new_arguments);
 
     /// Lambda body expression is resolved as standard query expression node.
-    resolveExpressionNode(lambda.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    auto result_projection_names = resolveExpressionNode(lambda.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     lambdas_in_resolve_process.erase(lambda_node.get());
+
+    return result_projection_names;
 }
 
 /** Resolve function node in scope.
@@ -3016,17 +3435,17 @@ void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const Qu
   * they must be resolved.
   * 9. If function is suitable for constant folding, try to perform constant folding for function node.
   */
-void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
-    if (function_node_ptr->isResolved())
-        return;
-
     auto function_name = function_node_ptr->getFunctionName();
 
     /// Resolve function parameters
 
-    resolveExpressionNodeList(function_node_ptr->getParametersNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    auto parameters_projection_names = resolveExpressionNodeList(function_node_ptr->getParametersNode(),
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/);
 
     /// Convert function parameters into constant parameters array
 
@@ -3068,8 +3487,12 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         is_special_function_exists = function_name == "exists";
 
         /// Handle SELECT count(*) FROM test_table
-        if (function_name == "count")
-            function_node_ptr->getArguments().getNodes().clear();
+        if (function_name == "count" && function_node_ptr->getArguments().getNodes().size() == 1)
+        {
+            auto * matcher_node = function_node_ptr->getArguments().getNodes().front()->as<MatcherNode>();
+            if (matcher_node && matcher_node->isUnqualified())
+                function_node_ptr->getArguments().getNodes().clear();
+        }
     }
 
     /** Special functions dictGet and its variations and joinGet can be executed when first argument is identifier.
@@ -3099,7 +3522,10 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     /// Resolve function arguments
 
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    resolveExpressionNodeList(function_node_ptr->getArgumentsNode(), scope, true /*allow_lambda_expression*/, allow_table_expressions /*allow_table_expression*/);
+    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+        scope,
+        true /*allow_lambda_expression*/,
+        allow_table_expressions /*allow_table_expression*/);
 
     if (is_special_function_exists)
     {
@@ -3205,7 +3631,8 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
-        else if (is_special_function_in && (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
+        else if (is_special_function_in &&
+            (function_argument->getNodeType() == QueryTreeNodeType::TABLE ||
             function_argument->getNodeType() == QueryTreeNodeType::QUERY ||
             function_argument->getNodeType() == QueryTreeNodeType::UNION))
         {
@@ -3235,6 +3662,9 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
     }
+
+    /// Calculate function projection name
+    ProjectionNames result_projection_names = {calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names)};
 
     /** Try to resolve function as
       * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
@@ -3273,11 +3703,15 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
-            resolveLambda(lambda_expression_clone, function_arguments, lambda_scope);
+            ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
             node = resolved_lambda.getExpression();
-            return;
+
+            if (node->getNodeType() == QueryTreeNodeType::LIST)
+                result_projection_names = std::move(lambda_projection_names);
+
+            return result_projection_names;
         }
 
         if (function_name == "untuple")
@@ -3289,8 +3723,8 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
                     "Function 'untuple' must have 1 argument. In scope {}",
                     scope.scope_node->formatASTForErrorMessage());
 
-            const auto & tuple_argument = function_arguments[0];
-            auto result_type = tuple_argument->getResultType();
+            const auto & untuple_argument = function_arguments[0];
+            auto result_type = untuple_argument->getResultType();
             const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
             if (!tuple_data_type)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -3306,20 +3740,28 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             for (const auto & element_name : element_names)
             {
                 auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
-                tuple_element_function->getArguments().getNodes().push_back(tuple_argument);
+                tuple_element_function->getArguments().getNodes().push_back(untuple_argument);
                 tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
 
                 QueryTreeNodePtr function_query_node = tuple_element_function;
                 resolveFunction(function_query_node, scope);
 
-                if (scope.projection_names_calculation_stage && node->hasAlias())
-                    scope.node_to_projection_name.emplace(function_query_node, node->getAlias() + '.' + element_name);
-
                 result_list->getNodes().push_back(std::move(function_query_node));
             }
 
-            node = result_list;
-            return;
+            auto untuple_argument_projection_name = arguments_projection_names.at(0);
+            result_projection_names.clear();
+
+            for (const auto & element_name : element_names)
+            {
+                if (node->hasAlias())
+                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
+                else
+                    result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
+            }
+
+            node = std::move(result_list);
+            return result_projection_names;
         }
         else if (function_name == "grouping")
         {
@@ -3336,7 +3778,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
             function_node.resolveAsFunction(std::move(grouping_function_adaptor), std::make_shared<DataTypeUInt64>());
-            return;
+            return result_projection_names;
         }
     }
 
@@ -3352,8 +3794,16 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(aggregate_function, aggregate_function->getReturnType());
-        resolveWindow(function_node.getWindowNode(), scope);
-        return;
+
+        bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
+        ProjectionName window_projection_name = resolveWindow(function_node.getWindowNode(), scope);
+
+        if (window_node_is_identifier)
+            result_projection_names[0] += " OVER " + window_projection_name;
+        else
+            result_projection_names[0] += " OVER (" + window_projection_name + ')';
+
+        return result_projection_names;
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, context, parameters);
@@ -3364,7 +3814,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     if (!function)
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+           throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
                "Function with name {} does not exists. In scope {}",
                function_name,
                scope.scope_node->formatASTForErrorMessage());
@@ -3372,7 +3822,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
         function_node.resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
-        return;
+        return result_projection_names;
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
@@ -3386,6 +3836,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     {
         function->getLambdaArgumentTypes(argument_types);
 
+        ProjectionNames lambda_projection_names;
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
             auto lambda_to_resolve = function_arguments[function_lambda_argument_index]->clone();
@@ -3425,11 +3876,10 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             }
 
             IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
-            resolveLambda(lambda_to_resolve, lambda_arguments, lambda_scope);
+            lambda_projection_names = resolveLambda(lambda_to_resolve, lambda_arguments, lambda_scope);
 
             if (auto * lambda_list_node_result = lambda_to_resolve_typed.getExpression()->as<ListNode>())
             {
-                auto & lambda_list_node_result_nodes = lambda_list_node_result->getNodes();
                 size_t lambda_list_node_result_nodes_size = lambda_list_node_result->getNodes().size();
 
                 if (lambda_list_node_result_nodes_size != 1)
@@ -3438,13 +3888,48 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
                         lambda_list_node_result_nodes_size,
                         lambda_to_resolve->formatASTForErrorMessage());
 
-                lambda_to_resolve_typed.getExpression() = lambda_list_node_result_nodes[0];
+                lambda_to_resolve_typed.getExpression() = lambda_list_node_result->getNodes().front();
+            }
+
+            if (arguments_projection_names.at(function_lambda_argument_index) == PROJECTION_NAME_PLACEHOLDER)
+            {
+                size_t lambda_projection_names_size =lambda_projection_names.size();
+                if (lambda_projection_names_size != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Lambda argument inside function expected to have 1 projection name. Actual {}",
+                        lambda_projection_names_size);
+
+                WriteBufferFromOwnString lambda_argument_projection_name_buffer;
+                lambda_argument_projection_name_buffer << "lambda(";
+                lambda_argument_projection_name_buffer << "tuple(";
+
+                size_t lambda_argument_names_size = lambda_argument_names.size();
+
+                for (size_t i = 0; i < lambda_argument_names_size; ++i)
+                {
+                    const auto & lambda_argument_name = lambda_argument_names[i];
+                    lambda_argument_projection_name_buffer << lambda_argument_name;
+
+                    if (i + 1 != lambda_argument_names_size)
+                        lambda_argument_projection_name_buffer << ", ";
+                }
+
+                lambda_argument_projection_name_buffer << "), ";
+                lambda_argument_projection_name_buffer << lambda_projection_names[0];
+                lambda_argument_projection_name_buffer << ")";
+
+                lambda_projection_names.clear();
+
+                arguments_projection_names[function_lambda_argument_index] = lambda_argument_projection_name_buffer.str();
             }
 
             argument_types[function_lambda_argument_index] = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve->getResultType());
             argument_columns[function_lambda_argument_index].type = argument_types[function_lambda_argument_index];
             function_arguments[function_lambda_argument_index] = std::move(lambda_to_resolve);
         }
+
+        /// Recalculate function projection name after lambda resolution
+        result_projection_names = {calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names)};
     }
 
     /** Create SET column for special function IN to allow constant folding
@@ -3515,6 +4000,8 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
     }
 
     function_node.resolveAsFunction(std::move(function), std::move(result_type));
+
+    return result_projection_names;
 }
 
 /** Resolve expression node.
@@ -3543,9 +4030,39 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
   *
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
-void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
 {
+    auto resolved_expression_it = resolved_expressions.find(node);
+    if (resolved_expression_it != resolved_expressions.end())
+    {
+        /** There can be edge case, when subquery for IN function is resolved multiple times in different context.
+          * SELECT id IN (subquery AS value), value FROM test_table;
+          * When we start to resolve `value` identifier, subquery is already resolved but constant folding is not performed.
+          */
+        auto node_type = node->getNodeType();
+        if (!allow_table_expression && (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION))
+        {
+            IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+            evaluateScalarSubqueryIfNeeded(node, subquery_scope.subquery_depth);
+        }
+
+        return resolved_expression_it->second;
+    }
+
     String node_alias = node->getAlias();
+    ProjectionNames result_projection_names;
+
+    if (node_alias.empty())
+    {
+        auto projection_name_it = node_to_projection_name.find(node);
+        if (projection_name_it != node_to_projection_name.end())
+            result_projection_names.push_back(projection_name_it->second);
+    }
+    else
+    {
+        result_projection_names.push_back(node_alias);
+    }
 
     /** Do not use alias table if node has alias same as some other node.
       * Example: WITH x -> x + 1 AS lambda SELECT 1 AS lambda;
@@ -3592,6 +4109,14 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
             auto resolve_identifier_expression_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
             node = resolve_identifier_expression_result.resolved_identifier;
 
+            if (node && result_projection_names.empty() &&
+                (resolve_identifier_expression_result.isResolvedFromJoinTree() || resolve_identifier_expression_result.isResolvedFromExpressionArguments()))
+            {
+                auto projection_name_it = node_to_projection_name.find(node);
+                if (projection_name_it != node_to_projection_name.end())
+                    result_projection_names.push_back(projection_name_it->second);
+            }
+
             if (node && !node_alias.empty())
                 scope.alias_name_to_lambda_node.erase(node_alias);
 
@@ -3605,7 +4130,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
 
             if (!node && allow_table_expression)
             {
-                node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE}, scope).resolved_identifier;
+                node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
 
                 /// If table identifier is resolved as CTE clone it
                 bool resolved_as_cte = node && node->as<QueryNode>() && node->as<QueryNode>()->isCTE();
@@ -3624,7 +4149,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
 
                 if (allow_table_expression)
-                    message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::TABLE);
+                    message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::TABLE_EXPRESSION);
 
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown {}{} identifier {} in scope {}",
@@ -3634,11 +4159,27 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     scope.scope_node->formatASTForErrorMessage());
             }
 
+            if (node->getNodeType() == QueryTreeNodeType::LIST)
+            {
+                result_projection_names.clear();
+                resolved_expression_it = resolved_expressions.find(node);
+                if (resolved_expression_it != resolved_expressions.end())
+                    return resolved_expression_it->second;
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Identifier {} resolve into list node and list node projection names are not initialized. In scope {}",
+                        unresolved_identifier.getFullName(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
+
+            if (result_projection_names.empty())
+                result_projection_names.push_back(unresolved_identifier.getFullName());
+
             break;
         }
         case QueryTreeNodeType::MATCHER:
         {
-            node = resolveMatcher(node, scope);
+            result_projection_names = resolveMatcher(node, scope);
             break;
         }
         case QueryTreeNodeType::TRANSFORMER:
@@ -3655,24 +4196,38 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
               * Example: SELECT a, untuple(CAST(('hello', 1) AS Tuple(name String, count UInt32))) AS a;
               * During resolveFunction `untuple` function is replaced by list of 2 constants 'hello', 1.
               */
-            resolveExpressionNodeList(node, scope, allow_lambda_expression, allow_lambda_expression);
+            result_projection_names = resolveExpressionNodeList(node, scope, allow_lambda_expression, allow_lambda_expression);
             break;
         }
         case QueryTreeNodeType::CONSTANT:
         {
+            if (result_projection_names.empty())
+            {
+                const auto & constant_node = node->as<ConstantNode &>();
+                result_projection_names.push_back(constant_node.getValueStringRepresentation());
+            }
+
             /// Already resolved
             break;
         }
         case QueryTreeNodeType::COLUMN:
         {
-            auto & column_function_node = node->as<ColumnNode &>();
-            if (column_function_node.hasExpression())
-                resolveExpressionNode(column_function_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            auto & column_node = node->as<ColumnNode &>();
+            if (column_node.hasExpression())
+                resolveExpressionNode(column_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            if (result_projection_names.empty())
+                result_projection_names.push_back(column_node.getColumnName());
+
             break;
         }
         case QueryTreeNodeType::FUNCTION:
         {
-            resolveFunction(node, scope);
+            auto function_projection_names = resolveFunction(node, scope);
+
+            if (result_projection_names.empty() || node->getNodeType() == QueryTreeNodeType::LIST)
+                result_projection_names = std::move(function_projection_names);
+
             break;
         }
         case QueryTreeNodeType::LAMBDA:
@@ -3682,6 +4237,9 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     "Lambda is not allowed {} in expression. In scope {}",
                     node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+            if (result_projection_names.empty())
+                result_projection_names.push_back(PROJECTION_NAME_PLACEHOLDER);
 
             /// Lambda must be resolved by caller
             break;
@@ -3696,7 +4254,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
         case QueryTreeNodeType::INTERPOLATE:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Interpolate column {} is not allowed in expression. In scope {}",
+                "Interpolate {} is not allowed in expression. In scope {}",
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
@@ -3714,36 +4272,37 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     "Table is not allowed {} in expression. In scope {}",
                     node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+            auto & table_node = node->as<TableNode &>();
+            result_projection_names.push_back(table_node.getStorageID().getFullNameNotQuoted());
+
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            if (!allow_table_expression)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function is not allowed {} in expression. In scope {}",
-                    node->formatASTForErrorMessage(),
-                    scope.scope_node->formatASTForErrorMessage());
-            break;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function is not allowed {} in expression. In scope {}",
+                node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
         }
         case QueryTreeNodeType::QUERY:
-        {
-            IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
-            subquery_scope.subquery_depth = scope.subquery_depth + 1;
-            resolveQuery(node, subquery_scope);
-
-            if (!allow_table_expression)
-                evaluateScalarSubquery(node, subquery_scope.subquery_depth);
-
-            break;
-        }
+            [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
             IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
-            resolveUnion(node, subquery_scope);
+
+            if (node_type == QueryTreeNodeType::QUERY)
+                resolveQuery(node, subquery_scope);
+            else
+                resolveUnion(node, subquery_scope);
 
             if (!allow_table_expression)
-                evaluateScalarSubquery(node, subquery_scope.subquery_depth);
+                evaluateScalarSubqueryIfNeeded(node, subquery_scope.subquery_depth);
+
+            ++subquery_counter;
+            if (result_projection_names.empty())
+                result_projection_names.push_back("_subquery_" + std::to_string(subquery_counter));
 
             break;
         }
@@ -3780,10 +4339,14 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
         }
     }
 
+    resolved_expressions.emplace(node, result_projection_names);
+
     scope.expressions_in_resolve_process_stack.popNode();
     bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
     if (expression_was_root)
         scope.non_cached_identifier_lookups_during_expression_resolve.clear();
+
+    return result_projection_names;
 }
 
 /** Resolve expression node list.
@@ -3794,7 +4357,7 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
   * Example: CREATE TABLE test_table (id UInt64, value UInt64) ENGINE=TinyLog; SELECT plus(*) FROM test_table;
   * Example: SELECT *** FROM system.one;
   */
-void QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
+ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
 {
     auto & node_list_typed = node_list->as<ListNode &>();
     size_t node_list_size = node_list_typed.getNodes().size();
@@ -3802,76 +4365,153 @@ void QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node_list, Iden
     QueryTreeNodes result_nodes;
     result_nodes.reserve(node_list_size);
 
+    ProjectionNames result_projection_names;
+
     for (auto & node : node_list_typed.getNodes())
     {
         auto node_to_resolve = node;
-        resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
+        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
 
+        size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
+            expected_projection_names_size = expression_list->getNodes().size();
             for (auto & expression_list_node : expression_list->getNodes())
-                result_nodes.push_back(std::move(expression_list_node));
+                result_nodes.push_back(expression_list_node);
         }
         else
         {
             result_nodes.push_back(std::move(node_to_resolve));
         }
+
+        if (expression_node_projection_names.size() != expected_projection_names_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expression nodes list expected {} projection names. Actual {}",
+                expected_projection_names_size,
+                expression_node_projection_names.size());
+
+        result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
+        expression_node_projection_names.clear();
     }
 
     node_list_typed.getNodes() = std::move(result_nodes);
+
+    return result_projection_names;
 }
 
 /** Resolve sort columns nodes list.
   */
-void QueryAnalyzer::resolveSortColumnsNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope)
 {
-    auto & sort_node_list_typed = sort_node_list->as<ListNode &>();
+    ProjectionNames result_projection_names;
+    ProjectionNames sort_expression_projection_names;
+    ProjectionNames fill_from_expression_projection_names;
+    ProjectionNames fill_to_expression_projection_names;
+    ProjectionNames fill_step_expression_projection_names;
 
+    auto & sort_node_list_typed = sort_node_list->as<ListNode &>();
     for (auto & node : sort_node_list_typed.getNodes())
     {
         auto & sort_node = node->as<SortNode &>();
-        resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        sort_expression_projection_names = resolveExpressionNode(sort_node.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (auto * sort_column_list_node = sort_node.getExpression()->as<ListNode>())
+        {
+            size_t sort_column_list_node_size = sort_column_list_node->getNodes().size();
+            if (sort_column_list_node_size != 1)
+            {
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Sort column node expression resolved into list with size {}. Expected 1. In scope {}",
+                    sort_column_list_node_size,
+                    scope.scope_node->formatASTForErrorMessage());
+            }
+
+            sort_node.getExpression() = sort_column_list_node->getNodes().front();
+        }
+
+        size_t sort_expression_projection_names_size = sort_expression_projection_names.size();
+        if (sort_expression_projection_names_size != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Sort expression expected 1 projection name. Actual {}",
+                sort_expression_projection_names_size);
 
         if (sort_node.hasFillFrom())
         {
-            resolveExpressionNode(sort_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            fill_from_expression_projection_names = resolveExpressionNode(sort_node.getFillFrom(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            const auto * constant_node = sort_node.getFillFrom()->as<const ConstantNode>();
-            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
+            const auto constant_value = sort_node.getFillFrom()->getConstantValueOrNull();
+            if (!constant_value || !isColumnedAsNumber(constant_value->getType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
+                    "Sort FILL FROM expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillFrom()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+            size_t fill_from_expression_projection_names_size = fill_from_expression_projection_names.size();
+            if (fill_from_expression_projection_names_size != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Sort node FILL FROM expression expected 1 projection name. Actual {}",
+                    fill_from_expression_projection_names_size);
         }
+
         if (sort_node.hasFillTo())
         {
-            resolveExpressionNode(sort_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            const auto * constant_node = sort_node.getFillTo()->as<const ConstantNode>();
-            if (!constant_node || !isColumnedAsNumber(constant_node->getResultType()))
+            fill_to_expression_projection_names = resolveExpressionNode(sort_node.getFillTo(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            const auto constant_value = sort_node.getFillTo()->getConstantValueOrNull();
+            if (!constant_value || !isColumnedAsNumber(constant_value->getType()))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
+                    "Sort FILL TO expression must be constant with numeric type. Actual {}. In scope {}",
                     sort_node.getFillFrom()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+            size_t fill_to_expression_projection_names_size = fill_to_expression_projection_names.size();
+            if (fill_to_expression_projection_names_size != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Sort node FILL TO expression expected 1 projection name. Actual {}",
+                    fill_to_expression_projection_names_size);
         }
+
         if (sort_node.hasFillStep())
         {
-            resolveExpressionNode(sort_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            const auto * constant_node = sort_node.getFillStep()->as<const ConstantNode>();
-            if (!constant_node)
+            fill_step_expression_projection_names = resolveExpressionNode(sort_node.getFillStep(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            const auto constant_value = sort_node.getFillStep()->getConstantValueOrNull();
+            if (!constant_value)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
-            bool is_number = isColumnedAsNumber(constant_node->getResultType());
-            bool is_interval = WhichDataType(constant_node->getResultType()).isInterval();
+            bool is_number = isColumnedAsNumber(constant_value->getType());
+            bool is_interval = WhichDataType(constant_value->getType()).isInterval();
             if (!is_number && !is_interval)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "WITH FILL TO expression must be constant with numeric or interval type. Actual {}. In scope {}",
+                    "Sort FILL STEP expression must be constant with numeric or interval type. Actual {}. In scope {}",
                     sort_node.getFillStep()->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
+
+            size_t fill_step_expression_projection_names_size = fill_step_expression_projection_names.size();
+            if (fill_step_expression_projection_names_size != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Sort FILL STEP expression expected 1 projection name. Actual {}",
+                    fill_step_expression_projection_names_size);
         }
+
+        auto sort_column_projection_name = calculateSortColumnProjectionName(node,
+            sort_expression_projection_names[0],
+            fill_from_expression_projection_names.empty() ? "" : fill_from_expression_projection_names.front(),
+            fill_to_expression_projection_names.empty() ? "" : fill_to_expression_projection_names.front(),
+            fill_step_expression_projection_names.empty() ? "" : fill_step_expression_projection_names.front());
+
+        result_projection_names.push_back(std::move(sort_column_projection_name));
+
+        sort_expression_projection_names.clear();
+        fill_from_expression_projection_names.clear();
+        fill_to_expression_projection_names.clear();
+        fill_step_expression_projection_names.clear();
     }
+
+    return result_projection_names;
 }
 
 /** Resolve interpolate columns nodes list.
@@ -3898,305 +4538,19 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-class SubqueryToProjectionNameMatcher
-{
-public:
-    using Visitor = ConstInDepthQueryTreeVisitor<SubqueryToProjectionNameMatcher, true, true>;
-
-    struct Data
-    {
-        std::unordered_map<QueryTreeNodePtr, std::string> & node_to_display_name;
-        size_t subquery_index = 1;
-    };
-
-    static void visit(const QueryTreeNodePtr &, Data &)
-    {
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node, Data & data)
-    {
-        auto child_node_type = child_node->getNodeType();
-        if (child_node_type != QueryTreeNodeType::QUERY && child_node_type != QueryTreeNodeType::UNION)
-            return true;
-
-        data.node_to_display_name.emplace(child_node, "_subquery_" + std::to_string(data.subquery_index));
-        ++data.subquery_index;
-        return false;
-    }
-};
-
-using SubqueryToProjectionNameVisitor = SubqueryToProjectionNameMatcher::Visitor;
-
-String QueryAnalyzer::calculateProjectionNodeDisplayName(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
-{
-    if (node->hasAlias())
-        return node->getAlias();
-
-    auto calculate_inner_expression_display_name = [&](QueryTreeNodePtr & expression_node, IdentifierResolveScope & node_scope)
-    {
-        auto * expression_function_node = expression_node->as<FunctionNode>();
-        if (expression_node->getNodeType() == QueryTreeNodeType::MATCHER)
-            expression_node = resolveMatcher(expression_node, node_scope);
-        else if (expression_function_node && expression_function_node->getFunctionName() == "untuple")
-            resolveFunction(expression_node, node_scope);
-
-        if (expression_node->getNodeType() == QueryTreeNodeType::LIST)
-        {
-            auto & list_nodes = expression_node->as<ListNode &>().getNodes();
-            size_t list_nodes_size = list_nodes.size();
-
-            WriteBufferFromOwnString result_buffer;
-            for (size_t i = 0; i < list_nodes_size; ++i)
-            {
-                auto & list_expression_node = list_nodes[i];
-                String list_node_display_name = calculateProjectionNodeDisplayName(list_expression_node, node_scope);
-                result_buffer << list_node_display_name;
-
-                if (i + 1 != list_nodes_size)
-                    result_buffer << ", ";
-            }
-
-            return result_buffer.str();
-        }
-
-        return calculateProjectionNodeDisplayName(expression_node, node_scope);
-    };
-
-    auto try_to_get_projection_name_from_scope = [&](const QueryTreeNodePtr & expression_node)
-    {
-        bool check_in_parent_query = scope.scope_node->getNodeType() != QueryTreeNodeType::QUERY;
-        IdentifierResolveScope * scope_to_check = &scope;
-
-        while (scope_to_check != nullptr)
-        {
-            auto projection_name_it = scope_to_check->node_to_projection_name.find(expression_node);
-            if (projection_name_it != scope_to_check->node_to_projection_name.end())
-                return projection_name_it->second;
-
-            scope_to_check = scope_to_check->parent_scope;
-            if (scope_to_check && scope_to_check->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            {
-                if (check_in_parent_query)
-                    check_in_parent_query = false;
-                else
-                    break;
-            }
-        }
-
-        return String();
-    };
-
-    auto projection_name_from_scope = try_to_get_projection_name_from_scope(node);
-    if (!projection_name_from_scope.empty())
-        return projection_name_from_scope;
-
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::CONSTANT)
-    {
-        const auto & constant_node = node->as<ConstantNode &>();
-        return constant_node.getName();
-    }
-    else if (node_type == QueryTreeNodeType::COLUMN)
-    {
-        const auto & column_node = node->as<ColumnNode &>();
-        const auto & column_name = column_node.getColumnName();
-        return column_name;
-    }
-    else if (node_type == QueryTreeNodeType::IDENTIFIER)
-    {
-        const auto & identifier_node = node->as<IdentifierNode &>();
-        auto identifier = identifier_node.getIdentifier();
-        IdentifierLookup lookup {identifier, IdentifierLookupContext::EXPRESSION};
-        auto resolved_identifier_result = tryResolveIdentifier(lookup, scope);
-
-        if (resolved_identifier_result.resolved_identifier && resolved_identifier_result.isResolvedFromJoinTree())
-        {
-            projection_name_from_scope = try_to_get_projection_name_from_scope(resolved_identifier_result.resolved_identifier);
-
-            if (!projection_name_from_scope.empty())
-                return projection_name_from_scope;
-
-            if (auto * column_node = resolved_identifier_result.resolved_identifier->as<ColumnNode>())
-                return column_node->getColumnName();
-        }
-
-        return identifier_node.getIdentifier().getFullName();
-    }
-    else if (node_type == QueryTreeNodeType::MATCHER)
-    {
-        /// Top level matcher
-        return {};
-    }
-    else if (node_type == QueryTreeNodeType::FUNCTION)
-    {
-        auto & function_node = node->as<FunctionNode &>();
-
-        WriteBufferFromOwnString buffer;
-        buffer << function_node.getFunctionName();
-
-        auto & function_parameters_nodes = function_node.getParameters().getNodes();
-
-        if (!function_parameters_nodes.empty())
-        {
-            buffer << '(';
-
-            size_t function_parameters_nodes_size = function_parameters_nodes.size();
-            for (size_t i = 0; i < function_parameters_nodes_size; ++i)
-            {
-                auto & function_parameter_node = function_parameters_nodes[i];
-                String function_parameter_node_display_name = calculate_inner_expression_display_name(function_parameter_node, scope);
-                buffer << function_parameter_node_display_name;
-
-                if (i + 1 != function_parameters_nodes_size)
-                    buffer << ", ";
-            }
-
-            buffer << ')';
-        }
-
-        buffer << '(';
-
-        auto & function_arguments_nodes = function_node.getArguments().getNodes();
-        size_t function_arguments_nodes_size = function_arguments_nodes.size();
-        for (size_t i = 0; i < function_arguments_nodes_size; ++i)
-        {
-            auto & function_argument_node = function_arguments_nodes[i];
-            String function_argument_node_display_name = calculate_inner_expression_display_name(function_argument_node, scope);
-            buffer << function_argument_node_display_name;
-
-            if (i + 1 != function_arguments_nodes_size)
-                buffer << ", ";
-        }
-
-        buffer << ')';
-
-        return buffer.str();
-    }
-    else if (node_type == QueryTreeNodeType::LAMBDA)
-    {
-        auto & lambda_node = node->as<LambdaNode &>();
-        IdentifierResolveScope lambda_scope(node, &scope /*parent_scope*/);
-        lambda_scope.projection_names_calculation_stage = true;
-        String lambda_expression_display_name = calculate_inner_expression_display_name(lambda_node.getExpression(), lambda_scope);
-
-        WriteBufferFromOwnString buffer;
-        buffer << "lambda(tuple(";
-
-        const auto & lambda_argument_names = lambda_node.getArgumentNames();
-        size_t lambda_argument_names_size = lambda_argument_names.size();
-
-        for (size_t i = 0; i < lambda_argument_names_size; ++i)
-        {
-            const auto & argument_name = lambda_argument_names[i];
-            buffer << argument_name;
-
-            if (i + 1 != lambda_argument_names_size)
-                buffer << ", ";
-        }
-
-        buffer << "), ";
-        buffer << lambda_expression_display_name;
-        buffer << ')';
-
-        return buffer.str();
-    }
-    else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery name must be already collected");
-    }
-    else if (node_type == QueryTreeNodeType::TABLE)
-    {
-        /// Table node can be second argument of IN function
-        const auto & table_node = node->as<TableNode &>();
-        return table_node.getStorageID().getFullNameNotQuoted();
-    }
-    else if (node_type == QueryTreeNodeType::TABLE_FUNCTION)
-    {
-        /// Table function node can be second argument of IN function
-        auto & table_function_node = node->as<TableFunctionNode &>();
-
-        WriteBufferFromOwnString buffer;
-        buffer << table_function_node.getTableFunctionName();
-
-        buffer << '(';
-
-        auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-        size_t table_function_arguments_nodes_size = table_function_arguments_nodes.size();
-        for (size_t i = 0; i < table_function_arguments_nodes_size; ++i)
-        {
-            auto & function_argument_node = table_function_arguments_nodes[i];
-            if (auto * identifier_node = function_argument_node->as<IdentifierNode>())
-            {
-                if (identifier_node->hasAlias())
-                    buffer << identifier_node->getAlias();
-                else
-                    buffer << identifier_node->getIdentifier().getFullName();
-            }
-            else
-            {
-                buffer << calculateProjectionNodeDisplayName(function_argument_node, scope);
-            }
-
-            if (i + 1 != table_function_arguments_nodes_size)
-                buffer << ", ";
-        }
-
-        buffer << ')';
-
-        return buffer.str();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Invalid projection node {} {}", node->getNodeType(), node->dumpTree());
-    }
-}
-
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
-    auto & initial_node_list = projection_node_list->as<ListNode &>();
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    scope.projection_names_calculation_stage = true;
+    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    size_t projection_nodes_size = projection_nodes.size();
 
-    SubqueryToProjectionNameVisitor::Data subquery_to_projection_name_visitor_data {scope.node_to_projection_name};
-    SubqueryToProjectionNameVisitor subquery_to_projection_name_visitor(subquery_to_projection_name_visitor_data);
-    subquery_to_projection_name_visitor.visit(projection_node_list);
-
-    auto initial_node_list_nodes_copy = initial_node_list.getNodes();
-    size_t list_nodes_copy_size = initial_node_list_nodes_copy.size();
-
-    std::vector<std::pair<QueryTreeNodePtr, std::string>> projection_nodes_with_display_name;
-    projection_nodes_with_display_name.reserve(list_nodes_copy_size);
-
-    for (size_t i = 0; i < list_nodes_copy_size; ++i)
-    {
-        auto & node = initial_node_list_nodes_copy[i];
-
-        String display_name = calculateProjectionNodeDisplayName(node, scope);
-
-        auto node_to_resolve = node;
-        resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        if (auto * expression_list = node_to_resolve->as<ListNode>())
-        {
-            for (auto & expression_list_node : expression_list->getNodes())
-                projection_nodes_with_display_name.emplace_back(expression_list_node, calculateProjectionNodeDisplayName(expression_list_node, scope));
-        }
-        else
-        {
-            projection_nodes_with_display_name.emplace_back(node_to_resolve, std::move(display_name));
-        }
-    }
-
-    size_t projection_nodes_size = projection_nodes_with_display_name.size();
-
-    auto projection_result_node_list = std::make_shared<ListNode>();
     NamesAndTypes projection_columns;
     projection_columns.reserve(projection_nodes_size);
-    projection_result_node_list->getNodes().reserve(projection_nodes_size);
 
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
-        auto && projection_node =  projection_nodes_with_display_name[i].first;
+        auto projection_node = projection_nodes[i];
 
         if (projection_node->getNodeType() != QueryTreeNodeType::CONSTANT &&
             projection_node->getNodeType() != QueryTreeNodeType::FUNCTION &&
@@ -4206,14 +4560,9 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Projection node must be constant, function, column, query or union");
 
-        projection_columns.emplace_back(projection_nodes_with_display_name[i].second, projection_node->getResultType());
-        projection_result_node_list->getNodes().emplace_back(std::move(projection_node));
+        projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
     }
 
-    scope.projection_names_calculation_stage = false;
-    scope.node_to_projection_name.clear();
-
-    projection_node_list = std::move(projection_result_node_list);
     return projection_columns;
 }
 
@@ -4240,7 +4589,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             case QueryTreeNodeType::IDENTIFIER:
             {
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
-                auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE};
+                auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
 
                 IdentifierResolveSettings resolve_settings;
                 /// In join tree initialization ignore join tree as identifier lookup source
@@ -4252,7 +4601,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 if (!resolved_identifier)
                     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                         "Unknown {} identifier {} in scope {}",
-                        toStringLowercase(IdentifierLookupContext::TABLE),
+                        toStringLowercase(IdentifierLookupContext::TABLE_EXPRESSION),
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
 
@@ -5053,7 +5402,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        resolveSortColumnsNodeList(query_node_typed.getOrderByNode(), scope);
+        resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
     }
 
     if (query_node_typed.hasInterpolate())

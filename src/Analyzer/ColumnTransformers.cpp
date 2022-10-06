@@ -106,8 +106,7 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl() const
 
 QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
 {
-    ApplyColumnTransformerNodePtr result_apply_transformer(new ApplyColumnTransformerNode());
-    return result_apply_transformer;
+    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
 }
 
 /// ExceptColumnTransformerNode implementation
