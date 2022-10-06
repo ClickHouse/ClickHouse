@@ -13,6 +13,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
+#include <span>
+
 namespace DB::ErrorCodes
 {
 extern const int ARGUMENT_OUT_OF_BOUND;
@@ -30,7 +32,7 @@ enum class Representation
     LittleEndian
 };
 
-std::pair<int, int> determineBinaryStartIndexWithIncrement(const int num_bytes, const Representation representation)
+std::pair<int, int> determineBinaryStartIndexWithIncrement(const ptrdiff_t num_bytes, const Representation representation)
 {
     if (representation == Representation::BigEndian)
         return {0, 1};
@@ -40,18 +42,20 @@ std::pair<int, int> determineBinaryStartIndexWithIncrement(const int num_bytes, 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented yet", magic_enum::enum_name(representation));
 }
 
-void formatHex(const UInt8 * src, UInt8 * dst, const int num_bytes, const Representation representation)
+void formatHex(const std::span<const UInt8> src, UInt8 * dst, const Representation representation)
 {
-    const auto [src_start_index, src_increment] = determineBinaryStartIndexWithIncrement(num_bytes, representation);
-    for (int src_pos = src_start_index, dst_pos = 0; src_pos >= 0 && src_pos < num_bytes; src_pos += src_increment, dst_pos += 2)
+    const auto src_size = std::ssize(src);
+    const auto [src_start_index, src_increment] = determineBinaryStartIndexWithIncrement(src_size, representation);
+    for (int src_pos = src_start_index, dst_pos = 0; src_pos >= 0 && src_pos < src_size; src_pos += src_increment, dst_pos += 2)
         writeHexByteLowercase(src[src_pos], dst + dst_pos);
 }
 
-void parseHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const int num_bytes, const Representation representation)
+void parseHex(const UInt8 * __restrict src, const std::span<UInt8> dst, const Representation representation)
 {
-    const auto [dst_start_index, dst_increment] = determineBinaryStartIndexWithIncrement(num_bytes, representation);
+    const auto dst_size = std::ssize(dst);
+    const auto [dst_start_index, dst_increment] = determineBinaryStartIndexWithIncrement(dst_size, representation);
     const auto * src_as_char = reinterpret_cast<const char *>(src);
-    for (auto dst_pos = dst_start_index, src_pos = 0; dst_pos >= 0 && dst_pos < num_bytes; dst_pos += dst_increment, src_pos += 2)
+    for (auto dst_pos = dst_start_index, src_pos = 0; dst_pos >= 0 && dst_pos < dst_size; dst_pos += dst_increment, src_pos += 2)
         dst[dst_pos] = unhex2(src_as_char + src_pos);
 }
 
@@ -71,27 +75,27 @@ public:
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented yet", magic_enum::enum_name(variant));
     }
 
-    void deserialize(const UInt8 * src16, UInt8 * dst36)
+    void deserialize(const UInt8 * src16, UInt8 * dst36) const
     {
-        formatHex(&src16[0], &dst36[0], 4, first_half_binary_representation);
+        formatHex({src16, 4}, &dst36[0], first_half_binary_representation);
         dst36[8] = '-';
-        formatHex(&src16[4], &dst36[9], 2, first_half_binary_representation);
+        formatHex({src16 + 4, 2}, &dst36[9], first_half_binary_representation);
         dst36[13] = '-';
-        formatHex(&src16[6], &dst36[14], 2, first_half_binary_representation);
+        formatHex({src16 + 6, 2}, &dst36[14], first_half_binary_representation);
         dst36[18] = '-';
-        formatHex(&src16[8], &dst36[19], 2, Representation::BigEndian);
+        formatHex({src16 + 8, 2}, &dst36[19], Representation::BigEndian);
         dst36[23] = '-';
-        formatHex(&src16[10], &dst36[24], 6, Representation::BigEndian);
+        formatHex({src16 + 10, 6}, &dst36[24], Representation::BigEndian);
     }
 
-    void serialize(const UInt8 * src36, UInt8 * dst16)
+    void serialize(const UInt8 * src36, UInt8 * dst16) const
     {
         /// If string is not like UUID - implementation specific behaviour.
-        parseHex(&src36[0], &dst16[0], 4, first_half_binary_representation);
-        parseHex(&src36[9], &dst16[4], 2, first_half_binary_representation);
-        parseHex(&src36[14], &dst16[6], 2, first_half_binary_representation);
-        parseHex(&src36[19], &dst16[8], 2, Representation::BigEndian);
-        parseHex(&src36[24], &dst16[10], 6, Representation::BigEndian);
+        parseHex(&src36[0], {dst16 + 0, 4}, first_half_binary_representation);
+        parseHex(&src36[9], {dst16 + 4, 2}, first_half_binary_representation);
+        parseHex(&src36[14], {dst16 + 6, 2}, first_half_binary_representation);
+        parseHex(&src36[19], {dst16 + 8, 2}, Representation::BigEndian);
+        parseHex(&src36[24], {dst16 + 10, 6}, Representation::BigEndian);
     }
 
 private:
@@ -194,7 +198,7 @@ public:
             size_t src_offset = 0;
             size_t dst_offset = 0;
 
-            UUIDSerializer uuid_serializer(variant);
+            const UUIDSerializer uuid_serializer(variant);
             for (size_t i = 0; i < size; ++i)
             {
                 uuid_serializer.deserialize(&vec_in[src_offset], &vec_res[dst_offset]);
@@ -254,7 +258,7 @@ public:
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
-        UUIDSerializer uuid_serializer(parseVariant(arguments));
+        const UUIDSerializer uuid_serializer(parseVariant(arguments));
         if (const auto * col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto & vec_in = col_in->getChars();
