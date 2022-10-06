@@ -9,6 +9,10 @@
 
 #include "config.h"
 
+#if USE_BLAKE3
+#    include <blake3.h>
+#endif
+
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -613,6 +617,32 @@ struct ImplXxHash64
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+
+
+#if USE_BLAKE3
+struct ImplBLAKE3
+{
+    static constexpr auto name = "blake3";
+    enum { length = 32 };
+
+    static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        #if defined(MEMORY_SANITIZER)
+            auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+            __msan_unpoison(out_char_data, length);
+        #else
+            auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+        #endif
+        if (err_msg != nullptr)
+        {
+            auto err_st = std::string(err_msg);
+            blake3_free_char_pointer(err_msg);
+            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+};
+#endif
+
 
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
@@ -1472,5 +1502,9 @@ using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
+
+#if USE_BLAKE3
+    using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
+#endif
 
 }

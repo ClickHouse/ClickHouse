@@ -1,5 +1,7 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
 #include <Common/EventNotifier.h>
@@ -13,6 +15,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <base/getThreadId.h>
 
+#include "Coordination/KeeperConstants.h"
 #include "config.h"
 
 #if USE_SSL
@@ -1297,6 +1300,9 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     ZooKeeperMultiRequest request(requests, default_acls);
+
+    if (request.getOpNum() == OpNum::MultiRead && keeper_api_version < Coordination::KeeperApiVersion::WITH_MULTI_READ)
+            throw Exception(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
