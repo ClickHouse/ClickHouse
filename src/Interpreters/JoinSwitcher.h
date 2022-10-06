@@ -74,6 +74,11 @@ public:
         return join->getDelayedBlocks();
     }
 
+    bool hasDelayedBlocks() const override
+    {
+        return join->hasDelayedBlocks();
+    }
+
 private:
     JoinPtr join;
     SizeLimits limits;
