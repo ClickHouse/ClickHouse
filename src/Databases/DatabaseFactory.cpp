@@ -18,7 +18,7 @@
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
