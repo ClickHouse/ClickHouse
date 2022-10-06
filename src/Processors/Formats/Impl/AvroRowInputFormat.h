@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_AVRO
 
