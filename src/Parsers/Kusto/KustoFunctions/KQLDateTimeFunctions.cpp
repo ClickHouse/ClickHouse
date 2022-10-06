@@ -231,21 +231,27 @@ bool EndOfWeek::convertImpl(String & out, IParser::Pos & pos)
 
 bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
-    
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
     ++pos;
     const String datetime_str = getConvertedArgument(fn_name, pos);
-    String offset = "0";
 
+    if(datetime_str.empty())
+        throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+
+    String offset = "0";
     if (pos->type == TokenType::Comma)
     {
          ++pos;
          offset = getConvertedArgument(fn_name, pos);
+         if(offset.empty())
+            throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+         offset.erase(remove(offset.begin(), offset.end(), ' '), offset.end());
     }
-        out = std::format("toDateTime(toStartOfDay({}),9,'UTC') + (INTERVAL {} +1 YEAR) - (INTERVAL 1 microsecond)", datetime_str, toString(offset));
+
+        out = std::format("(((((toDateTime(toString(toLastDayOfMonth(toDateTime({0}, 9, 'UTC') + toIntervalYear({1}) + toIntervalMonth(12 - toInt8(substring(toString(toDateTime({0}, 9, 'UTC')), 6, 2))))), 9, 'UTC') + toIntervalHour(23)) + toIntervalMinute(59)) + toIntervalSecond(60)) - toIntervalMicrosecond(1)))", datetime_str, toString(offset));
 
     return true;
 }
