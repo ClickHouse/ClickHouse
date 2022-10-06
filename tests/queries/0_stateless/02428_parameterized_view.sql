@@ -48,9 +48,10 @@ CREATE VIEW system.v1 AS SELECT * FROM system.Catalog WHERE Price={price:UInt64}
 SELECT Price FROM system.v1(price=20);
 SELECT Price FROM `system.v1`(price=20); -- { serverError UNKNOWN_FUNCTION }
 
-DROP TABLE Catalog;
+
 DROP TABLE v1;
 DROP TABLE v2;
 DROP TABLE v3;
-DROP TABLE system.Catalog;
+DROP TABLE Catalog;
 DROP TABLE system.v1;
+DROP TABLE system.Catalog;
