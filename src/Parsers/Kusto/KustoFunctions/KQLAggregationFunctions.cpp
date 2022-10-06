@@ -158,7 +158,7 @@ bool MakeListWithNulls::convertImpl(String & out,IParser::Pos & pos)
         return false;
     ++pos;
     const auto column_name = getConvertedArgument(fn_name,pos);
-    out = "arrayConcat(groupArray(" + column_name + ") AS ga, arrayMap(x -> null, range(0, toUInt32(count(*)-length(ga)),1)))";
+    out = "arrayConcat(groupArray(" + column_name + "), arrayMap(x -> null, range(0, toUInt32(count(*)-length(  groupArray(" + column_name + ") )),1)))";
     return true;
 }
 
