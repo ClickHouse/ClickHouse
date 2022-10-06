@@ -385,8 +385,6 @@ void ReplicatedMergeTreeSink::commitPart(
             }
         }
 
-        part_committed_locally_but_zookeeper = false;
-
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
@@ -552,32 +550,39 @@ void ReplicatedMergeTreeSink::commitPart(
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
-        bool renamed = false;
+        MergeTreeData::Transaction transaction(
+            storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
 
-        try
+        if (!part_committed_locally_but_zookeeper)
         {
-            auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::DUPLICATE_DATA_PART
-                && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
-                throw;
-        }
+            bool renamed = false;
 
-        if (!renamed)
-        {
-            if (is_already_existing_part)
+            try
             {
-                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.", part->name);
-                return;
+                auto lock = storage.lockParts();
+                renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
             }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part with name {} is already written by concurrent request."
-                    " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
-                    part->name);
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::DUPLICATE_DATA_PART && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+                    throw;
+            }
+
+            if (!renamed)
+            {
+                if (is_already_existing_part)
+                {
+                    LOG_INFO(
+                        log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.", part->name);
+                    return;
+                }
+                else
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Part with name {} is already written by concurrent request."
+                        " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
+                        part->name);
+            }
         }
 
         storage.lockSharedData(*part, false, {});
