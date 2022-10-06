@@ -80,7 +80,8 @@ bool ParserKQLSummarize::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (agg_colum_pos->type == TokenType::Comma || agg_colum_pos->type == TokenType::ClosingRoundBracket)
                     {
                         --agg_colum_pos;
-                        alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
+                        if (agg_colum_pos->type != TokenType::ClosingRoundBracket)
+                            alias = alias + String(agg_colum_pos->begin, agg_colum_pos->end);
                     }
                 }
                 expr = std::format("{} = {}", alias, expr);

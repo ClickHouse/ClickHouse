@@ -164,6 +164,17 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 String token;
                 if (pos->type == TokenType::QuotedIdentifier)
                     token = "'" + String(pos->begin + 1,pos->end - 1) + "'";
+                else if (pos->type == TokenType::OpeningSquareBracket)
+                {
+                    ++pos;
+                    String array_index;
+                    while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+                    {
+                        array_index += getExpression(pos);
+                        ++pos;
+                    }
+                    token = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+                }
                 else
                     token = String(pos->begin, pos->end);
 
@@ -311,6 +322,17 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     }
     else if (pos->type == TokenType::QuotedIdentifier)
         arg = "'" + String(pos->begin + 1,pos->end - 1) + "'";
+    else if (pos->type == TokenType::OpeningSquareBracket)
+    {
+        ++pos;
+        String array_index;
+        while (!pos->isEnd() && pos->type != TokenType::ClosingSquareBracket)
+        {
+            array_index += getExpression(pos);
+            ++pos;
+        }
+        arg = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+    }
 
     return arg;
 }

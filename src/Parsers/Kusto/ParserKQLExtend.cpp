@@ -42,8 +42,19 @@ bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         alias.clear();
     };
 
+    int32_t round_bracket_count = 0;
+    int32_t square_bracket_count = 0;
     while (!npos->isEnd())
     {
+        if (npos->type == TokenType::OpeningRoundBracket)
+            ++round_bracket_count;
+        if (npos->type == TokenType::OpeningSquareBracket)
+            ++square_bracket_count;
+        if (npos->type == TokenType::ClosingRoundBracket)
+            --round_bracket_count;
+        if (npos->type == TokenType::ClosingSquareBracket)
+            --square_bracket_count;
+
         auto expr = String(npos->begin, npos->end);
         if (expr == "AS")
         {
@@ -51,7 +62,7 @@ bool ParserKQLExtend :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             alias = String(npos->begin, npos->end);
         }
 
-        if (npos->type == TokenType::Comma)
+        if (npos->type == TokenType::Comma && square_bracket_count == 0 && round_bracket_count == 0)
         {
             apply_alias();
             new_extend_str += ", ";

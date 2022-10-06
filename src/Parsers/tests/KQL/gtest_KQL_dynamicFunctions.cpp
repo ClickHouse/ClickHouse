@@ -128,5 +128,33 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Dynamic, ParserTest,
          {
             "print t = array_sort_desc(dynamic(['b', 'a', null]), dynamic(['p', 'q', 'r', 's']), 1 < 2)",
             "SELECT [if(1 < 2, arrayReverseSort(['b', 'a', NULL]), concat(arraySlice(arrayReverseSort(['b', 'a', NULL]) AS as1, indexOf(as1, NULL) AS len1), arraySlice(as1, 1, len1 - 1))), [NULL]] AS t"
+         },
+         {
+             "print A[0]",
+             "SELECT A[if(0 >= 0, 0 + 1, 0)]"
+         },
+         {
+             "print A[0][1]",
+             "SELECT (A[if(0 >= 0, 0 + 1, 0)])[if(1 >= 0, 1 + 1, 1)]"
+         },
+         {
+             "print dynamic([[1,2,3,4,5],[20,30]])[0]",
+             "SELECT [[1, 2, 3, 4, 5], [20, 30]][if(0 >= 0, 0 + 1, 0)]"
+         },
+         {
+             "print dynamic([[1,2,3,4,5],[20,30]])[1][1]",
+             "SELECT ([[1, 2, 3, 4, 5], [20, 30]][if(1 >= 0, 1 + 1, 1)])[if(1 >= 0, 1 + 1, 1)]"
+         },
+         {
+             "print A[B[1]]",
+             "SELECT A[if((B[if(1 >= 0, 1 + 1, 1)]) >= 0, (B[if(1 >= 0, 1 + 1, 1)]) + 1, B[if(1 >= 0, 1 + 1, 1)])]"
+         },
+         {
+             "print A[strlen('a')-1]",
+             "SELECT A[if((lengthUTF8('a') - 1) >= 0, (lengthUTF8('a') - 1) + 1, lengthUTF8('a') - 1)]"
+         },
+         {
+             "print strlen(A[0])",
+             "SELECT lengthUTF8(A[if(0 >= 0, 0 + 1, 0)])"
          }
  })));

@@ -139,6 +139,9 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
 
                 alias = tokens.back();
                 tokens.pop_back();
+                if (alias[0] == '\'' || alias[0] == '\"')
+                    throw Exception(alias + " Quoted string is not a valid alias", ErrorCodes::SYNTAX_ERROR);
+
             }
             --pos;
         }
