@@ -79,7 +79,9 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
+#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
+#endif
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
@@ -209,7 +211,7 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
     }
 }
 catch (...)
@@ -971,7 +973,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         std::string tmp_path = config().getString("tmp_path", path / "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -1263,8 +1266,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-
+#if USE_BORINGSSL
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1417,8 +1421,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             settings.async_insert_threads,
-            settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+            settings.async_insert_cleanup_timeout_ms));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1470,9 +1473,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-
+#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+#endif
 
     SCOPE_EXIT({
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because

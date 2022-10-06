@@ -218,7 +218,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             write_part_log(ExecutionStatus::fromCurrentException());
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
-                storage.forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
+                storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(new_part), "mutate-not-byte-identical");
             else
                 storage.tryRemovePartImmediately(std::move(new_part));
 
