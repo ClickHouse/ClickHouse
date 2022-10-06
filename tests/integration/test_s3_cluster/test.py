@@ -3,6 +3,7 @@ import logging
 import os
 import csv
 import shutil
+import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -335,20 +336,20 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         """
     )
 
-    first = int(
-        first_replica_first_shard.query(
-            """SELECT count(*) FROM insert_select_replicated_local"""
-        ).strip()
-    )
+    for replica in [first_replica_first_shard, second_replica_first_shard]:
+        replica.query(
+            """
+            SYSTEM FLUSH LOGS;
+            """
+        )
+
     second = int(
         second_replica_first_shard.query(
-            """SELECT count(*) FROM insert_select_replicated_local"""
+            """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query like '%s3Cluster%';"""
         ).strip()
     )
 
-    assert first != 0
     assert second != 0
-    assert first + second == 100 * 100
 
     first_replica_first_shard.query(
         """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard';"""
