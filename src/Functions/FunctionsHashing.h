@@ -620,17 +620,17 @@ struct ImplXxHash64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-
 struct ImplBLAKE3
 {
     static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
     #if !USE_BLAKE3
-    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data) {
-        (void) begin;
-        (void) size;
-        (void) out_char_data;
+    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        UNUSED(begin);
+        UNUSED(size);
+        UNUSED(out_char_data);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
     }
     #else
@@ -651,8 +651,6 @@ struct ImplBLAKE3
     }
     #endif
 };
-
-
 
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
