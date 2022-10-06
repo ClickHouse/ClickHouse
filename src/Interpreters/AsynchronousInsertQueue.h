@@ -47,6 +47,7 @@ private:
         public:
             const String bytes;
             const String query_id;
+            std::chrono::time_point<std::chrono::system_clock> create_time;
 
             Entry(String && bytes_, String && query_id_);
 
