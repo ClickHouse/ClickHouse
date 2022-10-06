@@ -82,10 +82,8 @@ public:
     virtual bool supportParallelJoin() const { return false; }
 
     /// Peek next stream of delayed joined blocks.
-    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks()
-    {
-        return nullptr;
-    }
+    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks() { return nullptr; }
+    virtual bool hasDelayedBlocks() const { return false; }
 
     virtual std::unique_ptr<IBlocksStream>
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;

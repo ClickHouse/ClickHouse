@@ -80,6 +80,7 @@ public:
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
     std::unique_ptr<IBlocksStream> getDelayedBlocks() override;
+    bool hasDelayedBlocks() const override { return true; }
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
