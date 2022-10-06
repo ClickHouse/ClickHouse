@@ -64,7 +64,7 @@ public:
         Microsoft = 2
     };
 
-    UUIDSerializer(const Variant variant)
+    explicit UUIDSerializer(const Variant variant)
         : first_half_binary_representation(variant == Variant::Microsoft ? Representation::LittleEndian : Representation::BigEndian)
     {
         if (variant != Variant::Default && variant != Variant::Microsoft)
