@@ -46,11 +46,13 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -60,6 +62,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -74,6 +77,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -136,6 +140,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int REPLICA_IS_NOT_IN_QUORUM;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_DROPPED;
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int NOT_A_LEADER;
@@ -161,6 +166,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int NOT_INITIALIZED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
 }
 
 namespace ActionLocks
@@ -279,7 +285,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
     , renaming_restrictions(renaming_restrictions_)
-    , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
+    , replicated_fetches_pool_size(getContext()->getFetchesExecutor()->getMaxTasksCount())
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
@@ -443,7 +449,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
     syncPinnedPartUUIDs();
 
-    createTableSharedID();
+    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+        createTableSharedID();
 
     initialization_done = true;
 }
@@ -4450,6 +4457,106 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
 }
 
 
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
+{
+    const auto & settings = local_context->getSettingsRef();
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context);
+
+    /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
+    auto src_cluster = src_storage_cluster->getCluster(local_context);
+
+    /// Actually the query doesn't change, we just serialize it to string
+    String query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
+        query.IAST::format(ast_format_settings);
+        query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    ContextMutablePtr query_context = Context::createCopy(local_context);
+    ++query_context->getClientInfo().distributed_depth;
+
+    for (const auto & replicas : src_cluster->getShardsAddresses())
+    {
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & node : replicas)
+        {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "ParallelInsertSelectInititiator",
+                node.compression,
+                node.secure
+            );
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                connection,
+                query_str,
+                Block{},
+                query_context,
+                /*throttler=*/nullptr,
+                Scalars{},
+                Tables{},
+                QueryProcessingStage::Complete,
+                extension);
+
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+
+            pipeline.addCompletedPipeline(std::move(remote_pipeline));
+        }
+    }
+
+    return pipeline;
+}
+
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+{
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+
+    StoragePtr src_storage;
+
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
+
+            if (joined_tables.tablesCount() == 1)
+            {
+                src_storage = joined_tables.getLeftTableStorage();
+            }
+        }
+    }
+
+    if (!src_storage)
+        return {};
+
+    if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
+        return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage", src_storage->getName());
+    }
+
+    return {};
+}
+
+
 bool StorageReplicatedMergeTree::optimize(
     const ASTPtr &,
     const StorageMetadataPtr &,
@@ -7443,10 +7550,22 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
-        createTableSharedID();
+    if (table_shared_id == UUIDHelpers::Nil)
+    {
+        if (has_metadata_in_zookeeper.has_value())
+        {
+            if (*has_metadata_in_zookeeper)
+                createTableSharedID();
+            else
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped", getStorageID().getNameForLogs());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID for table {}. "
+                            "It will be resolve automatically when connection will be established", getStorageID().getNameForLogs());
+        }
+    }
 
     return toString(table_shared_id);
 }
@@ -7622,6 +7741,10 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
+    /// If table was completely dropped (no meta in zookeeper) we can safely remove parts
+    if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
+        return std::make_pair(true, NameSet{});
+
     /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
     /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
     /// context.
@@ -7630,6 +7753,11 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         zookeeper = getZooKeeperIfTableShutDown();
     else
         zookeeper = getZooKeeper();
+
+    /// It can happen that we didn't had the connection to zookeeper during table creation, but actually
+    /// table is completely dropped, so we can drop it without any additional checks.
+    if (!has_metadata_in_zookeeper.has_value() && !zookeeper->exists(zookeeper_path))
+        return std::make_pair(true, NameSet{});
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
         zookeeper_path);
