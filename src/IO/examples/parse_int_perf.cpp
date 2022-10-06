@@ -1,6 +1,5 @@
 #include <iostream>
 #include <iomanip>
-#include <pcg_random.hpp>
 
 #include <base/types.h>
 
@@ -8,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Compression/CompressedReadBuffer.h>
 
 #include <Common/Stopwatch.h>
 
@@ -27,8 +27,6 @@ static UInt64 rdtsc()
 
 int main(int argc, char ** argv)
 {
-    pcg64 rng;
-
     try
     {
         if (argc < 2)
@@ -49,7 +47,7 @@ int main(int argc, char ** argv)
             Stopwatch watch;
 
             for (size_t i = 0; i < n; ++i)
-                data[i] = rng();
+                data[i] = lrand48();// / lrand48();// ^ (lrand48() << 24) ^ (lrand48() << 48);
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)

@@ -240,7 +240,7 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
-    for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
         readRow();
 }
 
@@ -302,17 +302,14 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
-            if (!with_types)
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
             {
-                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
-                {
-                    String result = getAdditionalFormatInfoByEscapingRule(
-                        settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
-                    if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-                    return result;
-                });
-            }
+                String result = getAdditionalFormatInfoByEscapingRule(
+                    settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                if (!with_names)
+                    result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                return result;
+            });
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);

@@ -70,7 +70,7 @@
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <IO/ForkWriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -89,6 +89,13 @@ static const NameSet exit_strings
     "exit", "quit", "logout", "учше", "йгше", "дщпщге",
     "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
+
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
 };
 
 
@@ -292,7 +299,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    std::unique_ptr<IParserBase> parser;
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -301,17 +308,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
-    const Dialect & dialect = settings.dialect;
-
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    else
-        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-
     if (is_interactive || ignore_error)
     {
         String message;
-        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -321,7 +321,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)
@@ -1087,20 +1087,6 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 }
 
 
-void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
-{
-    if (!global_context->hasInsertionTable() && insert_query.table)
-    {
-        String table = insert_query.table->as<ASTIdentifier &>().shortName();
-        if (!table.empty())
-        {
-            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            global_context->setInsertionTable(StorageID(database, table));
-        }
-    }
-}
-
-
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
@@ -1150,8 +1136,6 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        setInsertionTable(parsed_insert_query);
-
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
     }
@@ -1968,7 +1952,7 @@ void ClientBase::runInteractive()
 
     if (home_path.empty())
     {
-        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+        const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
@@ -1978,7 +1962,7 @@ void ClientBase::runInteractive()
         history_file = config().getString("history_file");
     else
     {
-        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
         if (history_file_from_env)
             history_file = history_file_from_env;
         else if (!home_path.empty())
@@ -2015,21 +1999,6 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr.enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
-        {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
-        };
-
-    static const std::initializer_list<String> repeat_last_input_aliases =
-        {
-            ".",  /// Vim shortcut
-            "/"   /// Oracle SQL Plus shortcut
-        };
-
-    String last_input;
-
     do
     {
         auto input = lr.readLine(prompt(), ":-] ");
@@ -2047,7 +2016,7 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto& [alias, command] : backslash_aliases)
         {
             auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
@@ -2065,20 +2034,10 @@ void ClientBase::runInteractive()
             }
         }
 
-        for (const auto & alias : repeat_last_input_aliases)
-        {
-            if (input == alias)
-            {
-                input  = last_input;
-                break;
-            }
-        }
-
         try
         {
             if (!processQueryText(input))
                 break;
-            last_input = input;
         }
         catch (const Exception & e)
         {
@@ -2301,13 +2260,13 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("version") || options.count("V"))
     {
         showClientVersion();
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     if (options.count("version-clean"))
     {
         std::cout << VERSION_STRING;
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     /// Output of help message.
@@ -2315,7 +2274,7 @@ void ClientBase::init(int argc, char ** argv)
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     /// Common options for clickhouse-client and clickhouse-local.

@@ -386,17 +386,16 @@ public:
 };
 
 
-template <bool result_is_nullable, bool serialize_flag>
-class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<
-                                                result_is_nullable,
-                                                serialize_flag,
-                                                AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>
+template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
+class AggregateFunctionNullVariadic final
+    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : AggregateFunctionNullBase<result_is_nullable, serialize_flag, AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(
-            std::move(nested_function_), arguments, params)
-        , number_of_arguments(arguments.size())
+        : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
+            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
+        number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
             throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
@@ -419,7 +418,7 @@ public:
             if (is_nullable[i])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                if (nullable_col.isNullAt(row_num))
+                if (null_is_skipped && nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,
                     /// we don't process this row.
@@ -433,105 +432,6 @@ public:
 
         this->setFlag(place);
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
-    }
-
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const final
-    {
-        /// We are going to merge all the flags into a single one to be able to call the nested batching functions
-        std::vector<const UInt8 *> nullable_filters;
-        const IColumn * nested_columns[number_of_arguments];
-
-        std::unique_ptr<UInt8[]> final_flags = nullptr;
-        const UInt8 * final_flags_ptr = nullptr;
-
-        if (if_argument_pos >= 0)
-        {
-            final_flags = std::make_unique<UInt8[]>(row_end);
-            final_flags_ptr = final_flags.get();
-
-            bool included_elements = 0;
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                final_flags[i] = !flags.data()[i];
-                included_elements += !!flags.data()[i];
-            }
-
-            if (included_elements == 0)
-                return;
-            if (included_elements != (row_end - row_begin))
-            {
-                nullable_filters.push_back(final_flags_ptr);
-            }
-        }
-
-        for (size_t i = 0; i < number_of_arguments; ++i)
-        {
-            if (is_nullable[i])
-            {
-                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                nested_columns[i] = &nullable_col.getNestedColumn();
-                const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                nullable_filters.push_back(nullmap_column.getData().data());
-            }
-            else
-            {
-                nested_columns[i] = columns[i];
-            }
-        }
-
-        chassert(nullable_filters.size() > 0);
-        bool found_one = false;
-        if (nullable_filters.size() == 1)
-        {
-            /// We can avoid making copies of the only filter but we still need to check that there is data to be added
-            final_flags_ptr = nullable_filters[0];
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                if (!final_flags_ptr[i])
-                {
-                    found_one = true;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            if (!final_flags)
-            {
-                final_flags = std::make_unique<UInt8[]>(row_end);
-                final_flags_ptr = final_flags.get();
-            }
-
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
-            {
-                for (size_t i = row_begin; i < row_end; i++)
-                    final_flags[i] |= nullable_filters[filter][i];
-            }
-
-            for (size_t i = row_begin; i < row_end; i++)
-            {
-                if (!final_flags_ptr[i])
-                {
-                    found_one = true;
-                    break;
-                }
-            }
-        }
-
-        if (!found_one)
-            return; // Nothing to do and nothing to mark
-
-        this->setFlag(place);
-        this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
     }
 
 
@@ -558,7 +458,9 @@ public:
             if (is_nullable[i])
             {
                 auto * wrapped_value = b.CreateExtractValue(argument_value, {0});
-                is_null_values[i] = b.CreateExtractValue(argument_value, {1});
+
+                if constexpr (null_is_skipped)
+                    is_null_values[i] = b.CreateExtractValue(argument_value, {1});
 
                 wrapped_values[i] = wrapped_value;
                 non_nullable_types[i] = removeNullable(arguments_types[i]);
@@ -570,39 +472,48 @@ public:
             }
         }
 
-        auto * head = b.GetInsertBlock();
-
-        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-        auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
-        auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
-
-        auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
-        b.CreateStore(b.getInt1(false), values_have_null_ptr);
-
-        for (auto * is_null_value : is_null_values)
+        if constexpr (null_is_skipped)
         {
-            if (!is_null_value)
-                continue;
+            auto * head = b.GetInsertBlock();
 
-            auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
-            b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
+            auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+            auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
+            auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
+
+            auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
+            b.CreateStore(b.getInt1(false), values_have_null_ptr);
+
+            for (auto * is_null_value : is_null_values)
+            {
+                if (!is_null_value)
+                    continue;
+
+                auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
+                b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
+            }
+
+            b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), if_null, if_not_null);
+
+            b.SetInsertPoint(if_null);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(if_not_null);
+
+            if constexpr (result_is_nullable)
+                b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
+
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
+            this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, arguments_types, wrapped_values);
+            b.CreateBr(join_block);
+
+            b.SetInsertPoint(join_block);
         }
-
-        b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), if_null, if_not_null);
-
-        b.SetInsertPoint(if_null);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(if_not_null);
-
-        if constexpr (result_is_nullable)
+        else
+        {
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
-
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, arguments_types, wrapped_values);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(join_block);
+            auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
+            this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, non_nullable_types, wrapped_values);
+        }
     }
 
 #endif

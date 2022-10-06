@@ -256,7 +256,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -623,7 +623,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const Tuple & tuple = value_field.get<const Tuple &>();
+            const Tuple & tuple = get<const Tuple &>(value_field);
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 

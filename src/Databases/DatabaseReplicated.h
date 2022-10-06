@@ -60,7 +60,7 @@ public:
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     /// Returns cluster consisting of database replicas
-    ClusterPtr tryGetCluster() const;
+    ClusterPtr getCluster() const;
 
     void drop(ContextPtr /*context*/) override;
 

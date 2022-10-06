@@ -1,12 +1,11 @@
 ---
-slug: /en/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [live](#live-view-experimental), and [window](#window-view-experimental) (live view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal), [materialized](#materialized), [live](#live-view), and [window](#window-view) (live view and window view are experimental features).
 
 ## Normal View
 
