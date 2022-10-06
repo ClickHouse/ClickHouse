@@ -37,7 +37,7 @@ public:
     void setHasQueryParameters();
 
     //clang-tidy wants it to be const, but it changes flags of children
-    void clearAllowQueryParameters();// NOLINT
+    void clearAllowQueryParameters(); // NOLINT
 
 };
 
