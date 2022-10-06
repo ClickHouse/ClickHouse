@@ -362,13 +362,13 @@ void ReplicatedMergeTreeSink::commitPart(
         zookeeper->setKeeper(storage.getZooKeeper());
 
         /// if we are in retry, check if last iteration was actually successful
-        /// we could get network error on lastest keeper operation in iteration
+        /// we could get network error on latest keeper operation in iteration
         /// but operation could be completed by keeper server
         if (retries_ctl.isRetry())
         {
             if (part_committed_locally_but_zookeeper)
             {
-                /// FIXME: if retries will be exhaused by exists() call then we'll never enque part for check i.e.:
+                /// FIXME: if all retries will be exhausted by this exists() call then we'll never enquque the part for check i.e.:
                 //     storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
                 /// check that info about the part was actually written in zk
