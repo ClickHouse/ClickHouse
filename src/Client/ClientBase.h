@@ -198,7 +198,6 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;

@@ -1818,6 +1818,11 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
+## modelEvaluate(model_name, …)
+
+Evaluate external model.
+Accepts a model name and model arguments. Returns Float64.
+
 ## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
 
 Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.

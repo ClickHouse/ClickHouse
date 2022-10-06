@@ -70,7 +70,7 @@
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <IO/ForkWriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -292,7 +292,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    std::unique_ptr<IParserBase> parser;
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -301,17 +301,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
-    const Dialect & dialect = settings.dialect;
-
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    else
-        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-
     if (is_interactive || ignore_error)
     {
         String message;
-        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -321,7 +314,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)

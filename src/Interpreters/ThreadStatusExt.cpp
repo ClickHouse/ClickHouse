@@ -350,10 +350,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     /// Avoid leaking of ThreadGroupStatus::finished_threads_counters_memory
     /// (this is in case someone uses system thread but did not call getProfileEventsCountersAndMemoryForThreads())
-    {
-        std::lock_guard guard(thread_group->mutex);
-        auto stats = std::move(thread_group->finished_threads_counters_memory);
-    }
+    thread_group->getProfileEventsCountersAndMemoryForThreads();
 
     thread_group.reset();
 

@@ -11,20 +11,19 @@
 namespace DB
 {
 
-static constexpr auto DEFAULT_RETRY_NUM = 3;
-
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
     size_t buf_size_,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    std::optional<std::map<std::string, std::string>> attributes_)
     : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
-    , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
+    , blob_container_client(blob_container_client_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
-    , blob_container_client(blob_container_client_)
+    , attributes(attributes_)
 {
 }
 
@@ -34,37 +33,33 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     finalize();
 }
 
-void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries)
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
-    auto handle_exception = [&](const auto & e, size_t i)
+    if (attributes.has_value())
     {
-        if (i == num_tries - 1)
-            throw;
+        auto blob_client = blob_container_client->GetBlobClient(blob_path);
+        Azure::Storage::Metadata metadata;
+        for (const auto & [key, value] : *attributes)
+            metadata[key] = value;
+        blob_client.SetMetadata(metadata);
+    }
 
-        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {}", i + 1, blob_path, e.Message);
-    };
-
-    for (size_t i = 0; i < num_tries; ++i)
+    const size_t max_tries = 3;
+    for (size_t i = 0; i < max_tries; ++i)
     {
         try
         {
-            func();
+            next();
             break;
-        }
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e, i);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            handle_exception(e, i);
+            if (i == max_tries - 1)
+                throw;
+            LOG_INFO(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"),
+                     "Exception caught during finalizing azure storage write at attempt {}: {}", i + 1, e.Message);
         }
     }
-}
-
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    execWithRetry([this](){ next(); }, DEFAULT_RETRY_NUM);
 }
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
@@ -72,31 +67,29 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     if (!offset())
         return;
 
-    char * buffer_begin = working_buffer.begin();
-    size_t total_size = offset();
-
+    auto * buffer_begin = working_buffer.begin();
+    auto len = offset();
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
-    size_t current_size = 0;
+    size_t read = 0;
     std::vector<std::string> block_ids;
-
-    while (current_size < total_size)
+    while (read < len)
     {
-        size_t part_len = std::min(total_size - current_size, max_single_part_upload_size);
-        const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
+        auto part_len = std::min(len - read, max_single_part_upload_size);
 
-        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(buffer_begin + current_size), part_len);
-        execWithRetry([&](){ block_blob_client.StageBlock(block_id, tmp_buffer); }, DEFAULT_RETRY_NUM);
+        auto block_id = getRandomASCIIString(64);
+        block_ids.push_back(block_id);
 
-        current_size += part_len;
-        LOG_TRACE(log, "Staged block (id: {}) of size {} (written {}/{}, blob path: {}).", block_id, part_len, current_size, total_size, blob_path);
+        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(buffer_begin + read), part_len);
+        block_blob_client.StageBlock(block_id, tmp_buffer);
+
+        read += part_len;
     }
 
-    execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, DEFAULT_RETRY_NUM);
-    LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
+    block_blob_client.CommitBlockList(block_ids);
 
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(total_size);
+        write_settings.remote_throttler->add(read);
 }
 
 }

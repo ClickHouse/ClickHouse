@@ -490,9 +490,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 void Keeper::logRevision() const
 {
     Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 

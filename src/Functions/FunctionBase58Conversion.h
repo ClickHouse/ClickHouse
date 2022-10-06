@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/Base58.h>
+#include <Common/base58.h>
 #include <cstring>
 
 
@@ -62,16 +62,9 @@ struct Base58Encode
     }
 };
 
-enum class Base58DecodeErrorHandling
-{
-    ThrowException,
-    ReturnEmptyString
-};
-
-template <typename Name, Base58DecodeErrorHandling ErrorHandling>
 struct Base58Decode
 {
-    static constexpr auto name = Name::name;
+    static constexpr auto name = "base58Decode";
 
     static void process(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
@@ -100,12 +93,7 @@ struct Base58Decode
             size_t src_length = current_src_offset - prev_src_offset - 1;
             std::optional<size_t> decoded_size = decodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
             if (!decoded_size)
-            {
-                if constexpr (ErrorHandling == Base58DecodeErrorHandling::ThrowException)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base58 value, cannot be decoded");
-                else
-                    decoded_size = 0;
-            }
+                throw Exception("Invalid Base58 value, cannot be decoded", ErrorCodes::BAD_ARGUMENTS);
 
             prev_src_offset = current_src_offset;
             current_dst_offset += *decoded_size;
@@ -125,23 +113,33 @@ class FunctionBase58Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBase58Conversion>(); }
-    String getName() const override { return Func::name; }
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionBase58Conversion>();
+    }
+
+    String getName() const override
+    {
+        return Func::name;
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}: 1 expected.", getName());
+            throw Exception("Wrong number of arguments for function " + getName() + ":  1 expected.", ErrorCodes::BAD_ARGUMENTS);
 
         if (!isString(arguments[0].type))
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}. Must be String.",
-                arguments[0].type->getName(), getName());
+                "Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -152,9 +150,8 @@ public:
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
         if (!input)
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}, must be String",
-                arguments[0].column->getName(), getName());
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be String",
+                ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
 
