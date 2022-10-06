@@ -136,6 +136,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int REPLICA_IS_NOT_IN_QUORUM;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_DROPPED;
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int NOT_A_LEADER;
@@ -443,7 +444,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
     syncPinnedPartUUIDs();
 
-    createTableSharedID();
+    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+        createTableSharedID();
 
     initialization_done = true;
 }
@@ -7443,10 +7445,22 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
-        createTableSharedID();
+    if (table_shared_id == UUIDHelpers::Nil)
+    {
+        if (has_metadata_in_zookeeper.has_value())
+        {
+            if (*has_metadata_in_zookeeper)
+                createTableSharedID();
+            else
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped", getStorageID().getNameForLogs());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID for table {}. "
+                            "It will be resolve automatically when connection will be established", getStorageID().getNameForLogs());
+        }
+    }
 
     return toString(table_shared_id);
 }
@@ -7622,6 +7636,10 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
+    /// If table was completely dropped (no meta in zookeeper) we can safely remove parts
+    if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
+        return std::make_pair(true, NameSet{});
+
     /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
     /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
     /// context.
@@ -7630,6 +7648,11 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         zookeeper = getZooKeeperIfTableShutDown();
     else
         zookeeper = getZooKeeper();
+
+    /// It can happen that we didn't had the connection to zookeeper during table creation, but actually
+    /// table is completely dropped, so we can drop it without any additional checks.
+    if (!has_metadata_in_zookeeper.has_value() && !zookeeper->exists(zookeeper_path))
+        return std::make_pair(true, NameSet{});
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
         zookeeper_path);
