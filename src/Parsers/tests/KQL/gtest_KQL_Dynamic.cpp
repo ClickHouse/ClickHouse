@@ -72,10 +72,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
             "SELECT [A, B, C, D]"
         },
         {
-            "print repeat(A, B)",
-            "SELECT arrayWithConstant(B, A)"
-        },
-        {
             "print set_difference(A, B)",
             "SELECT arrayFilter(x -> (NOT has(arrayDistinct(arrayConcat(B)), x)), arrayDistinct(A))"
         },
