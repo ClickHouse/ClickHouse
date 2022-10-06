@@ -601,7 +601,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 blocks.push_back(right_block);
         }
 
-        while (overflow)
+        if (overflow)
         {
             buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 
@@ -616,6 +616,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         // All blocks were added to the @join
         return;
 
+    /// TODO: extract code below into function `flushBlocksToBuckets`
     UNUSED(flushBlocksToBuckets);
 
     // Write the rest of the blocks to the disk buckets
