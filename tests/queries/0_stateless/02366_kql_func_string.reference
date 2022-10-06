@@ -167,12 +167,6 @@ https://www.test.com/hello word
 https%3A%2F%2Fwww.test.com%2Fhello%20word
 
 -- Customers | project name_abbr = strcat(substring(FirstName,0,3), \' \', substring(LastName,2))
-\N
-Lat en
-Pet ra
-The az
-Ste x
-App 
 
 -- Customers | project name = strcat(FirstName, \' \', LastName)
 \N

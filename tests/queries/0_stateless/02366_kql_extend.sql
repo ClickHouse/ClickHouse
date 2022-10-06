@@ -40,10 +40,10 @@ print '-- extend #5 --';
 Ledger | take 2 | extend strcat(Fruit, ' was purchased from ', Supplier, ' for $', tostring(Price), ' on ', tostring(Purchase)) | extend PriceInCents = 100 * Price;
 
 print '-- extend #6 --';
-Ledger | extend Price = 100 * Price
+Ledger | extend Price = 100 * Price;
 
 print '-- extend #7 --';
-print a = 4 | extend a = 5
+print a = 4 | extend a = 5;
 
 print '-- extend #8 --';
 -- print x = 5 | extend array_sort_desc(range(0, x), range(1, x + 1))
