@@ -156,5 +156,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Dynamic, ParserTest,
          {
              "print strlen(A[0])",
              "SELECT lengthUTF8(A[if(0 >= 0, 0 + 1, 0)])"
+         },
+         {
+            "print repeat(1, 3)",
+            "SELECT if(3 < 0, [NULL], arrayWithConstant(abs(3), 1))"
+         },
+         {
+            "print repeat(1, -3)",
+            "SELECT if(-3 < 0, [NULL], arrayWithConstant(abs(-3), 1))"
          }
  })));

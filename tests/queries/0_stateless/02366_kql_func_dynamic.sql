@@ -108,6 +108,7 @@ print repeat(1, 3);
 print repeat("asd", 3);
 print repeat(timespan(1d), 3);
 print repeat(true, 3);
+print repeat(1, -3);
 print '-- set_difference()';
 print set_difference(dynamic([]), dynamic([]));
 print set_difference(dynamic([]), dynamic([9]));
