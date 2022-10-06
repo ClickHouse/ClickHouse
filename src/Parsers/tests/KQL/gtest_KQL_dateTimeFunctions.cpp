@@ -96,11 +96,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print endofyear(datetime(2017-01-01 10:10:17), -1) ",
-            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (((toDateTime(toString(toLastDayOfMonth((toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC') + toIntervalYear(-1)) + toIntervalMonth(12 - toInt8(substring(toString(toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC')), 6, 2))))), 9, 'UTC') + toIntervalHour(23)) + toIntervalMinute(59)) + toIntervalSecond(60)) - toIntervalMicrosecond(1)"
         },
         {
            "print endofyear(datetime(2017-01-01 10:10:17), 1)" ,
-           "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalYear(1 + 1)) - toIntervalMicrosecond(1)"
+           "SELECT (((toDateTime(toString(toLastDayOfMonth((toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC') + toIntervalYear(1)) + toIntervalMonth(12 - toInt8(substring(toString(toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC')), 6, 2))))), 9, 'UTC') + toIntervalHour(23)) + toIntervalMinute(59)) + toIntervalSecond(60)) - toIntervalMicrosecond(1)"
         },
         {
             "print make_datetime(2017,10,01)",
