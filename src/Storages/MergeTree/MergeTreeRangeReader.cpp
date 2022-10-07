@@ -1212,7 +1212,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         if (result.getFilter())
         {
             /// filter might be shrunk while columns not
-            const auto * result_filter = result.getFilterOriginal();
+            const auto * result_filter = result.getFilter();//getFilterOriginal();
 
             filterColumns(result.columns, current_step_filter);
 
