@@ -858,7 +858,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzColumnLikeExpressionList(select->select().get());
 
-        if(select->groupBy().get())
+        if (select->groupBy().get())
         {
             if (fuzz_rand() % 50 == 0)
             {
@@ -869,19 +869,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 select->group_by_with_cube = false;
                 select->group_by_with_totals = true;
             }
-            else if  (fuzz_rand() % 100 == 0)
+            else if (fuzz_rand() % 100 == 0)
             {
                 select->group_by_with_grouping_sets = !select->group_by_with_grouping_sets;
             }
-            else if  (fuzz_rand() % 100 == 0)
+            else if (fuzz_rand() % 100 == 0)
             {
                 select->group_by_with_rollup = !select->group_by_with_rollup;
             }
-            else if  (fuzz_rand() % 100 == 0)
+            else if (fuzz_rand() % 100 == 0)
             {
                 select->group_by_with_cube = !select->group_by_with_cube;
             }
-            else if  (fuzz_rand() % 100 == 0)
+            else if (fuzz_rand() % 100 == 0)
             {
                 select->group_by_with_totals = !select->group_by_with_totals;
             }
@@ -891,7 +891,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList());
         }
 
-        if(select->where().get())
+        if (select->where().get())
         {
             if (fuzz_rand() % 50 == 0)
             {
