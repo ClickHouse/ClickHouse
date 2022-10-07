@@ -85,7 +85,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/TCPProtocolStackFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
@@ -1858,27 +1857,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 
-
-void Server::createServers(
-    Poco::Util::AbstractConfiguration & config,
-    const Strings & listen_hosts,
-    const Strings & interserver_listen_hosts,
-    bool listen_try,
-    Poco::ThreadPool & server_pool,
+std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & protocol,
+    Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
-    std::vector<ProtocolServerAdapter> & servers,
-    bool start_servers)
+    bool & is_secure)
 {
-    const Settings & settings = global_context->getSettingsRef();
-
-    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
-    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-    Poco::Util::AbstractConfiguration::Keys protocols;
-    config.keys("protocols", protocols);
-
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
@@ -1914,6 +1899,61 @@ void Server::createServers(
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
 
+    std::string conf_name = "protocols." + protocol;
+    std::string prefix = conf_name + ".";
+    std::unordered_set<std::string> pset {conf_name};
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
+    while (true)
+    {
+        // if there is no "type" - it's a reference to another protocol and this is just an endpoint
+        if (config.has(prefix + "type"))
+        {
+            std::string type = config.getString(prefix + "type");
+            if (type == "tls")
+            {
+                if (is_secure)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
+                is_secure = true;
+            }
+
+            stack->append(create_factory(type, conf_name));
+        }
+
+        if (!config.has(prefix + "impl"))
+            break;
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        if (!pset.insert(conf_name).second)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+    }
+
+    return stack;
+}
+
+void Server::createServers(
+    Poco::Util::AbstractConfiguration & config,
+    const Strings & listen_hosts,
+    const Strings & interserver_listen_hosts,
+    bool listen_try,
+    Poco::ThreadPool & server_pool,
+    AsynchronousMetrics & async_metrics,
+    std::vector<ProtocolServerAdapter> & servers,
+    bool start_servers)
+{
+    const Settings & settings = global_context->getSettingsRef();
+
+    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
     for (const auto & protocol : protocols)
     {
         std::vector<std::string> hosts;
@@ -1926,7 +1966,6 @@ void Server::createServers(
         {
             std::string conf_name = "protocols." + protocol;
             std::string prefix = conf_name + ".";
-            std::unordered_set<std::string> pset {conf_name};
 
             if (!config.has(prefix + "port"))
                 continue;
@@ -1936,33 +1975,7 @@ void Server::createServers(
                 description = config.getString(prefix + "description");
             std::string port_name = prefix + "port";
             bool is_secure = false;
-            auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
-
-            while (true)
-            {
-                // if there is no "type" - it's a reference to another protocol and this is just an endpoint
-                if (config.has(prefix + "type"))
-                {
-                    std::string type = config.getString(prefix + "type");
-                    if (type == "tls")
-                    {
-                        if (is_secure)
-                            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
-                        is_secure = true;
-                    }
-
-                    stack->append(create_factory(type, conf_name));
-                }
-
-                if (!config.has(prefix + "impl"))
-                    break;
-
-                conf_name = "protocols." + config.getString(prefix + "impl");
-                prefix = conf_name + ".";
-
-                if (!pset.insert(conf_name).second)
-                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
-            }
+            auto stack = buildProtocolStackFromConfig(config, protocol, http_params, async_metrics, is_secure);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
