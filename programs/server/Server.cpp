@@ -90,8 +90,8 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#include "config.h"
+#include "config_version.h"
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>

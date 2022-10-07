@@ -35,11 +35,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+
+#include "config_version.h"
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
