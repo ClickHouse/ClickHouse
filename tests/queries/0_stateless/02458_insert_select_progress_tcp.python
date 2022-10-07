@@ -181,6 +181,21 @@ class Progress():
     def __str__(self):
         return json.dumps(self.__dict__)
 
+    def __add__(self, b):
+        self.read_rows += b.read_rows
+        self.read_bytes += b.read_bytes
+        self.total_rows_to_read += b.total_rows_to_read
+        self.written_rows += b.written_rows
+        self.written_bytes += b.written_bytes
+        return self
+
+    def readPacket(self, s):
+        self.read_rows += readVarUInt(s)
+        self.read_bytes += readVarUInt(s)
+        self.total_rows_to_read += readVarUInt(s)
+        self.written_rows += readVarUInt(s)
+        self.written_bytes += readVarUInt(s)
+
     def __bool__(self):
         return (
             self.read_rows > 0 or
@@ -188,6 +203,7 @@ class Progress():
             self.total_rows_to_read > 0 or
             self.written_rows > 0 or
             self.written_bytes > 0)
+
 
 def readProgress(s):
     packet_type = readVarUInt(s)
@@ -200,12 +216,7 @@ def readProgress(s):
     assertPacket(packet_type, 3)  # Progress
 
     progress = Progress()
-    progress.read_rows += readVarUInt(s)
-    progress.read_bytes += readVarUInt(s)
-    progress.total_rows_to_read += readVarUInt(s)
-
-    progress.written_rows += readVarUInt(s)
-    progress.written_bytes += readVarUInt(s)
+    progress.readPacket(s)
     return progress
 
 def readException(s):
@@ -230,13 +241,21 @@ def main():
         # external tables
         sendEmptyBlock(s)
 
+        summary_progress = Progress()
+        non_empty_progress_packets = 0
         while True:
             progress = readProgress(s)
             if progress is None:
                 break
-            # Print only non empty progress packets, eventually we should have 3 of them
+            summary_progress += progress
             if progress:
-                print(progress)
+                non_empty_progress_packets += 1
+
+        print(summary_progress)
+        # Print only non empty progress packets, eventually we should have at least 3 of them
+        # - 2 for each INSERT block (one of them can be merged with read block, heance 3 or for)
+        # - 1 or 2 for each SELECT block
+        assert non_empty_progress_packets in (3, 4), f"{non_empty_progress_packets=:}"
 
         s.close()
 
