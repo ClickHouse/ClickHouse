@@ -74,7 +74,8 @@ public:
     UInt64 get64(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
 
-    ColumnPtr convertToFullColumnIfSparse() const override;
+    ColumnPtr convertToFullColumn() const;
+    ColumnPtr convertToFullColumnIfSparse() const override { return convertToFullColumn(); }
 
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;

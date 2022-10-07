@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataTypes/recursiveTypeConversions.h>
 
 #include <algorithm>
 #include <bit>
@@ -127,7 +128,7 @@ StringRef ColumnSparse::getDataAt(size_t n) const
     return values->getDataAt(getValueIndex(n));
 }
 
-ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
+ColumnPtr ColumnSparse::convertToFullColumn() const
 {
     return values->createWithOffsets(getOffsetsData(), (*values)[0], _size, /*shift=*/ 1);
 }
@@ -790,19 +791,10 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
 {
-    if (!column)
-        return column;
-
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    return recursiveConvertColumn<ColumnSparse>(column, [](const auto & column_sparse)
     {
-        auto columns = column_tuple->getColumns();
-        for (auto & element : columns)
-            element = recursiveRemoveSparse(element);
-
-        return ColumnTuple::create(columns);
-    }
-
-    return column->convertToFullColumnIfSparse();
+        return column_sparse.convertToFullColumn();
+    });
 }
 
 }

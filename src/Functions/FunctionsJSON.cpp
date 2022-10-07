@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/ObjectUtils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -550,8 +551,33 @@ public:
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        auto temporary_result = FunctionJSONHelpers::ExecutorObject<Name, Impl>::run(arguments, result_type, input_rows_count);
+        assert(!arguments.empty());
+        auto temp_arguments = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+
+        const auto & type_object = assert_cast<const DataTypeObject &>(*temp_arguments[0].type);
+        const auto & arg_object = temp_arguments[0].column;
+        const auto * column_const = typeid_cast<const ColumnConst *>(arg_object.get());
+        const auto * column_object = typeid_cast<const ColumnObject *>(
+            column_const ? column_const->getDataColumnPtr().get() : arg_object.get());
+
+        assert(column_object);
+        if (column_object->hasNullableSubcolumns())
+        {
+            auto non_nullable_object = ColumnObject::create(false);
+            for (const auto & entry : column_object->getSubcolumns())
+            {
+                auto new_subcolumn = recursiveAssumeNotNullable(entry->data.getFinalizedColumnPtr());
+                non_nullable_object->addSubcolumn(entry->path, new_subcolumn->assumeMutable());
+            }
+
+            temp_arguments[0].type = std::make_shared<DataTypeObject>(type_object.getSchemaFormat(), false);
+            temp_arguments[0].column = std::move(non_nullable_object);
+
+            if (column_const)
+                temp_arguments[0].column = ColumnConst::create(temp_arguments[0].column, column_const->size());
+        }
+
+        auto temporary_result = FunctionJSONHelpers::ExecutorObject<Name, Impl>::run(temp_arguments, result_type, input_rows_count);
         if (null_presence.has_nullable)
             return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
         return temporary_result;

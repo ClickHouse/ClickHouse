@@ -194,6 +194,7 @@ public:
     bool tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const;
     bool tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const;
 
+    bool hasNullableSubcolumns() const { return is_nullable; }
     const Subcolumns & getSubcolumns() const { return subcolumns; }
     Subcolumns & getSubcolumns() { return subcolumns; }
     PathsInData getKeys() const;

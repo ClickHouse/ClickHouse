@@ -8,7 +8,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataTypes/recursiveTypeConversions.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -804,6 +806,21 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
+}
+
+ColumnPtr recursiveAssumeNotNullable(const ColumnPtr & column)
+{
+    auto column_no_nullable_lc = recursiveConvertColumn<ColumnLowCardinality>(column, [](const auto & column_lc)
+    {
+        auto column_lc_not_nullable = IColumn::mutate(column_lc.getPtr());
+        assert_cast<ColumnLowCardinality &>(*column_lc_not_nullable).nestedRemoveNullable();
+        return column_lc_not_nullable;
+    });
+
+    return recursiveConvertColumn<ColumnNullable>(column_no_nullable_lc, [](const auto & column_nullable)
+    {
+        return column_nullable.getNestedColumnPtr();
+    });
 }
 
 }
