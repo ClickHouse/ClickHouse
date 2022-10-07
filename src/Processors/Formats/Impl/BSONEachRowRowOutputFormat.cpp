@@ -92,7 +92,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, size_t r
             break;
         }
         // case TypeIndex::Binary:    - Not supported
-        // case TypeIndex::UNDEFINED  - Depricated
+        // case TypeIndex::UNDEFINED  - Deprecated
         case TypeIndex::UUID: {
             writeChar(0x07, out);
             writeString(name, out);
@@ -125,10 +125,10 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, size_t r
             break;
         }
         // case TypeIndex::Regexp - Not supported
-        // case TypeIndex::DBPointer - Depricated
+        // case TypeIndex::DBPointer - Deprecated
         // case TypeIndex::JSCODE - Not supported
-        // case TypeIndex::Symbol - Depricated
-        // case TypeIndex::JSCODE_w_scope - Depricated
+        // case TypeIndex::Symbol - Deprecated
+        // case TypeIndex::JSCODE_w_scope - Deprecated
         case TypeIndex::Int32: {
             writeChar(0x10, out);
             writeString(name, out);

@@ -69,7 +69,7 @@ namespace BSONUtils
                 {
                     if (in.eof())
                         return false;
-                    
+
                     auto pre_array_size = already_read;
 
                     UInt32 arr_size;
@@ -101,14 +101,14 @@ namespace BSONUtils
                         if (already_read - pre_array_size + 1 >= arr_size) {
                             in.read(nested_type);
                             ++already_read;
-                        }                           
+                        }
                     }
                     offsets.push_back(offsets.back() + key_index);
 
                     return true;
                 }
                 // case BSONDataTypeIndex::BINARY:    - Not supported
-                // case BSONDataTypeIndex::UNDEFINED: - Depricated
+                // case BSONDataTypeIndex::UNDEFINED: - Deprecated
                 case BSONDataTypeIndex::OID:
                 {
                     union {
@@ -148,10 +148,10 @@ namespace BSONUtils
                     return true;
                 }
                 // case BSONDataTypeIndex::REGEXP:                     - Not supported
-                // case BSONDataTypeIndex::DBPOINTER:                  - Depricated
+                // case BSONDataTypeIndex::DBPOINTER:                  - Deprecated
                 // case BSONDataTypeIndex::JAVASCRIPT_CODE:            - Not supported
-                // case BSONDataTypeIndex::SYMBOL:                     - Depricated
-                // case BSONDataTypeIndex::JAVASCRIPT_CODE_WITH_SCOPE: - Depricated
+                // case BSONDataTypeIndex::SYMBOL:                     - Deprecated
+                // case BSONDataTypeIndex::JAVASCRIPT_CODE_WITH_SCOPE: - Deprecated
                 case BSONDataTypeIndex::INT32:
                 {
                     union {
