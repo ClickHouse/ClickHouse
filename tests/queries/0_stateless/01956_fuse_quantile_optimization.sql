@@ -58,8 +58,8 @@ SELECT quantileBFloat16Weighted(0.2)(d, 1), quantileBFloat16Weighted(0.3)(d, 1),
 
 EXPLAIN SYNTAX SELECT quantile(0.2)(d) as k, quantile(0.3)(d) FROM datetime order by quantile(0.2)(d);
 
-SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
-EXPLAIN SYNTAX SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
+SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b order by b;
+EXPLAIN SYNTAX SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b order by b;
 
 -- fuzzer
 SELECT quantileDeterministic(0.99)(1023) FROM datetime FORMAT Null; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

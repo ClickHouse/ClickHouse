@@ -46,7 +46,7 @@ void chooseResultColumnType(
     {
         throw Exception(
             ErrorCodes::TYPE_MISMATCH,
-            "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}. "
+            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
             "You can specify the type for this column using setting schema_inference_hints",
             type->getName(),
             column_name,
@@ -62,7 +62,7 @@ void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & ty
         if (!default_type)
             throw Exception(
                 ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                "Cannot determine type for column {} by first {} rows of data, most likely this column contains only Nulls or empty "
+                "Cannot determine type for column '{}' by first {} rows of data, most likely this column contains only Nulls or empty "
                 "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints",
                 name,
                 rows_read);

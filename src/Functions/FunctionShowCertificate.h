@@ -1,8 +1,9 @@
 #pragma once
 
+#include "config.h"
+
 #include <memory>
 #include <string>
-#include <Common/config.h>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>

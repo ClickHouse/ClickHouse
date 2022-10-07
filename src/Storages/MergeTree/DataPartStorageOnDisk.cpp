@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -223,52 +224,76 @@ void DataPartStorageOnDisk::remove(
 
     /// NOTE relative_path can contain not only part name itself, but also some prefix like
     /// "moving/all_1_1_1" or "detached/all_2_3_5". We should handle this case more properly.
-    if (part_dir_without_slash.has_parent_path())
-    {
-        auto parent_path = part_dir_without_slash.parent_path();
-        if (parent_path == "detached")
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", part_dir, root_path);
 
-        part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
-    }
-    else
-    {
-        part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
-    }
-
+    /// File might be already renamed on previous try
+    bool has_delete_prefix = part_dir_without_slash.filename().string().starts_with("delete_tmp_");
+    std::optional<CanRemoveDescription> can_remove_description;
+    auto disk = volume->getDisk();
     fs::path to = fs::path(root_path) / part_dir_without_slash;
 
-    std::optional<CanRemoveDescription> can_remove_description;
-
-    auto disk = volume->getDisk();
-    if (disk->exists(to))
+    if (!has_delete_prefix)
     {
-        LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
+        if (part_dir_without_slash.has_parent_path())
+        {
+            auto parent_path = part_dir_without_slash.parent_path();
+            if (parent_path == "detached")
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",
+                    part_dir,
+                    root_path);
+
+            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+        }
+        else
+        {
+            part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+        }
+
+        to = fs::path(root_path) / part_dir_without_slash;
+
+        if (disk->exists(to))
+        {
+            LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. "
+                        "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
+            try
+            {
+                can_remove_description.emplace(can_remove_callback());
+                disk->removeSharedRecursive(
+                    fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
+            }
+            catch (...)
+            {
+                LOG_ERROR(
+                    log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+                throw;
+            }
+        }
+
         try
         {
-            can_remove_description.emplace(can_remove_callback());
-            disk->removeSharedRecursive(fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
+            disk->moveDirectory(from, to);
+            onRename(root_path, part_dir_without_slash);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            LOG_ERROR(log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                return;
+            }
             throw;
         }
-    }
-
-    try
-    {
-        disk->moveDirectory(from, to);
-        onRename(root_path, part_dir_without_slash);
-    }
-    catch (const fs::filesystem_error & e)
-    {
-        if (e.code() == std::errc::no_such_file_or_directory)
+        catch (const fs::filesystem_error & e)
         {
-            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
-            return;
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                return;
+            }
+            throw;
         }
-        throw;
     }
 
     if (!can_remove_description)
@@ -717,12 +742,14 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
     const std::string & dir_path,
     bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    bool copy_instead_of_hardlink) const
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks) const
+
 {
     auto disk = volume->getDisk();
     disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);

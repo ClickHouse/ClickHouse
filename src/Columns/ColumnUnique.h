@@ -113,6 +113,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
+    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    {
+        callback(column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+        reverse_index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
@@ -307,8 +316,8 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
-
-namespace
+template <typename ColumnType>
+size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     class FieldVisitorGetData : public StaticVisitor<>
     {
@@ -341,12 +350,7 @@ namespace
         void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
     };
-}
 
-
-template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
-{
     if (x.isNull())
         return getNullValueIndex();
 
