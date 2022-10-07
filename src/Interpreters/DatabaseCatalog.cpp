@@ -1136,7 +1136,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id
     checkTableCanBeRemovedOrRenamedImpl(dependent, removing_table, is_drop_database);
 }
 
-void DatabaseCatalog::checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database) const
+void DatabaseCatalog::checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database)
 {
     if (!is_drop_database)
     {

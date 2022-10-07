@@ -245,7 +245,7 @@ private:
 
     void shutdownImpl();
 
-    void checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database) const;
+    static void checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database);
 
     struct UUIDToStorageMapPart
     {
