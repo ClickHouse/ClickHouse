@@ -123,11 +123,15 @@
 ///     - tries to print failed assertion into server log
 /// It can be used for all assertions except heavy ones.
 /// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
+/// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
+/// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
         #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
+        #define UNREACHABLE() abort()
     #else
         #define chassert(x) ((void)0)
+        #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
 
