@@ -55,6 +55,7 @@ function check_replication_consistency()
             break
         fi
     done
+    time_left=$((300 - num_tries))
 
     # Do not check anything if all replicas are readonly,
     # because is this case all replicas are probably lost (it may happen and it's not a bug)
