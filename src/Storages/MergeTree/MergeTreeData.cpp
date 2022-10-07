@@ -91,6 +91,18 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <fmt/format.h>
+
+template <>
+struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const DB::DataPartPtr & part, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(part->name, ctx);
+    }
+};
+
 
 namespace fs = std::filesystem;
 
@@ -1905,6 +1917,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+        LOG_DEBUG(log, "Removing {} parts from filesystem: {} (concurrently)", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
@@ -1912,7 +1925,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
-                LOG_DEBUG(log, "Removing part from filesystem {} (concurrently)", part->name);
                 part->remove();
                 if (part_names_succeed)
                 {
@@ -1924,11 +1936,11 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
         pool.wait();
     }
-    else
+    else if (!parts_to_remove.empty())
     {
+        LOG_DEBUG(log, "Removing {} parts from filesystem: {}", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
-            LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
             part->remove();
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
@@ -4911,15 +4923,13 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     DiskPtr selected_disk) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    LOG_TRACE(log, "Trying reserve {} bytes preffering TTL rules", expected_size);
     ReservationPtr reservation;
 
     auto move_ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), ttl_infos.moves_ttl, time_of_move, true);
 
     if (move_ttl_entry)
     {
-        LOG_TRACE(log, "Got move TTL entry, will try to reserver destination for move");
+        LOG_TRACE(log, "Trying to reserve {} to apply a TTL rule. Will try to reserve in the destination", ReadableSize(expected_size));
         SpacePtr destination_ptr = getDestinationForMoveTTL(*move_ttl_entry);
         bool perform_ttl_move_on_insert = is_insert && destination_ptr && shouldPerformTTLMoveOnInsert(destination_ptr);
 
@@ -4949,11 +4959,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         }
         else
         {
-            LOG_TRACE(log, "Reserving bytes on selected destination");
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
             {
-                LOG_TRACE(log, "Reservation successful");
                 return reservation;
             }
             else
@@ -4977,13 +4985,18 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     // Prefer selected_disk
     if (selected_disk)
     {
-        LOG_DEBUG(log, "Disk for reservation provided: {} (with type {})", selected_disk->getName(), toString(selected_disk->getDataSourceDescription().type));
+        LOG_TRACE(
+            log,
+            "Trying to reserve {} on the selected disk: {} (with type {})",
+            ReadableSize(expected_size),
+            selected_disk->getName(),
+            toString(selected_disk->getDataSourceDescription().type));
         reservation = selected_disk->reserve(expected_size);
     }
 
     if (!reservation)
     {
-        LOG_DEBUG(log, "No reservation, reserving using storage policy from min volume index {}", min_volume_index);
+        LOG_TRACE(log, "Trying to reserve {} using storage policy from min volume index {}", ReadableSize(expected_size), min_volume_index);
         reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
     }
 
