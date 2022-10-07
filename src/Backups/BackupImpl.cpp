@@ -43,8 +43,8 @@ namespace ErrorCodes
 
 namespace
 {
-    const UInt64 INITIAL_BACKUP_VERSION = 1;
-    const UInt64 CURRENT_BACKUP_VERSION = 1;
+    const int INITIAL_BACKUP_VERSION = 1;
+    const int CURRENT_BACKUP_VERSION = 1;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
     using FileInfo = IBackupCoordination::FileInfo;
@@ -275,7 +275,7 @@ void BackupImpl::writeBackupMetadata()
     assert(!is_internal_backup);
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->setUInt64("version", CURRENT_BACKUP_VERSION);
+    config->setInt("version", CURRENT_BACKUP_VERSION);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
@@ -367,7 +367,7 @@ void BackupImpl::readBackupMetadata()
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
 
-    version = config->getUInt64("version");
+    version = config->getInt("version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
         throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name, version);
 
