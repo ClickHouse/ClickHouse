@@ -548,6 +548,26 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 select->groupBy()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+                select->group_by_with_grouping_sets = false;
+                select->group_by_with_rollup = false;
+                select->group_by_with_cube = false;
+                select->group_by_with_totals = true;
+            }
+            else if  (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_grouping_sets = !select->group_by_with_grouping_sets;
+            }
+            else if  (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_rollup = !select->group_by_with_rollup;
+            }
+            else if  (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_cube = !select->group_by_with_cube;
+            }
+            else if  (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_totals = !select->group_by_with_totals;
             }
         }
         else if (fuzz_rand() % 50 == 0)
