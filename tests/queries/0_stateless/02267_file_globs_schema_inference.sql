@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest, no-parallel, disabled
+-- FIXME https://github.com/ClickHouse/ClickHouse/issues/41934
 
 insert into function file('02267_data2.jsonl') select NULL as x;
 insert into function file('02267_data3.jsonl') select * from numbers(0);
