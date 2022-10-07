@@ -18,19 +18,14 @@ class IdentifierNode final : public IQueryTreeNode
 {
 public:
     /// Construct identifier node with identifier
-    explicit IdentifierNode(Identifier identifier_)
-        : identifier(std::move(identifier_))
-    {}
+    explicit IdentifierNode(Identifier identifier_);
 
     /** Construct identifier node with identifier and table expression modifiers
       * when identifier node is part of JOIN TREE.
       *
       * Example: SELECT * FROM test_table SAMPLE 0.1 OFFSET 0.1 FINAL
       */
-    explicit IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_)
-        : identifier(std::move(identifier_))
-        , table_expression_modifiers(std::move(table_expression_modifiers_))
-    {}
+    explicit IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_);
 
     /// Get identifier
     const Identifier & getIdentifier() const
@@ -45,7 +40,7 @@ public:
     }
 
     /// Get table expression modifiers
-    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -74,6 +69,8 @@ protected:
 private:
     Identifier identifier;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    static constexpr size_t children_size = 0;
 };
 
 }

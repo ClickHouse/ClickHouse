@@ -11,9 +11,9 @@ namespace DB
 {
 
 WindowNode::WindowNode(WindowFrame window_frame_)
-    : window_frame(std::move(window_frame_))
+    : IQueryTreeNode(children_size)
+    , window_frame(std::move(window_frame_))
 {
-    children.resize(children_size);
     children[partition_by_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
 }

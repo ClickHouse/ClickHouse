@@ -75,6 +75,8 @@ protected:
 private:
     ConstantValuePtr constant_value;
     String value_string;
+
+    static constexpr size_t children_size = 0;
 };
 
 }

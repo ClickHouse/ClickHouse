@@ -21,6 +21,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// IColumnTransformerNode implementation
+
 const char * toString(ColumnTransfomerType type)
 {
     switch (type)
@@ -30,6 +32,10 @@ const char * toString(ColumnTransfomerType type)
         case ColumnTransfomerType::REPLACE: return "REPLACE";
     }
 }
+
+IColumnTransformerNode::IColumnTransformerNode(size_t children_size)
+    : IQueryTreeNode(children_size)
+{}
 
 /// ApplyColumnTransformerNode implementation
 
@@ -43,6 +49,7 @@ const char * toString(ApplyColumnTransformerType type)
 }
 
 ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_)
+    : IColumnTransformerNode(children_size)
 {
     if (expression_node_->getNodeType() == QueryTreeNodeType::LAMBDA)
         apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
@@ -53,7 +60,6 @@ ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expressi
             "Apply column transformer expression must be lambda or function. Actual {}",
             expression_node_->getNodeTypeName());
 
-    children.resize(1);
     children[expression_child_index] = std::move(expression_node_);
 }
 
@@ -110,6 +116,21 @@ QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
 }
 
 /// ExceptColumnTransformerNode implementation
+
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_)
+    : IColumnTransformerNode(children_size)
+    , except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
+    , except_column_names(std::move(except_column_names_))
+    , is_strict(is_strict_)
+{
+}
+
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_)
+    : IColumnTransformerNode(children_size)
+    , except_transformer_type(ExceptColumnTransformerType::REGEXP)
+    , column_matcher(std::move(column_matcher_))
+{
+}
 
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name) const
 {
@@ -226,9 +247,9 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
 /// ReplaceColumnTransformerNode implementation
 
 ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Replacement> & replacements_, bool is_strict_)
-    : is_strict(is_strict_)
+    : IColumnTransformerNode(children_size)
+    , is_strict(is_strict_)
 {
-    children.resize(1);
     children[replacements_child_index] = std::make_shared<ListNode>();
 
     auto & replacement_expressions_nodes = getReplacements().getNodes();
@@ -326,12 +347,12 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 {
-    ReplaceColumnTransformerNodePtr result_replace_transformers(new ReplaceColumnTransformerNode());
+    auto result_replace_transformer = std::make_shared<ReplaceColumnTransformerNode>(std::vector<Replacement>{}, false);
 
-    result_replace_transformers->is_strict = is_strict;
-    result_replace_transformers->replacements_names = replacements_names;
+    result_replace_transformer->is_strict = is_strict;
+    result_replace_transformer->replacements_names = replacements_names;
 
-    return result_replace_transformers;
+    return result_replace_transformer;
 }
 
 }

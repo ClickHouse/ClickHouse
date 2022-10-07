@@ -26,12 +26,12 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     std::optional<SortDirection> nulls_sort_direction_,
     std::shared_ptr<Collator> collator_,
     bool with_fill_)
-    : sort_direction(sort_direction_)
+    : IQueryTreeNode(children_size)
+    , sort_direction(sort_direction_)
     , nulls_sort_direction(nulls_sort_direction_)
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
-    children.resize(children_size);
     children[sort_expression_child_index] = std::move(expression_);
 }
 

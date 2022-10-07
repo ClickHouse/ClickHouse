@@ -23,8 +23,8 @@ namespace DB
 {
 
 QueryNode::QueryNode()
+    : IQueryTreeNode(children_size)
 {
-    children.resize(children_size);
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();

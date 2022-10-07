@@ -11,7 +11,12 @@
 namespace DB
 {
 
+ListNode::ListNode()
+    : IQueryTreeNode(0 /*children_size*/)
+{}
+
 ListNode::ListNode(QueryTreeNodes nodes)
+    : IQueryTreeNode(0 /*children_size*/)
 {
     children = std::move(nodes);
 }

@@ -86,7 +86,8 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     Identifiers columns_identifiers_,
     std::shared_ptr<re2::RE2> columns_matcher_,
     ColumnTransformersNodes column_transformers_)
-    : matcher_type(matcher_type_)
+    : IQueryTreeNode(children_size)
+    , matcher_type(matcher_type_)
     , qualified_identifier(qualified_identifier_)
     , columns_identifiers(columns_identifiers_)
     , columns_matcher(columns_matcher_)
@@ -99,7 +100,6 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     for (auto && column_transformer : column_transformers_)
         column_transformers_nodes.emplace_back(std::move(column_transformer));
 
-    children.resize(1);
     children[column_transformers_child_index] = std::move(column_transformers_list_node);
 
     columns_identifiers_set.reserve(columns_identifiers.size());
@@ -155,30 +155,49 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
 
 String MatcherNode::getName() const
 {
-    if (matcher_type == MatcherNodeType::ASTERISK)
-        return "*";
-
     WriteBufferFromOwnString buffer;
-    buffer << "COLUMNS(";
 
-    if (columns_matcher)
+    if (!qualified_identifier.empty())
+        buffer << qualified_identifier.getFullName() << '.';
+
+    if (matcher_type == MatcherNodeType::ASTERISK)
     {
-        buffer << ' ' << columns_matcher->pattern();
+        buffer << '*';
     }
-    else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
+    else
     {
-        size_t columns_identifiers_size = columns_identifiers.size();
-        for (size_t i = 0; i < columns_identifiers_size; ++i)
-        {
-            buffer << columns_identifiers[i].getFullName();
+        buffer << "COLUMNS(";
 
-            if (i + 1 != columns_identifiers_size)
-                buffer << ", ";
+        if (columns_matcher)
+        {
+            buffer << ' ' << columns_matcher->pattern();
+        }
+        else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
+        {
+            size_t columns_identifiers_size = columns_identifiers.size();
+            for (size_t i = 0; i < columns_identifiers_size; ++i)
+            {
+                buffer << columns_identifiers[i].getFullName();
+
+                if (i + 1 != columns_identifiers_size)
+                    buffer << ", ";
+            }
         }
     }
 
     buffer << ')';
-    /// TODO: Transformers
+
+    const auto & column_transformers = getColumnTransformers().getNodes();
+    size_t column_transformers_size = column_transformers.size();
+
+    for (size_t i = 0; i < column_transformers_size; ++i)
+    {
+        const auto & column_transformer = column_transformers[i];
+        buffer << column_transformer->getName();
+
+        if (i + 1 != column_transformers_size)
+            buffer << ' ';
+    }
 
     return buffer.str();
 }

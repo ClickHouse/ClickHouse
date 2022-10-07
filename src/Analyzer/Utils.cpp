@@ -47,10 +47,22 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
 
 bool isNameOfInFunction(const std::string & function_name)
 {
-    bool is_special_function_in = function_name == "in" || function_name == "globalIn" || function_name == "notIn" || function_name == "globalNotIn" ||
-        function_name == "nullIn" || function_name == "globalNullIn" || function_name == "notNullIn" || function_name == "globalNotNullIn" ||
-        function_name == "inIgnoreSet" || function_name == "globalInIgnoreSet" || function_name == "notInIgnoreSet" || function_name == "globalNotInIgnoreSet" ||
-        function_name == "nullInIgnoreSet" || function_name == "globalNullInIgnoreSet" || function_name == "notNullInIgnoreSet" || function_name == "globalNotNullInIgnoreSet";
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "globalIn" ||
+        function_name == "notIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "nullIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
 
     return is_special_function_in;
 }

@@ -17,17 +17,17 @@ namespace ErrorCodes
 }
 
 ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
-    : column(std::move(column_))
+    : IQueryTreeNode(children_size)
+    , column(std::move(column_))
     , column_source(std::move(column_source_))
 {
-    children.resize(children_size);
 }
 
 ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
-    : column(std::move(column_))
+    : IQueryTreeNode(children_size)
+    , column(std::move(column_))
     , column_source(std::move(column_source_))
 {
-    children.resize(children_size);
     children[expression_child_index] = std::move(expression_node_);
 }
 
@@ -45,11 +45,7 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
 
 QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
 {
-    auto lock = column_source.lock();
-    if (!lock)
-        return nullptr;
-
-    return lock;
+    return column_source.lock();
 }
 
 void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
@@ -109,8 +105,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    auto clone_result = std::make_shared<ColumnNode>(column, column_source);
-    return clone_result;
+    return std::make_shared<ColumnNode>(column, column_source);
 }
 
 void ColumnNode::getPointersToUpdateAfterClone(QueryTreePointersToUpdate & pointers_to_update)

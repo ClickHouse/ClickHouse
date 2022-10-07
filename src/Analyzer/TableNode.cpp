@@ -13,15 +13,18 @@
 namespace DB
 {
 
-TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : storage(std::move(storage_))
-    , storage_id(storage->getStorageID())
+TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
+    : IQueryTreeNode(children_size)
+    , storage(std::move(storage_))
+    , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))
     , storage_snapshot(std::move(storage_snapshot_))
+{}
+
+TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
+    : TableNode(storage_, storage_->getStorageID(), std::move(storage_lock_), std::move(storage_snapshot_))
 {
 }
-
-TableNode::TableNode() : storage_id("system", "one") {}
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
@@ -75,12 +78,7 @@ ASTPtr TableNode::toASTImpl() const
 
 QueryTreeNodePtr TableNode::cloneImpl() const
 {
-    TableNodePtr result_table_node(new TableNode());
-
-    result_table_node->storage = storage;
-    result_table_node->storage_id = storage_id;
-    result_table_node->storage_lock = storage_lock;
-    result_table_node->storage_snapshot = storage_snapshot;
+    auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_table_node;

@@ -162,7 +162,7 @@ public:
     }
 
     /** Resolve function node as non aggregate function.
-      * It is important that function name is update with resolved function name.
+      * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       * Assume we have `multiIf` function with single argument, it can be converted to `if` function.
       * Function name must be updated accordingly.
@@ -170,13 +170,13 @@ public:
     void resolveAsFunction(FunctionOverloadResolverPtr function_value, DataTypePtr result_type_value);
 
     /** Resolve function node as aggregate function.
-      * It is important that function name is update with resolved function name.
+      * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
     void resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value);
 
     /** Resolve function node as window function.
-      * It is important that function name is update with resolved function name.
+      * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
       */
     void resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value);
@@ -216,16 +216,16 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    static constexpr size_t parameters_child_index = 0;
-    static constexpr size_t arguments_child_index = 1;
-    static constexpr size_t window_child_index = 2;
-    static constexpr size_t children_size = window_child_index + 1;
-
     String function_name;
     FunctionOverloadResolverPtr function;
     AggregateFunctionPtr aggregate_function;
     DataTypePtr result_type;
     ConstantValuePtr constant_value;
+
+    static constexpr size_t parameters_child_index = 0;
+    static constexpr size_t arguments_child_index = 1;
+    static constexpr size_t window_child_index = 2;
+    static constexpr size_t children_size = window_child_index + 1;
 };
 
 }

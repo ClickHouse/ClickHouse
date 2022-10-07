@@ -252,6 +252,8 @@ public:
     virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
 
 protected:
+    /// Construct query tree node and resize children to children size
+    explicit IQueryTreeNode(size_t children_size);
 
     /** Subclass node must convert itself to AST.
       * Subclass must convert children to AST.
