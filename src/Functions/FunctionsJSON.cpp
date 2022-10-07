@@ -231,7 +231,7 @@ private:
             {
                 case MoveType::ConstIndex:
                 {
-                    if (!moveToElementByIndex<JSONParser>(res_element, moves[j].index, key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
                         return false;
                     break;
                 }
@@ -245,7 +245,7 @@ private:
                 case MoveType::Index:
                 {
                     Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
-                    if (!moveToElementByIndex<JSONParser>(res_element, index, key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
                 }

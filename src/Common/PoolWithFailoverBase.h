@@ -339,7 +339,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {

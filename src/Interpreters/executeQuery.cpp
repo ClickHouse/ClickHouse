@@ -944,9 +944,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                                 processor_elem.processor_name = processor->getName();
 
-                                processor_elem.elapsed_us = processor->getElapsedUs();
-                                processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
-                                processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+                                /// NOTE: convert this to UInt64
+                                processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
+                                processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
+                                processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                                 auto stats = processor->getProcessorDataStats();
                                 processor_elem.input_rows = stats.input_rows;

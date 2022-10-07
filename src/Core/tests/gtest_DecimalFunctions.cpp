@@ -28,7 +28,7 @@ class DecimalUtilsSplitAndCombineTest : public ::testing::TestWithParam<DecimalU
 template <typename DecimalType>
 void testSplit(const DecimalUtilsSplitAndCombineTestParam & param)
 {
-    const DecimalType decimal_value = param.decimal_value;
+    const DecimalType decimal_value(static_cast<typename DecimalType::NativeType>(param.decimal_value));
     const auto & actual_components = DecimalUtils::split(decimal_value, param.scale);
 
     EXPECT_EQ(param.components.whole, actual_components.whole);
@@ -39,21 +39,28 @@ template <typename DecimalType>
 void testDecimalFromComponents(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.decimal_value,
-              DecimalUtils::decimalFromComponents<DecimalType>(param.components.whole, param.components.fractional, param.scale));
+              DecimalUtils::decimalFromComponents<DecimalType>(
+                  static_cast<typename DecimalType::NativeType>(param.components.whole),
+                  static_cast<typename DecimalType::NativeType>(param.components.fractional),
+                  param.scale));
 }
 
 template <typename DecimalType>
 void testGetWhole(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.whole,
-              DecimalUtils::getWholePart(DecimalType{param.decimal_value}, param.scale));
+              DecimalUtils::getWholePart(
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value)},
+                  param.scale));
 }
 
 template <typename DecimalType>
 void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.fractional,
-              DecimalUtils::getFractionalPart(DecimalType{param.decimal_value}, param.scale));
+              DecimalUtils::getFractionalPart(
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value)},
+                  param.scale));
 }
 
 // Unfortunately typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
