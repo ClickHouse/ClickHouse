@@ -42,6 +42,8 @@ print endofyear(datetime(2017-01-01 10:10:17), -1);
 print endofyear(datetime(2017-01-01 10:10:17), 1);
 print '-- unixtime_seconds_todatetime()';
 print unixtime_seconds_todatetime(1546300800);
+print unixtime_seconds_todatetime(1d);
+print unixtime_seconds_todatetime(-1d);
 print '-- unixtime_microseconds_todatetime';
 print unixtime_microseconds_todatetime(1546300800000000);
 print '-- unixtime_milliseconds_todatetime()';
