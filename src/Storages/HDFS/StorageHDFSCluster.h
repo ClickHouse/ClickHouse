@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -9,6 +9,7 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
 
 namespace DB
@@ -16,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorage
+class StorageHDFSCluster : public IStorageCluster
 {
 public:
     StorageHDFSCluster(
@@ -38,6 +39,9 @@ public:
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
+
+    ClusterPtr getCluster(ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
 
 private:
     String cluster_name;

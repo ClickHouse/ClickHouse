@@ -54,7 +54,7 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 using namespace std::literals;
 using namespace DB;

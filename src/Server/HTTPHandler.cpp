@@ -32,7 +32,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -110,7 +110,7 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
     {
@@ -138,7 +138,7 @@ bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::La
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     /// If can add some headers from config
-    if (tryAddHeadersFromConfig(response, config))
+    if (tryAddHttpOptionHeadersFromConfig(response, config))
     {
         response.setKeepAlive(false);
         response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
@@ -542,22 +542,7 @@ void HTTPHandler::processQuery(
     CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
-    {
-        /// If client supports brotli - it's preferred.
-        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-        /// NOTE parsing of the list of methods is slightly incorrect.
-
-        if (std::string::npos != http_response_compression_methods.find("br"))
-            http_response_compression_method = CompressionMethod::Brotli;
-        else if (std::string::npos != http_response_compression_methods.find("gzip"))
-            http_response_compression_method = CompressionMethod::Gzip;
-        else if (std::string::npos != http_response_compression_methods.find("deflate"))
-            http_response_compression_method = CompressionMethod::Zlib;
-        else if (std::string::npos != http_response_compression_methods.find("xz"))
-            http_response_compression_method = CompressionMethod::Xz;
-        else if (std::string::npos != http_response_compression_methods.find("zstd"))
-            http_response_compression_method = CompressionMethod::Zstd;
-    }
+        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
@@ -774,16 +759,11 @@ void HTTPHandler::processQuery(
     if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin,
-    /// or if config has http_options_response, which means that there
-    /// are some headers to be sent, and the client passed Origin header.
-    if (!request.get("Origin", "").empty())
-    {
-        if (config.has("http_options_response"))
-            tryAddHeadersFromConfig(response, config);
-        else if (settings.add_http_cors_header)
-            used_output.out->addHeaderCORS(true);
-    }
+    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
+    /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
+    /// Once the authentication fails, the header can't be added.
+    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+        used_output.out->addHeaderCORS(true);
 
     auto append_callback = [context = context] (ProgressCallback callback)
     {
@@ -971,6 +951,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
+
+        if (!request.get("Origin", "").empty())
+            tryAddHttpOptionHeadersFromConfig(response, server.config());
+
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);

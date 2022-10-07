@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.296.2
+export RUNNER_VERSION=2.298.2
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -33,6 +33,7 @@ apt-get update
 
 apt-get install --yes --no-install-recommends \
     apt-transport-https \
+    at \
     atop \
     binfmt-support \
     build-essential \

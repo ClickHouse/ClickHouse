@@ -27,7 +27,7 @@
 #include <chrono>
 
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>

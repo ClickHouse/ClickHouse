@@ -323,13 +323,13 @@ struct ToDateTimeImpl
 {
     static constexpr auto name = "toDateTime";
 
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
     }
 
-    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if (d < 0)
             return 0;
@@ -338,12 +338,12 @@ struct ToDateTimeImpl
         return date_time <= 0xffffffff ? date_time : 0xffffffff;
     }
 
-    static inline UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
+    static UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
     {
         return dt;
     }
 
-    static inline UInt32 execute(Int64 d, const DateLUTImpl & time_zone)
+    static UInt32 execute(Int64 d, const DateLUTImpl & time_zone)
     {
         if (d < 0)
             return 0;
@@ -352,7 +352,7 @@ struct ToDateTimeImpl
         return date_time <= 0xffffffff ? date_time : 0xffffffff;
     }
 
-    static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
+    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
     {
         if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
@@ -374,7 +374,7 @@ struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
         if (from < 0)
@@ -391,7 +391,7 @@ struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // TODO: decide narrow or extended range based on FromType
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
@@ -413,7 +413,7 @@ struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
             return 0;
@@ -431,7 +431,7 @@ struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? from
@@ -444,7 +444,7 @@ struct ToDate32Transform32Or64Signed
 {
     static constexpr auto name = "toDate32";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
         if (from < daynum_min_offset)
@@ -460,7 +460,7 @@ struct ToDate32Transform8Or16Signed
 {
     static constexpr auto name = "toDate32";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         return from;
     }
@@ -529,7 +529,7 @@ struct ToDateTimeTransform64
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
     }
@@ -540,7 +540,7 @@ struct ToDateTimeTransformSigned
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
             return 0;
@@ -553,7 +553,7 @@ struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & /* time_zone */)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & /* time_zone */)
     {
         if (from < 0)
             return 0;
@@ -581,9 +581,9 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, N
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
 
-const time_t LUT_MIN_TIME = -2208988800l;           //  1900-01-01 UTC
+constexpr time_t LUT_MIN_TIME = -2208988800l;           //  1900-01-01 UTC
 
-const time_t LUT_MAX_TIME = 10413791999l;           // 2299-12-31 UTC
+constexpr time_t LUT_MAX_TIME = 10413791999l;           // 2299-12-31 UTC
 
 /** Conversion of numeric to DateTime64
   */
@@ -599,7 +599,7 @@ struct ToDateTime64TransformUnsigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         from = std::min<time_t>(from, LUT_MAX_TIME);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
@@ -616,7 +616,7 @@ struct ToDateTime64TransformSigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         from = std::max<time_t>(from, LUT_MIN_TIME);
         from = std::min<time_t>(from, LUT_MAX_TIME);
@@ -634,11 +634,10 @@ struct ToDateTime64TransformFloat
         : scale(scale_)
     {}
 
-    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
+    NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if (from < 0)
-            return 0;
-        from = std::min<FromType>(from, FromType(0xFFFFFFFF));
+        from = std::max(from, static_cast<FromType>(LUT_MIN_TIME));
+        from = std::min(from, static_cast<FromType>(LUT_MAX_TIME));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -672,7 +671,7 @@ struct FromDateTime64Transform
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline auto execute(DateTime64::NativeType dt, const DateLUTImpl & time_zone) const
+    auto execute(DateTime64::NativeType dt, const DateLUTImpl & time_zone) const
     {
         const auto c = DecimalUtils::splitWithScaleMultiplier(DateTime64(dt), scale_multiplier);
         return Transform::execute(static_cast<UInt32>(c.whole), time_zone);
@@ -694,19 +693,19 @@ struct ToDateTime64Transform
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
         const auto dt = ToDateTimeImpl::execute(d, time_zone);
         return execute(dt, time_zone);
     }
 
-    inline DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         const auto dt = time_zone.fromDayNum(ExtendedDayNum(d));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
-    inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
+    DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }

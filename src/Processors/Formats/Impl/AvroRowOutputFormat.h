@@ -1,5 +1,5 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 #if USE_AVRO
 #include <unordered_map>
 

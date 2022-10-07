@@ -25,7 +25,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #include <Interpreters/JIT/compileFunction.h>

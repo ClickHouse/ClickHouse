@@ -21,7 +21,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
