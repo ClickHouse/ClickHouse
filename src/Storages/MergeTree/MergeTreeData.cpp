@@ -954,6 +954,8 @@ void MergeTreeData::loadDataPartsFromDisk(
     /// Parallel loading of data parts.
     pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
     size_t num_threads = pool.getMaxThreads();
+    LOG_DEBUG(log, "Going to use {} threads to load parts", num_threads);
+
     std::vector<size_t> parts_per_thread(num_threads, num_parts / num_threads);
     for (size_t i = 0ul; i < num_parts % num_threads; ++i)
         ++parts_per_thread[i];
@@ -1016,6 +1018,8 @@ void MergeTreeData::loadDataPartsFromDisk(
         auto part_opt = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (!part_opt)
             return;
+
+        LOG_TRACE(log, "Loading part {} from disk {}", part_name, part_disk_ptr->getName());
         const auto & part_info = *part_opt;
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
         auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, part_name);
@@ -1119,6 +1123,7 @@ void MergeTreeData::loadDataPartsFromDisk(
         }
 
         addPartContributionToDataVolume(part);
+        LOG_TRACE(log, "Finished part {} load on disk {}", part_name, part_disk_ptr->getName());
     };
 
     std::mutex part_select_mutex;
@@ -1311,8 +1316,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     size_t num_parts = 0;
     std::queue<std::vector<std::pair<String, DiskPtr>>> parts_queue;
-    for (auto & [_, disk_parts] : disk_part_map)
+    for (auto & [disk_name, disk_parts] : disk_part_map)
     {
+        LOG_INFO(log, "Found {} parts for disk '{}' to load", disk_name, disk_parts.size());
+
         if (disk_parts.empty())
             continue;
         num_parts += disk_parts.size();
