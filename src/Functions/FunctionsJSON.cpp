@@ -43,7 +43,7 @@
 #include <Interpreters/Context.h>
 
 
-#include "config_functions.h"
+#include "config.h"
 
 
 namespace DB

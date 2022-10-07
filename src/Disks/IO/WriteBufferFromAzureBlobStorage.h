@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -40,6 +40,7 @@ public:
 private:
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries);
+    void uploadBlock(const char * data, size_t size);
 
     Poco::Logger * log;
 
@@ -48,6 +49,13 @@ private:
     const WriteSettings write_settings;
 
     AzureClientPtr blob_container_client;
+    std::vector<std::string> block_ids;
+
+    using MemoryBufferPtr = std::unique_ptr<Memory<>>;
+    MemoryBufferPtr tmp_buffer;
+    size_t tmp_buffer_write_offset = 0;
+
+    MemoryBufferPtr allocateBuffer() const;
 };
 
 }
