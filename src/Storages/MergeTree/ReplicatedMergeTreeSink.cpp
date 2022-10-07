@@ -355,6 +355,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
     bool part_committed_locally_but_zookeeper = false;
+    std::string part_name_committed;
 
     ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
     retries_ctl.retryLoop([&]()
@@ -372,7 +373,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 //     storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
 
                 /// check that info about the part was actually written in zk
-                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name))
+                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part_name_committed))
                 {
                     /// check that we've created this block
                     if (storage.getActiveContainingPart(part->name))
@@ -561,6 +562,7 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 auto lock = storage.lockParts();
                 renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
+                part_name_committed = part->name;
             }
             catch (const Exception & e)
             {
