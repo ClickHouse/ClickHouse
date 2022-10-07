@@ -10,5 +10,4 @@ sidebar_position: 28
 -   [INSERT INTO](statements/insert-into.md)
 -   [CREATE](statements/create/index.md)
 -   [ALTER](statements/alter/index.md#query_language_queries_alter)
--   [Прочие виды запросов](statements/misc.md)
 
