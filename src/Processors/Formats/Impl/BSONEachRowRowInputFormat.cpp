@@ -1,9 +1,9 @@
 #include <IO/ReadBufferFromString.h>
 
-#include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
-#include <Processors/Formats/Impl/BSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
+#include <Processors/Formats/Impl/BSONUtils.h>
 
 namespace DB
 {
@@ -18,21 +18,20 @@ namespace ErrorCodes
 namespace
 {
 
-enum
-{
-    UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2)
-};
+    enum
+    {
+        UNKNOWN_FIELD = size_t(-1),
+        NESTED_FIELD = size_t(-2)
+    };
 
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_,
-    const Block & header_,
-    Params params_,
-    const FormatSettings & format_settings_,
-    bool yield_strings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_, bool yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_))
+    , format_settings(format_settings_)
+    , name_map(header_.columns())
+    , yield_strings(yield_strings_)
 {
     size_t num_columns = getPort().getHeader().columns();
 
@@ -55,9 +54,7 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index]
-        && name == prev_positions[key_index]->getKey())
+    if (prev_positions.size() > key_index && prev_positions[key_index] && name == prev_positions[key_index]->getKey())
     {
         return prev_positions[key_index]->getMapped();
     }
@@ -84,7 +81,7 @@ StringRef BSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     if (nested_prefix_length == 0 && !buf.eof() && buf.position() + 1 < buf.buffer().end())
     {
         char * next_pos = find_first_symbols<0>(buf.position() + 1, buf.buffer().end());
-        
+
 
         if (next_pos != buf.buffer().end())
         {
@@ -99,12 +96,12 @@ StringRef BSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 }
 
 
-
 void BSONEachRowRowInputFormat::readBSONObject(MutableColumns & columns)
 {
     UInt32 obj_size;
     {
-        union {
+        union
+        {
             char buf[4];
             UInt32 size;
         } read_value;
@@ -112,7 +109,8 @@ void BSONEachRowRowInputFormat::readBSONObject(MutableColumns & columns)
         obj_size = read_value.size;
     }
     UInt32 already_read = BSON_32;
-    for (size_t key_index = 0; already_read + 1 < obj_size; ++key_index) {
+    for (size_t key_index = 0; already_read + 1 < obj_size; ++key_index)
+    {
         char type;
         in->read(type);
         StringRef name_ref = readColumnName(*in);
@@ -135,7 +133,8 @@ void BSONEachRowRowInputFormat::readBSONObject(MutableColumns & columns)
             //     throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
         }
         if (seen_columns[column_index])
-            throw Exception("Duplicate field found while parsing BSONEachRow format: " + columnName(column_index), ErrorCodes::INCORRECT_DATA);
+            throw Exception(
+                "Duplicate field found while parsing BSONEachRow format: " + columnName(column_index), ErrorCodes::INCORRECT_DATA);
 
         seen_columns[column_index] = true;
         read_columns[column_index] = BSONUtils::readField(*in, *columns[column_index], type, already_read);
@@ -144,7 +143,8 @@ void BSONEachRowRowInputFormat::readBSONObject(MutableColumns & columns)
     char eof_check;
     in->read(eof_check);
     ++already_read;
-    if (eof_check != 0) throw Exception("Wrong BSON syntax", ErrorCodes::INCORRECT_DATA);
+    if (eof_check != 0)
+        throw Exception("Wrong BSON syntax", ErrorCodes::INCORRECT_DATA);
 }
 
 bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -167,7 +167,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
-    
+
     if (format_settings.defaults_for_omitted_fields)
         ext.read_columns = read_columns;
     else
@@ -178,15 +178,10 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 void registerInputFormatBSONEachRow(FormatFactory & factory)
 {
-    factory.registerInputFormat("BSONEachRow", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-        {
-            return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-        }
-    );
+    factory.registerInputFormat(
+        "BSONEachRow",
+        [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false); });
 }
 
 }

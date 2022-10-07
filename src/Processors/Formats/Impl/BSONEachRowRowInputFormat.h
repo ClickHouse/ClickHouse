@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -14,22 +14,18 @@ class BSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     BSONEachRowRowInputFormat(
-        ReadBuffer & in_,
-        const Block & header_,
-        Params params_,
-        const FormatSettings & format_settings_,
-        bool yield_strings_);
+        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_, bool yield_strings_);
 
     String getName() const override { return "BSONEachRowRowInputFormat"; }
-    void resetParser() override {}
+    void resetParser() override { }
 
 private:
-    void readPrefix() override {}
-    void readSuffix() override {}
+    void readPrefix() override { }
+    void readSuffix() override { }
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
-    void syncAfterError() override {}
+    void syncAfterError() override { }
 
     const String & columnName(size_t i) const;
     size_t columnIndex(const StringRef & name, size_t key_index);
