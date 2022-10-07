@@ -2629,12 +2629,6 @@ Sets the maximum number of inserted blocks after which mergeable blocks are drop
 
 Default value: `64`.
 
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
-
-Default value: `5`.
-
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
 Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
