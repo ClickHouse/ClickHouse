@@ -265,7 +265,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (max_num_params == 0)
             msg += "no parameters";
-        if (min_num_params == max_num_params)
+        else if (min_num_params == max_num_params)
             msg += fmt::format("{} parameters: {}", min_num_params, needed_params);
         else
             msg += fmt::format("{} to {} parameters: {}", min_num_params, max_num_params, needed_params);

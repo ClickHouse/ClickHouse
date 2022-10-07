@@ -234,17 +234,6 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.stack_trace);
 }
 
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
-
 static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
 {
     /// Exception before the query execution.
@@ -379,8 +368,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     // example, the query is from an initiator that is running an old version of clickhouse.
     if (!internal && client_info.initial_query_start_time == 0)
     {
-        client_info.initial_query_start_time = time_in_seconds(current_time);
-        client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
+        client_info.initial_query_start_time = timeInSeconds(current_time);
+        client_info.initial_query_start_time_microseconds = timeInMicroseconds(current_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -448,7 +437,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
+            onExceptionBeforeStart(query_for_logging, context, timeInMicroseconds(current_time), ast, query_span);
         throw;
     }
 
@@ -742,10 +731,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.type = QueryLogElementType::QUERY_START; //-V1048
 
-            elem.event_time = time_in_seconds(current_time);
-            elem.event_time_microseconds = time_in_microseconds(current_time);
-            elem.query_start_time = time_in_seconds(current_time);
-            elem.query_start_time_microseconds = time_in_microseconds(current_time);
+            elem.event_time = timeInSeconds(current_time);
+            elem.event_time_microseconds = timeInMicroseconds(current_time);
+            elem.query_start_time = timeInSeconds(current_time);
+            elem.query_start_time_microseconds = timeInMicroseconds(current_time);
 
             elem.current_database = context->getCurrentDatabase();
             elem.query = query_for_logging;
@@ -874,8 +863,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     // construct event_time and event_time_microseconds using the same time point
                     // so that the two times will always be equal up to a precision of a second.
                     const auto finish_time = std::chrono::system_clock::now();
-                    elem.event_time = time_in_seconds(finish_time);
-                    elem.event_time_microseconds = time_in_microseconds(finish_time);
+                    elem.event_time = timeInSeconds(finish_time);
+                    elem.event_time_microseconds = timeInMicroseconds(finish_time);
                     status_info_to_query_log(elem, info, ast, context);
 
                     if (pulling_pipeline)
@@ -915,8 +904,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         if (auto processors_profile_log = context->getProcessorsProfileLog())
                         {
                             ProcessorProfileLogElement processor_elem;
-                            processor_elem.event_time = time_in_seconds(finish_time);
-                            processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
+                            processor_elem.event_time = timeInSeconds(finish_time);
+                            processor_elem.event_time_microseconds = timeInMicroseconds(finish_time);
                             processor_elem.query_id = elem.client_info.current_query_id;
 
                             auto get_proc_id = [](const IProcessor & proc) -> UInt64
@@ -1018,8 +1007,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 // to ensure that both the times will be equal up to the precision of a second.
                 const auto time_now = std::chrono::system_clock::now();
 
-                elem.event_time = time_in_seconds(time_now);
-                elem.event_time_microseconds = time_in_microseconds(time_now);
+                elem.event_time = timeInSeconds(time_now);
+                elem.event_time_microseconds = timeInMicroseconds(time_now);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
@@ -1084,7 +1073,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
+            onExceptionBeforeStart(query_for_logging, context, timeInMicroseconds(current_time), ast, query_span);
 
         throw;
     }
