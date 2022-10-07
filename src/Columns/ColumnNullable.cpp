@@ -810,11 +810,15 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column)
 
 ColumnPtr recursiveAssumeNotNullable(const ColumnPtr & column)
 {
-    auto column_no_nullable_lc = recursiveConvertColumn<ColumnLowCardinality>(column, [](const auto & column_lc)
+    auto column_no_nullable_lc = recursiveConvertColumn<ColumnLowCardinality>(column, [](const auto & column_lc) -> ColumnPtr
     {
-        auto column_lc_not_nullable = IColumn::mutate(column_lc.getPtr());
-        assert_cast<ColumnLowCardinality &>(*column_lc_not_nullable).nestedRemoveNullable();
-        return column_lc_not_nullable;
+        if (column_lc.nestedIsNullable())
+        {
+            auto column_lc_not_nullable = IColumn::mutate(column_lc.getPtr());
+            assert_cast<ColumnLowCardinality &>(*column_lc_not_nullable).nestedRemoveNullable();
+            return column_lc_not_nullable;
+        }
+        return column_lc.getPtr();
     });
 
     return recursiveConvertColumn<ColumnNullable>(column_no_nullable_lc, [](const auto & column_nullable)

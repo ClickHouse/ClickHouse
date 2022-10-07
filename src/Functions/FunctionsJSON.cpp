@@ -343,9 +343,9 @@ public:
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
 
-            Int64 array_size = offsets[row] - offsets[row - 1];
+            UInt64 array_size = offsets[row] - offsets[row - 1];
             index = adjustIndex(index, array_size);
-            if (index >= array_size)
+            if (static_cast<UInt64>(index) >= array_size)
                 return false;
 
             type = type_array->getNestedType();
@@ -2158,13 +2158,13 @@ public:
         return true;
     }
 
-    bool insertResultToColumn(IColumn & to, const ObjectIterator & iterator) requires IsObjectIterator<Iterator>
+    bool insertResultToColumn(IColumn & dest, const ObjectIterator & iterator) requires IsObjectIterator<Iterator>
     {
         const auto * type_tuple = typeid_cast<const DataTypeTuple *>(iterator.getType().get());
         if (!type_tuple || !type_tuple->haveExplicitNames())
             return false;
 
-        auto & to_array = assert_cast<ColumnArray &>(to);
+        auto & to_array = assert_cast<ColumnArray &>(dest);
         auto & to_string = assert_cast<ColumnString &>(to_array.getData());
 
         const auto & tuple_names = type_tuple->getElementNames();
