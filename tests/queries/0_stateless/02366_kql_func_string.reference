@@ -285,6 +285,8 @@ YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi
 {"Query Parameters":{"k1":"v1","k2":"v2","k3":"v3"}}
 -- strcmp()
 0	1	-1	1
+-- substring()
+CD
 -- translate()
 kusto		xxx
 -- trim()

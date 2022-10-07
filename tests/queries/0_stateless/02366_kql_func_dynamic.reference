@@ -1,3 +1,5 @@
+-- constant index value
+1	c	['A',NULL,'C']
 -- array_length()
 1
 1
@@ -106,6 +108,7 @@ nan
 ['asd','asd','asd']
 [86400,86400,86400]
 [true,true,true]
+[NULL]
 [NULL]
 -- set_difference()
 []

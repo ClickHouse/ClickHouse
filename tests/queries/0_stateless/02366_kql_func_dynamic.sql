@@ -1,4 +1,12 @@
+DROP TABLE IF EXISTS array_test;
+CREATE TABLE array_test (floats Array(Float64),
+                         strings Array(String),
+                         nullable_strings Array(Nullable(String))
+                         ) ENGINE=Memory;
+INSERT INTO array_test VALUES([1.0, 2.5], ['a', 'c'], ['A', NULL, 'C']);
 set dialect = 'kusto';
+print '-- constant index value';
+array_test | project floats[0], strings[1], nullable_strings;
 print '-- array_length()';
 print array_length(dynamic(['John', 'Denver', 'Bob', 'Marley'])) == 4;
 print array_length(dynamic([1, 2, 3])) == 3;
@@ -109,6 +117,7 @@ print repeat("asd", 3);
 print repeat(timespan(1d), 3);
 print repeat(true, 3);
 print repeat(1, -3);
+print repeat(6.7,-4);
 print '-- set_difference()';
 print set_difference(dynamic([]), dynamic([]));
 print set_difference(dynamic([]), dynamic([9]));
