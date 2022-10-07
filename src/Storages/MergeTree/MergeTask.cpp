@@ -654,6 +654,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
+            global_ctx->cleanup,
             projection_merging_params,
             global_ctx->new_data_part.get(),
             global_ctx->data_part_storage_builder.get(),

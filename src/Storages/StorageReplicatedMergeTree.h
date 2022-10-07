@@ -145,7 +145,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool with_cleanup,
+        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;

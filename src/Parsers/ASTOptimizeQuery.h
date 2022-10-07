@@ -22,11 +22,11 @@ public:
     /// Deduplicate by columns.
     ASTPtr deduplicate_by_columns;
     /// Delete 'is_deleted' data
-    bool with_cleanup = false;
+    bool cleanup = false;
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (with_cleanup ? "_deduplicate" : "")+ (deduplicate ? "_cleanup" : "");
+        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "")+ (cleanup ? "_cleanup" : "");
     }
 
     ASTPtr clone() const override

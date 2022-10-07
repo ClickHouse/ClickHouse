@@ -4457,13 +4457,13 @@ bool StorageReplicatedMergeTree::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool with_cleanup,
+    bool cleanup,
     ContextPtr query_context)
 {
-    if (final && with_cleanup)
+    if (final && cleanup)
     {
         LOG_DEBUG(log, "[StorageReplicatedMergeTree::optimize] - WITH CLEANUP ");
-        // TODO: create a task to schedule with with_cleanup
+        // TODO: create a task to schedule with cleanup
     }
 
     /// NOTE: exclusive lock cannot be used here, since this may lead to deadlock (see comments below),

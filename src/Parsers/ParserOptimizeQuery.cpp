@@ -39,7 +39,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr partition;
     bool final = false;
     bool deduplicate = false;
-    bool with_cleanup = false;
+    bool cleanup = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -71,7 +71,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         deduplicate = true;
 
     if (s_cleanup.ignore(pos, expected))
-        with_cleanup = true;
+        cleanup = true;
 
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
@@ -90,7 +90,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
-    query->with_cleanup = with_cleanup;
+    query->cleanup = cleanup;
     query->database = database;
     query->table = table;
 
