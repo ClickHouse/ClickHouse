@@ -19,10 +19,10 @@ namespace ErrorCodes
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : table_function_name(table_function_name_)
+    : IQueryTreeNode(children_size)
+    , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {
-    children.resize(1);
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 

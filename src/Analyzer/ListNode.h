@@ -17,7 +17,7 @@ class ListNode final : public IQueryTreeNode
 {
 public:
     /// Initialize list node with empty nodes
-    ListNode() = default;
+    ListNode();
 
     /// Initialize list node with nodes
     explicit ListNode(QueryTreeNodes nodes);

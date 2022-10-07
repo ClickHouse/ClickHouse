@@ -174,6 +174,7 @@ private:
     std::unordered_set<std::string> columns_identifiers_set;
 
     static constexpr size_t column_transformers_child_index = 0;
+    static constexpr size_t children_size = column_transformers_child_index + 1;
 };
 
 }

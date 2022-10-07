@@ -10,10 +10,9 @@ namespace DB
 {
 
 LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_)
-    : argument_names(std::move(argument_names_))
+    : IQueryTreeNode(children_size)
+    , argument_names(std::move(argument_names_))
 {
-    children.resize(2);
-
     auto arguments_list_node = std::make_shared<ListNode>();
     auto & nodes = arguments_list_node->getNodes();
 
@@ -88,11 +87,7 @@ ASTPtr LambdaNode::toASTImpl() const
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const
 {
-    LambdaNodePtr result_lambda(new LambdaNode());
-
-    result_lambda->argument_names = argument_names;
-
-    return result_lambda;
+    return std::make_shared<LambdaNode>(argument_names, getExpression());
 }
 
 }

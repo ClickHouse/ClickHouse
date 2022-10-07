@@ -15,10 +15,20 @@ namespace DB
 
 /** Array join node represents array join in query tree.
   *
-  * In query tree join expression is represented by list query tree node.
+  * In query tree array join expressions are represented by list query tree node.
   *
   * Example: SELECT id FROM test_table ARRAY JOIN [1, 2, 3] as a.
+  *
+  * Multiple expressions can be inside single array join.
   * Example: SELECT id FROM test_table ARRAY JOIN [1, 2, 3] as a, [4, 5, 6] as b.
+  * Example: SELECT id FROM test_table ARRAY JOIN array_column_1 AS value_1, array_column_2 AS value_2.
+  *
+  * Multiple array joins can be inside JOIN TREE.
+  * Example: SELECT id FROM test_table ARRAY JOIN array_column_1 ARRAY JOIN array_column_2.
+  *
+  * Array join can be used inside JOIN TREE with ordinary JOINS.
+  * Example: SELECT t1.id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t2.id ARRAY JOIN [1,2,3];
+  * Example: SELECT t1.id FROM test_table_1 AS t1 ARRAY JOIN [1,2,3] INNER JOIN test_table_2 AS t2 ON t1.id = t2.id;
   */
 class ArrayJoinNode;
 using ArrayJoinNodePtr = std::shared_ptr<ArrayJoinNode>;
@@ -90,10 +100,6 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    explicit ArrayJoinNode(bool is_left_)
-        : is_left(is_left_)
-    {}
-
     bool is_left = false;
 
     static constexpr size_t table_expression_child_index = 0;

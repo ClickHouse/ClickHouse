@@ -10,6 +10,17 @@
 namespace DB
 {
 
+IdentifierNode::IdentifierNode(Identifier identifier_)
+    : IQueryTreeNode(children_size)
+    , identifier(std::move(identifier_))
+{}
+
+IdentifierNode::IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_)
+    : IQueryTreeNode(children_size)
+    , identifier(std::move(identifier_))
+    , table_expression_modifiers(std::move(table_expression_modifiers_))
+{}
+
 void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "IDENTIFIER id: " << format_state.getNodeId(this);

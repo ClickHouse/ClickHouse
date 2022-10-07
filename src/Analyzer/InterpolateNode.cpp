@@ -11,8 +11,8 @@ namespace DB
 {
 
 InterpolateNode::InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_)
+    : IQueryTreeNode(children_size)
 {
-    children.resize(children_size);
     children[expression_child_index] = std::move(expression_);
     children[interpolate_expression_child_index] = std::move(interpolate_expression_);
 }

@@ -17,7 +17,8 @@ namespace DB
 {
 
 ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
-    : constant_value(std::move(constant_value_))
+    : IQueryTreeNode(children_size)
+    , constant_value(std::move(constant_value_))
     , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
 {
 }

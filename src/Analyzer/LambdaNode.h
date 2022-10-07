@@ -16,7 +16,7 @@ namespace DB
   *
   * Initially lambda is initialized with argument names and expression query tree node.
   * During query analysis if expression is not resolved lambda must be resolved.
-  * Lambda is resolved if lambda expression is resolved.
+  * Lambda is in resolved state if lambda body expression is in resolved state.
   *
   * It is important that lambda expression result type can depend on arguments types.
   * Example: WITH (x -> x) as lambda SELECT lambda(1), lambda('string_value').
@@ -112,12 +112,11 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    LambdaNode() = default;
+    Names argument_names;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t expression_child_index = 1;
-
-    Names argument_names;
+    static constexpr size_t children_size = expression_child_index + 1;
 };
 
 }

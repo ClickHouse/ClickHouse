@@ -20,25 +20,25 @@ public:
     /// Initialize interpolate node with expression and interpolate expression
     explicit InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_);
 
-    /// Get expression
+    /// Get expression to interpolate
     const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
 
-    /// Get expression
+    /// Get expression to interpolate
     QueryTreeNodePtr & getExpression()
     {
         return children[expression_child_index];
     }
 
-    /// Get expression
+    /// Get interpolate expression
     const QueryTreeNodePtr & getInterpolateExpression() const
     {
         return children[interpolate_expression_child_index];
     }
 
-    /// Get expression
+    /// Get interpolate expression
     QueryTreeNodePtr & getInterpolateExpression()
     {
         return children[interpolate_expression_child_index];

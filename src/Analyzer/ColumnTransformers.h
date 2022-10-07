@@ -75,7 +75,6 @@ using ColumnTransformersNodes = std::vector<ColumnTransformerNodePtr>;
 class IColumnTransformerNode : public IQueryTreeNode
 {
 public:
-
     /// Get transformer type
     virtual ColumnTransfomerType getTransformerType() const = 0;
 
@@ -89,6 +88,10 @@ public:
     {
         return QueryTreeNodeType::TRANSFORMER;
     }
+
+protected:
+    /// Construct column transformer node and resize children to children size
+    explicit IColumnTransformerNode(size_t children_size);
 };
 
 enum class ApplyColumnTransformerType
@@ -142,7 +145,9 @@ protected:
 
 private:
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
+
     static constexpr size_t expression_child_index = 0;
+    static constexpr size_t children_size = expression_child_index + 1;
 };
 
 /// Except column transformer type
@@ -171,20 +176,10 @@ class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
     /// Initialize except column transformer with column names
-    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_)
-        : except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
-        , is_strict(is_strict_)
-        , except_column_names(std::move(except_column_names_))
-    {
-    }
+    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_);
 
     /// Initialize except column transformer with regexp column matcher
-    explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_)
-        : except_transformer_type(ExceptColumnTransformerType::REGEXP)
-        , is_strict(false)
-        , column_matcher(std::move(column_matcher_))
-    {
-    }
+    explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_);
 
     /// Get except transformer type
     ExceptColumnTransformerType getExceptTransformerType() const
@@ -229,9 +224,11 @@ protected:
 
 private:
     ExceptColumnTransformerType except_transformer_type;
-    bool is_strict;
     Names except_column_names;
     std::shared_ptr<re2::RE2> column_matcher;
+    bool is_strict = false;
+
+    static constexpr size_t children_size = 0;
 };
 
 class ReplaceColumnTransformerNode;
@@ -263,12 +260,6 @@ public:
         return ColumnTransfomerType::REPLACE;
     }
 
-    /// Is replace column transformer strict
-    bool isStrict() const
-    {
-        return is_strict;
-    }
-
     /// Get replacements
     ListNode & getReplacements() const
     {
@@ -285,6 +276,12 @@ public:
     const Names & getReplacementsNames() const
     {
         return replacements_names;
+    }
+
+    /// Is replace column transformer strict
+    bool isStrict() const
+    {
+        return is_strict;
     }
 
     /** Returns replacement expression if for expression name replacements exists, nullptr otherwise.
@@ -304,11 +301,11 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    ReplaceColumnTransformerNode() = default;
-
-    bool is_strict;
     Names replacements_names;
+    bool is_strict = false;
+
     static constexpr size_t replacements_child_index = 0;
+    static constexpr size_t children_size = replacements_child_index + 1;
 };
 
 }

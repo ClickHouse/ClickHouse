@@ -33,8 +33,8 @@ namespace ErrorCodes
 }
 
 UnionNode::UnionNode()
+    : IQueryTreeNode(children_size)
 {
-    children.resize(children_size);
     children[queries_child_index] = std::make_shared<ListNode>();
 }
 

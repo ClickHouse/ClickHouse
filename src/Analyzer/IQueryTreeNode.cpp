@@ -42,6 +42,11 @@ const char * toString(QueryTreeNodeType type)
     }
 }
 
+IQueryTreeNode::IQueryTreeNode(size_t children_size)
+{
+    children.resize(children_size);
+}
+
 String IQueryTreeNode::dumpTree() const
 {
     WriteBufferFromOwnString buff;

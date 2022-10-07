@@ -11,6 +11,8 @@ using namespace DB;
 class SourceNode final : public IQueryTreeNode
 {
 public:
+    SourceNode() : IQueryTreeNode(0 /*children_size*/) {}
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;

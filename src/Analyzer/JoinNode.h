@@ -14,8 +14,17 @@
 namespace DB
 {
 
-/** Array join node represents array join in query tree.
-  * Example: SELECT id FROM test_table ARRAY JOIN [1, 2, 3].
+/** Join node represents join in query tree.
+  *
+  * For JOIN without join expression, JOIN expression is null.
+  * Example: SELECT id FROM test_table_1 AS t1, test_table_2 AS t2;
+  *
+  * For JOIN with USING, JOIN expression contains list of identifier nodes. These nodes must be resolved
+  * during query analysis pass.
+  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
+  *
+  * For JOIN with ON, JOIN expression contains single expression.
+  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t1.id;
   */
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
@@ -130,10 +139,6 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    JoinNode(JoinLocality locality_,
-        JoinStrictness strictness_,
-        JoinKind kind_);
-
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;

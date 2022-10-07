@@ -141,14 +141,15 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    static constexpr size_t arguments_child_index = 0;
-
     String table_function_name;
     TableFunctionPtr table_function;
     StoragePtr storage;
     StorageID storage_id;
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    static constexpr size_t arguments_child_index = 0;
+    static constexpr size_t children_size = arguments_child_index + 1;
 };
 
 }

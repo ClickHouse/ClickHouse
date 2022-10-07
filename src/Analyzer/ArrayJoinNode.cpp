@@ -12,9 +12,9 @@ namespace DB
 {
 
 ArrayJoinNode::ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_)
-    : is_left(is_left_)
+    : IQueryTreeNode(children_size)
+    , is_left(is_left_)
 {
-    children.resize(children_size);
     children[table_expression_child_index] = std::move(table_expression_);
     children[join_expressions_child_index] = std::move(join_expressions_);
 }
@@ -65,8 +65,7 @@ ASTPtr ArrayJoinNode::toASTImpl() const
 
 QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
 {
-    ArrayJoinNodePtr result_array_join_node(new ArrayJoinNode(is_left));
-    return result_array_join_node;
+    return std::make_shared<ArrayJoinNode>(getTableExpression(), getJoinExpressionsNode(), is_left);
 }
 
 }

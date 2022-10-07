@@ -18,9 +18,9 @@ namespace DB
 {
 
 FunctionNode::FunctionNode(String function_name_)
-    : function_name(function_name_)
+    : IQueryTreeNode(children_size)
+    , function_name(function_name_)
 {
-    children.resize(children_size);
     children[parameters_child_index] = std::make_shared<ListNode>();
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
@@ -201,7 +201,9 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
 {
     auto result_function = std::make_shared<FunctionNode>(function_name);
 
-    /// This is valid for clone method function or aggregate function must be stateless
+    /** This is valid for clone method to reuse same function pointers
+      * because ordinary functions or aggregate functions must be stateless.
+      */
     result_function->function = function;
     result_function->aggregate_function = aggregate_function;
     result_function->result_type = result_type;
