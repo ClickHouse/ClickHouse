@@ -691,7 +691,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     std::string from_file_name = "memory buffer";
     if (auto fname = entry->getFilePath(); !fname.empty())
         from_file_name = "file " + fname;
-    LOG_TRACE(log, "Writing backup for file {} from file {}", file_name, from_file_name);
+    LOG_TRACE(log, "Writing backup for file {} from {}", file_name, from_file_name);
 
     auto adjusted_path = removeLeadingSlash(file_name);
     if (coordination->getFileInfo(adjusted_path))
