@@ -142,7 +142,7 @@
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
-/// They use a lambda function to apply function attribute to a single statement. This enable us to supress warnings locally instead of
+/// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
 /// suppressing them in the whole function
 /// Consider adding a comment when using these macros.
 #   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
