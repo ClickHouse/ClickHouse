@@ -81,7 +81,7 @@ public:
 
     void append(TCPServerConnectionFactory::Ptr factory)
     {
-        stack.push_back(factory);
+        stack.push_back(std::move(factory));
     }
 
     size_t size() { return stack.size(); }
