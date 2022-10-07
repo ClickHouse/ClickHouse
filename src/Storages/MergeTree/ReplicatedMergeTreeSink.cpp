@@ -354,8 +354,10 @@ void ReplicatedMergeTreeSink::commitPart(
     constexpr size_t max_iterations = 10;
 
     bool is_already_existing_part = false;
+
+    /// for retries due to keeper error
     bool part_committed_locally_but_zookeeper = false;
-    std::string part_name_committed;
+    Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
 
     ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
     retries_ctl.retryLoop([&]()
@@ -369,20 +371,33 @@ void ReplicatedMergeTreeSink::commitPart(
         {
             if (part_committed_locally_but_zookeeper)
             {
-                /// FIXME: if all retries will be exhausted by this exists() call then we'll never enquque the part for check i.e.:
-                //     storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-
                 /// check that info about the part was actually written in zk
-                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part_name_committed))
+                if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name))
                 {
-                    /// check that we've created this block
+                    /// check that we've created this part
                     if (storage.getActiveContainingPart(part->name))
                     {
                         LOG_DEBUG(
-                            log, "Part was successfully committed on previous iteration, no retry is necessary: part_id={}", part->name);
-                        return;
+                            log, "Part was successfully committed on previous iteration: part_id={}", part->name);
+                    }
+                    else
+                    {
+                        retries_ctl.setUserError(
+                            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                            "The same part id was inserted concurrently while retry reconnect to zookeeper. Please retry. Reason: {}",
+                            Coordination::errorMessage(write_part_info_keeper_error));
                     }
                 }
+                else
+                {
+                    retries_ctl.setUserError(
+                        ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+                        "Insert failed due to zookeeper error. Please retry. Reason: {}",
+                        Coordination::errorMessage(write_part_info_keeper_error));
+                }
+
+                retries_ctl.stopRetries();
+                return;
             }
         }
 
@@ -551,40 +566,31 @@ void ReplicatedMergeTreeSink::commitPart(
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(
-            storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
+        MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
+        bool renamed = false;
 
-        if (!part_committed_locally_but_zookeeper)
+        try
         {
-            bool renamed = false;
+            auto lock = storage.lockParts();
+            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DUPLICATE_DATA_PART && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+                throw;
+        }
 
-            try
+        if (!renamed)
+        {
+            if (is_already_existing_part)
             {
-                auto lock = storage.lockParts();
-                renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
-                part_name_committed = part->name;
+                LOG_INFO(log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.", part->name);
+                return;
             }
-            catch (const Exception & e)
-            {
-                if (e.code() != ErrorCodes::DUPLICATE_DATA_PART && e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
-                    throw;
-            }
-
-            if (!renamed)
-            {
-                if (is_already_existing_part)
-                {
-                    LOG_INFO(
-                        log, "Part {} is duplicate and it is already written by concurrent request or fetched; ignoring it.", part->name);
-                    return;
-                }
-                else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Part with name {} is already written by concurrent request."
-                        " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
-                        part->name);
-            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part with name {} is already written by concurrent request."
+                    " It should not happen for non-duplicate data parts because unique names are assigned for them. It's a bug",
+                    part->name);
         }
 
         storage.lockSharedData(*part, false, {});
@@ -602,13 +608,17 @@ void ReplicatedMergeTreeSink::commitPart(
         }
         else if (Coordination::isHardwareError(multi_code))
         {
+            write_part_info_keeper_error = multi_code;
             /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
              *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
              */
             transaction.commit();
             part_committed_locally_but_zookeeper = true;
-            if (retries_ctl.isLastRetry())
-                storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+
+            /// if all retries will be exhausted by accessing zookeeper on fresh retry -> we'll add committed part to queue in the action
+            retries_ctl.actionAfterLastFailedRetry(
+                [&storage = storage, part_name = part->name]()
+                { storage.enqueuePartForCheck(part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER); });
 
             /// We do not know whether or not data has been inserted.
             retries_ctl.setUserError(

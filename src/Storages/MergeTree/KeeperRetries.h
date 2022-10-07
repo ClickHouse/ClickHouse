@@ -35,7 +35,9 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_) { }
+    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_)
+    {
+    }
 
     bool canTry()
     {
@@ -64,9 +66,18 @@ public:
             return false;
         }
 
+        if (stop_retries)
+        {
+            logLastError("stop retires on request");
+            action_after_last_failed_retry();
+            throwIfError();
+            return false;
+        }
+
         if (retries_info.retry_count >= retries_info.max_retries)
         {
             logLastError("retry limit is reached");
+            action_after_last_failed_retry();
             throwIfError();
             return false;
         }
@@ -123,12 +134,7 @@ public:
     {
         if (retries_info.logger)
             LOG_TRACE(
-                retries_info.logger,
-                "KeeperRetires: {}/{}: setUserError: error={} message={}",
-                retries_info.name,
-                name,
-                code,
-                message);
+                retries_info.logger, "KeeperRetires: {}/{}: setUserError: error={} message={}", retries_info.name, name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -150,12 +156,7 @@ public:
     {
         if (retries_info.logger)
             LOG_TRACE(
-                retries_info.logger,
-                "KeeperRetires: {}/{}: setKeeperError: error={} message={}",
-                retries_info.name,
-                name,
-                code,
-                message);
+                retries_info.logger, "KeeperRetires: {}/{}: setKeeperError: error={} message={}", retries_info.name, name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -167,11 +168,17 @@ public:
         user_error = UserError{};
     }
 
+    void stopRetries() { stop_retries = true; }
+
     void requestUnconditionalRetry() { unconditional_retry = true; }
 
     bool isLastRetry() const { return retries_info.retry_count >= retries_info.max_retries; }
 
     bool isRetry() const { return retries_info.retry_count > 0; }
+
+    Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
+
+    void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
 private:
     struct KeeperError
@@ -234,8 +241,10 @@ private:
     Int64 iteration_count = -1;
     UserError user_error;
     KeeperError keeper_error;
+    std::function<void()> action_after_last_failed_retry;
     bool unconditional_retry = false;
     bool iteration_succeeded = true;
+    bool stop_retries = false;
 };
 
 }
