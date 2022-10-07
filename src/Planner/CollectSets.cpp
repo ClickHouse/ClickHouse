@@ -22,17 +22,14 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSetsMatcher
+class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
 public:
-    using Visitor = ConstInDepthQueryTreeVisitor<CollectSetsMatcher, true, false>;
+    explicit CollectSetsVisitor(const PlannerContext & planner_context_)
+        : planner_context(planner_context_)
+    {}
 
-    struct Data
-    {
-        const PlannerContext & planner_context;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
@@ -42,7 +39,6 @@ public:
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
         auto in_second_argument_node_type = in_second_argument->getNodeType();
 
-        const auto & planner_context = data.planner_context;
         const auto & global_planner_context = planner_context.getGlobalPlannerContext();
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
 
@@ -93,16 +89,16 @@ public:
     {
         return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
-};
 
-using CollectSetsVisitor = CollectSetsMatcher::Visitor;
+private:
+    const PlannerContext & planner_context;
+};
 
 }
 
 void collectSets(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
-    CollectSetsVisitor::Data data {planner_context};
-    CollectSetsVisitor visitor(data);
+    CollectSetsVisitor visitor(planner_context);
     visitor.visit(node);
 }
 

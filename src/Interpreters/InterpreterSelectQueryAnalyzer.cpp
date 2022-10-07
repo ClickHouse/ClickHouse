@@ -5,57 +5,15 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 
-#include <Core/QueryProcessingStage.h>
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/FieldToDataType.h>
-
-#include <Columns/getLeastSuperColumn.h>
-
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/IStorage.h>
-
-#include <Analyzer/Utils.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/LambdaNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 
-#include <Functions/FunctionsMiscellaneous.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsConversion.h>
-#include <Functions/CastOverloadResolver.h>
-
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/HashJoin.h>
-#include <Interpreters/ArrayJoinAction.h>
 
 namespace DB
 {

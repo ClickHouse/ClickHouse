@@ -804,6 +804,7 @@ struct IdentifierResolveScope
   * There are no easy solution here, without trying to make full featured expression resolution at this stage.
   * Example:
   * WITH (x -> x + 1) AS id, id AS id_1, id_1 AS id_2 SELECT id_2(1);
+  * Example: SELECT a, b AS a, b AS c, 1 AS c;
   *
   * It is client responsibility after resolving identifier node with alias, make following actions:
   * 1. If identifier node was resolved in function scope, remove alias from scope expression map.
@@ -811,26 +812,23 @@ struct IdentifierResolveScope
   *
   * That way we separate alias map initialization and expressions resolution.
   */
-class QueryExpressionsAliasVisitorMatcher
+class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<QueryExpressionsAliasVisitorMatcher, true, true>;
+    explicit QueryExpressionsAliasVisitor(IdentifierResolveScope & scope_)
+        : scope(scope_)
+    {}
 
-    struct Data
+    void visitImpl(QueryTreeNodePtr & node)
     {
-        IdentifierResolveScope & scope;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
-    {
-        updateAliasesIfNeeded(data, node, false);
+        updateAliasesIfNeeded(node, false /*is_lambda_node*/);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child, Data & data)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
         if (auto * lambda_node = child->as<LambdaNode>())
         {
-            updateAliasesIfNeeded(data, child, true);
+            updateAliasesIfNeeded(child, true /*is_lambda_node*/);
             return false;
         }
         else if (auto * query_tree_node = child->as<QueryNode>())
@@ -838,7 +836,7 @@ public:
             if (query_tree_node->isCTE())
                 return false;
 
-            updateAliasesIfNeeded(data, child, false);
+            updateAliasesIfNeeded(child, false /*is_lambda_node*/);
             return false;
         }
         else if (auto * union_node = child->as<UnionNode>())
@@ -846,60 +844,57 @@ public:
             if (union_node->isCTE())
                 return false;
 
-            updateAliasesIfNeeded(data, child, false);
+            updateAliasesIfNeeded(child, false /*is_lambda_node*/);
             return false;
         }
 
         return true;
     }
 private:
-    static void updateAliasesIfNeeded(Data & data, const QueryTreeNodePtr & node, bool function_node)
+    void updateAliasesIfNeeded(const QueryTreeNodePtr & node, bool is_lambda_node)
     {
         if (!node->hasAlias())
             return;
 
         const auto & alias = node->getAlias();
 
-        if (function_node)
+        if (is_lambda_node)
         {
-            if (data.scope.alias_name_to_expression_node.contains(alias))
-                data.scope.nodes_with_duplicated_aliases.insert(node);
+            if (scope.alias_name_to_expression_node.contains(alias))
+                scope.nodes_with_duplicated_aliases.insert(node);
 
-            auto [_, inserted] = data.scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
+            auto [_, inserted] = scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-                data.scope.nodes_with_duplicated_aliases.insert(node);
+                scope.nodes_with_duplicated_aliases.insert(node);
 
             return;
         }
 
-        if (data.scope.alias_name_to_lambda_node.contains(alias))
-            data.scope.nodes_with_duplicated_aliases.insert(node);
+        if (scope.alias_name_to_lambda_node.contains(alias))
+            scope.nodes_with_duplicated_aliases.insert(node);
 
-        auto [_, inserted] = data.scope.alias_name_to_expression_node.insert(std::make_pair(alias, node));
+        auto [_, inserted] = scope.alias_name_to_expression_node.insert(std::make_pair(alias, node));
         if (!inserted)
-            data.scope.nodes_with_duplicated_aliases.insert(node);
+            scope.nodes_with_duplicated_aliases.insert(node);
 
         /// If node is identifier put it also in scope alias name to lambda node map
         if (node->getNodeType() == QueryTreeNodeType::IDENTIFIER)
-            data.scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
+            scope.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
     }
+
+    IdentifierResolveScope & scope;
 };
 
-using QueryExpressionsAliasVisitor = QueryExpressionsAliasVisitorMatcher::Visitor;
-
-class TableExpressionsAliasVisitorMatcher
+class TableExpressionsAliasVisitor : public InDepthQueryTreeVisitor<TableExpressionsAliasVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<TableExpressionsAliasVisitorMatcher, true, false>;
+    explicit TableExpressionsAliasVisitor(IdentifierResolveScope & scope_)
+        : scope(scope_)
+    {}
 
-    struct Data
+    void visitImpl(QueryTreeNodePtr & node)
     {
-        IdentifierResolveScope & scope;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
-    {
-        updateAliasesIfNeeded(data, node);
+        updateAliasesIfNeeded(node);
     }
 
     static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & child)
@@ -928,22 +923,22 @@ public:
     }
 
 private:
-    static void updateAliasesIfNeeded(Data & data, const QueryTreeNodePtr & node)
+    void updateAliasesIfNeeded(const QueryTreeNodePtr & node)
     {
         if (!node->hasAlias())
             return;
 
         const auto & node_alias = node->getAlias();
-        auto [_, inserted] = data.scope.alias_name_to_table_expression_node.emplace(node_alias, node);
+        auto [_, inserted] = scope.alias_name_to_table_expression_node.emplace(node_alias, node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Multiple table expressions with same alias {}. In scope {}",
                 node_alias,
-                data.scope.scope_node->formatASTForErrorMessage());
+                scope.scope_node->formatASTForErrorMessage());
     }
-};
 
-using TableExpressionsAliasVisitor = TableExpressionsAliasVisitorMatcher::Visitor;
+    IdentifierResolveScope & scope;
+};
 
 class QueryAnalyzer
 {
@@ -3367,8 +3362,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    QueryExpressionsAliasVisitor::Data data{scope};
-    QueryExpressionsAliasVisitor visitor(data);
+    QueryExpressionsAliasVisitor visitor(scope);
     visitor.visit(lambda.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -3384,8 +3378,8 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         auto & lambda_argument_node_typed = lambda_argument_node->as<IdentifierNode &>();
         const auto & lambda_argument_name = lambda_argument_node_typed.getIdentifier().getFullName();
 
-        bool has_expression_node = data.scope.alias_name_to_expression_node.contains(lambda_argument_name);
-        bool has_alias_node = data.scope.alias_name_to_lambda_node.contains(lambda_argument_name);
+        bool has_expression_node = scope.alias_name_to_expression_node.contains(lambda_argument_name);
+        bool has_alias_node = scope.alias_name_to_lambda_node.contains(lambda_argument_name);
 
         if (has_expression_node || has_alias_node)
         {
@@ -4783,8 +4777,7 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
             alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
 
             /// Initialize aliases in alias column scope
-            QueryExpressionsAliasVisitor::Data data{alias_column_resolve_scope};
-            QueryExpressionsAliasVisitor visitor(data);
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope);
 
             visitor.visit(alias_column_to_resolve->getExpression());
 
@@ -5074,18 +5067,15 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
-class ValidateGroupByColumnsMatcher
+class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
 {
 public:
-    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsMatcher, true, true>;
+    ValidateGroupByColumnsVisitor(const QueryTreeNodes & group_by_keys_nodes_, const IdentifierResolveScope & scope_)
+        : group_by_keys_nodes(group_by_keys_nodes_)
+        , scope(scope_)
+    {}
 
-    struct Data
-    {
-        const QueryTreeNodes & group_by_keys_nodes;
-        const IdentifierResolveScope & scope;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto query_tree_node_type = node->getNodeType();
         if (query_tree_node_type == QueryTreeNodeType::CONSTANT ||
@@ -5101,7 +5091,7 @@ public:
             {
                 bool found_argument_in_group_by_keys = false;
 
-                for (const auto & group_by_key_node : data.group_by_keys_nodes)
+                for (const auto & group_by_key_node : group_by_keys_nodes)
                 {
                     if (grouping_function_arguments_node->isEqual(*group_by_key_node))
                     {
@@ -5114,7 +5104,7 @@ public:
                     throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
                         "GROUPING function argument {} is not in GROUP BY. In scope {}",
                         grouping_function_arguments_node->formatASTForErrorMessage(),
-                        data.scope.scope_node->formatASTForErrorMessage());
+                        scope.scope_node->formatASTForErrorMessage());
             }
 
             return;
@@ -5128,7 +5118,7 @@ public:
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
             return;
 
-        for (const auto & group_by_key_node : data.group_by_keys_nodes)
+        for (const auto & group_by_key_node : group_by_keys_nodes)
         {
             if (node->isEqual(*group_by_key_node))
                 return;
@@ -5146,10 +5136,10 @@ public:
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
             "Column {} is not under aggregate function and not in GROUP BY. In scope {}",
             column_name,
-            data.scope.scope_node->formatASTForErrorMessage());
+            scope.scope_node->formatASTForErrorMessage());
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node, Data & data)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         auto * child_function_node = child_node->as<FunctionNode>();
         if (child_function_node)
@@ -5157,7 +5147,7 @@ public:
             if (child_function_node->isAggregateFunction())
                 return false;
 
-            for (const auto & group_by_key_node : data.group_by_keys_nodes)
+            for (const auto & group_by_key_node : group_by_keys_nodes)
             {
                 if (child_node->isEqual(*group_by_key_node))
                     return false;
@@ -5166,44 +5156,41 @@ public:
 
         return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
+
+private:
+    const QueryTreeNodes & group_by_keys_nodes;
+    const IdentifierResolveScope & scope;
 };
 
-using ValidateGroupByColumnsVisitor = ValidateGroupByColumnsMatcher::Visitor;
-
-class ValidateGroupingFunctionNodesMatcher
+class ValidateGroupingFunctionNodesVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupingFunctionNodesVisitor>
 {
 public:
-    using Visitor = ConstInDepthQueryTreeVisitor<ValidateGroupingFunctionNodesMatcher, true, false>;
+    explicit ValidateGroupingFunctionNodesVisitor(String assert_no_grouping_function_place_message_)
+        : assert_no_grouping_function_place_message(std::move(assert_no_grouping_function_place_message_))
+    {}
 
-    struct Data
-    {
-        String assert_no_grouping_function_place_message;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (function_node && function_node->getFunctionName() == "grouping")
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "GROUPING function {} is found {} in query",
                 function_node->formatASTForErrorMessage(),
-                data.assert_no_grouping_function_place_message);
+                assert_no_grouping_function_place_message);
     }
 
     static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         return child_node->getNodeType() != QueryTreeNodeType::QUERY || child_node->getNodeType() != QueryTreeNodeType::UNION;
     }
-};
 
-using ValidateGroupingFunctionNodesVisitor = ValidateGroupingFunctionNodesMatcher::Visitor;
+private:
+    String assert_no_grouping_function_place_message;
+};
 
 void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message)
 {
-    ValidateGroupingFunctionNodesVisitor::Data data;
-    data.assert_no_grouping_function_place_message = assert_no_grouping_function_place_message;
-
-    ValidateGroupingFunctionNodesVisitor visitor(data);
+    ValidateGroupingFunctionNodesVisitor visitor(assert_no_grouping_function_place_message);
     visitor.visit(node);
 }
 
@@ -5237,9 +5224,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     /// Initialize aliases in query node scope
-
-    QueryExpressionsAliasVisitor::Data data{scope};
-    QueryExpressionsAliasVisitor visitor(data);
+    QueryExpressionsAliasVisitor visitor(scope);
 
     if (query_node_typed.hasWith())
         visitor.visit(query_node_typed.getWithNode());
@@ -5294,12 +5279,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             continue;
 
         const auto & cte_name = subquery_node->getCTEName();
-        auto [_, inserted] = data.scope.cte_name_to_query_node.emplace(cte_name, node);
+        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "CTE with name {} already exists. In scope {}",
                 cte_name,
-                data.scope.scope_node->formatASTForErrorMessage());
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     std::erase_if(with_nodes, [](const QueryTreeNodePtr & node)
@@ -5340,9 +5325,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.getJoinTree())
     {
-        TableExpressionsAliasVisitor::Data table_expressions_visitor_data{scope};
-        TableExpressionsAliasVisitor table_expressions_visitor(table_expressions_visitor_data);
-
+        TableExpressionsAliasVisitor table_expressions_visitor(scope);
         table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
         initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
@@ -5463,8 +5446,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             if (!it->second->isEqual(*node))
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                     "Multiple expressions {} and {} for alias {}. In scope {}",
-                    node->dumpTree(),
-                    it->second->dumpTree(),
+                    node->formatASTForErrorMessage(),
+                    it->second->formatASTForErrorMessage(),
                     node_alias,
                     scope.scope_node->formatASTForErrorMessage());
         }
@@ -5588,16 +5571,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (has_aggregation)
     {
-        ValidateGroupByColumnsVisitor::Data validate_group_by_visitor_data {group_by_keys_nodes, scope};
-        ValidateGroupByColumnsVisitor validate_group_by_visitor(validate_group_by_visitor_data);
+        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, scope);
 
         if (query_node_typed.hasHaving())
-            validate_group_by_visitor.visit(query_node_typed.getHaving());
+            validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
 
         if (query_node_typed.hasOrderBy())
-            validate_group_by_visitor.visit(query_node_typed.getOrderByNode());
+            validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
 
-        validate_group_by_visitor.visit(query_node_typed.getProjectionNode());
+        validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
 
     if (context->getSettingsRef().group_by_use_nulls)

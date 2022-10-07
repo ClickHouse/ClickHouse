@@ -8,43 +8,63 @@
 namespace DB
 {
 
-/** Visit query tree in depth.
-  * Matcher need to define `visit`, `needChildVisit` methods and `Data` type.
+/** Visitor that traverse query tree in depth.
+  * Derived class must implement `visitImpl` methods.
+  * Additionally subclass can control if child need to be visited using `needChildVisit` method, by
+  * default all node children are visited.
+  * By default visitor traverse tree from top to bottom, if bottom to top traverse is required subclass
+  * can override `shouldTraverseTopToBottom` method.
+  *
+  * Usage example:
+  * class FunctionsVisitor : public InDepthQueryTreeVisitor<FunctionsVisitor>
+  * {
+  *     void visitImpl(VisitQueryTreeNodeType & query_tree_node)
+  *     {
+  *         if (query_tree_node->getNodeType() == QueryTreeNodeType::FUNCTION)
+  *             processFunctionNode(query_tree_node);
+  *     }
+  * }
   */
-template <typename Matcher, bool top_to_bottom, bool need_child_accept_data = false, bool const_visitor = false>
+template <typename Derived, bool const_visitor = false>
 class InDepthQueryTreeVisitor
 {
 public:
-    using Data = typename Matcher::Data;
     using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
 
-    /// Initialize visitor with matchers data
-    explicit InDepthQueryTreeVisitor(Data & data_)
-        : data(data_)
-    {}
+    /// Return true if visitor should traverse tree top to bottom, false otherwise
+    bool shouldTraverseTopToBottom() const
+    {
+        return true;
+    }
 
-    /// Visit query tree node
+    /// Return true if visitor should visit child, false otherwise
+    bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+    {
+        return true;
+    }
+
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
-        if constexpr (!top_to_bottom)
+        bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
+        if (!traverse_top_to_bottom)
             visitChildren(query_tree_node);
 
-        try
-        {
-            Matcher::visit(query_tree_node, data);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While processing {}", query_tree_node->formatASTForErrorMessage());
-            throw;
-        }
+        getDerived().visitImpl(query_tree_node);
 
-        if constexpr (top_to_bottom)
+        if (traverse_top_to_bottom)
             visitChildren(query_tree_node);
     }
 
 private:
-    Data & data;
+    Derived & getDerived()
+    {
+        return *static_cast<Derived *>(this);
+    }
+
+    const Derived & getDerived() const
+    {
+        return *static_cast<Derived *>(this);
+    }
 
     void visitChildren(VisitQueryTreeNodeType & expression)
     {
@@ -53,11 +73,7 @@ private:
             if (!child)
                 continue;
 
-            bool need_visit_child = false;
-            if constexpr (need_child_accept_data)
-                need_visit_child = Matcher::needChildVisit(expression, child, data);
-            else
-                need_visit_child = Matcher::needChildVisit(expression, child);
+            bool need_visit_child = getDerived().needChildVisit(expression, child);
 
             if (need_visit_child)
                 visit(child);
@@ -65,7 +81,7 @@ private:
     }
 };
 
-template <typename Matcher, bool top_to_bottom, bool need_child_accept_data = false>
-using ConstInDepthQueryTreeVisitor = InDepthQueryTreeVisitor<Matcher, top_to_bottom, need_child_accept_data, true>;
+template <typename Derived>
+using ConstInDepthQueryTreeVisitor = InDepthQueryTreeVisitor<Derived, true /*const_visitor*/>;
 
 }

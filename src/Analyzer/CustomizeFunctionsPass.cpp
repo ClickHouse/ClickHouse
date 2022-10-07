@@ -15,36 +15,33 @@ namespace DB
 namespace
 {
 
-class CustomizeFunctionsMatcher
+class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitor<CustomizeFunctionsVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<CustomizeFunctionsMatcher, true>;
+    explicit CustomizeFunctionsVisitor(ContextPtr & context_)
+        : context(context_)
+    {}
 
-    struct Data
-    {
-        ContextPtr & context;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
 
-        const auto & settings = data.context->getSettingsRef();
+        const auto & settings = context->getSettingsRef();
 
         /// After successful function replacement function name and function name lowercase must be recalculated
         auto function_name = function_node->getFunctionName();
         auto function_name_lowercase = Poco::toLower(function_name);
 
-        if (function_node->isAggregateFunction())
+        if (function_node->isAggregateFunction() || function_node->isWindowFunction())
         {
             auto count_distinct_implementation_function_name = String(settings.count_distinct_implementation);
 
             /// Replace countDistinct with countDistinct implementation
             if (function_name_lowercase == "countdistinct")
             {
-                resolveFunctionNodeAsAggregateFunction(*function_node, count_distinct_implementation_function_name);
+                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name);
                 function_name = function_node->getFunctionName();
                 function_name_lowercase = Poco::toLower(function_name);
             }
@@ -52,7 +49,7 @@ public:
             /// Replace countDistinct with countIfDistinct with countDistinctIf implementation
             if (function_name_lowercase == "countifdistinct")
             {
-                resolveFunctionNodeAsAggregateFunction(*function_node, count_distinct_implementation_function_name + "If");
+                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name + "If");
                 function_name = function_node->getFunctionName();
                 function_name_lowercase = Poco::toLower(function_name);
             }
@@ -62,7 +59,7 @@ public:
             {
                 size_t prefix_length = function_name_lowercase.size() - strlen("ifdistinct");
                 auto updated_function_name = function_name_lowercase.substr(0, prefix_length) + "DistinctIf";
-                resolveFunctionNodeAsAggregateFunction(*function_node, updated_function_name);
+                resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                 function_name = function_node->getFunctionName();
                 function_name_lowercase = Poco::toLower(function_name);
             }
@@ -74,7 +71,7 @@ public:
                 if (function_properies && !function_properies->returns_default_when_only_null)
                 {
                     auto updated_function_name = function_name + "OrNull";
-                    resolveFunctionNodeAsAggregateFunction(*function_node, updated_function_name);
+                    resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                     function_name = function_node->getFunctionName();
                     function_name_lowercase = Poco::toLower(function_name);
                 }
@@ -99,7 +96,7 @@ public:
                             continue;
 
                         auto updated_function_name = function_name_lowercase.substr(0, function_name_size - suffix.size()) + "OrNull" + String(suffix);
-                        resolveFunctionNodeAsAggregateFunction(*function_node, updated_function_name);
+                        resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                         function_name = function_node->getFunctionName();
                         function_name_lowercase = Poco::toLower(function_name);
                         break;
@@ -126,7 +123,7 @@ public:
             {
                 if (function_name_lowercase == in_function_name)
                 {
-                    resolveFunctionNodeAsFunction(*function_node, String(in_function_name_to_replace), data);
+                    resolveOrdinaryFunctionNode(*function_node, String(in_function_name_to_replace));
                     function_name = function_node->getFunctionName();
                     function_name_lowercase = Poco::toLower(function_name);
                     break;
@@ -135,12 +132,7 @@ public:
         }
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
-
-    static inline void resolveFunctionNodeAsAggregateFunction(FunctionNode & function_node, const String & aggregate_function_name)
+    static inline void resolveAggregateOrWindowFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
     {
         auto function_result_type = function_node.getResultType();
         auto function_aggregate_function = function_node.getAggregateFunction();
@@ -150,23 +142,29 @@ public:
             function_aggregate_function->getArgumentTypes(),
             function_aggregate_function->getParameters(),
             properties);
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+
+        if (function_node.isAggregateFunction())
+            function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        else if (function_node.isWindowFunction())
+            function_node.resolveAsWindowFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 
-    static inline void resolveFunctionNodeAsFunction(FunctionNode & function_node, const String & function_name, const Data & data)
+    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function_result_type = function_node.getResultType();
-        auto function = FunctionFactory::instance().get(function_name, data.context);
+        auto function = FunctionFactory::instance().get(function_name, context);
         function_node.resolveAsFunction(function, std::move(function_result_type));
     }
+
+private:
+    ContextPtr & context;
 };
 
 }
 
 void CustomizeFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    CustomizeFunctionsMatcher::Data data{context};
-    CustomizeFunctionsMatcher::Visitor visitor(data);
+    CustomizeFunctionsVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

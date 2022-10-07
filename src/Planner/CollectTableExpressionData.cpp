@@ -23,17 +23,14 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSourceColumnsMatcher
+class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<CollectSourceColumnsMatcher, true, false>;
+    explicit CollectSourceColumnsVisitor(PlannerContext & planner_context_)
+        : planner_context(planner_context_)
+    {}
 
-    struct Data
-    {
-        PlannerContext & planner_context;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
@@ -50,14 +47,14 @@ public:
         if (column_node->hasExpression() && column_source_node->getNodeType() == QueryTreeNodeType::JOIN)
             return;
 
-        auto & table_expression_data = data.planner_context.getOrCreateTableExpressionData(column_source_node);
+        auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_source_node);
 
         if (column_node->hasExpression())
         {
             /// Replace ALIAS column with expression
             table_expression_data.addAliasColumnName(column_node->getColumnName());
             node = column_node->getExpression();
-            visit(node, data);
+            visitImpl(node);
             return;
         }
 
@@ -73,7 +70,7 @@ public:
         if (column_already_exists)
             return;
 
-        auto column_identifier = data.planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
+        auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
         table_expression_data.addColumn(column_node->getColumn(), column_identifier);
     }
 
@@ -81,9 +78,10 @@ public:
     {
         return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
-};
 
-using CollectSourceColumnsVisitor = CollectSourceColumnsMatcher::Visitor;
+private:
+    PlannerContext & planner_context;
+};
 
 }
 
@@ -111,8 +109,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContext & 
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Remote storages are not supported");
     }
 
-    CollectSourceColumnsVisitor::Data data {planner_context};
-    CollectSourceColumnsVisitor collect_source_columns_visitor(data);
+    CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context);
     collect_source_columns_visitor.visit(query_node);
 }
 

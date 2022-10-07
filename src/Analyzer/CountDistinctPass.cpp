@@ -14,16 +14,10 @@ namespace DB
 namespace
 {
 
-class CountDistinctMatcher
+class CountDistinctVisitor : public InDepthQueryTreeVisitor<CountDistinctVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<CountDistinctMatcher, true>;
-
-    struct Data
-    {
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data &)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
 
@@ -77,19 +71,13 @@ public:
         function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(result_type));
         function_node->getArguments().getNodes().clear();
     }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
 };
 
 }
 
 void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    CountDistinctMatcher::Data data{};
-    CountDistinctMatcher::Visitor visitor(data);
+    CountDistinctVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

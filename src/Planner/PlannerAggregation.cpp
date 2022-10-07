@@ -32,64 +32,53 @@ enum class GroupByKind
     GROUPING_SETS
 };
 
-class GroupingFunctionResolveMatcher
+class GroupingFunctionResolveVisitor : public InDepthQueryTreeVisitor<GroupingFunctionResolveVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<GroupingFunctionResolveMatcher, true, false>;
-
-    struct Data
+    GroupingFunctionResolveVisitor(GroupByKind group_by_kind_,
+        const Names & aggregation_keys_,
+        const GroupingSetsParamsList & grouping_sets_parameters_list_,
+        const PlannerContext & planner_context_)
+        : group_by_kind(group_by_kind_)
+        , planner_context(planner_context_)
     {
-        Data(GroupByKind group_by_kind_,
-            const Names & aggregation_keys_,
-            const GroupingSetsParamsList & grouping_sets_parameters_list_,
-            const PlannerContext & planner_context_)
-            : group_by_kind(group_by_kind_)
-            , planner_context(planner_context_)
+        size_t aggregation_keys_size = aggregation_keys_.size();
+        for (size_t i = 0; i < aggregation_keys_size; ++i)
+            aggegation_key_to_index.emplace(aggregation_keys_[i], i);
+
+        for (const auto & grouping_sets_parameter : grouping_sets_parameters_list_)
         {
-            size_t aggregation_keys_size = aggregation_keys_.size();
-            for (size_t i = 0; i < aggregation_keys_size; ++i)
-                aggegation_key_to_index.emplace(aggregation_keys_[i], i);
+            grouping_sets_keys_indices.emplace_back();
+            auto & grouping_set_keys_indices = grouping_sets_keys_indices.back();
 
-            for (const auto & grouping_sets_parameter : grouping_sets_parameters_list_)
+            for (const auto & used_key : grouping_sets_parameter.used_keys)
             {
-                grouping_sets_keys_indices.emplace_back();
-                auto & grouping_set_keys_indices = grouping_sets_keys_indices.back();
+                auto aggregation_key_index_it = aggegation_key_to_index.find(used_key);
+                if (aggregation_key_index_it == aggegation_key_to_index.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Aggregation key {} in GROUPING SETS is not found in GROUP BY keys");
 
-                for (const auto & used_key : grouping_sets_parameter.used_keys)
-                {
-                    auto aggregation_key_index_it = aggegation_key_to_index.find(used_key);
-                    if (aggregation_key_index_it == aggegation_key_to_index.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Aggregation key {} in GROUPING SETS is not found in GROUP BY keys");
-
-                    grouping_set_keys_indices.push_back(aggregation_key_index_it->second);
-                }
+                grouping_set_keys_indices.push_back(aggregation_key_index_it->second);
             }
         }
+    }
 
-        GroupByKind group_by_kind;
-        std::unordered_map<std::string, size_t> aggegation_key_to_index;
-        // Indexes of aggregation keys used in each grouping set (only for GROUP BY GROUPING SETS)
-        ColumnNumbersList grouping_sets_keys_indices;
-        const PlannerContext & planner_context;
-    };
-
-    static void visit(const QueryTreeNodePtr & node, Data & data)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "grouping")
             return;
 
-        size_t aggregation_keys_size = data.aggegation_key_to_index.size();
+        size_t aggregation_keys_size = aggegation_key_to_index.size();
 
         ColumnNumbers arguments_indexes;
 
         for (const auto & argument : function_node->getArguments().getNodes())
         {
-            String action_node_name = calculateActionNodeName(argument, data.planner_context);
+            String action_node_name = calculateActionNodeName(argument, planner_context);
 
-            auto it = data.aggegation_key_to_index.find(action_node_name);
-            if (it == data.aggegation_key_to_index.end())
+            auto it = aggegation_key_to_index.find(action_node_name);
+            if (it == aggegation_key_to_index.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Argument of GROUPING function {} is not a part of GROUP BY clause",
                         argument->formatASTForErrorMessage());
@@ -101,9 +90,9 @@ public:
         auto grouping_set_argument_column = std::make_shared<ColumnNode>(NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, column_source);
         function_node->getArguments().getNodes().clear();
 
-        bool force_grouping_standard_compatibility = data.planner_context.getQueryContext()->getSettingsRef().force_grouping_standard_compatibility;
+        bool force_grouping_standard_compatibility = planner_context.getQueryContext()->getSettingsRef().force_grouping_standard_compatibility;
 
-        switch (data.group_by_kind)
+        switch (group_by_kind)
         {
             case GroupByKind::ORDINARY:
             {
@@ -130,7 +119,7 @@ public:
             }
             case GroupByKind::GROUPING_SETS:
             {
-                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, data.grouping_sets_keys_indices, force_grouping_standard_compatibility);
+                auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, grouping_sets_keys_indices, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
                 function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
@@ -143,9 +132,14 @@ public:
     {
         return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
     }
-};
 
-using GroupingFunctionResolveVisitor = GroupingFunctionResolveMatcher::Visitor;
+private:
+    GroupByKind group_by_kind;
+    std::unordered_map<std::string, size_t> aggegation_key_to_index;
+    // Indexes of aggregation keys used in each grouping set (only for GROUP BY GROUPING SETS)
+    ColumnNumbersList grouping_sets_keys_indices;
+    const PlannerContext & planner_context;
+};
 
 void resolveGroupingFunctions(QueryTreeNodePtr & node,
     GroupByKind group_by_kind,
@@ -153,8 +147,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & node,
     const GroupingSetsParamsList & grouping_sets_parameters_list,
     const PlannerContext & planner_context)
 {
-    GroupingFunctionResolveVisitor::Data data {group_by_kind, aggregation_keys, grouping_sets_parameters_list, planner_context};
-    GroupingFunctionResolveVisitor visitor(data);
+    GroupingFunctionResolveVisitor visitor(group_by_kind, aggregation_keys, grouping_sets_parameters_list, planner_context);
     visitor.visit(node);
 }
 
