@@ -197,12 +197,13 @@ public:
 private:
     bool addBlockImpl(const Block & block, TemporaryFileStream & writer, std::unique_lock<std::mutex> & lock)
     {
-        if (block.rows())
-            is_empty = false;
-
         ensureState(State::WRITING_BLOCKS);
+
         if (!lock.owns_lock())
             return false;
+
+        if (block.rows())
+            is_empty = false;
 
         writer.write(block);
         return true;
@@ -323,15 +324,15 @@ bool GraceHashJoin::fitsInMemory() const
     return table_join->sizeLimits().softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
 }
 
-GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
+GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t next_size)
 {
     std::unique_lock lock(rehash_mutex);
     size_t current_size = buckets.size();
 
-    if (to_size <= current_size)
+    if (next_size <= current_size)
         return buckets;
 
-    size_t next_size = current_size * 2;
+    assert(isPowerOf2(next_size));
 
     if (next_size > max_num_buckets)
     {
@@ -344,9 +345,8 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 
     buckets.reserve(next_size);
     for (size_t i = current_size; i < next_size; ++i)
-    {
         addBucket(buckets);
-    }
+
     return buckets;
 }
 
@@ -413,12 +413,14 @@ void GraceHashJoin::setTotals(const Block & block)
 
 size_t GraceHashJoin::getTotalRowCount() const
 {
+    std::lock_guard lock(hash_join_mutex);
     assert(hash_join);
     return hash_join->getTotalRowCount();
 }
 
 size_t GraceHashJoin::getTotalByteCount() const
 {
+    std::lock_guard lock(hash_join_mutex);
     assert(hash_join);
     return hash_join->getTotalByteCount();
 }
@@ -511,10 +513,7 @@ public:
 
 std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks()
 {
-    if (current_bucket == nullptr)
-        return nullptr;
-
-    std::lock_guard lock(current_bucket_mutex);
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
 
     if (current_bucket == nullptr)
         return nullptr;
@@ -610,6 +609,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
             hash_join->addJoinedBlock(blocks[bucket_index], /* check_limits = */ false);
             overflow = !fitsInMemory();
         }
+        blocks[bucket_index].clear();
     }
 
     if (blocks.empty())
@@ -625,10 +625,11 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         generateRandomPermutation(1, buckets_snapshot.size()),
         [&](size_t i)
         {
-            if (i == bucket_index || !blocks[i].rows())
+            if (!blocks[i].rows())
                 return true;
             return buckets_snapshot[i]->tryAddRightBlock(blocks[i]);
         });
+
 }
 
 size_t GraceHashJoin::getNumBuckets() const

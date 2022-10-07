@@ -1,20 +1,17 @@
 (Expression)
 ExpressionTransform
   (Join)
-  Resize 2 → 1
-    DelayedPorts 2 → 2
-      DelayedJoinedBlocksTransform 0 → 1
-        JoiningTransform 2 → 1
-          (Expression)
-          ExpressionTransform
-            (Limit)
-            Limit
-              (ReadFromStorage)
-              Numbers 0 → 1
-          (Expression)
-          FillingRightJoinSide
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromStorage)
-                Numbers 0 → 1
+  JoiningTransform 2 → 1
+    (Expression)
+    ExpressionTransform
+      (Limit)
+      Limit
+        (ReadFromStorage)
+        Numbers 0 → 1
+    (Expression)
+    FillingRightJoinSide
+      ExpressionTransform
+        (Limit)
+        Limit
+          (ReadFromStorage)
+          Numbers 0 → 1
