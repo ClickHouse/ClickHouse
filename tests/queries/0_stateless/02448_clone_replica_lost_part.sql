@@ -128,7 +128,6 @@ insert into rmt2 values (600);
 system sync replica rmt2;
 -- merge through gap
 optimize table rmt2;
-select arraySort(groupArrayDistinct(_part)) from rmt2;
 -- give it a chance to cleanup log
 select sleep(2) format Null; -- increases probability of reproducing the issue
 
@@ -136,7 +135,7 @@ select sleep(2) format Null; -- increases probability of reproducing the issue
 system stop replicated sends rmt2;
 attach table rmt1;
 -- rmt1 should not show the value (100) from dropped part
-select 10, arraySort(groupArray(n)) from rmt1;
+select throwIf(n = 100) from rmt1 format Null;
 select 11, arraySort(groupArray(n)) from rmt2;
 
 system start replicated sends rmt2;
