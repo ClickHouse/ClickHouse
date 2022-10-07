@@ -65,7 +65,7 @@
         For example, as below:
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         To enable JSON logging support, please uncomment the entire <formatting> tag below.
-        
+
         a) You can modify key names by changing values under tag values inside <names> tag.
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
@@ -462,8 +462,9 @@
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
-    <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
-    <!-- <allow_no_password>0</allow_no_password> -->`
+    <allow_plaintext_password>1</allow_plaintext_password>
+    <allow_no_password>1</allow_no_password>
+    <allow_implicit_no_password>1</allow_implicit_no_password>
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -661,6 +662,13 @@
              executed by any user. You can change this behaviour by setting this to true.
              If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
         <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
+
+        <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
+             previous profile. You can change this behaviour by setting this to true.
+             If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
+             actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
+             It also enables 'changeable_in_readonly' constraint type -->
+        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
@@ -1106,10 +1114,6 @@
     <asynchronous_metric_log>
         <database>system</database>
         <table>asynchronous_metric_log</table>
-        <!--
-            Asynchronous metrics are updated once a minute, so there is
-            no need to flush more often.
-        -->
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
@@ -1168,6 +1172,18 @@
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </processors_profile_log>
+
+    <!-- Log of asynchronous inserts. It allows to check status
+         of insert query in fire-and-forget mode.
+    -->
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>event_date</partition_by>
+        <ttl>event_date + INTERVAL 3 DAY</ttl>
+    </asynchronous_insert_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.

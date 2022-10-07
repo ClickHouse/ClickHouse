@@ -5,7 +5,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -71,6 +71,11 @@ public:
         return nested_func->isVersioned();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
@@ -84,6 +89,11 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_func->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override

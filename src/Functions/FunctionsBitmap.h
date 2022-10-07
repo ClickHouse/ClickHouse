@@ -20,12 +20,13 @@
 // inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Bitmap functions.
@@ -640,7 +641,7 @@ private:
             }
 
             if (from_end - from_start != to_end - to_start)
-                throw Exception("From array size and to array size mismatch", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("From array size and to array size mismatch", ErrorCodes::BAD_ARGUMENTS);
 
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data_2

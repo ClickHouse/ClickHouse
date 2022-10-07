@@ -500,7 +500,7 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
 ### 说明 {#alter-user-dscr}
@@ -540,7 +540,7 @@ ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ``` sql
 ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
 ## 修改row policy {#alter-row-policy-statement}
@@ -584,7 +584,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 ``` sql
 ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
 ```
 
 [Original article](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->

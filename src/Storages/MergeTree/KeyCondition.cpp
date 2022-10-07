@@ -1640,6 +1640,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(1).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
@@ -1663,6 +1670,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(0).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
@@ -1804,7 +1818,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
         }
         else if (const_value.getType() == Field::Types::Float64)
         {
-            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }

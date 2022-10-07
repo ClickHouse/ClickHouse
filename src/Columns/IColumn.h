@@ -7,7 +7,7 @@
 #include <base/StringRef.h>
 #include <Core/Types.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 class SipHash;
@@ -413,6 +413,9 @@ public:
     /// Shallow: doesn't do recursive calls; don't do call for itself.
     using ColumnCallback = std::function<void(WrappedPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
+
+    /// Similar to forEachSubcolumn but it also do recursive calls.
+    virtual void forEachSubcolumnRecursively(ColumnCallback) {}
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.

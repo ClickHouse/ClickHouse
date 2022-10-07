@@ -11,8 +11,8 @@ sidebar_label: "Роль"
 Синтаксис:
 
 ```sql
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] [, name2 [ON CLUSTER cluster_name2] ...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
 ## Управление ролями {#managing-roles}
