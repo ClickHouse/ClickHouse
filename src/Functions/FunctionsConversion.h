@@ -101,7 +101,7 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 
     Field field;
     named_column.column->get(0, field);
-    return field.get<UInt32>();
+    return static_cast<UInt32>(field.get<UInt32>());
 }
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
@@ -335,7 +335,7 @@ struct ToDateTimeImpl
             return 0;
 
         auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
-        return date_time <= 0xffffffff ? date_time : 0xffffffff;
+        return date_time <= 0xffffffff ? static_cast<UInt32>(date_time) : 0xffffffff;
     }
 
     static UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
@@ -349,7 +349,7 @@ struct ToDateTimeImpl
             return 0;
 
         auto date_time = time_zone.toDate(d);
-        return date_time <= 0xffffffff ? date_time : 0xffffffff;
+        return date_time <= 0xffffffff ? static_cast<UInt32>(date_time) : 0xffffffff;
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
@@ -357,7 +357,7 @@ struct ToDateTimeImpl
         if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
-        return std::min<Int64>(t.whole, Int64(0xFFFFFFFF));
+        return t.whole > 0xffffffff ? 0xffffffff : static_cast<UInt32>(t.whole);
     }
 };
 
@@ -434,7 +434,7 @@ struct ToDate32Transform32Or64
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? from
+            ? static_cast<ToType>(from)
             : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_EXTEND_DAY_NUM));
     }
 };
@@ -531,7 +531,7 @@ struct ToDateTimeTransform64
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
+        return from > 0xffffffff ? 0xffffffff : static_cast<ToType>(from);
     }
 };
 
@@ -558,7 +558,7 @@ struct ToDateTimeTransform64Signed
         if (from < 0)
             return 0;
 
-        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
+        return from > 0xffffffff ? 0xffffffff : static_cast<ToType>(from);
     }
 };
 
@@ -618,8 +618,8 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        from = std::max<time_t>(from, LUT_MIN_TIME);
-        from = std::min<time_t>(from, LUT_MAX_TIME);
+        from = static_cast<FromType>(std::max<time_t>(from, LUT_MIN_TIME));
+        from = static_cast<FromType>(std::min<time_t>(from, LUT_MAX_TIME));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -979,7 +979,7 @@ inline void convertFromTime<DataTypeDate>(DataTypeDate::FieldType & x, time_t & 
 template <>
 inline void convertFromTime<DataTypeDate32>(DataTypeDate32::FieldType & x, time_t & time)
 {
-    x = time;
+    x = static_cast<UInt32>(time);
 }
 
 template <>
@@ -990,7 +990,7 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
     else if (unlikely(time > 0xFFFFFFFF))
         x = 0xFFFFFFFF;
     else
-        x = time;
+        x = static_cast<UInt32>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -1070,7 +1070,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
     time_t tmp = 0;
     if (!tryReadDateTimeText(tmp, rb, *time_zone))
         return false;
-    x = tmp;
+    x = static_cast<UInt32>(tmp);
     return true;
 }
 

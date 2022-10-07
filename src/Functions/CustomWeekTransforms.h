@@ -134,14 +134,17 @@ struct WeekTransformer
     void
     vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
+        using ValueType = typename ToVectorType::value_type;
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
+        {
             if constexpr (is_extended_result)
-                vec_to[i] = transform.executeExtendedResult(vec_from[i], week_mode, time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], week_mode, time_zone));
             else
-                vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.execute(vec_from[i], week_mode, time_zone));
+        }
     }
 
 private:

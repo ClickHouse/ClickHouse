@@ -126,7 +126,8 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
+                /// TODO: use epoll_pwait() for more precise timers
+                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -380,7 +381,7 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 

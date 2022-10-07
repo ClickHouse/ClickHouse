@@ -340,7 +340,7 @@ namespace DB
         const auto d         = gd::mod(c, 1461);
         const auto y         = gd::min(gd::div(d, 365), 3);
         day_of_year_ = d - y * 365 + 1;
-        year_      = quad_cent * 400 + cent * 100 + quad * 4 + y + 1;
+        year_      = static_cast<YearT>(quad_cent * 400 + cent * 100 + quad * 4 + y + 1);
     }
 
     template <typename YearT>

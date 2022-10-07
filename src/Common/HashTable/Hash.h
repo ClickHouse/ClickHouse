@@ -48,33 +48,36 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #include <arm_acle.h>
 #endif
 
-inline DB::UInt64 intHashCRC32(DB::UInt64 x)
+/// NOTE: Intel intrinsic can be confusing.
+/// - https://code.google.com/archive/p/sse-intrinsics/wikis/PmovIntrinsicBug.wiki
+/// - https://stackoverflow.com/questions/15752770/mm-crc32-u64-poorly-defined
+inline DB::UInt32 intHashCRC32(DB::UInt64 x)
 {
 #ifdef __SSE4_2__
-    return _mm_crc32_u64(-1ULL, x);
+    return static_cast<UInt32>(_mm_crc32_u64(-1ULL, x));
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    return __crc32cd(-1U, x);
+    return static_cast<UInt32>(__crc32cd(-1U, x));
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
-    return intHash64(x);
+    /// NOTE: consider using intHash32()
+    return static_cast<UInt32>(intHash64(x));
 #endif
 }
-
-inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
+inline DB::UInt32 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 {
 #ifdef __SSE4_2__
-    return _mm_crc32_u64(updated_value, x);
+    return static_cast<UInt32>(_mm_crc32_u64(updated_value, x));
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-    return  __crc32cd(updated_value, x);
+    return __crc32cd(static_cast<UInt32>(updated_value), x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
-    return intHash64(x) ^ updated_value;
+    return static_cast<UInt32>(intHash64(x) ^ updated_value);
 #endif
 }
 
 template <typename T>
 requires (sizeof(T) > sizeof(DB::UInt64))
-inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
+inline DB::UInt32 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     const auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
@@ -83,7 +86,7 @@ inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
         begin += sizeof(DB::UInt64);
     }
 
-    return updated_value;
+    return static_cast<UInt32>(updated_value);
 }
 
 
@@ -219,7 +222,7 @@ template <typename T> struct HashCRC32;
 
 template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline UInt32 hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     union
     {
@@ -233,7 +236,7 @@ inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 
 template <typename T>
 requires (sizeof(T) > sizeof(UInt64))
-inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
+inline UInt32 hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     return intHashCRC32(key, updated_value);
 }
@@ -241,7 +244,7 @@ inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 #define DEFINE_HASH(T) \
 template <> struct HashCRC32<T>\
 {\
-    size_t operator() (T key) const\
+    UInt32 operator() (T key) const\
     {\
         return hashCRC32<T>(key);\
     }\
@@ -302,8 +305,8 @@ struct UInt128HashCRC32
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
         return crc;
     }
 };
@@ -358,10 +361,10 @@ struct UInt256HashCRC32
     size_t operator()(UInt256 x) const
     {
         UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        crc = __crc32cd(crc, x.items[2]);
-        crc = __crc32cd(crc, x.items[3]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[0]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[1]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[2]);
+        crc = __crc32cd(static_cast<UInt32>(crc), x.items[3]);
         return crc;
     }
 };
@@ -423,7 +426,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
     key = key + (key << 6);
     key = key ^ ((key >> 22) | (key << 42));
 
-    return key;
+    return static_cast<UInt32>(key);
 }
 
 

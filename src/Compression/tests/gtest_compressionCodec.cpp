@@ -391,7 +391,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = gen(static_cast<T>(i));
+        const T v = static_cast<T>(gen(i));
 
         unalignedStoreLE<T>(write_pos, v);
         write_pos += sizeof(v);
@@ -464,13 +464,15 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 {
     const auto & source_data = test_sequence.serialized_data;
 
-    const UInt32 encoded_max_size = codec.getCompressedReserveSize(source_data.size());
+    const UInt32 encoded_max_size = codec.getCompressedReserveSize(
+        static_cast<UInt32>(source_data.size()));
     PODArray<char> encoded(encoded_max_size);
 
     timer.start();
 
     assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
-    const UInt32 encoded_size = codec.compress(source_data.data(), source_data.size(), encoded.data());
+    const UInt32 encoded_size = codec.compress(
+        source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     timer.report("encoding");
 
     encoded.resize(encoded_size);
@@ -478,7 +480,8 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
     PODArray<char> decoded(source_data.size());
 
     timer.start();
-    const UInt32 decoded_size = codec.decompress(encoded.data(), encoded.size(), decoded.data());
+    const UInt32 decoded_size = codec.decompress(
+        encoded.data(), static_cast<UInt32>(encoded.size()), decoded.data());
     timer.report("decoding");
 
     decoded.resize(decoded_size);
@@ -542,10 +545,12 @@ TEST_P(CodecTestCompatibility, Encoding)
     const auto & source_data = data_sequence.serialized_data;
 
     // Just encode the data with codec
-    const UInt32 encoded_max_size = codec->getCompressedReserveSize(source_data.size());
+    const UInt32 encoded_max_size = codec->getCompressedReserveSize(
+        static_cast<UInt32>(source_data.size()));
     PODArray<char> encoded(encoded_max_size);
 
-    const UInt32 encoded_size = codec->compress(source_data.data(), source_data.size(), encoded.data());
+    const UInt32 encoded_size = codec->compress(
+        source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     encoded.resize(encoded_size);
     SCOPED_TRACE(::testing::Message("encoded:  ") << AsHexString(encoded));
 
@@ -560,7 +565,8 @@ TEST_P(CodecTestCompatibility, Decoding)
     const auto codec = makeCodec(codec_spec.codec_statement, expected.data_type);
 
     PODArray<char> decoded(expected.serialized_data.size());
-    const UInt32 decoded_size = codec->decompress(encoded_data.c_str(), encoded_data.size(), decoded.data());
+    const UInt32 decoded_size = codec->decompress(
+        encoded_data.c_str(), static_cast<UInt32>(encoded_data.size()), decoded.data());
     decoded.resize(decoded_size);
 
     ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
