@@ -10,17 +10,14 @@ namespace DB
 namespace
 {
 
-class MultiIfToIfVisitorMatcher
+class MultiIfToIfVisitor : public InDepthQueryTreeVisitor<MultiIfToIfVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<MultiIfToIfVisitorMatcher, true>;
+    explicit MultiIfToIfVisitor(FunctionOverloadResolverPtr if_function_ptr_)
+        : if_function_ptr(if_function_ptr_)
+    {}
 
-    struct Data
-    {
-        FunctionOverloadResolverPtr if_function_overload_resolver;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "multiIf")
@@ -30,21 +27,18 @@ public:
             return;
 
         auto result_type = function_node->getResultType();
-        function_node->resolveAsFunction(data.if_function_overload_resolver, result_type);
+        function_node->resolveAsFunction(if_function_ptr, result_type);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
+private:
+    FunctionOverloadResolverPtr if_function_ptr;
 };
 
 }
 
 void MultiIfToIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    MultiIfToIfVisitorMatcher::Data data{FunctionFactory::instance().get("if", context)};
-    MultiIfToIfVisitorMatcher::Visitor visitor(data);
+    MultiIfToIfVisitor visitor(FunctionFactory::instance().get("if", context));
     visitor.visit(query_tree_node);
 }
 

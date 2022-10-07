@@ -1,6 +1,5 @@
 #include <Planner/PlannerWindowFunctions.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
 

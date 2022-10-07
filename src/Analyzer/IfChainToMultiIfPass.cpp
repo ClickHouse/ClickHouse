@@ -12,17 +12,14 @@ namespace DB
 namespace
 {
 
-class IfChainToMultiIfPassMatcher
+class IfChainToMultiIfPassVisitor : public InDepthQueryTreeVisitor<IfChainToMultiIfPassVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<IfChainToMultiIfPassMatcher, true>;
+    explicit IfChainToMultiIfPassVisitor(FunctionOverloadResolverPtr multi_if_function_ptr_)
+        : multi_if_function_ptr(std::move(multi_if_function_ptr_))
+    {}
 
-    struct Data
-    {
-        FunctionOverloadResolverPtr multi_if_function_value;
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data & data)
+    void visit(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "if" || function_node->getArguments().getNodes().size() != 3)
@@ -58,23 +55,20 @@ public:
             return;
 
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
-        multi_if_function->resolveAsFunction(data.multi_if_function_value, std::make_shared<DataTypeUInt8>());
+        multi_if_function->resolveAsFunction(multi_if_function_ptr, std::make_shared<DataTypeUInt8>());
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
         node = std::move(multi_if_function);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
+private:
+    FunctionOverloadResolverPtr multi_if_function_ptr;
 };
 
 }
 
 void IfChainToMultiIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    IfChainToMultiIfPassMatcher::Data data{FunctionFactory::instance().get("multiIf", context)};
-    IfChainToMultiIfPassMatcher::Visitor visitor(data);
+    IfChainToMultiIfPassVisitor visitor(FunctionFactory::instance().get("multiIf", context));
     visitor.visit(query_tree_node);
 }
 

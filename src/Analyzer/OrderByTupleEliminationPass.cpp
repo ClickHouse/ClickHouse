@@ -12,16 +12,10 @@ namespace DB
 namespace
 {
 
-class OrderByTupleEliminationMatcher
+class OrderByTupleEliminationVisitor : public InDepthQueryTreeVisitor<OrderByTupleEliminationVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<OrderByTupleEliminationMatcher, true>;
-
-    struct Data
-    {
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data &)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
         if (!query_node || !query_node->hasOrderBy())
@@ -52,19 +46,13 @@ public:
 
         query_node->getOrderBy().getNodes() = std::move(result_nodes);
     }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
 };
 
 }
 
 void OrderByTupleEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    OrderByTupleEliminationMatcher::Data data{};
-    OrderByTupleEliminationMatcher::Visitor visitor(data);
+    OrderByTupleEliminationVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

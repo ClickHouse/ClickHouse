@@ -12,16 +12,10 @@ namespace DB
 namespace
 {
 
-class NormalizeCountVariantsMatcher
+class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<NormalizeCountVariantsMatcher, true>;
-
-    struct Data
-    {
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data &)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))
@@ -51,19 +45,13 @@ public:
             function_node->getArguments().getNodes().clear();
         }
     }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
 };
 
 }
 
 void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    NormalizeCountVariantsMatcher::Data data{};
-    NormalizeCountVariantsMatcher::Visitor visitor(data);
+    NormalizeCountVariantsVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

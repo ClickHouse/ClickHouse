@@ -10,16 +10,10 @@ namespace DB
 namespace
 {
 
-class IfConstantConditionMatcher
+class IfConstantConditionVisitor : public InDepthQueryTreeVisitor<IfConstantConditionVisitor>
 {
 public:
-    using Visitor = InDepthQueryTreeVisitor<IfConstantConditionMatcher, true>;
-
-    struct Data
-    {
-    };
-
-    static void visit(QueryTreeNodePtr & node, Data &)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
@@ -49,19 +43,13 @@ public:
         else
             node = function_node->getArguments().getNodes()[2];
     }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &)
-    {
-        return true;
-    }
 };
 
 }
 
 void IfConstantConditionPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    IfConstantConditionMatcher::Data data{};
-    IfConstantConditionMatcher::Visitor visitor(data);
+    IfConstantConditionVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

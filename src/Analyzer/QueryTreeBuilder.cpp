@@ -42,7 +42,6 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Databases/IDatabase.h>
 
