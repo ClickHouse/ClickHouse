@@ -1,3 +1,4 @@
+-- Tags: long
 
 drop table if exists rmt1;
 drop table if exists rmt2;
