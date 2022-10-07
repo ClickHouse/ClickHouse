@@ -1,5 +1,3 @@
--- Check that max_parts_to_throw_insert limit work
-
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (x UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS parts_to_throw_insert = 3;
 
