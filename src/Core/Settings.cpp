@@ -148,8 +148,7 @@ std::vector<String> Settings::getAllRegisteredNames() const
 
 void Settings::set(std::string_view name, const Field & value)
 {
-    String setting_value;
-    if (value.tryGet(setting_value) && setting_value == "DEFAULT") {
+    if (value.isNull()) {
         resetToDefault(name);
     } else {
         BaseSettings::set(name, value);
