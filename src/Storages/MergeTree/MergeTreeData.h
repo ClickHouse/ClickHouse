@@ -1329,12 +1329,41 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    class PartLoadingTree
+    {
+    public:
+        struct Node
+        {
+            Node(const MergeTreePartInfo & info_, const DiskPtr & disk_)
+                :  info(info_), disk(disk_)
+            {
+            }
+
+            MergeTreePartInfo info;
+            DiskPtr disk;
+
+            std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
+        };
+
+        using NodePtr = std::shared_ptr<Node>;
+        using PartInfoWithDisk = std::pair<MergeTreePartInfo, DiskPtr>;
+
+        static PartLoadingTree build(std::vector<PartInfoWithDisk> nodes);
+        void add(const MergeTreePartInfo & info, const DiskPtr & disk);
+        const std::unordered_map<String, NodePtr> & getRoots() const { return root_by_partition; }
+
+    private:
+        std::unordered_map<String, NodePtr> root_by_partition;
+    };
+
+    using PartLoadingTreeNodes = std::vector<PartLoadingTree::NodePtr>;
+
     void loadDataPartsFromDisk(
         DataPartsVector & broken_parts_to_detach,
         DataPartsVector & duplicate_parts_to_remove,
         ThreadPool & pool,
         size_t num_parts,
-        std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
+        std::queue<PartLoadingTreeNodes> & parts_queue,
         bool skip_sanity_checks,
         const MergeTreeSettingsPtr & settings);
 
