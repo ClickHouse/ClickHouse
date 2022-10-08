@@ -52,7 +52,7 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::None:
             return "";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
