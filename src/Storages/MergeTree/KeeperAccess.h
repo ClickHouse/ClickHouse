@@ -143,7 +143,7 @@ public:
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        return access<Coordination::Error>(
+        return access<Coordination::Error, false>(
             "tryMultiNoThrow",
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMultiNoThrow(requests, responses); });
@@ -171,7 +171,7 @@ public:
     }
 
 private:
-    template <typename Result>
+    template <typename Result, bool inject_failure_before_op = true, int inject_failure_after_op = true>
     Result access(const char * func_name, const std::string & path, auto && operation)
     {
         try
@@ -181,11 +181,17 @@ private:
                 throw zkutil::KeeperException(
                     "Session is considered to be expired due to fault injection", Coordination::Error::ZSESSIONEXPIRED);
 
-            if (unlikely(fault_policy))
-                fault_policy->beforeOperation();
+            if constexpr (inject_failure_before_op)
+            {
+                if (unlikely(fault_policy))
+                    fault_policy->beforeOperation();
+            }
             Result res = operation();
-            if (unlikely(fault_policy))
-                fault_policy->afterOperation();
+            if constexpr (inject_failure_after_op)
+            {
+                if (unlikely(fault_policy))
+                    fault_policy->afterOperation();
+            }
             ++calls_without_fault_injection;
             if (unlikely(logger))
                 LOG_TRACE(logger, "KeeperAccess call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
