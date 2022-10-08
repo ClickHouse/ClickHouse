@@ -352,3 +352,8 @@ find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"
+
+# Forbid __builtin_unreachable(), because it's hard to debug when it becomes reachable
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"

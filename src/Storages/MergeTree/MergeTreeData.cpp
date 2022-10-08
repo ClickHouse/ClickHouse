@@ -928,7 +928,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case VersionedCollapsing: return "VersionedCollapsing";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 Int64 MergeTreeData::getMaxBlockNumber() const
