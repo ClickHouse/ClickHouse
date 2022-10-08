@@ -241,7 +241,7 @@ private:
     Int64 iteration_count = -1;
     UserError user_error;
     KeeperError keeper_error;
-    std::function<void()> action_after_last_failed_retry;
+    std::function<void()> action_after_last_failed_retry = []() {};
     bool unconditional_retry = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
