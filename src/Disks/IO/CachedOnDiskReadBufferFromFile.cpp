@@ -46,7 +46,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     size_t file_size_,
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
-    std::optional<size_t> read_until_position_)
+    std::optional<size_t> read_until_position_,
+    FileCache::OnKeyEvictionFunc && on_key_eviction_func_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
@@ -66,6 +67,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , is_persistent(settings_.is_file_cache_persistent)
+    , on_key_eviction_func(on_key_eviction_func_)
 {
 }
 
@@ -122,7 +124,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
             .is_persistent = is_persistent
         };
 
-        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
+        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings, std::move(on_key_eviction_func)));
     }
 
     /**

@@ -34,7 +34,8 @@ public:
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
-        std::optional<size_t> read_until_position_ = std::nullopt);
+        std::optional<size_t> read_until_position_ = std::nullopt,
+        FileCache::OnKeyEvictionFunc && on_key_eviction_func_ = {});
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -146,6 +147,8 @@ private:
     FileCache::QueryContextHolder query_context_holder;
 
     bool is_persistent;
+
+    FileCache::OnKeyEvictionFunc on_key_eviction_func;
 };
 
 }

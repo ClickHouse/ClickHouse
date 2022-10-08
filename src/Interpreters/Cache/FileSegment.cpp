@@ -723,6 +723,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(segment_lock);
     snapshot->download_state = file_segment->download_state;
     snapshot->is_persistent = file_segment->isPersistent();
+    snapshot->cache = file_segment->cache;
 
     return snapshot;
 }

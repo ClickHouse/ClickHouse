@@ -75,6 +75,33 @@ void FileCache::removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std:
         fs::remove(key_prefix_path);
 }
 
+void FileCache::removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock)
+{
+    assert(files[key].file_segments_by_offset.empty());
+
+    auto it = files.find(key);
+    if (it == files.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not key `{}` in cache", key.toString());
+
+    const auto & [_, on_key_eviction_func] = it->second;
+
+    if (on_key_eviction_func)
+    {
+        try
+        {
+            on_key_eviction_func();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            assert(false);
+        }
+    }
+
+    files.erase(it);
+    removeKeyDirectoryIfExists(key, cache_lock);
+}
+
 static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
@@ -169,7 +196,7 @@ FileCache::FileSegmentCell * FileCache::getCell(
     if (it == files.end())
         return nullptr;
 
-    auto & offsets = it->second;
+    auto & offsets = it->second.file_segments_by_offset;
     auto cell_it = offsets.find(offset);
     if (cell_it == offsets.end())
         return nullptr;
@@ -187,11 +214,10 @@ FileSegments FileCache::getImpl(
     if (it == files.end())
         return {};
 
-    const auto & file_segments = it->second;
+    const auto & file_segments = it->second.file_segments_by_offset;
     if (file_segments.empty())
     {
-        files.erase(key);
-        removeKeyDirectoryIfExists(key, cache_lock);
+        removeEmptyKey(key, cache_lock);
         return {};
     }
 
@@ -379,7 +405,12 @@ void FileCache::fillHolesWithEmptyFileSegments(
     }
 }
 
-FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+FileSegmentsHolder FileCache::getOrSet(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    const CreateFileSegmentSettings & settings,
+    OnKeyEvictionFunc && on_key_eviction_func_)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -402,6 +433,10 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     {
         fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
     }
+
+    auto & on_key_eviction_func = files[key].on_key_eviction_func;
+    if (!on_key_eviction_func)
+        on_key_eviction_func = std::move(on_key_eviction_func_);
 
     assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
@@ -441,8 +476,11 @@ FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
 }
 
 FileCache::FileSegmentCell * FileCache::addCell(
-    const Key & key, size_t offset, size_t size,
-    FileSegment::State state, const CreateFileSegmentSettings & settings,
+    const Key & key,
+    size_t offset,
+    size_t size,
+    FileSegment::State state,
+    const CreateFileSegmentSettings & settings,
     std::lock_guard<std::mutex> & cache_lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
@@ -450,23 +488,36 @@ FileCache::FileSegmentCell * FileCache::addCell(
     if (!size)
         return nullptr; /// Empty files are not cached.
 
-    if (files[key].contains(offset))
+    auto & offsets = files[key].file_segments_by_offset;
+
+    if (offsets.empty())
+    {
+        auto key_path = getPathInLocalCache(key);
+
+        if (!fs::exists(key_path))
+            fs::create_directories(key_path);
+    }
+    else if (offsets.contains(offset))
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cache cell already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             key.toString(), offset, size, dumpStructureUnlocked(key, cache_lock));
+    }
 
     auto skip_or_download = [&]() -> FileSegmentPtr
     {
         FileSegment::State result_state = state;
-        if (state == FileSegment::State::EMPTY && enable_cache_hits_threshold)
+
+        if (enable_cache_hits_threshold && state == FileSegment::State::EMPTY)
         {
-            auto record = stash_records.find({key, offset});
+            AccessKeyAndOffset record_key{key, offset};
+            auto record = stash_records.find(record_key);
 
             if (record == stash_records.end())
             {
                 auto priority_iter = stash_priority->add(key, offset, 0, cache_lock);
-                stash_records.insert({{key, offset}, priority_iter});
+                stash_records.insert({record_key, priority_iter});
 
                 if (stash_priority->getElementsNum(cache_lock) > max_stash_element_size)
                 {
@@ -494,22 +545,15 @@ FileCache::FileSegmentCell * FileCache::addCell(
     };
 
     FileSegmentCell cell(skip_or_download(), this, cache_lock);
-    auto & offsets = files[key];
-
-    if (offsets.empty())
-    {
-        auto key_path = getPathInLocalCache(key);
-
-        if (!fs::exists(key_path))
-            fs::create_directories(key_path);
-    }
 
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
     if (!inserted)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Failed to insert into cache key: `{}`, offset: {}, size: {}",
             key.toString(), offset, size);
+    }
 
     return &(it->second);
 }
@@ -817,7 +861,7 @@ void FileCache::removeIfExists(const Key & key)
     if (it == files.end())
         return;
 
-    auto & offsets = it->second;
+    auto & offsets = it->second.file_segments_by_offset;
 
     std::vector<FileSegmentCell *> to_remove;
     to_remove.reserve(offsets.size());
@@ -849,8 +893,7 @@ void FileCache::removeIfExists(const Key & key)
 
     if (!some_cells_were_skipped)
     {
-        files.erase(key);
-        removeKeyDirectoryIfExists(key, cache_lock);
+        removeEmptyKey(key, cache_lock);
     }
 }
 
@@ -931,7 +974,7 @@ void FileCache::remove(
         cache_file_path = cell->file_segment->getPathInLocalCache();
     }
 
-    auto & offsets = files[key];
+    auto & offsets = files[key].file_segments_by_offset;
     offsets.erase(offset);
 
     if (fs::exists(cache_file_path))
@@ -942,8 +985,7 @@ void FileCache::remove(
 
             if (is_initialized && offsets.empty())
             {
-                files.erase(key);
-                removeKeyDirectoryIfExists(key, cache_lock);
+                removeEmptyKey(key, cache_lock);
             }
         }
         catch (...)
@@ -1117,9 +1159,9 @@ FileSegments FileCache::getSnapshot() const
 
     FileSegments file_segments;
 
-    for (const auto & [key, cells_by_offset] : files)
+    for (const auto & [key, key_info] : files)
     {
-        for (const auto & [offset, cell] : cells_by_offset)
+        for (const auto & [offset, cell] : key_info.file_segments_by_offset)
             file_segments.push_back(FileSegment::getSnapshot(cell.file_segment, cache_lock));
     }
     return file_segments;
@@ -1131,7 +1173,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
     std::vector<String> cache_paths;
 
-    const auto & cells_by_offset = files[key];
+    const auto & cells_by_offset = files[key].file_segments_by_offset;
 
     for (const auto & [offset, cell] : cells_by_offset)
     {
@@ -1212,7 +1254,7 @@ String FileCache::dumpStructure(const Key & key)
 String FileCache::dumpStructureUnlocked(const Key & key, std::lock_guard<std::mutex> &)
 {
     WriteBufferFromOwnString result;
-    const auto & cells_by_offset = files[key];
+    const auto & cells_by_offset = files[key].file_segments_by_offset;
 
     for (const auto & [offset, cell] : cells_by_offset)
         result << cell.file_segment->getInfoForLog() << "\n";
@@ -1238,14 +1280,16 @@ void FileCache::assertCacheCellsCorrectness(
 
 void FileCache::assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock)
 {
-    assertCacheCellsCorrectness(files[key], cache_lock);
+    auto it = files.find(key);
+    if (it != files.end())
+        assertCacheCellsCorrectness(it->second.file_segments_by_offset, cache_lock);
     assertPriorityCorrectness(cache_lock);
 }
 
 void FileCache::assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock)
 {
-    for (const auto & [key, cells_by_offset] : files)
-        assertCacheCellsCorrectness(files[key], cache_lock);
+    for (const auto & [key, key_info] : files)
+        assertCacheCellsCorrectness(key_info.file_segments_by_offset, cache_lock);
     assertPriorityCorrectness(cache_lock);
 }
 

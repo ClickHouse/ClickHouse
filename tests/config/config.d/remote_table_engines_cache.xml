@@ -1,0 +1,6 @@
+<clickhouse>
+    <cache_for_remote_storages_and_table_functions>
+        <path>./table_engines_cache</path>
+        <max_size>1Gi</max_size>
+    </cache_for_remote_storages_and_table_functions>
+</clickhouse>

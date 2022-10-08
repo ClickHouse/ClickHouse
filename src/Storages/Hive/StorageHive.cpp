@@ -20,7 +20,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -35,7 +34,6 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
-#include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -245,24 +243,8 @@ public:
                     throw;
                 }
 
-                /// Use local cache for remote storage if enabled.
-                std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (ExternalDataSourceCache::instance().isInitialized()
-                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
-                {
-                    size_t buff_size = raw_read_buf->internalBuffer().size();
-                    if (buff_size == 0)
-                        buff_size = DBMS_DEFAULT_BUFFER_SIZE;
-                    remote_read_buf = RemoteReadBuffer::create(
-                        getContext(),
-                        std::make_shared<StorageHiveMetadata>(
-                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, current_file->getSize(), current_file->getLastModTs()),
-                        std::move(raw_read_buf),
-                        buff_size,
-                        format == "Parquet" || format == "ORC");
-                }
-                else
-                    remote_read_buf = std::move(raw_read_buf);
+                /// CACHE ADD HERE
+                auto remote_read_buf = std::move(raw_read_buf);
 
                 if (current_file->getFormat() == FileFormat::TEXT)
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);

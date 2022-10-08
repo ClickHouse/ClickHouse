@@ -39,6 +39,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 
 public:
     using Key = DB::FileCacheKey;
+    using OnKeyEvictionFunc = std::function<void()>;
 
     FileCache(const FileCacheSettings & cache_settings_);
 
@@ -59,7 +60,12 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolder getOrSet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        OnKeyEvictionFunc && on_key_eviction_func_);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -93,6 +99,10 @@ public:
     size_t getFileSegmentsNum() const;
 
     static bool isReadOnly();
+
+    /// Check if a key is present in cache.
+    /// Does not give any guarantees - the key can be evicted from cache just after this method returned true.
+    bool hasKey(const Key & key) const;
 
     /**
      * Create a file segment of exactly requested size with EMPTY state.
@@ -202,7 +212,12 @@ private:
     };
 
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
-    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
+    struct KeyInfo
+    {
+        FileSegmentsByOffset file_segments_by_offset;
+        OnKeyEvictionFunc on_key_eviction_func;
+    };
+    using CachedFiles = std::unordered_map<Key, KeyInfo>;
     using FileCacheRecords = std::unordered_map<AccessKeyAndOffset, IFileCachePriority::WriteIterator, KeyAndOffsetHash>;
 
     CachedFiles files;
@@ -262,6 +277,8 @@ private:
     void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
 
     void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
+
+    void removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.

@@ -344,17 +344,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         return nullptr;
     }
 
-    auto reader = std::make_shared<ReadBufferFromS3>(
-        client_ptr,
-        bucket,
-        key,
-        version_id,
-        s3_max_single_read_retries,
-        read_settings,
-        false /*use_external_buffer*/,
-        next_range->first,
-        next_range->second);
-    return reader;
+    return read_buffer_creator(next_range->first, next_range->second);
 }
 
 off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
@@ -363,10 +353,6 @@ off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
     return off;
 }
 
-size_t ReadBufferS3Factory::getFileSize()
-{
-    return object_size;
-}
 }
 
 #endif

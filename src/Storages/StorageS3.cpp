@@ -28,6 +28,7 @@
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
+#include <Storages/wrapWithCachedReadBuffer.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
@@ -403,6 +404,7 @@ Block StorageS3Source::getHeader(Block sample_block, const std::vector<NameAndTy
 }
 
 StorageS3Source::StorageS3Source(
+    const StorageS3::S3Configuration & s3_configuration_,
     const std::vector<NameAndTypePair> & requested_virtual_columns_,
     const String & format_,
     String name_,
@@ -411,25 +413,18 @@ StorageS3Source::StorageS3Source(
     std::optional<FormatSettings> format_settings_,
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
-    UInt64 max_single_read_retries_,
     String compression_hint_,
-    const std::shared_ptr<const Aws::S3::S3Client> & client_,
-    const String & bucket_,
-    const String & version_id_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     const size_t download_thread_num_,
     const std::unordered_map<String, S3::ObjectInfo> & object_infos_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
+    , s3_configuration(s3_configuration_)
     , name(std::move(name_))
-    , bucket(bucket_)
-    , version_id(version_id_)
     , format(format_)
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
-    , max_single_read_retries(max_single_read_retries_)
     , compression_hint(std::move(compression_hint_))
-    , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
     , requested_virtual_columns(requested_virtual_columns_)
@@ -455,7 +450,7 @@ bool StorageS3Source::initialize()
     if (current_key.empty())
         return false;
 
-    file_path = fs::path(bucket) / current_key;
+    file_path = fs::path(s3_configuration.uri.bucket) / current_key;
 
     auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
     read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
@@ -479,20 +474,76 @@ bool StorageS3Source::initialize()
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
 {
+    const auto & bucket = s3_configuration.uri.bucket;
+    const auto & version_id = s3_configuration.uri.version_id;
+    const auto max_single_read_retries = s3_configuration.rw_settings.max_single_read_retries;
+    auto client = s3_configuration.client;
+
     size_t object_size;
-    auto it = object_infos.find(fs::path(bucket) / key);
+    std::string object_path = fs::path(bucket) / key;
+
+    auto it = object_infos.find(object_path);
     if (it != object_infos.end())
         object_size = it->second.size;
     else
         object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false, false);
 
-    auto download_buffer_size = getContext()->getSettings().max_download_buffer_size;
+    const auto & context = getContext();
+    const auto & settings = context->getSettings();
+    const auto & read_settings = context->getReadSettings();
+
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t start_offset, size_t end_offset_non_including)>;
+    ReadBufferCreator read_buffer_creator;
+
+    if (settings.enable_cache_for_s3_table_engine)
+    {
+        auto impl_buffer_creator = [=]() -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, read_settings);
+        };
+
+        auto modification_time_getter = [=, this]() -> std::optional<time_t>
+        {
+            return StorageS3::getLastModificationTime(s3_configuration, key, &object_infos);
+        };
+
+        read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            auto result_buffer = wrapWithCachedReadBuffer(impl_buffer_creator, modification_time_getter, object_path, object_size, read_settings);
+
+            if (!result_buffer)
+                result_buffer = impl_buffer_creator();
+
+            result_buffer->setReadUntilPosition(end_offset_non_including);
+
+            if (start_offset)
+                result_buffer->seek(start_offset, SEEK_SET);
+
+            return result_buffer;
+        };
+    }
+
+    if (!read_buffer_creator)
+    {
+        read_buffer_creator = [=] (size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return std::make_unique<ReadBufferFromS3>(
+                client, bucket, key, version_id, max_single_read_retries, read_settings,
+                /* use_external_buffer */false,
+                /* offset */start_offset,
+                /* read_until_position */end_offset_non_including,
+                /* restricted_seek */false);
+        };
+    }
+
+    auto download_buffer_size = context->getSettings().max_download_buffer_size;
     const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
     const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+
     if (!use_parallel_download || object_too_small)
     {
         LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
-        return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, getContext()->getReadSettings());
+        return read_buffer_creator(0, object_size);
     }
 
     assert(object_size > 0);
@@ -504,9 +555,13 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, version_id, download_buffer_size, object_size, max_single_read_retries, getContext()->getReadSettings());
+        std::move(read_buffer_creator),
+        /* filename */object_path,
+        /* range_step */download_buffer_size,
+        object_size);
+
     LOG_TRACE(
-        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}.", download_thread_num, object_size, download_buffer_size);
+        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}", download_thread_num, object_size, download_buffer_size);
 
     return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
 }
@@ -933,6 +988,7 @@ Pipe StorageS3::read(
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
+            s3_configuration,
             requested_virtual_columns,
             format_name,
             getName(),
@@ -941,11 +997,7 @@ Pipe StorageS3::read(
             format_settings,
             columns_description,
             max_block_size,
-            s3_configuration.rw_settings.max_single_read_retries,
             compression_method,
-            s3_configuration.client,
-            s3_configuration.uri.bucket,
-            s3_configuration.uri.version_id,
             iterator_wrapper,
             max_download_threads,
             object_infos));
@@ -1090,6 +1142,10 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     auto headers = upd.auth_settings.headers;
     if (!upd.headers_from_ast.empty())
         headers.insert(headers.end(), upd.headers_from_ast.begin(), upd.headers_from_ast.end());
+
+    std::cerr << "env: " << upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)) << "\n";
+    std::cerr << "env1: " << (upd.auth_settings.use_environment_credentials == std::nullopt) << "\n";
+    std::cerr << "env2: " << ctx->getConfigRef().getBool("s3.use_environment_credentials", false) << "\n";
 
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
@@ -1362,6 +1418,30 @@ SchemaCache & StorageS3::getSchemaCache(const ContextPtr & ctx)
     return schema_cache;
 }
 
+std::optional<time_t> StorageS3::getLastModificationTime(
+    const S3Configuration & s3_configuration, const String & key, std::unordered_map<String, S3::ObjectInfo> * object_infos)
+{
+    String path = fs::path(s3_configuration.uri.bucket) / key;
+    S3::ObjectInfo info;
+    /// Check if we already have information about this object.
+    /// If no, request it and remember for possible future usage.
+    if (object_infos && object_infos->contains(path))
+        info = (*object_infos)[path];
+    else
+    {
+        /// Note that in case of exception in getObjectInfo returned info will be empty,
+        /// but schema cache will handle this case and won't return columns from cache
+        /// because we can't say that it's valid without last modification time.
+        info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, false, false);
+        if (object_infos)
+            (*object_infos)[path] = info;
+    }
+
+    if (info.last_modification_time)
+        return info.last_modification_time;
+    return std::nullopt;
+}
+
 std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
     const Strings::const_iterator & begin,
     const Strings::const_iterator & end,
@@ -1377,24 +1457,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
         String path = fs::path(s3_configuration.uri.bucket) / *it;
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
-            S3::ObjectInfo info;
-            /// Check if we already have information about this object.
-            /// If no, request it and remember for possible future usage.
-            if (object_infos && object_infos->contains(path))
-                info = (*object_infos)[path];
-            else
-            {
-                /// Note that in case of exception in getObjectInfo returned info will be empty,
-                /// but schema cache will handle this case and won't return columns from cache
-                /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false, false);
-                if (object_infos)
-                    (*object_infos)[path] = info;
-            }
-
-            if (info.last_modification_time)
-                return info.last_modification_time;
-            return std::nullopt;
+            return StorageS3::getLastModificationTime(s3_configuration, *it, object_infos);
         };
 
         String source = fs::path(s3_configuration.uri.uri.getHost() + std::to_string(s3_configuration.uri.uri.getPort())) / path;

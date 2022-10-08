@@ -93,24 +93,18 @@ private:
 class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
 public:
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t, size_t)>;
+
     explicit ReadBufferS3Factory(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
-        const String & bucket_,
-        const String & key_,
-        const String & version_id_,
+        ReadBufferCreator && read_buffer_creator_,
+        const std::string & filename_,
         size_t range_step_,
-        size_t object_size_,
-        UInt64 s3_max_single_read_retries_,
-        const ReadSettings & read_settings_)
-        : client_ptr(client_ptr_)
-        , bucket(bucket_)
-        , key(key_)
-        , version_id(version_id_)
-        , read_settings(read_settings_)
+        size_t object_size_)
+        : read_buffer_creator(std::move(read_buffer_creator_))
+        , filename(filename_)
         , range_generator(object_size_, range_step_)
         , range_step(range_step_)
         , object_size(object_size_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
     {
         assert(range_step > 0);
         assert(range_step < object_size);
@@ -120,22 +114,17 @@ public:
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    size_t getFileSize() override;
+    size_t getFileSize() override { return object_size; } /// Fixme: make this method const?
 
-    String getFileName() const override { return bucket + "/" + key; }
+    String getFileName() const override { return filename; }
 
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
-    const String bucket;
-    const String key;
-    const String version_id;
-    ReadSettings read_settings;
+    ReadBufferCreator read_buffer_creator;
+    const std::string filename;
 
     RangeGenerator range_generator;
     size_t range_step;
     size_t object_size;
-
-    UInt64 s3_max_single_read_retries;
 };
 
 }
