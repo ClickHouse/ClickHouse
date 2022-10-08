@@ -34,6 +34,12 @@
             <port>9001</port>
             <description>native protocol endpoint (tcp)</description>
         </tcp_endpoint>
+        <tcp_proxy>
+            <type>proxy1</type>
+            <impl>tcp</impl>
+            <port>9100</port>
+            <description>native protocol with PROXYv1 (tcp_proxy)</description>
+        </tcp_proxy>
         <http>
             <type>http</type>
             <port>8123</port>
