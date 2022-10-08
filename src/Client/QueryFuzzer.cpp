@@ -23,7 +23,6 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/IAST_fwd.h"
 #include <Core/Types.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
