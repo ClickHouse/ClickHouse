@@ -110,7 +110,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     else if (ParserKeyword("FALSE").ignore(pos, expected))
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     else if (ParserKeyword("DEFAULT").ignore(pos, expected))
-        value = std::make_shared<ASTLiteral>(Field("DEFAULT"));
+        value = std::make_shared<ASTLiteral>(Field());
     else if (!value_p.parse(pos, value, expected))
         return false;
 
