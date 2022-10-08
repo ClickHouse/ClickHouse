@@ -1318,7 +1318,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     std::queue<std::vector<std::pair<String, DiskPtr>>> parts_queue;
     for (auto & [disk_name, disk_parts] : disk_part_map)
     {
-        LOG_INFO(log, "Found {} parts for disk '{}' to load", disk_name, disk_parts.size());
+        LOG_INFO(log, "Found {} parts for disk '{}' to load", disk_parts.size(), disk_name);
 
         if (disk_parts.empty())
             continue;
