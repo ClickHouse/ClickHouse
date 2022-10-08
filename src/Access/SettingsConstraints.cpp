@@ -118,6 +118,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field
     {
+        /// `Default` can't be cast to other types, so it should be checked separately
+        String setting_value;
+        if (x.tryGet(setting_value) && setting_value == "DEFAULT")
+            return {};
         cannot_cast = false;
         if (reaction == THROW_ON_VIOLATION)
             return Settings::castValueUtil(setting_name, x);
