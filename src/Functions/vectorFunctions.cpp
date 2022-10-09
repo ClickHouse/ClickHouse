@@ -415,6 +415,108 @@ public:
     }
 };
 
+template <typename Impl>
+class FunctionDateOrDateTimeOperationTupleOfIntervals : public ITupleFunction
+{
+public:
+    static constexpr auto name = Impl::name;
+
+    explicit FunctionDateOrDateTimeOperationTupleOfIntervals(ContextPtr context_) : ITupleFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_)
+    {
+        return std::make_shared<FunctionDateOrDateTimeOperationTupleOfIntervals>(context_);
+    }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+                throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
+                    arguments[0].type->getName(), getName()};
+
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+
+        if (!cur_tuple)
+            throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of second argument of function {}. Should be a tuple",
+                    arguments[0].type->getName(), getName()};
+
+        const auto & cur_types = cur_tuple->getElements();
+
+        Columns cur_elements;
+        if (arguments[1].column)
+            cur_elements = getTupleElements(*arguments[1].column);
+
+        size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return arguments[0].type;
+
+        auto plus = FunctionFactory::instance().get(Impl::func_name, context);
+        DataTypePtr res_type = arguments[0].type;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            try
+            {
+                ColumnWithTypeAndName left{res_type, {}};
+                ColumnWithTypeAndName right{cur_elements.empty() ? nullptr : cur_elements[i], cur_types[i], {}};
+                auto plus_elem = plus->build({left, right});
+                res_type = plus_elem->getResultType();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("While executing function {} for tuple element {}", getName(), i);
+                throw;
+            }
+        }
+
+        return res_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+        const auto & cur_types = cur_tuple->getElements();
+        auto cur_elements = getTupleElements(*arguments[1].column);
+
+        size_t tuple_size = cur_elements.size();
+        if (tuple_size == 0)
+            return arguments[0].column;
+
+        auto plus = FunctionFactory::instance().get(Impl::func_name, context);
+        ColumnWithTypeAndName res;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            ColumnWithTypeAndName column{cur_elements[i], cur_types[i], {}};
+            auto elem_plus = plus->build(ColumnsWithTypeAndName{i == 0 ? arguments[0] : res, column});
+            auto res_type = elem_plus->getResultType();
+            res.column = elem_plus->execute({i == 0 ? arguments[0] : res, column}, res_type, input_rows_count);
+            res.type = res_type;
+        }
+
+        return res.column;
+    }
+};
+
+struct AddTupleOfIntervalsImpl
+{
+    static constexpr auto name = "addTupleOfIntervals";
+    static constexpr auto func_name = "plus";
+};
+
+struct SubtractTupleOfIntervalsImpl
+{
+    static constexpr auto name = "subtractTupleOfIntervals";
+    static constexpr auto func_name = "minus";
+};
+
+using FunctionAddTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfIntervals<AddTupleOfIntervalsImpl>;
+
+using FunctionSubtractTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfIntervals<SubtractTupleOfIntervalsImpl>;
+
 /// this is for convenient usage in LNormalize
 template <class FuncLabel>
 class FunctionLNorm : public ITupleFunction {};
@@ -1281,6 +1383,9 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleNegate>();
+
+    factory.registerFunction<FunctionAddTupleOfIntervals>();
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>();
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
