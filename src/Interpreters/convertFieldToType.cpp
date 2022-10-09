@@ -112,15 +112,16 @@ Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> &
 template <typename From, typename T>
 Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    From dValue = from.get<From>();
-    if (!type.canStoreWhole(dValue))
+    From value = from.get<From>();
+    if (!type.canStoreWhole(value))
         throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    String sValue = convertFieldToString(from);
-    int fromScale = sValue.length()- sValue.find('.') - 1;
+    //String sValue = convertFieldToString(from);
+    //int fromScale = sValue.length()- sValue.find('.') - 1;
+    UInt32 scale = type.getScale();
 
-    auto scaledValue = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(dValue, fromScale);
-    return DecimalField<T>(scaledValue, fromScale);
+    auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(value, scale);
+    return DecimalField<T>(scaled_value, scale);
 }
 
 template <typename To>
