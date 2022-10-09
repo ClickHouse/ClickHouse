@@ -43,7 +43,6 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionWyHash64>();
 
 
-#if USE_BLAKE3
     factory.registerFunction<FunctionBLAKE3>(
     {
         R"(
@@ -53,10 +52,9 @@ The function is rather fast and shows approximately two times faster performance
 It returns a BLAKE3 hash as a byte array with type FixedString(32).
 )",
         Documentation::Examples{
-            {"hash", "SELECT hex(blake3('ABC'))"}},
+            {"hash", "SELECT hex(BLAKE3('ABC'))"}},
         Documentation::Categories{"Hash"}
     },
     FunctionFactory::CaseSensitive);
-#endif
 }
 }
