@@ -1334,22 +1334,23 @@ private:
     public:
         struct Node
         {
-            Node(const MergeTreePartInfo & info_, const DiskPtr & disk_)
-                :  info(info_), disk(disk_)
+            Node(const MergeTreePartInfo & info_, const String & name_, const DiskPtr & disk_)
+                : info(info_), name(name_), disk(disk_)
             {
             }
 
-            MergeTreePartInfo info;
-            DiskPtr disk;
+            const MergeTreePartInfo info;
+            const String name;
+            const DiskPtr disk;
 
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
         };
 
         using NodePtr = std::shared_ptr<Node>;
-        using PartInfoWithDisk = std::pair<MergeTreePartInfo, DiskPtr>;
+        using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
 
-        static PartLoadingTree build(std::vector<PartInfoWithDisk> nodes);
-        void add(const MergeTreePartInfo & info, const DiskPtr & disk);
+        static PartLoadingTree build(std::vector<PartLoadingInfo> nodes);
+        void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
         const std::unordered_map<String, NodePtr> & getRoots() const { return root_by_partition; }
 
     private:
