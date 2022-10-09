@@ -108,7 +108,7 @@ void UserDefinedSQLObjectsLoaderFromDisk::loadObjectsImpl()
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
     createDirectory();
 
-    std::unordered_map<String, ASTPtr> function_names_and_queries;
+    std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
@@ -129,10 +129,10 @@ void UserDefinedSQLObjectsLoaderFromDisk::loadObjectsImpl()
 
         ASTPtr ast = tryLoadObject(UserDefinedSQLObjectType::Function, function_name, dir_path + it.name(), /* check_file_exists= */ false);
         if (ast)
-            function_names_and_queries[function_name] = ast;
+            function_names_and_queries.emplace_back(function_name, ast);
     }
 
-    UserDefinedSQLFunctionFactory::instance().setAllFunctions(std::move(function_names_and_queries));
+    UserDefinedSQLFunctionFactory::instance().setAllFunctions(function_names_and_queries);
     objects_loaded = true;
 
     LOG_DEBUG(log, "User defined objects loaded");

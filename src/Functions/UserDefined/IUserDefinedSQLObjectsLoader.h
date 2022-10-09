@@ -22,6 +22,7 @@ public:
 
     /// Whether this loader can replicate SQL objects to another node.
     virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Loads all objects and if `start_watching==true` also starts watching them and reloading those which are changed.
     /// If objects are already loaded the function doesn't load them again.

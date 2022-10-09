@@ -352,13 +352,13 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooK
     if (force_refresh_all)
     {
         /// force_refresh_all=true means we read & parse all SQL objects from ZooKeeper.
-        std::unordered_map<String, ASTPtr> function_names_and_asts;
+        std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
         for (const auto & function_name : function_names)
         {
             if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::Function, function_name))
-                function_names_and_asts[function_name] = ast;
+                function_names_and_asts.emplace_back(function_name, ast);
         }
-        factory.setAllFunctions(std::move(function_names_and_asts));
+        factory.setAllFunctions(function_names_and_asts);
     }
     else
     {

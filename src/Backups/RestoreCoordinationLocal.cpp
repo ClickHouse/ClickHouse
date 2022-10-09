@@ -42,4 +42,9 @@ bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
     return true;
 }
 
+bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserDefinedSQLObjectType)
+{
+    return true;
+}
+
 }

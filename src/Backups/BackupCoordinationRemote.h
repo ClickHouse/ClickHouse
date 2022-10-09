@@ -3,6 +3,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
+#include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationStageSync.h>
 
 
@@ -43,6 +44,9 @@ public:
     void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) override;
     Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const override;
 
+    void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path) override;
+    Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const override;
+
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
 
@@ -63,6 +67,7 @@ private:
     void removeAllNodes();
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
+    void prepareReplicatedSQLObjects() const;
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
@@ -74,6 +79,7 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects;
 };
 
 }

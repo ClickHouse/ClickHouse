@@ -1,14 +1,16 @@
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 
 
@@ -231,13 +233,39 @@ bool UserDefinedSQLFunctionFactory::empty() const
     return function_name_to_create_query_map.empty();
 }
 
-void UserDefinedSQLFunctionFactory::setAllFunctions(std::unordered_map<String, ASTPtr> && new_functions)
+void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const
 {
+    backupUserDefinedSQLObjects(backup_entries_collector, data_path_in_backup, UserDefinedSQLObjectType::Function, getAllFunctions());
+}
+
+void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
+{
+    auto restored_functions = restoreUserDefinedSQLObjects(restorer, data_path_in_backup, UserDefinedSQLObjectType::Function);
+    const auto & restore_settings = restorer.getRestoreSettings();
+    bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
+    bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
+    auto context = restorer.getContext();
+    for (const auto & [function_name, create_function_query] : restored_functions)
+        registerFunction(context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+}
+
+void UserDefinedSQLFunctionFactory::setAllFunctions(const std::vector<std::pair<String, ASTPtr>> & new_functions)
+{
+    std::unordered_map<String, ASTPtr> normalized_functions;
     for (auto & [function_name, create_query] : new_functions)
-        create_query = normalizeCreateFunctionQuery(*create_query);
+        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query);
 
     std::lock_guard lock(mutex);
-    function_name_to_create_query_map = std::move(new_functions);
+    function_name_to_create_query_map = std::move(normalized_functions);
+}
+
+std::vector<std::pair<String, ASTPtr>> UserDefinedSQLFunctionFactory::getAllFunctions() const
+{
+    std::lock_guard lock{mutex};
+    std::vector<std::pair<String, ASTPtr>> all_functions;
+    all_functions.reserve(function_name_to_create_query_map.size());
+    std::copy(function_name_to_create_query_map.begin(), function_name_to_create_query_map.end(), std::back_inserter(all_functions));
+    return all_functions;
 }
 
 void UserDefinedSQLFunctionFactory::setFunction(const String & function_name, const IAST & create_function_query)

@@ -19,10 +19,13 @@ public:
     ~UserDefinedSQLObjectsLoaderFromZooKeeper() override;
 
     bool isReplicated() const override { return true; }
+    String getReplicationID() const override { return zookeeper_path; }
+
     void loadObjects(bool ignore_network_errors, bool start_watching) override;
     void stopWatching() override;
     void reloadObjects() override;
     void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) override;
+
     bool storeObject(UserDefinedSQLObjectType object_type, const String & object_name, const IAST & create_object_query, bool throw_if_exists, bool replace_if_exists, const Settings & settings) override;
     bool removeObject(UserDefinedSQLObjectType object_type, const String & object_name, bool throw_if_not_exists) override;
 
