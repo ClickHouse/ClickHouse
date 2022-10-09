@@ -709,6 +709,41 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
+    getFunctionForTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        bool first_is_date_or_datetime = isDate(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDate(type1) || isDateTime(type1) || isDateTime64(type1);
+
+        /// Exactly one argument must be Date or DateTime
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
+            return {};
+
+        if (!isTuple(type0) && !isTuple(type1))
+            return {};
+
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        /// We construct another function and call it.
+        if constexpr (!is_plus && !is_minus)
+            return {};
+
+        if (isTuple(type0) && second_is_date_or_datetime && is_minus)
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of Tuple type cannot be first",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        std::string function_name;
+        if (is_plus)
+        {
+            function_name = "addTupleOfIntervals";
+        }
+        else if (is_minus)
+        {
+            function_name = "subtractTupleOfIntervals";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
+    static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
         if (!isTuple(type0) || !isTuple(type1))
@@ -900,6 +935,20 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// Change interval argument type to its representation
         new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+        auto function = function_builder->build(new_arguments);
+
+        return function->execute(new_arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    {
+        ColumnsWithTypeAndName new_arguments = arguments;
+
+       /// Tuple argument must be second.
+        if (isTuple(arguments[0].type))
+            std::swap(new_arguments[0], new_arguments[1]);
 
         auto function = function_builder->build(new_arguments);
 
@@ -1116,6 +1165,22 @@ public:
 
             for (size_t i = 0; i < 2; ++i)
                 new_arguments[i].type = arguments[i];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        if (auto function_builder = getFunctionForTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Tuple argument must be second.
+            if (isTuple(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
 
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
@@ -1551,6 +1616,12 @@ public:
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        if (auto function_builder = getFunctionForTupleOfIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
