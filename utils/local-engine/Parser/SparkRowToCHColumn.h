@@ -8,6 +8,7 @@
 #include <Parser/CHColumnToSparkRow.h>
 #include <base/StringRef.h>
 #include <Common/JNIUtils.h>
+#include "base/types.h"
 
 namespace local_engine
 {
@@ -40,6 +41,7 @@ struct SparkRowToCHColumnHelper
     unique_ptr<vector<MutableColumnPtr>> cols;
     unique_ptr<vector<DataTypePtr>> typePtrs;
     shared_ptr<Block> header;
+    UInt64 rows = 0;
 
     void resetWrittenColumns()
     {
