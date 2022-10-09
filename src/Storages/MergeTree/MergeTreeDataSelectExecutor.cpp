@@ -176,6 +176,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
                 ErrorCodes::PROJECTION_NOT_USED);
 
+        if (settings.force_optimize_projection && settings.aggregate_functions_null_for_empty)
+            throw Exception(
+                "Projections cannot be used with 'aggregate_functions_null_for_empty' setting enabled.",
+                ErrorCodes::PROJECTION_NOT_USED);
+
         return plan;
     }
 
