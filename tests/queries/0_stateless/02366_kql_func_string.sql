@@ -140,15 +140,7 @@ print '-- Customers | project url_encode(\'https://www.test.com/hello word\') | 
 Customers | project url_encode('https://www.test.com/hello word') | take 1;
 print '';
 print '-- Customers | project name_abbr = strcat(substring(FirstName,0,3), \' \', substring(LastName,2))';
---Customers | project name_abbr = strcat(substring(FirstName,0,3), ' ', substring(LastName,2))| order by LastName;
-/*
---\N
---Lat en
---Pet ra
---The az
---Ste x
---App 
-*/
+Customers | project name_abbr = strcat(substring(FirstName,0,3), ' ', substring(LastName,2))| order by LastName;
 print '';
 print '-- Customers | project name = strcat(FirstName, \' \', LastName)';
 Customers | project name = strcat(FirstName, ' ', LastName)| order by LastName;
