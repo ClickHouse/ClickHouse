@@ -217,6 +217,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         {
             "print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z')",
             "SELECT if(CAST(position('record1,a,b,c\\nrecord2,x,y,z', '\\n'), 'UInt8'), splitByChar(',', substring('record1,a,b,c\\nrecord2,x,y,z', 1, position('record1,a,b,c\\nrecord2,x,y,z', '\\n') - 1)), splitByChar(',', substring('record1,a,b,c\\nrecord2,x,y,z', 1, length('record1,a,b,c\\nrecord2,x,y,z')))) AS result_multi_record"
+        },
+        {
+            "Customers | project name_abbr = strcat(substring(FirstName,0,3), ' ', substring(LastName,2))| order by LastName",
+            "SELECT concat(if(toInt64(length(FirstName)) = 0, '', substr(FirstName, (((0 % toInt64(length(FirstName))) + toInt64(length(FirstName))) % toInt64(length(FirstName))) + 1, 3)), ' ', if(toInt64(length(LastName)) = 0, '', substr(LastName, (((2 % toInt64(length(LastName))) + toInt64(length(LastName))) % toInt64(length(LastName))) + 1))) AS name_abbr\nFROM Customers\nORDER BY LastName DESC"
         }
 })));   
 
