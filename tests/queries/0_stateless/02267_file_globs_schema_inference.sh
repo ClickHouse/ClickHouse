@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Fast test: Requires JSON
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,4 +25,4 @@ ${CLICKHOUSE_CLIENT} --query="select * from file('${PREFIX}_data*.jsonl') order 
 ${CLICKHOUSE_CLIENT} --query="insert into function file('${PREFIX}_data1.jsonl', 'TSV') select 1 as x;"
 ${CLICKHOUSE_CLIENT} --query="insert into function file('${PREFIX}_data1.jsonl', 'TSV') select [1,2,3] as x;"
 
-${CLICKHOUSE_CLIENT} --query="select * from file('${PREFIX}_data*.jsonl') order by x" 2>&1 | (grep -q "INCORRECT_DATA" || echo "Expected error not found")
+${CLICKHOUSE_CLIENT} --schema_inference_use_cache_for_file=0 --query="select * from file('${PREFIX}_data*.jsonl') order by x" 2>&1 | (grep -q "INCORRECT_DATA" || echo "Expected error not found")
