@@ -24,6 +24,7 @@ print '-- endofmonth()';
 print endofmonth(datetime(2017-01-01 10:10:17));
 print endofmonth(datetime(2017-01-01 10:10:17), -1);
 print endofmonth(datetime(2017-01-01 10:10:17), 1);
+print endofmonth(datetime(2022-09-23));
 print '-- startofweek()';
 print startofweek(datetime(2017-01-01 10:10:17));
 print startofweek(datetime(2017-01-01 10:10:17), -1);
