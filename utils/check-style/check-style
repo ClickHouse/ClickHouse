@@ -87,6 +87,8 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
+
+    ErrorCodes::ErrorCode
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -114,7 +116,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
         grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
     } | while read file; do
-        grep -P "$extern_type::[$allowed_chars]+" $file | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
+        grep -P "$extern_type::[$allowed_chars]+" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
             if ! grep -q "extern const $type_of_extern $val" $file; then
                 if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
                     echo "$extern_type::$val is used in file $file but not defined"
