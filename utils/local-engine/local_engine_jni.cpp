@@ -58,7 +58,7 @@ std::string jstring2string(JNIEnv * env, jstring jStr)
 
         jclass string_class = env->GetObjectClass(jStr);
         jmethodID get_bytes = env->GetMethodID(string_class, "getBytes", "(Ljava/lang/String;)[B");
-        jbyteArray string_jbytes = static_cast<jbyteArray>(env->CallObjectMethod(jStr, get_bytes, env->NewStringUTF("UTF-8")));
+        jbyteArray string_jbytes = static_cast<jbyteArray>(local_engine::safeCallObjectMethod(env, jStr, get_bytes, env->NewStringUTF("UTF-8")));
 
         size_t length = static_cast<size_t>(env->GetArrayLength(string_jbytes));
         jbyte * p_bytes = env->GetByteArrayElements(string_jbytes, nullptr);

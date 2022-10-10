@@ -1,8 +1,9 @@
 #include "NativeSplitter.h"
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
+#include "Common/Exception.h"
 #include <Common/JNIUtils.h>
-
+#include <jni/jni_common.h>
 
 namespace local_engine
 {
@@ -120,7 +121,7 @@ bool NativeSplitter::inputHasNext()
 {
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
-    bool next = env->CallBooleanMethod(input, iterator_has_next);
+    bool next = safeCallBooleanMethod(env, input, iterator_has_next);
     if (attached)
     {
         JNIUtils::detachCurrentThread();
@@ -132,7 +133,7 @@ int64_t NativeSplitter::inputNext()
 {
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
-    int64_t result = env->CallLongMethod(input, iterator_next);
+    int64_t result = safeCallLongMethod(env, input, iterator_next);
     if (attached)
     {
         JNIUtils::detachCurrentThread();

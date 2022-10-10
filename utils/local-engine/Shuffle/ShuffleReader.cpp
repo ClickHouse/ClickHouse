@@ -2,6 +2,7 @@
 #include <Common/DebugUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/JNIUtils.h>
+#include <jni/jni_common.h>
 
 using namespace DB;
 
@@ -57,7 +58,7 @@ int ReadBufferFromJavaInputStream::readFromJava()
         buf = static_cast<jbyteArray>(env->NewGlobalRef(local_buf));
         env->DeleteLocalRef(local_buf);
     }
-    jint count = env->CallIntMethod(java_in, ShuffleReader::input_stream_read, buf);
+    jint count = safeCallIntMethod(env, java_in, ShuffleReader::input_stream_read, buf);
     if (count > 0)
     {
         env->GetByteArrayRegion(buf, 0, count, reinterpret_cast<jbyte *>(internal_buffer.begin()));

@@ -1,5 +1,6 @@
 #include "WriteBufferFromJavaOutputStream.h"
 #include <Common/JNIUtils.h>
+#include <jni/jni_common.h>
 
 namespace local_engine
 {
@@ -17,7 +18,7 @@ void WriteBufferFromJavaOutputStream::nextImpl()
     {
         size_t copy_num = std::min(offset() - bytes_write, buffer_size);
         env->SetByteArrayRegion(buffer, 0 , copy_num, reinterpret_cast<const jbyte *>(this->working_buffer.begin() + bytes_write));
-        env->CallVoidMethod(output_stream, output_stream_write, buffer, 0, copy_num);
+        safeCallVoidMethod(env, output_stream, output_stream_write, buffer, 0, copy_num);
         bytes_write += copy_num;
     }
     if (attached)
@@ -42,7 +43,7 @@ void WriteBufferFromJavaOutputStream::finalizeImpl()
     next();
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
-    env->CallVoidMethod(output_stream, output_stream_flush);
+    safeCallVoidMethod(env, output_stream, output_stream_flush);
     if (attached)
     {
         JNIUtils::detachCurrentThread();

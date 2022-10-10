@@ -8,6 +8,7 @@
 #include <Parser/CHColumnToSparkRow.h>
 #include <base/StringRef.h>
 #include <Common/JNIUtils.h>
+#include <jni/jni_common.h>
 
 namespace local_engine
 {
@@ -142,9 +143,9 @@ public:
 
         int attached;
         JNIEnv * env = JNIUtils::getENV(&attached);
-        while (env->CallBooleanMethod(java_iter, spark_row_interator_hasNext))
+        while (safeCallBooleanMethod(env, java_iter, spark_row_interator_hasNext))
         {
-            jobject rows_buf = env->CallObjectMethod(java_iter, spark_row_iterator_nextBatch);
+            jobject rows_buf = safeCallObjectMethod(env, java_iter, spark_row_iterator_nextBatch);
             auto * rows_buf_ptr = static_cast<char*>(env->GetDirectBufferAddress(rows_buf));
             int len = *(reinterpret_cast<int*>(rows_buf_ptr));
 

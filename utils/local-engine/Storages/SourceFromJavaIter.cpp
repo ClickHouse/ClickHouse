@@ -3,6 +3,7 @@
 #include <Common/DebugUtils.h>
 #include <Common/JNIUtils.h>
 #include <Columns/ColumnNullable.h>
+#include <jni/jni_common.h>
 
 namespace local_engine
 {
@@ -14,11 +15,11 @@ DB::Chunk SourceFromJavaIter::generate()
 {
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
-    jboolean has_next = env->CallBooleanMethod(java_iter,serialized_record_batch_iterator_hasNext);
+    jboolean has_next = safeCallBooleanMethod(env, java_iter,serialized_record_batch_iterator_hasNext);
     DB::Chunk result;
     if (has_next)
     {
-        jbyteArray block = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, serialized_record_batch_iterator_next));
+        jbyteArray block = static_cast<jbyteArray>(safeCallObjectMethod(env, java_iter, serialized_record_batch_iterator_next));
         DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
         if (data->rows() > 0)
         {
