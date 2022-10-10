@@ -1088,12 +1088,6 @@ TableNamesSet DatabaseCatalog::tryRemoveLoadingDependenciesUnlocked(const Qualif
     TableNamesSet & dependent = it->second.dependent_database_objects;
     if (!dependent.empty())
     {
-        if (check_dependencies && !is_drop_database)
-            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            removing_table, fmt::join(dependent, ", "));
-
-        /// For DROP DATABASE we should ignore dependent tables from the same database.
-        /// TODO unload tables in reverse topological order and remove this code
         if (check_dependencies)
             checkTableCanBeRemovedOrRenamedImpl(dependent, removing_table, is_drop_database);
 
