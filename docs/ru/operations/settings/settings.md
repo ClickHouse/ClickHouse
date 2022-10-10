@@ -3258,12 +3258,6 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `64`.
 
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Задает время в секундах, после которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) удаляется.
-
-Значение по умолчанию: `5`.
-
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
 Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.

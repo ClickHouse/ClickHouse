@@ -219,7 +219,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
