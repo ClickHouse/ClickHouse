@@ -10,6 +10,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
+#include "Common/NaNUtils.h"
 #include <Common/assert_cast.h>
 #include <Core/Types.h>
 
@@ -64,7 +65,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto f_stat = data(place).getFStatistic();
-        if (!std::isfinite(f_stat)) {
+        if (std::isinf(f_stat) || isNaN(f_stat)) {
             throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
         }
         auto p_value = data(place).getPValue();

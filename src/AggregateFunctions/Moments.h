@@ -6,6 +6,7 @@
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
+#include <numeric>
 
 
 namespace DB
@@ -14,6 +15,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -480,26 +482,23 @@ struct ZTestMoments
 template <typename T>
 struct AnalysisOfVarianceMoments
 {
-    size_t n{0};
     std::vector<T> xs1{};
     std::vector<T> xs2{};
-    std::vector<T> ns{};
+    std::vector<size_t> ns{};
 
-    void resizeIfNeeded(size_t group_number)
+    void resizeIfNeeded(size_t possible_size)
     {
-        auto possible_size = ++group_number;
         if (xs1.size() >= possible_size)
             return;
 
-        xs1.resize(possible_size);
-        xs2.resize(possible_size);
-        ns.resize(possible_size);
+        xs1.resize(possible_size, 0.0);
+        xs2.resize(possible_size, 0.0);
+        ns.resize(possible_size, 0);
     }
 
     void add(T value, size_t group)
     {
-        resizeIfNeeded(group);
-        ++n;
+        resizeIfNeeded(group + 1);
         xs1[group] += value;
         xs2[group] += value * value;
         ns[group] += 1;
@@ -514,32 +513,36 @@ struct AnalysisOfVarianceMoments
             xs2[i] += rhs.xs2[i];
             ns[i] += rhs.ns[i];
         }
-        n += rhs.n;
     }
 
     void write(WriteBuffer & buf) const
     {
-        writeIntBinary(n,  buf);
         writeVectorBinary(xs1, buf);
-        writeVectorBinary(xs2,  buf);
+        writeVectorBinary(xs2, buf);
         writeVectorBinary(ns, buf);
     }
 
     void read(ReadBuffer & buf)
     {
-        readIntBinary(n, buf);
         readVectorBinary(xs1, buf);
-        readVectorBinary(xs2,  buf);
+        readVectorBinary(xs2, buf);
         readVectorBinary(ns, buf);
     }
 
     Float64 getMeanAll() const
     {
-        return std::accumulate(xs1.begin(), xs1.end(), 0) / n;
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+        if (n == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
+
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
     }
 
     Float64 getMeanGroup(size_t group) const
     {
+        if (ns[group] == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
+
         return xs1[group] / ns[group];
     }
 
@@ -547,7 +550,8 @@ struct AnalysisOfVarianceMoments
     {
         Float64 res = 0;
         auto mean = getMeanAll();
-        for (size_t i = 0; i < xs1.size(); i++)
+
+        for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
             res += ns[i] * (group_mean - mean) * (group_mean - mean);
@@ -558,7 +562,7 @@ struct AnalysisOfVarianceMoments
     Float64 getWithinGroupsVariation() const
     {
         Float64 res = 0;
-        for (size_t i = 0; i < xs1.size(); i++)
+        for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
             res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
@@ -569,12 +573,28 @@ struct AnalysisOfVarianceMoments
     Float64 getFStatistic() const
     {
         const auto k = xs1.size();
-        return (getBetweenGroupsVariation() / (k - 1)) / (getWithinGroupsVariation() / (n - k));
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+
+        if (k == 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There should be more than one group to calculate f-statistics");
+
+        if (k == n)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
+
+        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
     }
 
     Float64 getPValue() const
     {
         const auto k = xs1.size();
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+
+        if (k == 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There should be more than one group to calculate f-statistics");
+
+        if (k == n)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
+
         return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), getFStatistic());
     }
 };
