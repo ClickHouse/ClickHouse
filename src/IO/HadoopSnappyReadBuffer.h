@@ -85,7 +85,7 @@ public:
             case Status::NEEDS_MORE_INPUT:
                 return "NEEDS_MORE_INPUT";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(
