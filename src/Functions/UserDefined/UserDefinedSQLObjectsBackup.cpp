@@ -7,6 +7,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
@@ -35,7 +36,7 @@ void backupUserDefinedSQLObjects(
 
     auto context = backup_entries_collector.getContext();
     const auto & loader = context->getUserDefinedSQLObjectsLoader();
-    
+
     if (!loader.isReplicated())
     {
         fs::path data_path_in_backup_fs{data_path_in_backup};

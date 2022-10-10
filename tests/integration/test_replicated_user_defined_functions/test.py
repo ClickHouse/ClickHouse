@@ -1,8 +1,11 @@
 import pytest
 import time
+import os.path
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
@@ -53,6 +56,11 @@ def replace_zookeeper_config(new_config):
     node2.query("SYSTEM RELOAD CONFIG")
 
 
+def revert_zookeeper_config():
+    with open(os.path.join(SCRIPT_DIR, "configs/zookeeper.xml"), "r") as f:
+        replace_zookeeper_config(f.read())
+
+
 def get_active_zk_connections():
     return str(
         node1.exec_in_container(
@@ -76,7 +84,9 @@ def test_create_and_replace():
     node1.query("CREATE FUNCTION f1 AS (x, y) -> x + y")
     assert node1.query("SELECT f1(12, 3)") == "15\n"
     expected_error = "User-defined function 'f1' already exists"
-    assert expected_error in node1.query_and_get_error("CREATE FUNCTION f1 AS (x, y) -> x + 2 * y")
+    assert expected_error in node1.query_and_get_error(
+        "CREATE FUNCTION f1 AS (x, y) -> x + 2 * y"
+    )
     node1.query("CREATE FUNCTION IF NOT EXISTS f1 AS (x, y) -> x + 3 * y")
     assert node1.query("SELECT f1(12, 3)") == "15\n"
     node1.query("CREATE OR REPLACE FUNCTION f1 AS (x, y) -> x + 4 * y")
@@ -95,14 +105,25 @@ def test_drop_if_exists():
 def test_replication():
     node1.query("CREATE FUNCTION f2 AS (x, y) -> x - y")
 
-    assert node1.query("SELECT create_query FROM system.functions WHERE name='f2'") == "CREATE FUNCTION f2 AS (x, y) -> (x - y)\n"
-    assert_eq_with_retry(node2, "SELECT create_query FROM system.functions WHERE name='f2'", "CREATE FUNCTION f2 AS (x, y) -> (x - y)\n")
+    assert (
+        node1.query("SELECT create_query FROM system.functions WHERE name='f2'")
+        == "CREATE FUNCTION f2 AS (x, y) -> (x - y)\n"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT create_query FROM system.functions WHERE name='f2'",
+        "CREATE FUNCTION f2 AS (x, y) -> (x - y)\n",
+    )
     assert node1.query("SELECT f2(12,3)") == "9\n"
     assert node2.query("SELECT f2(12,3)") == "9\n"
 
     node1.query("DROP FUNCTION f2")
-    assert node1.query("SELECT create_query FROM system.functions WHERE name='f2'") == ""
-    assert_eq_with_retry(node2, "SELECT create_query FROM system.functions WHERE name='f2'", "")
+    assert (
+        node1.query("SELECT create_query FROM system.functions WHERE name='f2'") == ""
+    )
+    assert_eq_with_retry(
+        node2, "SELECT create_query FROM system.functions WHERE name='f2'", ""
+    )
 
 
 # UserDefinedSQLObjectsLoaderFromZooKeeper must be able to continue working after reloading ZooKeeper.
@@ -140,7 +161,9 @@ def test_reload_zookeeper():
     assert node2.query(
         "SELECT name FROM system.functions WHERE name IN ['f1', 'f2'] ORDER BY name"
     ) == TSV(["f1", "f2"])
-    assert "ZooKeeper" in node1.query_and_get_error("CREATE FUNCTION f3 AS (x, y) -> x * y")
+    assert "ZooKeeper" in node1.query_and_get_error(
+        "CREATE FUNCTION f3 AS (x, y) -> x * y"
+    )
 
     ## start zoo2, zoo3, users will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
@@ -148,7 +171,9 @@ def test_reload_zookeeper():
     assert node2.query(
         "SELECT name FROM system.functions WHERE name IN ['f1', 'f2', 'f3'] ORDER BY name"
     ) == TSV(["f1", "f2"])
-    assert "ZooKeeper" in node1.query_and_get_error("CREATE FUNCTION f3 AS (x, y) -> x * y")
+    assert "ZooKeeper" in node1.query_and_get_error(
+        "CREATE FUNCTION f3 AS (x, y) -> x * y"
+    )
 
     ## set config to zoo2, server will be normal
     replace_zookeeper_config(
@@ -188,6 +213,10 @@ def test_reload_zookeeper():
     node1.query("DROP FUNCTION f2")
     node1.query("DROP FUNCTION f3")
 
+    ## switch to the original version of zookeeper config
+    cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+    revert_zookeeper_config()
+
 
 # Start without ZooKeeper must be possible, user-defined functions will be loaded after connecting to ZooKeeper.
 def test_start_without_zookeeper():
@@ -198,10 +227,16 @@ def test_start_without_zookeeper():
     cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
     node2.start_clickhouse()
 
-    assert node2.query("SELECT create_query FROM system.functions WHERE name='f1'") == ""
+    assert (
+        node2.query("SELECT create_query FROM system.functions WHERE name='f1'") == ""
+    )
 
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
     wait_zookeeper_node_to_start(["zoo1", "zoo2", "zoo3"])
 
-    assert_eq_with_retry(node2, "SELECT create_query FROM system.functions WHERE name='f1'", "CREATE FUNCTION f1 AS (x, y) -> (x + y)\n")
+    assert_eq_with_retry(
+        node2,
+        "SELECT create_query FROM system.functions WHERE name='f1'",
+        "CREATE FUNCTION f1 AS (x, y) -> (x + y)\n",
+    )
     node1.query("DROP FUNCTION f1")

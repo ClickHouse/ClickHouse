@@ -1,5 +1,7 @@
 #include "Functions/UserDefined/UserDefinedSQLObjectsLoaderFromDisk.h"
+
 #include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
+#include "Functions/UserDefined/UserDefinedSQLObjectType.h"
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/atomicRename.h>
@@ -37,8 +39,22 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    /// Converts a path to an absolute path and append it with a separator.
+    String makeDirectoryPathCanonical(const String & directory_path)
+    {
+        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        if (canonical_directory_path.has_filename())
+            canonical_directory_path += std::filesystem::path::preferred_separator;
+        return canonical_directory_path;
+    }
+}
+
 UserDefinedSQLObjectsLoaderFromDisk::UserDefinedSQLObjectsLoaderFromDisk(const ContextPtr & global_context_, const String & dir_path_)
-    : global_context(global_context_), dir_path{dir_path_}, log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
+    : global_context(global_context_)
+    , dir_path{makeDirectoryPathCanonical(dir_path_)}
+    , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
 {
     createDirectory();
 }

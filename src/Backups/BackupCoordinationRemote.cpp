@@ -1,6 +1,6 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Access/Common/AccessEntityType.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>

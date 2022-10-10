@@ -615,9 +615,13 @@ def test_system_functions():
 
     node1.query("DROP FUNCTION linear_equation")
     node1.query("DROP FUNCTION parity_str")
-    assert_eq_with_retry(node2, "SELECT name FROM system.functions WHERE name='parity_str'", "")
+    assert_eq_with_retry(
+        node2, "SELECT name FROM system.functions WHERE name='parity_str'", ""
+    )
 
-    node1.query(f"RESTORE TABLE system.functions ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query(
+        f"RESTORE TABLE system.functions ON CLUSTER 'cluster' FROM {backup_name}"
+    )
 
     assert node1.query(
         "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
@@ -627,7 +631,11 @@ def test_system_functions():
         [[0, "even"], [1, "odd"], [2, "even"]]
     )
 
-    assert_eq_with_retry(node2, "SELECT name FROM system.functions WHERE name='parity_str'", "parity_str\n")
+    assert_eq_with_retry(
+        node2,
+        "SELECT name FROM system.functions WHERE name='parity_str'",
+        "parity_str\n",
+    )
     assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
         [[0, "even"], [1, "odd"], [2, "even"]]
     )

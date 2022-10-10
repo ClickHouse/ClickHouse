@@ -1,5 +1,7 @@
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsLoaderFromZooKeeper.h>
+
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/formatAST.h>
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int UNKNOWN_FUNCTION;
     extern const int NO_ZOOKEEPER;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -46,7 +49,14 @@ UserDefinedSQLObjectsLoaderFromZooKeeper::UserDefinedSQLObjectsLoaderFromZooKeep
 
 UserDefinedSQLObjectsLoaderFromZooKeeper::~UserDefinedSQLObjectsLoaderFromZooKeeper()
 {
-    SCOPE_EXIT_SAFE(stopWatchingThread());
+    try
+    {
+        stopWatchingThread();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -307,7 +317,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refresh()
 
     if (object_name.empty())
         refreshObjects(zookeeper, /* force_refresh_all= */ false);
-    else 
+    else
         refreshObject(zookeeper, UserDefinedSQLObjectType::Function, object_name);
 }
 
@@ -326,7 +336,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooK
     {
         [[maybe_unused]] bool push_result = watch_queue->push("");
     };
-    
+
     Coordination::Stat stat;
     const auto node_names = zookeeper->getChildrenWatch(zookeeper_path, &stat, watch_entities_list);
 

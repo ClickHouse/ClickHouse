@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -126,7 +127,7 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
 {
     checkCanBeRegistered(context, function_name, *create_function_query);
     create_function_query = normalizeCreateFunctionQuery(*create_function_query);
-    
+
     std::lock_guard lock{mutex};
     auto it = function_name_to_create_query_map.find(function_name);
     if (it != function_name_to_create_query_map.end())

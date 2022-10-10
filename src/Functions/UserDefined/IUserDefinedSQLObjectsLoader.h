@@ -7,11 +7,7 @@ namespace DB
 {
 class IAST;
 struct Settings;
-
-enum class UserDefinedSQLObjectType
-{
-    Function
-};
+enum class UserDefinedSQLObjectType;
 
 /// Interface for a loader of user-defined SQL objects.
 /// Implementations: UserDefinedSQLLoaderFromDisk, UserDefinedSQLLoaderFromZooKeeper
