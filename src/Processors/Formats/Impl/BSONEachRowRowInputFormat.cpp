@@ -122,13 +122,6 @@ void BSONEachRowRowInputFormat::readBSONObject(MutableColumns & columns)
 
             current_column_name.assign(name_ref.data, name_ref.size);
             name_ref = StringRef(current_column_name);
-
-            // if (column_index == UNKNOWN_FIELD)
-            //     skipUnknownField(name_ref);
-            // else if (column_index == NESTED_FIELD)
-            //     readNestedData(name_ref.toString(), columns);
-            // else
-            //     throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
         }
         if (seen_columns[column_index])
             throw Exception(
