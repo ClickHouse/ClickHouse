@@ -20,10 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -113,21 +109,12 @@ protected:
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
-                try
+                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+
+                if (table_lock == nullptr)
                 {
-                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
-                }
-                catch (const Exception & e)
-                {
-                    /** There are case when IStorage::drop was called,
-                    *  but we still own the object.
-                    * Then table will throw exception at attempt to lock it.
-                    * Just skip the table.
-                    */
-                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                        continue;
-                    else
-                        throw;
+                    // Table was dropped while acquiring the lock, skipping table
+                    continue;
                 }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();

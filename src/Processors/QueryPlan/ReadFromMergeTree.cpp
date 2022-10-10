@@ -153,7 +153,6 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
 
         output_stream->sort_description = std::move(sort_description);
-
     }
 }
 
@@ -640,7 +639,7 @@ static void addMergingFinal(
                             sort_description, max_block_size, merging_params.graphite_params, now);
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     };
 
     pipe.addTransform(get_merging_processor());
@@ -1019,28 +1018,38 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> order_optimizer)
+void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
 {
-    if (query_info.projection)
-    {
-        query_info.projection->order_optimizer = order_optimizer;
-    }
-    else
-    {
-        query_info.order_optimizer = order_optimizer;
-    }
-}
+    /// if dirction is not set, use current one
+    if (!direction)
+        direction = getSortDirection();
 
-void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
-{
+    auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     if (query_info.projection)
-    {
         query_info.projection->input_order_info = order_info;
-    }
     else
-    {
         query_info.input_order_info = order_info;
+
+    /// update sort info for output stream
+    SortDescription sort_description;
+    const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+    const Block & header = output_stream->header;
+    const int sort_direction = getSortDirection();
+    for (const auto & column_name : sorting_key_columns)
+    {
+        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+            == header.end())
+            break;
+        sort_description.emplace_back(column_name, sort_direction);
     }
+    if (sort_description.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort description can't be empty when reading in order");
+
+    const size_t used_prefix_of_sorting_key_size = order_info->used_prefix_of_sorting_key_size;
+    if (sort_description.size() > used_prefix_of_sorting_key_size)
+        sort_description.resize(used_prefix_of_sorting_key_size);
+    output_stream->sort_description = std::move(sort_description);
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
@@ -1231,7 +1240,7 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "Skip";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 static const char * readTypeToString(ReadFromMergeTree::ReadType type)
@@ -1246,7 +1255,7 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
             return "InReverseOrder";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const

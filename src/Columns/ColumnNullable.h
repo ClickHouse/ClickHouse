@@ -6,7 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 class Collator;
