@@ -7673,7 +7673,7 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version)
+NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
 {
     NameSet files_not_to_remove;
 
@@ -7686,12 +7686,13 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
     Strings parts_str;
     zookeeper_ptr->tryGetChildren(zero_copy_part_path_prefix, parts_str);
 
-    /// Parsing infos
-    std::vector<MergeTreePartInfo> parts_infos;
+    /// Parsing infos. It's hard to convert info -> string for old-format merge tree
+    /// so storing string as is.
+    std::vector<std::pair<MergeTreePartInfo, std::string>> parts_infos;
     for (const auto & part_str : parts_str)
     {
         MergeTreePartInfo parent_candidate_info = MergeTreePartInfo::fromPartName(part_str, format_version);
-        parts_infos.push_back(parent_candidate_info);
+        parts_infos.emplace_back(parent_candidate_info, part_str);
     }
 
     /// Sort is important. We need to find our closest parent, like:
@@ -7702,7 +7703,7 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
     std::sort(parts_infos.begin(), parts_infos.end());
 
     /// In reverse order to process from bigger to smaller
-    for (const auto & parent_candidate_info : parts_infos | std::views::reverse)
+    for (const auto & [parent_candidate_info, part_candidate_info_str] : parts_infos | std::views::reverse)
     {
         if (parent_candidate_info == part_info)
             continue;
@@ -7710,10 +7711,20 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
         /// We are mutation child of this parent
         if (part_info.isMutationChildOf(parent_candidate_info))
         {
+            LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info_str);
             /// Get hardlinked files
             String files_not_to_remove_str;
-            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / parent_candidate_info.getPartName(), files_not_to_remove_str);
-            boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+            Coordination::Error code;
+            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
+            if (code != Coordination::Error::ZOK)
+                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+
+            if (!files_not_to_remove_str.empty())
+            {
+                boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+                LOG_TRACE(log, "Found files not to remove from parent part {}: [{}]", part_candidate_info_str, fmt::join(files_not_to_remove, ", "));
+            }
+
             break;
         }
     }
@@ -7743,7 +7754,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         if (!files_not_to_remove_str.empty())
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
 
-        auto parent_not_to_remove = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version);
+        auto parent_not_to_remove = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version, logger);
         files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;

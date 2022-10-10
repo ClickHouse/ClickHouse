@@ -116,7 +116,7 @@ private:
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 };
 

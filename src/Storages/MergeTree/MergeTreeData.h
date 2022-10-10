@@ -520,8 +520,12 @@ public:
     size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
-    size_t getMaxPartsCountForPartitionWithState(DataPartState state) const;
-    size_t getMaxPartsCountForPartition() const;
+
+    /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
+    /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
+    std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
+    std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
+
     size_t getMaxInactivePartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
