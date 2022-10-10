@@ -10,4 +10,4 @@ select runningDifference(x) from (select arrayJoin([Null, Null, toDate('1970-1-1
 select '-';
 select runningDifference(x) from (select arrayJoin([Null, Null, toDate32('1900-1-1'), toDate32('1930-5-25'), toDate('1990-9-4'), Null,  toDate32('2279-5-4')]) as x);
 select '-';
-select runningDifference(x) from (select arrayJoin([Null, Null, toDateTime('1970-06-28 23:48:12'), toDateTime('2070-04-12 21:16:41'), Null, Null, toDateTime('2106-02-03 06:38:52')]) as x);
+select runningDifference(x) from (select arrayJoin([Null, Null, toDateTime('1970-06-28 23:48:12', 'Asia/Istanbul'), toDateTime('2070-04-12 21:16:41', 'Asia/Istanbul'), Null, Null, toDateTime('2106-02-03 06:38:52', 'Asia/Istanbul')]) as x);
