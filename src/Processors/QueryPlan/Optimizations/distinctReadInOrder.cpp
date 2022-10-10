@@ -44,6 +44,12 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!read_from_merge_tree)
         return 0;
 
+    /// if reading from merge tree doesn't provide any output order, we can do nothing
+    /// it means that no ordering can provided or supported for a particular sorting key
+    /// for example, tuple() or sipHash(string)
+    if (read_from_merge_tree->getOutputStream().sort_description.empty())
+        return 0;
+
     /// find non-const columns in DISTINCT
     const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
     std::set<std::string_view> non_const_columns;
