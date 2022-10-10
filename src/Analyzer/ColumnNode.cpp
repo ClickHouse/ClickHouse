@@ -16,24 +16,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
-    : IQueryTreeNode(children_size)
-    , column(std::move(column_))
-    , column_source(std::move(column_source_))
-{
-}
-
 ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
-    : IQueryTreeNode(children_size)
+    : IQueryTreeNode(children_size, weak_pointers_size)
     , column(std::move(column_))
-    , column_source(std::move(column_source_))
 {
     children[expression_child_index] = std::move(expression_node_);
+    getSourceWeakPointer() = std::move(column_source_);
+}
+
+ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
+    : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
+{
 }
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
-    auto lock = column_source.lock();
+    auto lock = getSourceWeakPointer().lock();
     if (!lock)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Column {} {} query tree node does not have valid source node",
@@ -45,7 +43,7 @@ QueryTreeNodePtr ColumnNode::getColumnSource() const
 
 QueryTreeNodePtr ColumnNode::getColumnSourceOrNull() const
 {
-    return column_source.lock();
+    return getSourceWeakPointer().lock();
 }
 
 void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const
@@ -57,7 +55,7 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 
     buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
 
-    auto column_source_ptr = column_source.lock();
+    auto column_source_ptr = getSourceWeakPointer().lock();
     if (column_source_ptr)
         buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
 
@@ -73,20 +71,7 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-    if (column != rhs_typed.column)
-        return false;
-
-    auto source_ptr = column_source.lock();
-    auto rhs_source_ptr = rhs_typed.column_source.lock();
-
-    if (!source_ptr && !rhs_source_ptr)
-        return true;
-    else if (source_ptr && !rhs_source_ptr)
-        return false;
-    else if (!source_ptr && rhs_source_ptr)
-        return false;
-
-    return source_ptr->isEqualImpl(*rhs_source_ptr);
+    return column == rhs_typed.column;
 }
 
 void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
@@ -97,25 +82,11 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
     const auto & column_type_name = column.type->getName();
     hash_state.update(column_type_name.size());
     hash_state.update(column_type_name);
-
-    auto column_source_ptr = column_source.lock();
-    if (column_source_ptr)
-        column_source_ptr->updateTreeHashImpl(hash_state);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, column_source);
-}
-
-void ColumnNode::getPointersToUpdateAfterClone(QueryTreePointersToUpdate & pointers_to_update)
-{
-    /** This method is called on node returned from `cloneImpl`. Check IQueryTreeNode.h interface.
-      * old pointer is current column source pointer.
-      * update place is address of column source.
-      */
-    const auto * old_pointer = getColumnSource().get();
-    pointers_to_update.emplace_back(old_pointer, &column_source);
+    return std::make_shared<ColumnNode>(column, getColumnSource());
 }
 
 ASTPtr ColumnNode::toASTImpl() const

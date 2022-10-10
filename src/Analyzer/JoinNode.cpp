@@ -106,6 +106,11 @@ ASTPtr JoinNode::toASTTableJoin() const
     return join_ast;
 }
 
+QueryTreeNodePtr JoinNode::cloneImpl() const
+{
+    return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
+}
+
 ASTPtr JoinNode::toASTImpl() const
 {
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
@@ -137,11 +142,6 @@ ASTPtr JoinNode::toASTImpl() const
     table_element.table_join = table_element.children.back();
 
     return tables_in_select_query_ast;
-}
-
-QueryTreeNodePtr JoinNode::cloneImpl() const
-{
-    return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
 }
 
 }

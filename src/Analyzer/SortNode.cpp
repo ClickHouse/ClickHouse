@@ -135,6 +135,11 @@ void SortNode::updateTreeHashImpl(HashState & hash_state) const
     }
 }
 
+QueryTreeNodePtr SortNode::cloneImpl() const
+{
+    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
+}
+
 ASTPtr SortNode::toASTImpl() const
 {
     auto result = std::make_shared<ASTOrderByElement>();
@@ -154,11 +159,6 @@ ASTPtr SortNode::toASTImpl() const
     result->children.push_back(getExpression()->toAST());
 
     return result;
-}
-
-QueryTreeNodePtr SortNode::cloneImpl() const
-{
-    return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
 }

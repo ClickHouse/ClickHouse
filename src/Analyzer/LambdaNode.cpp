@@ -65,6 +65,11 @@ void LambdaNode::updateTreeHashImpl(HashState & state) const
     }
 }
 
+QueryTreeNodePtr LambdaNode::cloneImpl() const
+{
+    return std::make_shared<LambdaNode>(argument_names, getExpression());
+}
+
 ASTPtr LambdaNode::toASTImpl() const
 {
     auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
@@ -83,11 +88,6 @@ ASTPtr LambdaNode::toASTImpl() const
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
     return lambda_function_ast;
-}
-
-QueryTreeNodePtr LambdaNode::cloneImpl() const
-{
-    return std::make_shared<LambdaNode>(argument_names, getExpression());
 }
 
 }

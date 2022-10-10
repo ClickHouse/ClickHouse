@@ -67,6 +67,11 @@ void ListNode::updateTreeHashImpl(HashState &) const
     /// No state
 }
 
+QueryTreeNodePtr ListNode::cloneImpl() const
+{
+    return std::make_shared<ListNode>();
+}
+
 ASTPtr ListNode::toASTImpl() const
 {
     auto expression_list_ast = std::make_shared<ASTExpressionList>();
@@ -78,11 +83,6 @@ ASTPtr ListNode::toASTImpl() const
         expression_list_ast->children[i] = children[i]->toAST();
 
     return expression_list_ast;
-}
-
-QueryTreeNodePtr ListNode::cloneImpl() const
-{
-    return std::make_shared<ListNode>();
 }
 
 }

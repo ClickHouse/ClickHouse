@@ -246,6 +246,19 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state) const
     }
 }
 
+QueryTreeNodePtr MatcherNode::cloneImpl() const
+{
+    MatcherNodePtr matcher_node = std::make_shared<MatcherNode>();
+
+    matcher_node->matcher_type = matcher_type;
+    matcher_node->qualified_identifier = qualified_identifier;
+    matcher_node->columns_identifiers = columns_identifiers;
+    matcher_node->columns_matcher = columns_matcher;
+    matcher_node->columns_identifiers_set = columns_identifiers_set;
+
+    return matcher_node;
+}
+
 ASTPtr MatcherNode::toASTImpl() const
 {
     ASTPtr result;
@@ -290,19 +303,6 @@ ASTPtr MatcherNode::toASTImpl() const
         result->children.push_back(child->toAST());
 
     return result;
-}
-
-QueryTreeNodePtr MatcherNode::cloneImpl() const
-{
-    MatcherNodePtr matcher_node = std::make_shared<MatcherNode>();
-
-    matcher_node->matcher_type = matcher_type;
-    matcher_node->qualified_identifier = qualified_identifier;
-    matcher_node->columns_identifiers = columns_identifiers;
-    matcher_node->columns_matcher = columns_matcher;
-    matcher_node->columns_identifiers_set = columns_identifiers_set;
-
-    return matcher_node;
 }
 
 }

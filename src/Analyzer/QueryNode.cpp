@@ -338,6 +338,26 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
         table_expression_modifiers->updateTreeHash(state);
 }
 
+QueryTreeNodePtr QueryNode::cloneImpl() const
+{
+    auto result_query_node = std::make_shared<QueryNode>();
+
+    result_query_node->is_subquery = is_subquery;
+    result_query_node->is_cte = is_cte;
+    result_query_node->is_distinct = is_distinct;
+    result_query_node->is_limit_with_ties = is_limit_with_ties;
+    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
+    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
+    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
+    result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
+    result_query_node->cte_name = cte_name;
+    result_query_node->projection_columns = projection_columns;
+    result_query_node->constant_value = constant_value;
+    result_query_node->table_expression_modifiers = table_expression_modifiers;
+
+    return result_query_node;
+}
+
 ASTPtr QueryNode::toASTImpl() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
@@ -413,26 +433,6 @@ ASTPtr QueryNode::toASTImpl() const
     }
 
     return result_select_query;
-}
-
-QueryTreeNodePtr QueryNode::cloneImpl() const
-{
-    auto result_query_node = std::make_shared<QueryNode>();
-
-    result_query_node->is_subquery = is_subquery;
-    result_query_node->is_cte = is_cte;
-    result_query_node->is_distinct = is_distinct;
-    result_query_node->is_limit_with_ties = is_limit_with_ties;
-    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
-    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
-    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
-    result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
-    result_query_node->cte_name = cte_name;
-    result_query_node->projection_columns = projection_columns;
-    result_query_node->constant_value = constant_value;
-    result_query_node->table_expression_modifiers = table_expression_modifiers;
-
-    return result_query_node;
 }
 
 }

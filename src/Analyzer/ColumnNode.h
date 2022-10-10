@@ -37,11 +37,11 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class ColumnNode final : public IQueryTreeNode
 {
 public:
-    /// Construct column node with column name, type and column source weak pointer.
-    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
-
     /// Construct expression column node with column name, type, column expression and column source weak pointer.
     ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
+
+    /// Construct column node with column name, type and column source weak pointer.
+    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -122,23 +122,34 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
+protected:
+
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;
 
-protected:
-    ASTPtr toASTImpl() const override;
-
     QueryTreeNodePtr cloneImpl() const override;
 
-    void getPointersToUpdateAfterClone(QueryTreePointersToUpdate & pointers_to_update) override;
+    ASTPtr toASTImpl() const override;
 
 private:
+    const QueryTreeNodeWeakPtr & getSourceWeakPointer() const
+    {
+        return weak_pointers[source_weak_pointer_index];
+    }
+
+    QueryTreeNodeWeakPtr & getSourceWeakPointer()
+    {
+        return weak_pointers[source_weak_pointer_index];
+    }
+
     NameAndTypePair column;
-    QueryTreeNodeWeakPtr column_source;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
+
+    static constexpr size_t source_weak_pointer_index = 0;
+    static constexpr size_t weak_pointers_size = source_weak_pointer_index + 1;
 };
 
 }

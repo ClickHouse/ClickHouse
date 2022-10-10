@@ -51,13 +51,22 @@ enum class QueryTreeNodeType
 /// Convert query tree node type to string
 const char * toString(QueryTreeNodeType type);
 
-/** Query tree node represent node in query tree.
-  * This is base class for all query tree nodes.
+/** Query tree is semantical representation of query.
+  * Query tree node represent node in query tree.
+  * Query tree node is base class for all query tree nodes.
+  *
+  * Important property of query tree is that each query tree node can contain weak pointers to other
+  * query tree nodes. Keeping weak pointer to other query tree nodes can be useful for example for column
+  * to keep weak pointer to column source, column source can be table, lambda, subquery and preserving of
+  * such information can significantly simplify query planning.
+  *
+  * Another important property of query tree it must be convertible to AST without losing information.
   */
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
+using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
+using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
 class IQueryTreeNode : public TypePromotion<IQueryTreeNode>
 {
@@ -67,6 +76,7 @@ public:
     /// Get query tree node type
     virtual QueryTreeNodeType getNodeType() const = 0;
 
+    /// Get query tree node type name
     const char * getNodeTypeName() const
     {
         return toString(getNodeType());
@@ -107,16 +117,11 @@ public:
         return *constant_value;
     }
 
+    /// Returns constant value with type if node has constant value or null otherwise
     virtual ConstantValuePtr getConstantValueOrNull() const
     {
         return {};
     }
-
-    /// Dump query tree to string
-    String dumpTree() const;
-
-    /// Dump query tree to buffer
-    void dumpTree(WriteBuffer & buffer) const;
 
     /** Is tree equal to other tree with node root.
       *
@@ -134,9 +139,6 @@ public:
       * Original AST is not part of query tree hash.
       */
     Hash getTreeHash() const;
-
-    /// Update tree hash
-    void updateTreeHash(HashState & state) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
@@ -208,17 +210,11 @@ public:
         return formatConvertedASTForErrorMessage();
     }
 
-      /// Get query tree node children
-    QueryTreeNodes & getChildren()
-    {
-        return children;
-    }
+    /// Dump query tree to string
+    String dumpTree() const;
 
-    /// Get query tree node children
-    const QueryTreeNodes & getChildren() const
-    {
-        return children;
-    }
+    /// Dump query tree to buffer
+    void dumpTree(WriteBuffer & buffer) const;
 
     class FormatState
     {
@@ -235,59 +231,48 @@ public:
       */
     virtual void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const = 0;
 
-    /** Subclass must compare its internal state with rhs node and do not compare its children with rhs node children.
-      * Caller must compare node and rhs node children.
-      *
-      * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it
-      * as part of its isEqualImpl method.
-      */
-    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
+    /// Get query tree node children
+    QueryTreeNodes & getChildren()
+    {
+        return children;
+    }
 
-    /** Subclass must update tree hash with its internal state and do not update tree hash for children.
-      * Caller must update tree hash for node children.
-      *
-      * This method is not protected because if subclass node has weak pointers to other query tree nodes it must use it
-      * as part of its updateTreeHashImpl method.
-      */
-    virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
+    /// Get query tree node children
+    const QueryTreeNodes & getChildren() const
+    {
+        return children;
+    }
 
 protected:
+    /** Construct query tree node.
+      * Resize children to children size.
+      * Resize weak pointers to weak pointers size.
+      */
+    explicit IQueryTreeNode(size_t children_size, size_t weak_pointers_size);
+
     /// Construct query tree node and resize children to children size
     explicit IQueryTreeNode(size_t children_size);
 
-    /** Subclass node must convert itself to AST.
-      * Subclass must convert children to AST.
+    /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
+      * query tree nodes.
       */
-    virtual ASTPtr toASTImpl() const = 0;
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
 
-    /** Subclass must clone only it internal state.
-      * Subclass children will be cloned separately by caller.
+    /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
+      * query tree nodes.
+      */
+    virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
+
+    /** Subclass must clone its internal state and do not clone children or weak pointers to other
+      * query tree nodes.
       */
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
-    /** If node has weak pointers to other tree nodes during clone they will point to other tree nodes.
-      * Keeping weak pointer to other tree nodes can be useful for example for column to keep weak pointer to column source.
-      * Source can be table, lambda, subquery and such information is necessary to preserve.
-      *
-      * Example:
-      * SELECT id FROM table;
-      * id during query analysis will be resolved as ColumnNode and source will be TableNode.
-      * During clone we must update id ColumnNode source pointer.
-      *
-      * Subclass must save old pointer and place of pointer update into pointers_to_update.
-      * This method will be called on query tree node after clone.
-      *
-      * Root of clone process will update pointers as necessary.
-      */
-    using QueryTreePointerToUpdate = std::pair<const IQueryTreeNode *, QueryTreeNodeWeakPtr *>;
-    using QueryTreePointersToUpdate = std::vector<QueryTreePointerToUpdate>;
-
-    virtual void getPointersToUpdateAfterClone(QueryTreePointersToUpdate & pointers_to_update)
-    {
-        (void)(pointers_to_update);
-    }
+    /// Subclass must convert its internal state and its children to AST
+    virtual ASTPtr toASTImpl() const = 0;
 
     QueryTreeNodes children;
+    QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;

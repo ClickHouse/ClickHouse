@@ -134,14 +134,14 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
-protected:
-    ASTPtr toASTImpl() const override;
-
     QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl() const override;
 
 private:
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
@@ -213,14 +213,14 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
-protected:
-    ASTPtr toASTImpl() const override;
-
     QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl() const override;
 
 private:
     ExceptColumnTransformerType except_transformer_type;
@@ -291,14 +291,14 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
 
-protected:
-    ASTPtr toASTImpl() const override;
-
     QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl() const override;
 
 private:
     Names replacements_names;

@@ -71,17 +71,17 @@ String TableNode::getName() const
     return storage->getStorageID().getFullNameNotQuoted();
 }
 
-ASTPtr TableNode::toASTImpl() const
-{
-    return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
-}
-
 QueryTreeNodePtr TableNode::cloneImpl() const
 {
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_table_node;
+}
+
+ASTPtr TableNode::toASTImpl() const
+{
+    return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
 }
 
 }

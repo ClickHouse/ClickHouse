@@ -31,14 +31,14 @@ public:
     {
     }
 
-    ASTPtr toASTImpl() const override
-    {
-        return nullptr;
-    }
-
     QueryTreeNodePtr cloneImpl() const override
     {
         return std::make_shared<SourceNode>();
+    }
+
+    ASTPtr toASTImpl() const override
+    {
+        return nullptr;
     }
 };
 

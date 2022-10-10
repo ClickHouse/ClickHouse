@@ -62,15 +62,15 @@ void IdentifierNode::updateTreeHashImpl(HashState & state) const
         table_expression_modifiers->updateTreeHash(state);
 }
 
+QueryTreeNodePtr IdentifierNode::cloneImpl() const
+{
+    return std::make_shared<IdentifierNode>(identifier);
+}
+
 ASTPtr IdentifierNode::toASTImpl() const
 {
     auto identifier_parts = identifier.getParts();
     return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
-}
-
-QueryTreeNodePtr IdentifierNode::cloneImpl() const
-{
-    return std::make_shared<IdentifierNode>(identifier);
 }
 
 }

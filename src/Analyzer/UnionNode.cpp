@@ -211,6 +211,22 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
         table_expression_modifiers->updateTreeHash(state);
 }
 
+QueryTreeNodePtr UnionNode::cloneImpl() const
+{
+    auto result_query_node = std::make_shared<UnionNode>();
+
+    result_query_node->is_subquery = is_subquery;
+    result_query_node->is_cte = is_cte;
+    result_query_node->cte_name = cte_name;
+    result_query_node->union_mode = union_mode;
+    result_query_node->union_modes = union_modes;
+    result_query_node->union_modes_set = union_modes_set;
+    result_query_node->constant_value = constant_value;
+    result_query_node->table_expression_modifiers = table_expression_modifiers;
+
+    return result_query_node;
+}
+
 ASTPtr UnionNode::toASTImpl() const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
@@ -227,22 +243,6 @@ ASTPtr UnionNode::toASTImpl() const
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 
     return select_with_union_query;
-}
-
-QueryTreeNodePtr UnionNode::cloneImpl() const
-{
-    auto result_query_node = std::make_shared<UnionNode>();
-
-    result_query_node->is_subquery = is_subquery;
-    result_query_node->is_cte = is_cte;
-    result_query_node->cte_name = cte_name;
-    result_query_node->union_mode = union_mode;
-    result_query_node->union_modes = union_modes;
-    result_query_node->union_modes_set = union_modes_set;
-    result_query_node->constant_value = constant_value;
-    result_query_node->table_expression_modifiers = table_expression_modifiers;
-
-    return result_query_node;
 }
 
 }
