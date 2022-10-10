@@ -744,7 +744,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return std::current_exception();
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void FinalizingViewsTransform::work()
