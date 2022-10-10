@@ -712,6 +712,8 @@ void registerStorageHDFS(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
         String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        if (url.empty())
+            throw Exception("Storage HDFS requires valid URL to be set, empty string provided", ErrorCodes::BAD_ARGUMENTS);
 
         String format_name = "auto";
         if (engine_args.size() > 1)
