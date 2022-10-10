@@ -109,7 +109,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         std::lock_guard lock(thread_group->mutex);
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_ids.emplace_back(thread_id);
+        thread_group->thread_ids.insert(thread_id);
         thread_group->threads.insert(this);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
