@@ -131,6 +131,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
 {
     std::vector<std::string> result;
     listFilesWithRegexpMatchingImpl(path_for_ls, for_match, total_bytes_to_read, result);
+    std::sort(result.begin(), result.end()); /// Enforce the same order, independently of the order in the filesystem
     return result;
 }
 
