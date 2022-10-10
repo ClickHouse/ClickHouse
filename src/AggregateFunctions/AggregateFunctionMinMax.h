@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -15,7 +17,6 @@
 #include <base/defines.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include <Common/config.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -97,6 +98,7 @@ struct ComparatorMax
 template <typename Comparator>
 struct AggregateFunctionsMinMaxDataNumeric
 {
+    using Self = AggregateFunctionsMinMaxDataNumeric<Comparator>;
     using ComparatorType = Comparator;
     using T = typename Comparator::Type;
     using ColVecType = ColumnVectorOrDecimal<T>;
@@ -413,11 +415,8 @@ struct AggregateFunctionsMinMaxDataNumeric
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        static constexpr size_t value_offset_from_structure = offsetof(AggregateFunctionsMinMaxDataNumeric<Comparator>, value);
-
-        auto * type = toNativeType<T>(builder);
-        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
-        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+        static constexpr size_t value_offset_from_structure = offsetof(Self, value);
+        auto * value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, value_offset_from_structure);
 
         return value_ptr;
     }
@@ -436,27 +435,21 @@ struct AggregateFunctionsMinMaxDataNumeric
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_ptr = aggregate_data_ptr;
         b.CreateStore(b.getInt1(true), has_value_ptr);
 
         auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
         b.CreateStore(value_to_check, value_ptr);
     }
 
-    static void compileAdd(
-        llvm::IRBuilderBase & builder,
-        llvm::Value * aggregate_data_ptr,
-        const DataTypes &,
-        const std::vector<llvm::Value *> & argument_values)
+    static void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
     {
         if constexpr (!is_compilable)
             return;
 
-        llvm::Value * value_to_check = argument_values[0];
-
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_ptr = aggregate_data_ptr;
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -997,13 +990,13 @@ public:
     void compileAdd(
         llvm::IRBuilderBase & builder,
         llvm::Value * aggregate_data_ptr,
-        const DataTypes & datatypes,
+        const DataTypes &,
         const std::vector<llvm::Value *> & argument_values) const override
     {
         if constexpr (!Data::is_compilable)
             throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         else
-            Data::compileAdd(builder, aggregate_data_ptr, datatypes, argument_values);
+            Data::compileAdd(builder, aggregate_data_ptr, argument_values[0]);
     }
 
     void
