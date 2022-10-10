@@ -20,7 +20,6 @@ namespace DB
          * Allow only DNSPTRProvider to instantiate this class
          * */
         struct provider_token {};
-
     public:
         explicit CaresPTRResolver(provider_token);
         ~CaresPTRResolver() override;
@@ -37,6 +36,8 @@ namespace DB
         void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response);
 
         ares_channel channel;
+
+        static std::mutex mutex;
     };
 }
 

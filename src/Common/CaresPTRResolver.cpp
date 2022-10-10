@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <sys/select.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include "ares.h"
 #include "netdb.h"
 
@@ -39,6 +40,8 @@ namespace DB
             }
         }
     }
+
+    std::mutex CaresPTRResolver::mutex;
 
     CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token) : channel(nullptr)
     {
@@ -119,6 +122,9 @@ namespace DB
         {
             FD_ZERO(&read_fds);
             FD_ZERO(&write_fds);
+
+            std::lock_guard<std::mutex> guard {mutex};
+
             nfds = ares_fds(channel, &read_fds,&write_fds);
             if (nfds == 0)
             {
