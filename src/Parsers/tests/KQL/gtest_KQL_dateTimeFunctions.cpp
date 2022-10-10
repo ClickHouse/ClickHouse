@@ -80,11 +80,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         },
         {
             "print endofmonth(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(-1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (((toDateTime(toLastDayOfMonth(toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC') + toIntervalMonth(-1)), 9, 'UTC') + toIntervalHour(23)) + toIntervalMinute(59)) + toIntervalSecond(60)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofmonth(datetime(2017-01-01 10:10:17), 1)",
-            "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalMonth(1 + 1)) - toIntervalMicrosecond(1)"
+            "SELECT (((toDateTime(toLastDayOfMonth(toDateTime(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 9, 'UTC') + toIntervalMonth(1)), 9, 'UTC') + toIntervalHour(23)) + toIntervalMinute(59)) + toIntervalSecond(60)) - toIntervalMicrosecond(1)"
         },
         {
             "print endofweek(datetime(2017-01-01 10:10:17), -1)",

@@ -178,10 +178,11 @@ bool EndOfMonth::convertImpl(String & out, IParser::Pos & pos)
     {
          ++pos;
          offset = getConvertedArgument(fn_name, pos);
+         if(offset.empty())
+             throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
     }
+    out = std::format("toDateTime(toLastDayOfMonth(toDateTime({}, 9, 'UTC') + toIntervalMonth({})), 9, 'UTC') + toIntervalHour(23) + toIntervalMinute(59) + toIntervalSecond(60) - toIntervalMicrosecond(1)", datetime_str, toString(offset));
     
-    out = std::format("toDateTime(toStartOfDay({}),9,'UTC') + (INTERVAL {} +1 MONTH) - (INTERVAL 1 microsecond)", datetime_str, toString(offset));
-
     return true;
 }
 
