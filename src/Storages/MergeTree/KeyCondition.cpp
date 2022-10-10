@@ -2602,7 +2602,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             return "true";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

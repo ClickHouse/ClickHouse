@@ -357,8 +357,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
     /// Other codes are unexpected, will throw
     zkutil::KeeperMultiException::check(res, ops, responses);
-    chassert(false);
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path)
