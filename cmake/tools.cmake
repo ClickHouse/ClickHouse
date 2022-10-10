@@ -53,13 +53,18 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
+# s390x doesnt support lld and support for gold is still in progress
 if (NOT LINKER_NAME)
     if (COMPILER_GCC)
-        find_program (LLD_PATH NAMES "ld.lld")
-        find_program (GOLD_PATH NAMES "ld.gold")
+        if (NOT ARCH_S390X)
+            find_program (LLD_PATH NAMES "ld.lld")
+            find_program (GOLD_PATH NAMES "ld.gold")
+        endif()
     elseif (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
-        find_program (GOLD_PATH NAMES "ld.gold" "gold")
+        if (NOT ARCH_S390X))
+            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
+            find_program (GOLD_PATH NAMES "ld.gold" "gold")
+        endif ()
     endif ()
 endif()
 
