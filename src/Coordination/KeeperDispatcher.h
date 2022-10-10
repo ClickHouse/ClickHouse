@@ -33,11 +33,10 @@ private:
 
     /// Size depends on coordination settings
     /// Request currently being processed
-    std::unique_ptr<RequestsQueue> active_requests_queue;
+    std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
-    ConcurrentBoundedQueue<KeeperStorage::RequestForSession> read_requests_queue;
-    ConcurrentBoundedQueue<KeeperStorage::RequestForSession> finalize_requests_queue;
+    ConcurrentBoundedQueue<std::vector<std::packaged_task<void()>>> read_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -68,7 +67,6 @@ private:
     /// Apply or wait for configuration changes
     ThreadFromGlobalPool update_configuration_thread;
     ThreadFromGlobalPool read_request_thread;
-    ThreadFromGlobalPool finalize_requests_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -86,29 +84,8 @@ private:
     /// at the time the request was being made.
     /// If the node is stale, we need to wait to commit that log before doing local read requests to achieve
     /// linearizability.
-    std::unordered_map<KeeperServer::NodeInfo, KeeperStorage::RequestsForSessions> leader_waiters;
+    std::unordered_map<KeeperServer::NodeInfo, std::vector<std::packaged_task<void()>>> leader_waiters;
     std::mutex leader_waiter_mutex;
-
-    /// We can be actively processing one type of requests (either read or write) from a single session.
-    /// If we receive a request of a type that is not currently being processed, we put it in the waiting queue.
-    /// Also, we want to process them in ariving order, so if we have a different type in the queue, we cannot process that request
-    /// but wait for all the previous requests to finish.
-    /// E.g. READ -> WRITE -> READ, the last READ will go to the waiting queue even though we are currently processing the first READ
-    /// because we have WRITE request before it that needs to be processed.
-    struct UnprocessedRequests
-    {
-        /// how many requests are currently in the active request queue
-        size_t unprocessed_num{0};
-        /// is_read currently being processed
-        bool is_read{false};
-        std::list<KeeperStorage::RequestForSession> request_queue;
-    };
-
-    // Called every time a batch of requests are processed.
-    void finalizeRequests(const KeeperStorage::RequestForSession & request_for_session);
-
-    std::unordered_map<int64_t, UnprocessedRequests> unprocessed_requests_for_session;
-    std::mutex unprocessed_request_mutex;
 
     /// Thread put requests to raft
     void requestThread();
@@ -122,8 +99,6 @@ private:
     void updateConfigurationThread();
 
     void readRequestThread();
-
-    void finalizeRequestsThread();
 
     void processReadRequest(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestForSession read_request);
 
@@ -156,7 +131,7 @@ public:
     }
 
     /// Called when a single log with request is committed.
-    void onRequestCommit(const KeeperStorage::RequestForSession & request_for_session, uint64_t log_term, uint64_t log_idx);
+    void onRequestCommit(uint64_t log_term, uint64_t log_idx);
 
     /// Called when a snapshot is applied
     void onApplySnapshot(uint64_t term, uint64_t last_idx);
