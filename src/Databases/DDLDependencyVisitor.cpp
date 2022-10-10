@@ -187,7 +187,7 @@ void NormalizeAndEvaluateConstants::visit(const ASTFunctionWithKeyValueArguments
     for (auto & child : expr_list.children)
     {
         ASTPair * pair = child->as<ASTPair>();
-        if (const auto * func = pair->second->as<ASTFunction>())
+        if (pair->second->as<ASTFunction>())
         {
             auto ast_literal = evaluateConstantExpressionAsLiteral(pair->children[0], data.create_query_context);
             pair->replace(pair->second, ast_literal);
