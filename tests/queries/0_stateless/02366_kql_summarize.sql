@@ -96,7 +96,7 @@ Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
 Customers | summarize t = make_list_with_nulls(FirstName);
 Customers | summarize f_list = make_list_with_nulls(FirstName) by Occupation;
-
+Customers | summarize f_list = make_list_with_nulls(FirstName), a_list = make_list_with_nulls(Age) by Occupation;
 -- TODO:
 -- arg_max()
 -- arg_min()
