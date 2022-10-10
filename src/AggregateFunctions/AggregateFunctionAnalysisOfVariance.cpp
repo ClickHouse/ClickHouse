@@ -3,7 +3,14 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 
-namespace DB {
+namespace DB
+{
+
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -14,7 +21,7 @@ namespace
         assertBinary(name, arguments);
 
         if (!isNumber(arguments[0]) || !isNumber(arguments[1]))
-            throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
         return std::make_shared<AggregateFunctionAnalysisOfVariance>(arguments, parameters);
     }

@@ -16,9 +16,14 @@
 
 namespace DB
 {
-struct Settings;
 
-class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceMoments<Float64> {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceMoments<Float64>
+{
 };
 
 class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataHelper<AggregateFunctionAnalysisOfVarianceData, AggregateFunctionAnalysisOfVariance>
@@ -65,10 +70,10 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto f_stat = data(place).getFStatistic();
-        if (std::isinf(f_stat) || isNaN(f_stat)) {
+        if (std::isinf(f_stat) || isNaN(f_stat))
             throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
-        }
-        auto p_value = data(place).getPValue();
+
+        auto p_value = data(place).getPValue(f_stat);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));

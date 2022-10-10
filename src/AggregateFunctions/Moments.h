@@ -584,7 +584,7 @@ struct AnalysisOfVarianceMoments
         return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
     }
 
-    Float64 getPValue() const
+    Float64 getPValue(Float64 f_statistic) const
     {
         const auto k = xs1.size();
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
@@ -595,7 +595,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), getFStatistic());
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
     }
 };
 
