@@ -167,6 +167,21 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
     }
 }
 
+QueryTreeNodePtr FunctionNode::cloneImpl() const
+{
+    auto result_function = std::make_shared<FunctionNode>(function_name);
+
+    /** This is valid for clone method to reuse same function pointers
+      * because ordinary functions or aggregate functions must be stateless.
+      */
+    result_function->function = function;
+    result_function->aggregate_function = aggregate_function;
+    result_function->result_type = result_type;
+    result_function->constant_value = constant_value;
+
+    return result_function;
+}
+
 ASTPtr FunctionNode::toASTImpl() const
 {
     auto function_ast = std::make_shared<ASTFunction>();
@@ -195,21 +210,6 @@ ASTPtr FunctionNode::toASTImpl() const
     function_ast->arguments = function_ast->children.back();
 
     return function_ast;
-}
-
-QueryTreeNodePtr FunctionNode::cloneImpl() const
-{
-    auto result_function = std::make_shared<FunctionNode>(function_name);
-
-    /** This is valid for clone method to reuse same function pointers
-      * because ordinary functions or aggregate functions must be stateless.
-      */
-    result_function->function = function;
-    result_function->aggregate_function = aggregate_function;
-    result_function->result_type = result_type;
-    result_function->constant_value = constant_value;
-
-    return result_function;
 }
 
 }

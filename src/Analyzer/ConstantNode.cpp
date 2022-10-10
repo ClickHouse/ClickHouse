@@ -58,14 +58,14 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(value_string);
 }
 
-ASTPtr ConstantNode::toASTImpl() const
-{
-    return std::make_shared<ASTLiteral>(constant_value->getValue());
-}
-
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
     return std::make_shared<ConstantNode>(constant_value);
+}
+
+ASTPtr ConstantNode::toASTImpl() const
+{
+    return std::make_shared<ASTLiteral>(constant_value->getValue());
 }
 
 }

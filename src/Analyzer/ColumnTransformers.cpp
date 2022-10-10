@@ -84,8 +84,11 @@ void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & 
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getApplyTransformerType()));
+}
 
-    getExpressionNode()->updateTreeHash(hash_state);
+QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
+{
+    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
 }
 
 ASTPtr ApplyColumnTransformerNode::toASTImpl() const
@@ -108,11 +111,6 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl() const
     }
 
     return ast_apply_transformer;
-}
-
-QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
-{
-    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
 }
 
 /// ExceptColumnTransformerNode implementation
@@ -219,6 +217,14 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
     }
 }
 
+QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
+{
+    if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
+        return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
+
+    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
+}
+
 ASTPtr ExceptColumnTransformerNode::toASTImpl() const
 {
     auto ast_except_transformer = std::make_shared<ASTColumnsExceptTransformer>();
@@ -234,14 +240,6 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl() const
         ast_except_transformer->children.push_back(std::make_shared<ASTIdentifier>(name));
 
     return ast_except_transformer;
-}
-
-QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
-{
-    if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
-        return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
-
-    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
 }
 
 /// ReplaceColumnTransformerNode implementation
@@ -321,8 +319,17 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
         const auto & replacement_name = replacements_names[i];
         hash_state.update(replacement_name.size());
         hash_state.update(replacement_name);
-        replacement_expressions_nodes[i]->updateTreeHash(hash_state);
     }
+}
+
+QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
+{
+    auto result_replace_transformer = std::make_shared<ReplaceColumnTransformerNode>(std::vector<Replacement>{}, false);
+
+    result_replace_transformer->is_strict = is_strict;
+    result_replace_transformer->replacements_names = replacements_names;
+
+    return result_replace_transformer;
 }
 
 ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
@@ -343,16 +350,6 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
     }
 
     return ast_replace_transformer;
-}
-
-QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
-{
-    auto result_replace_transformer = std::make_shared<ReplaceColumnTransformerNode>(std::vector<Replacement>{}, false);
-
-    result_replace_transformer->is_strict = is_strict;
-    result_replace_transformer->replacements_names = replacements_names;
-
-    return result_replace_transformer;
 }
 
 }

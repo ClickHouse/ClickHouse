@@ -129,14 +129,15 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+
+protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;
 
-protected:
-    ASTPtr toASTImpl() const override;
-
     QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl() const override;
 
 private:
     static constexpr size_t sort_expression_child_index = 0;

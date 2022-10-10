@@ -120,6 +120,18 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state) const
         table_expression_modifiers->updateTreeHash(state);
 }
 
+QueryTreeNodePtr TableFunctionNode::cloneImpl() const
+{
+    auto result = std::make_shared<TableFunctionNode>(table_function_name);
+
+    result->storage = storage;
+    result->storage_id = storage_id;
+    result->storage_snapshot = storage_snapshot;
+    result->table_expression_modifiers = table_expression_modifiers;
+
+    return result;
+}
+
 ASTPtr TableFunctionNode::toASTImpl() const
 {
     auto table_function_ast = std::make_shared<ASTFunction>();
@@ -131,18 +143,6 @@ ASTPtr TableFunctionNode::toASTImpl() const
     table_function_ast->arguments = table_function_ast->children.back();
 
     return table_function_ast;
-}
-
-QueryTreeNodePtr TableFunctionNode::cloneImpl() const
-{
-    auto result = std::make_shared<TableFunctionNode>(table_function_name);
-
-    result->storage = storage;
-    result->storage_id = storage_id;
-    result->storage_snapshot = storage_snapshot;
-    result->table_expression_modifiers = table_expression_modifiers;
-
-    return result;
 }
 
 }

@@ -42,6 +42,11 @@ void ArrayJoinNode::updateTreeHashImpl(HashState & state) const
     state.update(is_left);
 }
 
+QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
+{
+    return std::make_shared<ArrayJoinNode>(getTableExpression(), getJoinExpressionsNode(), is_left);
+}
+
 ASTPtr ArrayJoinNode::toASTImpl() const
 {
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
@@ -61,11 +66,6 @@ ASTPtr ArrayJoinNode::toASTImpl() const
     tables_in_select_query_ast->children.push_back(std::move(array_join_query_element_ast));
 
     return tables_in_select_query_ast;
-}
-
-QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
-{
-    return std::make_shared<ArrayJoinNode>(getTableExpression(), getJoinExpressionsNode(), is_left);
 }
 
 }
