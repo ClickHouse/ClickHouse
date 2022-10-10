@@ -30,6 +30,7 @@ SkipList=(
     "00013_sorting_of_nested.sql" # It contains FINAL, which is not allowed together with parallel reading
 
     "00061_storage_buffer.sql"
+    "00097_constexpr_in_index.sql"
     "00095_hyperscan_profiler.sql" # too long in debug (there is a --no-debug tag inside a test)
 
     "00140_rename.sql" # Multiple renames are not allowed with DatabaseReplicated and tags are not forwarded through this test
