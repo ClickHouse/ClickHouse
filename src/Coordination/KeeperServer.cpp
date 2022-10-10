@@ -1,7 +1,7 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <chrono>
 #include <filesystem>
