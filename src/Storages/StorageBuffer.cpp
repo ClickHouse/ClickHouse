@@ -21,6 +21,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include "Processors/Transforms/ReverseTransform.h"
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -334,6 +335,13 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
+        if (query_info.getInputOrderInfo() && query_info.getInputOrderInfo()->direction == -1)
+        {
+            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ReverseTransform>(header);
+            });
+        }
     }
 
     if (pipe_from_buffers.empty())
