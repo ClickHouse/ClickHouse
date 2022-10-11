@@ -1,4 +1,4 @@
-#include <Analyzer/CollectWindowFunctionNodes.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>

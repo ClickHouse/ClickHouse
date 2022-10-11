@@ -6,7 +6,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/CollectAggregateFunctionNodes.h>
+#include <Analyzer/AggregationUtils.h>
 
 #include <Interpreters/Context.h>
 

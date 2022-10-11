@@ -134,15 +134,7 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
     else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
     {
-        buffer << ", columns_identifiers: ";
-        size_t columns_identifiers_size = columns_identifiers.size();
-        for (size_t i = 0; i < columns_identifiers_size; ++i)
-        {
-            buffer << columns_identifiers[i].getFullName();
-
-            if (i + 1 != columns_identifiers_size)
-                buffer << ", ";
-        }
+        buffer << ", " << fmt::format("column_identifiers: {}", fmt::join(columns_identifiers, ", "));
     }
 
     const auto & column_transformers_list = getColumnTransformers();

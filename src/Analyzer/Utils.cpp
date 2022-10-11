@@ -83,7 +83,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
             table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0], identifier[1]);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Identifier for table expression must contain 1 or 2 parts. Actual {}",
+                "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
                 identifier.getFullName());
     }
     else
