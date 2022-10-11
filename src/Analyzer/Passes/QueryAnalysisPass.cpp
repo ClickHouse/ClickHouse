@@ -1,4 +1,4 @@
-#include <Analyzer/QueryAnalysisPass.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>

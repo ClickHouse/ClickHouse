@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Convert if chain into multiIf.
+/** Convert `if` chain into single `multiIf`.
   * Replace if(cond_1, then_1_value, if(cond_2, ...)) chains into multiIf(cond_1, then_1_value, cond_2, ...).
   *
   * Example: SELECT if(cond_1, then_1_value, if(cond_2, then_2_value, else_value));

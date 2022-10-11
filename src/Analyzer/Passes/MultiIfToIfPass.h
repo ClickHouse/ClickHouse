@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Convert multiIf with single argument into if.
+/** Convert `multiIf` with single argument into `if`.
   * Example: SELECT multiIf(x, 1, 0);
   * Result: SELECT if(x, 1, 0);
   */

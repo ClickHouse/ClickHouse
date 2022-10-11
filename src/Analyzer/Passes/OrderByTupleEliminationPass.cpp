@@ -1,4 +1,4 @@
-#include <Analyzer/OrderByTupleEliminationPass.h>
+#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>

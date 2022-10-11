@@ -1,4 +1,4 @@
-#include <Analyzer/NormalizeCountVariantsPass.h>
+#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>

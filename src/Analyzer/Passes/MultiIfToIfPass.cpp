@@ -1,4 +1,4 @@
-#include <Analyzer/MultiIfToIfPass.h>
+#include <Analyzer/Passes/MultiIfToIfPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>

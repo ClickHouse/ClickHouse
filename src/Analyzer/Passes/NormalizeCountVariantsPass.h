@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/** Convert if with constant condition or multiIf into true condition argument value
-  * or false condition argument value.
+/** Remove single literal argument from `count`. Convert `sum` with single `1` literal argument into `count`.
+  *
   * Example: SELECT count(1)
   * Result: SELECT count();
   *
