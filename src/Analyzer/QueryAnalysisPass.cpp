@@ -2286,9 +2286,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         else
         {
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier {}. In scope {}",
+                "JOIN {} ambiguous identifier '{}'. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.dump(),
+                identifier_lookup.identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
