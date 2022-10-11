@@ -7,7 +7,12 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Common/Logger.h>
+#include <Interpreters/Context_fwd.h>
 #include <jni.h>
+#include <Poco/Logger.h>
+#include <base/logger_useful.h>
+#include <filesystem>
+#include <Storages/HDFS/HDFSCommon.h>
 
 using namespace DB;
 #ifdef __cplusplus
@@ -20,6 +25,35 @@ void registerAllFunctions()
     registerAggregateFunctions();
 }
 
+/// If spark need to access hdfs, the environment variable `HADOOP_CONF_DIR` should have been set.
+/// For clickhosue, environment variable `LIBHDFS3_CONF` need to be set to initialize libhdfs3.
+/// So we use`HADOOP_CONF_DIR` from spark to setup `LIBHDFS3_CONF`.
+///
+/// TODO : Maybe initialize libhdfs3 by configure map but not a configure file path. Need to modify
+/// clickhouse.
+void setupHDFSConf(DB::Context::ConfigurationPtr context_config)
+{
+    const char * env_var = getenv("HADOOP_CONF_DIR");
+    if (env_var)
+    {
+        std::filesystem::path conf_dir(env_var);
+        auto conf_path = conf_dir / "hdfs-site.xml";
+        if (!std::filesystem::exists(conf_path))
+        {
+            LOG_WARNING(&Poco::Logger::get("local_engine"), "Not found hdfs configure file:{}", conf_path.string());
+        }
+        else
+        {
+            LOG_INFO(&Poco::Logger::get("local_engine"), "Settup hdfs.libhdfs3_conf by {}", conf_path.string());
+            context_config->setString("hdfs.libhdfs3_conf1", conf_path.string());
+        }
+    }
+    else
+    {
+        LOG_INFO(&Poco::Logger::get("local_engine"), "HADOOP_CONF_DIR is not setted, hdfs access may fail");
+    }
+
+}
 void init()
 {
     static std::once_flag init_flag;
@@ -48,6 +82,7 @@ void init()
                 = Context::createGlobal(local_engine::SerializedPlanParser::shared_context.get());
             local_engine::SerializedPlanParser::global_context->makeGlobalContext();
             local_engine::SerializedPlanParser::global_context->setSetting("join_use_nulls", true);
+            setupHDFSConf(local_engine::SerializedPlanParser::config);
             local_engine::SerializedPlanParser::global_context->setConfig(local_engine::SerializedPlanParser::config);
             local_engine::SerializedPlanParser::global_context->setPath("/");
         }

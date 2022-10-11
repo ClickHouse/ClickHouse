@@ -19,9 +19,6 @@
 #include <Storages/SubstraitSource/FormatFile.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <substrait/plan.pb.h>
-
-#include <Poco/Logger.h>
-#include <base/logger_useful.h>
 #include <magic_enum.hpp>
 
 namespace DB

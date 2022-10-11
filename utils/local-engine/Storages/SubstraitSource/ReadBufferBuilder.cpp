@@ -65,6 +65,11 @@ public:
         Poco::URI file_uri(file_info.uri_file());
         std::unique_ptr<DB::ReadBuffer> read_buffer;
         /// Need to set "hdfs.libhdfs3_conf" in global settings
+        if (context->getConfigRef().getString("hdfs.libhdfs3_conf", "").empty())
+        {
+            LOG_ERROR(&Poco::Logger::get("HDFSFileReadBufferBuilder"), "Not found configure hdfs.libhdfs3_conf");
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "To use libhdfs3 to access hdfs, need to set hdfs.libhdfs3_conf in context configure");
+        }
         read_buffer = std::make_unique<DB::ReadBufferFromHDFS>(
             "hdfs://" + file_uri.getHost(), file_uri.getPath(), context->getGlobalContext()->getConfigRef());
         return read_buffer;

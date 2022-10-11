@@ -14,6 +14,8 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Storages/SubstraitSource/ReadBufferBuilder.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Poco/Logger.h>
+#include <base/logger_useful.h>
 namespace local_engine
 {
 
