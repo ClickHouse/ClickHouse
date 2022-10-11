@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include "DNSPTRResolver.h"
 
 using ares_channel = struct ares_channeldata *;
