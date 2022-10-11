@@ -126,7 +126,7 @@ namespace
         if (pos != std::string::npos && std::advance(pos, 2) != url.end())
         {
             pos = find('/', pos + 2);
-            if (pos != std::string::npos )
+            if (pos != std::string::npos)
                 return {uri.substr(pos), uri.substr(0, pos)};
         }
 
