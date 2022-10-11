@@ -288,6 +288,52 @@ DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b);
 c	Tuple(a UInt8, b UInt8)					
 c.a	UInt8					
 c.b	UInt8					
+SELECT '--';
+--
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.*);
+c	Tuple(a UInt8, b UInt8)					
+c.a	UInt8					
+c.b	UInt8					
+SELECT '--';
+--
+DESCRIBE (SELECT (SELECT 1 UNION DISTINCT SELECT 1), (SELECT 2 UNION DISTINCT SELECT 2), (SELECT 3 UNION DISTINCT SELECT 3) AS a, (SELECT 4 UNION DISTINCT SELECT 4));
+_subquery_1	Nullable(UInt8)					
+_subquery_2	Nullable(UInt8)					
+a	Nullable(UInt8)					
+_subquery_4	Nullable(UInt8)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> (SELECT 1 UNION DISTINCT SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2 UNION DISTINCT SELECT 2) AS a, [1, 2, 3]),
+arrayMap(x -> (SELECT 3 UNION DISTINCT SELECT 3), [1,2,3]));
+arrayMap(lambda(tuple(x), _subquery_1), [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(a, [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))					
+SELECT '--';
+--
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.a, c.b);
+c	Tuple(a UInt8, b UInt8)					
+c.a	UInt8					
+c.b	UInt8					
+SELECT '--';
+--
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.*);
+c	Tuple(a UInt8, b UInt8)					
+c.a	UInt8					
+c.b	UInt8					
+SELECT '--';
+--
+DESCRIBE (SELECT (SELECT 1), (SELECT 2 UNION DISTINCT SELECT 2), (SELECT 3) AS a, (SELECT 4 UNION DISTINCT SELECT 4));
+_subquery_1	Nullable(UInt8)					
+_subquery_2	Nullable(UInt8)					
+a	Nullable(UInt8)					
+_subquery_4	Nullable(UInt8)					
+SELECT '--';
+--
+DESCRIBE (SELECT arrayMap(x -> (SELECT 1 UNION DISTINCT SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS a, [1, 2, 3]),
+arrayMap(x -> (SELECT 3 UNION DISTINCT SELECT 3), [1,2,3]));
+arrayMap(lambda(tuple(x), _subquery_1), [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(a, [1, 2, 3])	Array(Nullable(UInt8))					
+arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))					
 SELECT 'Window functions';
 Window functions
 DESCRIBE (SELECT count() OVER ());
@@ -342,7 +388,8 @@ DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DES
 count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN plus(1, 1) PRECEDING AND plus(2, 2) FOLLOWING)	UInt64					
 SELECT '--';
 --
-DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING) FROM test_table);
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING)
+FROM test_table);
 count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN frame_offset_begin PRECEDING AND frame_offset_end FOLLOWING)	UInt64					
 SELECT '--';
 --
@@ -352,10 +399,6 @@ SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (ORDER BY toNullable(id) NULLS LAST) FROM test_table);
 count() OVER (ORDER BY toNullable(id) ASC NULLS LAST)	UInt64					
-SELECT '--';
---
-DESCRIBE (SELECT count() OVER (ORDER BY value COLLATE 'EN') FROM test_table);
-count() OVER (ORDER BY value ASC COLLATE en)	UInt64					
 SELECT '--';
 --
 DESCRIBE (SELECT count() OVER (ORDER BY id WITH FILL FROM 1 TO 5 STEP 1) FROM test_table);

@@ -268,6 +268,36 @@ SELECT '--';
 
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b);
 
+SELECT '--';
+
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.*);
+
+SELECT '--';
+
+DESCRIBE (SELECT (SELECT 1 UNION DISTINCT SELECT 1), (SELECT 2 UNION DISTINCT SELECT 2), (SELECT 3 UNION DISTINCT SELECT 3) AS a, (SELECT 4 UNION DISTINCT SELECT 4));
+
+SELECT '--';
+
+DESCRIBE (SELECT arrayMap(x -> (SELECT 1 UNION DISTINCT SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2 UNION DISTINCT SELECT 2) AS a, [1, 2, 3]),
+arrayMap(x -> (SELECT 3 UNION DISTINCT SELECT 3), [1,2,3]));
+
+SELECT '--';
+
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.a, c.b);
+
+SELECT '--';
+
+DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.*);
+
+SELECT '--';
+
+DESCRIBE (SELECT (SELECT 1), (SELECT 2 UNION DISTINCT SELECT 2), (SELECT 3) AS a, (SELECT 4 UNION DISTINCT SELECT 4));
+
+SELECT '--';
+
+DESCRIBE (SELECT arrayMap(x -> (SELECT 1 UNION DISTINCT SELECT 1), [1,2,3]), arrayMap(x -> (SELECT 2) AS a, [1, 2, 3]),
+arrayMap(x -> (SELECT 3 UNION DISTINCT SELECT 3), [1,2,3]));
+
 SELECT 'Window functions';
 
 DESCRIBE (SELECT count() OVER ());
@@ -322,7 +352,8 @@ DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DES
 
 SELECT '--';
 
-DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING) FROM test_table);
+DESCRIBE (SELECT count() OVER (PARTITION BY id, value ORDER BY id ASC, value DESC ROWS BETWEEN ((1 + 1) AS frame_offset_begin) PRECEDING AND ((2 + 2) AS frame_offset_end) FOLLOWING)
+FROM test_table);
 
 SELECT '--';
 
@@ -331,10 +362,6 @@ DESCRIBE (SELECT count() OVER (ORDER BY toNullable(id) NULLS FIRST) FROM test_ta
 SELECT '--';
 
 DESCRIBE (SELECT count() OVER (ORDER BY toNullable(id) NULLS LAST) FROM test_table);
-
-SELECT '--';
-
-DESCRIBE (SELECT count() OVER (ORDER BY value COLLATE 'EN') FROM test_table);
 
 SELECT '--';
 
