@@ -206,7 +206,7 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
         default:
             return type;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void initDataVariantsWithSizeHint(
@@ -3274,8 +3274,6 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
 {
     if (result.empty())
         return;
-
-    LOG_TRACE(log, "Destroying aggregate states");
 
     /// In what data structure is the data aggregated?
     if (result.type == AggregatedDataVariants::Type::without_key || params.overflow_row)

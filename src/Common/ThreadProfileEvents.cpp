@@ -76,7 +76,7 @@ const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
         case MetricsProvider::Netlink:
             return "netlink";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool TasksStatsCounters::checkIfAvailable()

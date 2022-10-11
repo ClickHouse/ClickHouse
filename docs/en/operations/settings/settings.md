@@ -668,7 +668,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
 
 Possible values:
 
@@ -1599,7 +1599,7 @@ Right now it requires `optimize_skip_unused_shards` (the reason behind this is t
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) query didn’t perform a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn’t perform a merge.
 
 By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
@@ -2628,12 +2628,6 @@ Default value: `15`.
 Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
 
 Default value: `64`.
-
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
-
-Default value: `5`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
