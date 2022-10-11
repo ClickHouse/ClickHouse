@@ -1,4 +1,4 @@
-#include <Analyzer/CustomizeFunctionsPass.h>
+#include <Analyzer/Passes/CustomizeFunctionsPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>

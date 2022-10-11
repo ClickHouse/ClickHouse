@@ -1,13 +1,13 @@
 #include <Analyzer/QueryTreePassManager.h>
 
-#include <Analyzer/QueryAnalysisPass.h>
-#include <Analyzer/MultiIfToIfPass.h>
-#include <Analyzer/IfConstantConditionPass.h>
-#include <Analyzer/IfChainToMultiIfPass.h>
-#include <Analyzer/OrderByTupleEliminationPass.h>
-#include <Analyzer/NormalizeCountVariantsPass.h>
-#include <Analyzer/CountDistinctPass.h>
-#include <Analyzer/CustomizeFunctionsPass.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/MultiIfToIfPass.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
+#include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/OrderByTupleEliminationPass.h>
+#include <Analyzer/Passes/NormalizeCountVariantsPass.h>
+#include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/CustomizeFunctionsPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

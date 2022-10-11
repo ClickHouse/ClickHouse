@@ -1,4 +1,4 @@
-#include <Analyzer/IfConstantConditionPass.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>

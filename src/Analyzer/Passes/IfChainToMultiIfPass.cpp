@@ -1,4 +1,4 @@
-#include <Analyzer/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/IfChainToMultiIfPass.h>
 
 #include <DataTypes/DataTypesNumber.h>
 

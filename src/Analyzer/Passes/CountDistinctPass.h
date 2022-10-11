@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Optimize single countDistinct into count over subquery.
+/** Optimize single `countDistinct` into `count` over subquery.
   *
   * Example: SELECT countDistinct(column) FROM table;
   * Result: SELECT count() FROM (SELECT column FROM table GROUP BY column);
