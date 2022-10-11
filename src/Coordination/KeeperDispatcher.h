@@ -35,7 +35,9 @@ private:
     std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
-    ConcurrentBoundedQueue<std::vector<std::packaged_task<void()>>> read_requests_queue;
+
+    using ReadRequestsQueue = ConcurrentBoundedQueue<std::vector<std::packaged_task<void()>>>;
+    std::unique_ptr<ReadRequestsQueue> read_requests_queue;
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};
@@ -100,6 +102,7 @@ private:
     void readRequestThread();
 
     void processReadRequest(const CoordinationSettingsPtr & coordination_settings, KeeperStorage::RequestForSession read_request);
+    void processReadRequestLocally(KeeperStorage::RequestForSession read_request);
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
@@ -109,7 +112,7 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    static void forceWaitAndProcessResult(RaftResult & result);
+    void forceWaitAndProcessResult(RaftResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`

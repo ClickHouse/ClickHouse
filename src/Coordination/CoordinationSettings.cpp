@@ -12,6 +12,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
+IMPLEMENT_SETTING_ENUM(ReadMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"nonlinear",  ReadMode::NONLINEAR},
+     {"fastlinear", ReadMode::FASTLINEAR},
+     {"quorum",     ReadMode::QUORUM}})
+
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
 void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
