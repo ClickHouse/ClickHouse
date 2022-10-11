@@ -1,5 +1,5 @@
 CREATE TABLE mytable_stored (`a` UInt8) ENGINE = MergeTree ORDER BY a;
-CREATE TABLE mytable (`a` UInt8) ENGINE = Buffer('mydb', 'mytable_stored', 4, 600, 3600, 10, 100, 10000, 10000000);
+CREATE TABLE mytable (`a` UInt8) ENGINE = Buffer(currentDatabase(), 'mytable_stored', 4, 600, 3600, 10, 100, 10000, 10000000);
 INSERT INTO mytable VALUES (0);
 INSERT INTO mytable VALUES (1);
 INSERT INTO mytable VALUES (2);
