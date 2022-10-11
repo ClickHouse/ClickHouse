@@ -148,11 +148,7 @@ std::vector<String> Settings::getAllRegisteredNames() const
 
 void Settings::set(std::string_view name, const Field & value)
 {
-    if (value.isNull()) {
-        resetToDefault(name);
-    } else {
-        BaseSettings::set(name, value);
-    }
+    BaseSettings::set(name, value);
 
     if (name == "compatibility")
         applyCompatibilitySetting();

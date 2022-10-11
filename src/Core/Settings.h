@@ -890,6 +890,8 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
 
     void set(std::string_view name, const Field & value) override;
 
+    void setDefaultValue(const String & name) { resetToDefault(name); }
+
 private:
     void applyCompatibilitySetting();
 

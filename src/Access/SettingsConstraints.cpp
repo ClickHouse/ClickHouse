@@ -118,8 +118,6 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     bool cannot_cast;
     auto cast_value = [&](const Field & x) -> Field
     {
-        if (x.isNull())
-            return {};
         cannot_cast = false;
         if (reaction == THROW_ON_VIOLATION)
             return Settings::castValueUtil(setting_name, x);
