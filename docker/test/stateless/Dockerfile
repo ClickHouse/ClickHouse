@@ -11,6 +11,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             awscli \
             brotli \
+            lz4 \
             expect \
             golang \
             lsof \
