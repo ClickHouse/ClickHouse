@@ -14,9 +14,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const String & version_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
+    bool use_average_block_sizes,
+    bool cleanup_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size), cleanup(cleanup_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -81,16 +82,20 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
                             ErrorCodes::INCORRECT_DATA);
 
-        /// A non-strict comparison, since we select the last row for the same version values.
-        if (version_column_number == -1
-            || selected_row.empty()
-            || current->all_columns[version_column_number]->compareAt(
-                current->getRow(), selected_row.row_num,
-                *(*selected_row.all_columns)[version_column_number],
-                /* nan_direction_hint = */ 1) >= 0)
-        {
-            max_pos = current_pos;
-            setRowRef(selected_row, current);
+        if (cleanup && is_deleted){
+            current_row.clear();
+        } else {
+            /// A non-strict comparison, since we select the last row for the same version values.
+            if (version_column_number == -1
+                || selected_row.empty()
+                || current->all_columns[version_column_number]->compareAt(
+                    current->getRow(), selected_row.row_num,
+                    *(*selected_row.all_columns)[version_column_number],
+                    /* nan_direction_hint = */ 1) >= 0)
+            {
+                max_pos = current_pos;
+                setRowRef(selected_row, current);
+            }
         }
 
         if (!current->isLast())
