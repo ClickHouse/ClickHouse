@@ -1,11 +1,11 @@
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION
     LIST id: 1, nodes: 1
       CONSTANT id: 2, constant_value: UInt64_1, constant_value_type: UInt8
   JOIN TREE
     IDENTIFIER id: 3, identifier: system.one
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION
     LIST id: 1, nodes: 2
       IDENTIFIER id: 2, identifier: id
@@ -13,7 +13,7 @@ QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, i
   JOIN TREE
     IDENTIFIER id: 4, identifier: test_table
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
     value String
@@ -24,7 +24,7 @@ QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, i
   JOIN TREE
     TABLE id: 3, table_name: default.test_table
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: arrayMap, function_type: ordinary
@@ -44,7 +44,7 @@ QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, i
   JOIN TREE
     IDENTIFIER id: 12, identifier: test_table
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION COLUMNS
     arrayMap(lambda(tuple(x), plus(x, 1)), [1, 2, 3]) Array(UInt16)
   PROJECTION
@@ -66,7 +66,7 @@ QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, i
   JOIN TREE
     TABLE id: 11, table_name: default.test_table
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   WITH
     LIST id: 1, nodes: 1
       LAMBDA id: 2, alias: lambda
@@ -88,7 +88,7 @@ QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, i
   JOIN TREE
     IDENTIFIER id: 13, identifier: test_table
 --
-QUERY id: 0, is_subquery: 0, is_cte: 0, is_distinct: 0, is_limit_with_ties: 0, is_group_by_with_totals: 0, group_by_type: ordinary
+QUERY id: 0
   PROJECTION COLUMNS
     lambda(id) UInt64
   PROJECTION

@@ -181,7 +181,7 @@ namespace ErrorCodes
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
-  * TODO: Support group_by_use_nulls
+  * TODO: Support group_by_use_nulls.
   * TODO: Scalar subqueries cache.
   */
 
@@ -5022,6 +5022,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             if (join_node.isUsingJoinExpression())
             {
                 auto & join_using_list = join_node.getJoinExpression()->as<ListNode &>();
+                std::unordered_set<std::string> join_using_identifiers;
+
                 for (auto & join_using_node : join_using_list.getNodes())
                 {
                     auto * identifier_node = join_using_node->as<IdentifierNode>();
@@ -5029,6 +5031,14 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         continue;
 
                     const auto & identifier_full_name = identifier_node->getIdentifier().getFullName();
+
+                    if (join_using_identifiers.contains(identifier_full_name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "JOIN {} identifier '{}' appears more than once in USING clause",
+                            join_node.formatASTForErrorMessage(),
+                            identifier_full_name);
+
+                    join_using_identifiers.insert(identifier_full_name);
 
                     IdentifierLookup identifier_lookup {identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                     auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getLeftTableExpression(), scope);
@@ -5060,16 +5070,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     join_using_node = std::move(join_using_column);
                 }
-
-                for (auto & join_using_node : join_using_list.getNodes())
-                {
-                    if (!join_using_node->as<ColumnNode>())
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "JOIN {} USING identifier node must be resolved into column node. Actual {}. In scope {}",
-                            join_node.formatASTForErrorMessage(),
-                            join_tree_node->formatASTForErrorMessage(),
-                            scope.scope_node->formatASTForErrorMessage());
-                }
             }
             else if (join_node.getJoinExpression())
             {
@@ -5098,10 +5098,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     }
 
     auto join_tree_node_type = join_tree_node->getNodeType();
-    if (join_tree_node_type == QueryTreeNodeType::QUERY ||
-        join_tree_node_type == QueryTreeNodeType::UNION ||
-        join_tree_node_type == QueryTreeNodeType::TABLE ||
-        join_tree_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    if (isTableExpressionNodeType(join_tree_node_type))
     {
         validateTableExpressionModifiers(join_tree_node, scope);
         initializeTableExpressionColumns(join_tree_node, scope);
@@ -5205,7 +5202,6 @@ private:
     const QueryTreeNodes & group_by_keys_nodes;
     const IdentifierResolveScope & scope;
 };
-
 
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
