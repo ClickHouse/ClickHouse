@@ -27,6 +27,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -335,11 +336,12 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.getInputOrderInfo() && query_info.getInputOrderInfo()->direction == -1)
+        if (query_info.getInputOrderInfo())
         {
+            /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ReverseTransform>(header);
+                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
             });
         }
     }
