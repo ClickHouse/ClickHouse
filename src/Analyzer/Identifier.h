@@ -3,6 +3,9 @@
 #include <vector>
 #include <string>
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 
@@ -361,3 +364,49 @@ inline std::ostream & operator<<(std::ostream & stream, const IdentifierView & i
 }
 
 }
+
+/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
+
+template <>
+struct fmt::formatter<DB::Identifier>
+{
+    constexpr static auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::Identifier & identifier, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", identifier.getFullName());
+    }
+};
+
+template <>
+struct fmt::formatter<DB::IdentifierView>
+{
+    constexpr static auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", identifier_view.getFullName());
+    }
+};

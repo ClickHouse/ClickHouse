@@ -7,8 +7,8 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/CollectWindowFunctionNodes.h>
-#include <Analyzer/CollectAggregateFunctionNodes.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/ActionsChain.h>
 #include <Planner/PlannerActionsVisitor.h>

@@ -20,4 +20,9 @@ void collectAggregateFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes
   */
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message);
 
+/** Assert that there are no GROUPING functions in node children.
+  * Do not visit subqueries.
+  */
+void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message);
+
 }

@@ -27,7 +27,6 @@ namespace ErrorCodes
   * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
   * TODO: Support fuse sum count optimize_fuse_sum_count_avg, optimize_syntax_fuse_functions.
-  * TODO: Support setting aggregate_functions_null_for_empty.
   * TODO: Support setting optimize_functions_to_subcolumns.
   * TODO: Support setting optimize_arithmetic_operations_in_aggregate_functions.
   * TODO: Support setting convert_query_to_cnf.
@@ -47,7 +46,6 @@ namespace ErrorCodes
   * TODO: Remove duplicated elements from USING clause.
   * TODO: Support settings.optimize_syntax_fuse_functions.
   * TODO: Support settings.optimize_or_like_chain.
-  * TODO: Support function name normalizer.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 

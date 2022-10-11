@@ -45,8 +45,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/CollectAggregateFunctionNodes.h>
-#include <Analyzer/CollectWindowFunctionNodes.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/Utils.h>
 #include <Planner/PlannerContext.h>
