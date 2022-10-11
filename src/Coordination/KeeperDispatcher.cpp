@@ -407,7 +407,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     bool fastlinear_reads = configuration_and_settings->coordination_settings->read_mode == ReadMode::FASTLINEAR;
-    if (fastlinear_reads) 
+    if (fastlinear_reads)
     {
         read_requests_queue = std::make_unique<ReadRequestsQueue>(std::numeric_limits<size_t>::max());
         read_request_thread = ThreadFromGlobalPool([this] { readRequestThread(); });
