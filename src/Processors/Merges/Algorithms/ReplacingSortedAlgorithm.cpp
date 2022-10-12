@@ -77,26 +77,26 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
+
+        /// A non-strict comparison, since we select the last row for the same version values.
+        if (version_column_number == -1
+            || selected_row.empty()
+            || current->all_columns[version_column_number]->compareAt(
+                current->getRow(), selected_row.row_num,
+                *(*selected_row.all_columns)[version_column_number],
+                /* nan_direction_hint = */ 1) >= 0)
+        {
+            max_pos = current_pos;
+            setRowRef(selected_row, current);
+        }
+
         UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
         if ((is_deleted != 1) && (is_deleted != 0))
             throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
                             ErrorCodes::INCORRECT_DATA);
 
-        if (cleanup && is_deleted){
+        if (cleanup && is_deleted)
             current_row.clear();
-        } else {
-            /// A non-strict comparison, since we select the last row for the same version values.
-            if (version_column_number == -1
-                || selected_row.empty()
-                || current->all_columns[version_column_number]->compareAt(
-                    current->getRow(), selected_row.row_num,
-                    *(*selected_row.all_columns)[version_column_number],
-                    /* nan_direction_hint = */ 1) >= 0)
-            {
-                max_pos = current_pos;
-                setRowRef(selected_row, current);
-            }
-        }
 
         if (!current->isLast())
         {
