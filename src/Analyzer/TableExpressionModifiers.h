@@ -59,7 +59,6 @@ private:
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
-    lhs.getSampleOffsetRatio();
     return lhs.hasFinal() == rhs.hasFinal() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
 }
 

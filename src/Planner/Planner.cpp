@@ -1,5 +1,7 @@
 #include <Planner/Planner.h>
 
+#include <Common/checkStackSize.h>
+
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -69,6 +71,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_SUBQUERIES;
 }
 
 /** ClickHouse query planner.
@@ -88,10 +91,42 @@ namespace ErrorCodes
   * TODO: Support ORDER BY read in order optimization
   * TODO: Support GROUP BY read in order optimization
   * TODO: Support Key Condition. Support indexes for IN function.
+  * TODO: Better support for quota and limits.
   */
 
 namespace
 {
+
+/** Check that table and table function table expressions from planner context support transactions.
+  *
+  * There is precondition that table expression data for table expression nodes is collected in planner context.
+  */
+void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+        return;
+
+    if (!query_context->getCurrentTransaction())
+        return;
+
+    for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
+    {
+        StoragePtr storage;
+        if (auto * table_node = table_expression->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        if (storage->supportsTransactions())
+            continue;
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Storage {} (table {}) does not support transactions",
+            storage->getName(),
+            storage->getStorageID().getNameForLogs());
+    }
+}
 
 void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQueryOptions & select_query_options, const PlannerContextPtr & planner_context)
 {
@@ -122,6 +157,25 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
 }
 
+/// Extend lifetime of query context, storages, and table locks
+void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
+{
+    query_plan.addInterpreterContext(planner_context->getQueryContext());
+
+    for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
+    {
+        if (auto * table_node = table_expression->as<TableNode>())
+        {
+            query_plan.addStorageHolder(table_node->getStorage());
+            query_plan.addTableLock(table_node->getStorageLock());
+        }
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+        {
+            query_plan.addStorageHolder(table_function_node->getStorage());
+        }
+    }
+}
+
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -131,11 +185,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     , select_query_options(select_query_options_)
     , planner_context(std::make_shared<PlannerContext>(context_, std::make_shared<GlobalPlannerContext>()))
 {
-    if (query_tree->getNodeType() != QueryTreeNodeType::QUERY &&
-        query_tree->getNodeType() != QueryTreeNodeType::UNION)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Expected QUERY or UNION node. Actual {}",
-            query_tree->formatASTForErrorMessage());
+    initialize();
 }
 
 /// Initialize interpreter with query tree after query analysis phase and global planner context
@@ -147,11 +197,26 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     , select_query_options(select_query_options_)
     , planner_context(std::make_shared<PlannerContext>(context_, std::move(global_planner_context_)))
 {
+    initialize();
+}
+
+void Planner::initialize()
+{
+    checkStackSize();
+
     if (query_tree->getNodeType() != QueryTreeNodeType::QUERY &&
         query_tree->getNodeType() != QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Expected QUERY or UNION node. Actual {}",
             query_tree->formatASTForErrorMessage());
+
+    const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
+
+    if (settings.max_subquery_depth && select_query_options.subquery_depth > settings.max_subquery_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES,
+            "Too deep subqueries. Maximum: {}",
+            settings.max_subquery_depth.toString());
 }
 
 void Planner::buildQueryPlanIfNeeded()
@@ -286,6 +351,8 @@ void Planner::buildQueryPlanIfNeeded()
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
 
     collectTableExpressionData(query_tree, *planner_context);
+    checkStoragesSupportTransactions(planner_context);
+
     collectSets(query_tree, *planner_context);
 
     query_plan = buildQueryPlanForJoinTreeNode(query_node.getJoinTree(), select_query_info, select_query_options, planner_context);
@@ -496,6 +563,21 @@ void Planner::buildQueryPlanIfNeeded()
     expression_step_projection->setStepDescription("Projection");
     query_plan.addStep(std::move(expression_step_projection));
 
+    UInt64 limit_offset = 0;
+    if (query_node.hasOffset())
+    {
+        /// Constness of offset is validated during query analysis stage
+        limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
+    }
+
+    UInt64 limit_length = 0;
+
+    if (query_node.hasLimit())
+    {
+        /// Constness of limit is validated during query analysis stage
+        limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
+    }
+
     if (query_node.isDistinct())
     {
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
@@ -503,6 +585,13 @@ void Planner::buildQueryPlanIfNeeded()
         bool pre_distinct = true;
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+        bool no_order_by = !query_node.hasOrderBy();
+
+        /** If after this stage of DISTINCT ORDER BY is not executed,
+          * then you can get no more than limit_length + limit_offset of different rows.
+          */
+        if (no_order_by && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+            limit_hint_for_distinct = limit_length + limit_offset;
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentDataStream(),
@@ -535,7 +624,16 @@ void Planner::buildQueryPlanIfNeeded()
     {
         sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
 
-        UInt64 limit = 0;
+        bool query_has_array_join = queryHasArrayJoin(query_tree);
+
+        UInt64 partial_sorting_limit = 0;
+
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN.
+        if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() && !query_has_array_join &&
+            limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        {
+            partial_sorting_limit = limit_length + limit_offset;
+        }
 
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
@@ -544,7 +642,7 @@ void Planner::buildQueryPlanIfNeeded()
             query_plan.getCurrentDataStream(),
             sort_description,
             settings.max_block_size,
-            limit,
+            partial_sorting_limit,
             SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
             settings.max_bytes_before_remerge_sort,
             settings.remerge_sort_lowered_memory_bytes_ratio,
@@ -678,21 +776,11 @@ void Planner::buildQueryPlanIfNeeded()
         query_plan.addStep(std::move(extremes_step));
     }
 
-    UInt64 limit_offset = 0;
-    if (query_node.hasOffset())
-    {
-        /// Constness of offset is validated during query analysis stage
-        limit_offset = query_node.getOffset()->getConstantValue().getValue().safeGet<UInt64>();
-    }
-
     if (query_node.hasLimit())
     {
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
         bool always_read_till_end = settings.exact_rows_before_limit;
         bool limit_with_ties = query_node.isLimitWithTies();
-
-        /// Constness of limit is validated during query analysis stage
-        UInt64 limit_length = query_node.getLimit()->getConstantValue().getValue().safeGet<UInt64>();
 
         SortDescription limit_with_ties_sort_description;
 
@@ -728,22 +816,7 @@ void Planner::buildQueryPlanIfNeeded()
     query_plan.addStep(std::move(projection_step));
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context);
-
-    /// Extend lifetime of context, table locks, storages
-    query_plan.addInterpreterContext(planner_context->getQueryContext());
-
-    for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
-    {
-        if (auto * table_node = table_expression->as<TableNode>())
-        {
-            query_plan.addStorageHolder(table_node->getStorage());
-            query_plan.addTableLock(table_node->getStorageLock());
-        }
-        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
-        {
-            query_plan.addStorageHolder(table_function_node->getStorage());
-        }
-    }
+    extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
 }

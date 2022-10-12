@@ -78,28 +78,42 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         const auto & columns_names = table_expression_data.getColumnsNames();
         Names column_names(columns_names.begin(), columns_names.end());
 
-        std::optional<NameAndTypePair> read_additional_column;
-
         if (column_names.empty())
         {
             auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-            read_additional_column = column_names_and_types.front();
+            auto additional_column_to_read = column_names_and_types.front();
+
+            const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
+            column_names.push_back(additional_column_to_read.name);
+            table_expression_data.addColumn(additional_column_to_read, column_identifier);
         }
 
-        if (read_additional_column)
+        const auto & query_context = planner_context->getQueryContext();
+        size_t max_block_size = query_context->getSettingsRef().max_block_size;
+        size_t max_streams = query_context->getSettingsRef().max_threads;
+
+        bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(column_names);
+        if (need_rewrite_query_with_final)
         {
-            const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(*read_additional_column, table_expression);
-            column_names.push_back(read_additional_column->name);
-            table_expression_data.addColumn(*read_additional_column, column_identifier);
+            if (table_expression_query_info.table_expression_modifiers)
+            {
+                const auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
+                auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
+                auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
+
+                table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    sample_size_ratio,
+                    sample_offset_ratio);
+            }
+            else
+            {
+                table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
+                    {} /*sample_size_ratio*/,
+                    {} /*sample_offset_ratio*/);
+            }
         }
 
-        if (!column_names.empty())
-        {
-            const auto & query_context = planner_context->getQueryContext();
-            size_t max_block_size = query_context->getSettingsRef().max_block_size;
-            size_t max_streams = query_context->getSettingsRef().max_threads;
-            storage->read(query_plan, column_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
-        }
+        storage->read(query_plan, column_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())

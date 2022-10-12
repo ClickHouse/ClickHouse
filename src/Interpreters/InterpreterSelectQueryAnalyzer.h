@@ -27,11 +27,17 @@ public:
 
     Block getSampleBlock();
 
-    QueryPlan && extractQueryPlan() &&;
-
     BlockIO execute() override;
 
+    QueryPlan && extractQueryPlan() &&;
+
     bool supportsTransactions() const override { return true; }
+
+    bool ignoreLimits() const override { return select_query_options.ignore_limits; }
+
+    bool ignoreQuota() const override { return select_query_options.ignore_quota; }
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
 private:
     ASTPtr query;

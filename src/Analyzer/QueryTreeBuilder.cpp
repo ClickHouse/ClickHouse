@@ -445,7 +445,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
                             function->formatForErrorMessage());
 
                     if (lambda_argument_identifier->name_parts.size() > 1)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Lambda {} argument identifier must contain only argument name. Actual {}",
                             function->formatForErrorMessage(),
                             lambda_argument_identifier->full_name);
@@ -453,7 +453,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
                     const auto & argument_name = lambda_argument_identifier->name_parts[0];
                     auto [_, inserted] = lambda_arguments_set.insert(argument_name);
                     if (!inserted)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Lambda {} multiple arguments with same name {}",
                             function->formatForErrorMessage(),
                             argument_name);
