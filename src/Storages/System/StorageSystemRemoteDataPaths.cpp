@@ -1,9 +1,8 @@
 #include "StorageSystemRemoteDataPaths.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Common/IFileCache.h>
+#include <Common/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
@@ -24,8 +23,6 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"local_path", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
-        {"size", std::make_shared<DataTypeUInt64>()},
-        {"common_prefix_for_blobs", std::make_shared<DataTypeString>()},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }));
     setInMemoryMetadata(storage_metadata);
@@ -47,8 +44,6 @@ Pipe StorageSystemRemoteDataPaths::read(
     MutableColumnPtr col_cache_base_path = ColumnString::create();
     MutableColumnPtr col_local_path = ColumnString::create();
     MutableColumnPtr col_remote_path = ColumnString::create();
-    MutableColumnPtr col_size = ColumnUInt64::create();
-    MutableColumnPtr col_namespace = ColumnString::create();
     MutableColumnPtr col_cache_paths = ColumnArray::create(ColumnString::create());
 
     auto disks = context->getDisksMap();
@@ -61,12 +56,11 @@ Pipe StorageSystemRemoteDataPaths::read(
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
             FileCachePtr cache;
-            auto cache_base_path = disk->supportsCache() ? disk->getCacheBasePath() : "";
-
+            auto cache_base_path = disk->getCacheBasePath();
             if (!cache_base_path.empty())
                 cache = FileCacheFactory::instance().get(cache_base_path);
 
-            for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
+            for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
             {
                 for (const auto & object : storage_objects)
                 {
@@ -75,8 +69,6 @@ Pipe StorageSystemRemoteDataPaths::read(
                     col_cache_base_path->insert(cache_base_path);
                     col_local_path->insert(local_path);
                     col_remote_path->insert(object.absolute_path);
-                    col_size->insert(object.bytes_size);
-                    col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
                     {
@@ -98,8 +90,6 @@ Pipe StorageSystemRemoteDataPaths::read(
     res_columns.emplace_back(std::move(col_cache_base_path));
     res_columns.emplace_back(std::move(col_local_path));
     res_columns.emplace_back(std::move(col_remote_path));
-    res_columns.emplace_back(std::move(col_size));
-    res_columns.emplace_back(std::move(col_namespace));
     res_columns.emplace_back(std::move(col_cache_paths));
 
     UInt64 num_rows = res_columns.at(0)->size();

@@ -1,9 +1,9 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserRenameQuery.h>

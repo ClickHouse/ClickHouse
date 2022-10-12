@@ -235,12 +235,6 @@ public:
     /// Returns true if the storage supports backup/restore for specific partitions.
     virtual bool supportsBackupPartition() const { return false; }
 
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
-
-    /// Return true if storage can execute lightweight delete mutations.
-    virtual bool supportsLightweightDelete() const { return false; }
-
 private:
 
     StorageID storage_id;
@@ -256,15 +250,11 @@ protected:
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
 public:
-    /// Lock table for share. This lock must be acquired if you want to be sure,
+    /// Lock table for share. This lock must be acuqired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
-
-    /// Similar to lockForShare, but returns a nullptr if the table is dropped while
-    /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
@@ -286,7 +276,7 @@ public:
       *
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards,
-      *  see also MergeTree engine and projection optimization).
+      *  see also MergeTree engine and allow_experimental_projection_optimization).
       * And to store optimized cluster (after optimize_skip_unused_shards).
       * It will also store needed stuff for projection query pipeline.
       *

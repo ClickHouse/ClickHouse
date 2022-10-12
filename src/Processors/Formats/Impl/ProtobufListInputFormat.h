@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
@@ -50,7 +50,6 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
-    bool skip_unsopported_fields;
 };
 
 }

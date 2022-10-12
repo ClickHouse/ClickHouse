@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -100,7 +100,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3GetIndexesFromUnidirectionalEdge)
+void registerFunctionH3GetIndexesFromUnidirectionalEdge(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3GetIndexesFromUnidirectionalEdge>();
 }

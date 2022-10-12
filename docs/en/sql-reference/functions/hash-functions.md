@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/hash-functions
 sidebar_position: 50
 sidebar_label: Hash
 ---
@@ -23,7 +22,7 @@ Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -70,7 +69,7 @@ Function [interprets](../../sql-reference/functions/type-conversion-functions.md
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -100,7 +99,7 @@ sipHash128(par1,...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned value**
 
@@ -136,7 +135,7 @@ This is a fast non-cryptographic hash function. It uses the CityHash algorithm f
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -276,7 +275,7 @@ These functions use the `Fingerprint64` and `Hash64` methods respectively from a
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data)..
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -296,14 +295,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash
 
-Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452), 
-[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405), 
-[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410), 
-[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959), 
-[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060). 
-This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
-
-Note that Java only support calculating signed integers hash, so if you want to calculate unsigned integers hash you must cast it to proper signed ClickHouse types.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
 **Syntax**
 
@@ -316,20 +308,6 @@ SELECT javaHash('')
 A `Int32` data type hash value.
 
 **Example**
-
-Query:
-
-```sql
-SELECT javaHash(toInt32(123));
-```
-
-Result:
-
-```response
-┌─javaHash(toInt32(123))─┐
-│               123      │
-└────────────────────────┘
-```
 
 Query:
 
@@ -423,7 +401,7 @@ metroHash64(par1, ...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -458,7 +436,7 @@ murmurHash2_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -526,7 +504,7 @@ murmurHash3_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 

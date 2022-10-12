@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/operations/
 title: Вопросы о производительности серверов и кластеров ClickHouse
 toc_hidden_folder: true
 sidebar_position: 3
@@ -15,6 +14,5 @@ sidebar_label: Операции
 
 :::info "Если вы не нашли то, что искали"
     Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
-:::
 
 [Original article](https://clickhouse.com/docs/en/faq/operations/)

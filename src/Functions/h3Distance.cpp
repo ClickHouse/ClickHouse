@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -107,7 +107,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3Distance)
+void registerFunctionH3Distance(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3Distance>();
 }

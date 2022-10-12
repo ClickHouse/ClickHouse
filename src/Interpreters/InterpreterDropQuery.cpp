@@ -12,7 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -54,7 +54,7 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!drop.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
@@ -139,6 +139,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = !query_ptr->as<ASTDropQuery>()->table;
+        bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                       !context_->getClientInfo().is_replicated_database_internal &&
+                                       !is_drop_or_detach_database;
 
         AccessFlags drop_storage;
 
@@ -149,7 +152,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else
             drop_storage = AccessType::DROP_TABLE;
 
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+        if (is_replicated_ddl_query)
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
                 context_->checkAccess(drop_storage, table_id);
@@ -160,7 +163,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return database->tryEnqueueReplicatedDDL(query.clone(), context_);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query.clone(), context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -242,11 +245,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
                                                                      is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
-
-            /// We have to drop mmapio cache when dropping table from Ordinary database
-            /// to avoid reading old data if new table with the same name is created
-            if (database->getUUID() == UUIDHelpers::Nil)
-                context_->dropMMappedFileCache();
         }
 
         db = database;

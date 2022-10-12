@@ -33,7 +33,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
@@ -75,7 +75,6 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setCurrentUnitNumber(current_ticket_number);
-        input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();

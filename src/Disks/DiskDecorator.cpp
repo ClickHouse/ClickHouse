@@ -236,16 +236,9 @@ void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & c
     delegate->applyNewSettings(config, context, config_prefix, map);
 }
 
-DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage()
+DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage(const String & name)
 {
-    return delegate->createDiskObjectStorage();
-}
-
-DiskPtr DiskDecorator::getNestedDisk() const
-{
-    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate.get()))
-        return decorator->getNestedDisk();
-    return delegate;
+    return delegate->createDiskObjectStorage(name);
 }
 
 }

@@ -195,7 +195,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
@@ -325,22 +325,8 @@ static void explainStep(
                 elem.dumpNameAndType(settings.out);
             }
         }
+
         settings.out.write('\n');
-
-    }
-
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
     }
 
     if (options.actions)
@@ -448,7 +434,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

@@ -31,7 +31,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -42,9 +41,7 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
-
 }
-
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -152,7 +149,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_assume("ASSUME");
 
     ParserIdentifier name_p;
-    ParserExpression expression_p;
+    ParserLogicalOrExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
@@ -587,7 +584,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = storage_p.parse(pos, storage, expected);
 
-        if ((storage_parse_result || is_temporary) && need_parse_as_select())
+        if (storage_parse_result && need_parse_as_select())
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
@@ -858,8 +855,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserStorage storage_p;
     ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
-    ParserExpression watermark_p;
-    ParserExpression lateness_p;
+    ParserIntervalOperatorExpression watermark_p;
+    ParserIntervalOperatorExpression lateness_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;

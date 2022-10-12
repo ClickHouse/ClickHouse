@@ -2,7 +2,6 @@
 
 #include <Core/Field.h>
 #include <Core/UUID.h>
-#include <Common/SettingConstraintWritability.h>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -26,9 +25,9 @@ struct SettingsProfileElement
     Field value;
     Field min_value;
     Field max_value;
-    std::optional<SettingConstraintWritability> writability;
+    std::optional<bool> readonly;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, readonly); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
+#include "config_core.h"
 
 #if USE_MSGPACK
 

@@ -54,7 +54,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
         return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
     }
 
-    return reader.submit(request);
+    return reader->submit(request);
 }
 
 
@@ -90,10 +90,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         prefetch_future = {};
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             prefetch_buffer.swap(memory);
             /// Adjust the working buffer so that it ignores `offset` bytes.
@@ -112,10 +109,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
             internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
@@ -140,7 +134,7 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
 
 
 AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
-    IAsynchronousReader & reader_,
+    AsynchronousReaderPtr reader_,
     Int32 priority_,
     int fd_,
     size_t buf_size,
@@ -148,7 +142,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     size_t alignment,
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
-    , reader(reader_)
+    , reader(std::move(reader_))
     , priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)

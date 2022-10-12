@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -137,7 +137,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3KRing)
+void registerFunctionH3KRing(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3KRing>();
 }

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include "registerTableFunctions.h"
 
 #if USE_HDFS
@@ -6,7 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
 #include <Access/Common/AccessFlags.h>
 

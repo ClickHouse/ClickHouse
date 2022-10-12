@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure
 sidebar_position: 44
 sidebar_label: Dictionary Key and Fields
 ---

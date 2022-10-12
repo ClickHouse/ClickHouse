@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 

@@ -1,5 +1,4 @@
 #include <Functions/FunctionsAES.h>
-#include <Interpreters/Context.h>
 
 #if USE_SSL
 
@@ -8,6 +7,7 @@
 
 #include <string>
 #include <cassert>
+
 
 namespace DB
 {
