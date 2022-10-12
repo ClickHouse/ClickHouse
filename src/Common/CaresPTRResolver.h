@@ -1,6 +1,7 @@
 #pragma once
 
-#include <mutex>
+#include <span>
+#include <poll.h>
 #include "DNSPTRResolver.h"
 
 using ares_channel = struct ares_channeldata *;
@@ -36,8 +37,15 @@ namespace DB
 
         void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response);
 
-        ares_channel channel;
+        std::span<pollfd> get_readable_sockets(int * sockets, pollfd * pollfd);
 
+        int64_t calculate_timeout();
+
+        void process_possible_timeout();
+
+        void process_readable_sockets(std::span<pollfd> readable_sockets);
+
+        ares_channel channel;
         static std::mutex mutex;
     };
 }
