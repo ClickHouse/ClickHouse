@@ -74,20 +74,30 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     }
 
     Pos dot_pos = nullptr;
+    Pos colon_pos = nullptr;
+    bool has_at_symbol = false;
+    bool has_terminator_after_colon = false;
     const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
         switch (*pos)
         {
         case '.':
-            dot_pos = pos;
+            if (has_at_symbol || colon_pos == nullptr)
+                dot_pos = pos;
             break;
-        case ':': /// end symbols
-        case '/':
+        case ':':
+            if (has_at_symbol || colon_pos) goto done;
+            colon_pos = pos;
+            break;
+        case '/': /// end symbols
         case '?':
         case '#':
-            return checkAndReturnHost(pos, dot_pos, start_of_host);
+            goto done;
         case '@': /// myemail@gmail.com
+            if (has_terminator_after_colon) return std::string_view{};
+            if (has_at_symbol) goto done;
+            has_at_symbol = true;
             start_of_host = pos + 1;
             break;
         case ' ': /// restricted symbols in whole URL
@@ -106,10 +116,16 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ';':
         case '=':
         case '&':
-            return std::string_view{};
+            if (colon_pos == nullptr)
+                return std::string_view{};
+            else
+                has_terminator_after_colon = true;
         }
     }
 
+done:
+    if (!has_at_symbol)
+        pos = colon_pos ? colon_pos : pos;
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 

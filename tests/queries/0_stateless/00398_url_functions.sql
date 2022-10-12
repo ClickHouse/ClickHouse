@@ -8,6 +8,14 @@ SELECT protocol('//127.0.0.1:443/') AS Scheme;
 
 SELECT '====HOST====';
 SELECT domain('http://paul@www.example.com:80/') AS Host;
+SELECT domain('user:password@example.com:8080') AS Host;
+SELECT domain('http://user:password@example.com:8080') AS Host;
+SELECT domain('http://user:password@example.com:8080/path?query=value#fragment') AS Host;
+SELECT domain('newuser:@example.com') AS Host;
+SELECT domain('http://:pass@example.com') AS Host;
+SELECT domain(':newpass@example.com') AS Host;
+SELECT domain('http://user:pass@example@.com') AS Host;
+SELECT domain('http://user:pass:example.com') AS Host;
 SELECT domain('http:/paul/example/com') AS Host;
 SELECT domain('http://www.example.com?q=4') AS Host;
 SELECT domain('http://127.0.0.1:443/') AS Host;
