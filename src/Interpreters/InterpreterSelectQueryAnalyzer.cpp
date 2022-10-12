@@ -14,6 +14,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryLog.h>
 
 namespace DB
 {
@@ -87,12 +88,6 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock()
     return planner.getQueryPlan().getCurrentDataStream().header;
 }
 
-QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
-{
-    planner.buildQueryPlanIfNeeded();
-    return std::move(planner).extractQueryPlan();
-}
-
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     planner.buildQueryPlanIfNeeded();
@@ -102,10 +97,24 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
     BuildQueryPipelineSettings build_pipeline_settings;
     auto pipeline_builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
-    BlockIO res;
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+    BlockIO result;
+    result.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
 
-    return res;
+    if (!select_query_options.ignore_quota && (select_query_options.to_stage == QueryProcessingStage::Complete))
+        result.pipeline.setQuota(getContext()->getQuota());
+
+    return result;
+}
+
+QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
+{
+    planner.buildQueryPlanIfNeeded();
+    return std::move(planner).extractQueryPlan();
+}
+
+void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
+{
+    elem.query_kind = "Select";
 }
 
 }

@@ -48,4 +48,7 @@ ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & express
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
 
+/// Returns true if query node JOIN TREE contains ARRAY JOIN node
+bool queryHasArrayJoin(const QueryTreeNodePtr & query_node);
+
 }

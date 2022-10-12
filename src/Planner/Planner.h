@@ -48,6 +48,8 @@ public:
     }
 
 private:
+    void initialize();
+
     QueryTreeNodePtr query_tree;
     QueryPlan query_plan;
     SelectQueryOptions select_query_options;

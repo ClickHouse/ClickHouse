@@ -278,12 +278,12 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual "
-                "{}",
+                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
                 join_tree_node->getNodeTypeName());
         }
     }
 }
+
 }
 
 QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node)

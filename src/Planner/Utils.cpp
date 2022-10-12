@@ -13,6 +13,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -194,5 +195,54 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
     return true;
 }
 
+bool queryHasArrayJoin(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    auto join_tree_node = query_node_typed.getJoinTree();
+
+    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(std::move(join_tree_node));
+
+    while (join_tree_nodes_to_process.empty())
+    {
+        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
+        join_tree_nodes_to_process.pop_back();
+
+        auto join_tree_node_type = join_tree_node_to_process->getNodeType();
+
+        switch (join_tree_node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+                [[fallthrough]];
+            case QueryTreeNodeType::QUERY:
+                [[fallthrough]];
+            case QueryTreeNodeType::UNION:
+                [[fallthrough]];
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                return true;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = join_tree_node->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                    join_tree_node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return false;
+}
 
 }
