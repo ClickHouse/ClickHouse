@@ -241,11 +241,4 @@ DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage()
     return delegate->createDiskObjectStorage();
 }
 
-DiskPtr DiskDecorator::getNestedDisk() const
-{
-    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate.get()))
-        return decorator->getNestedDisk();
-    return delegate;
-}
-
 }

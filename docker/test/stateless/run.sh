@@ -88,15 +88,13 @@ sleep 5
 function run_tests()
 {
     set -x
-    # We can have several additional options so we pass them as array because it is more ideologically correct.
+    # We can have several additional options so we path them as array because it's
+    # more idiologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
-
-    HIGH_LEVEL_COVERAGE=YES
 
     # Use random order in flaky check
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--order=random')
-        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
@@ -119,15 +117,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
         ADDITIONAL_OPTIONS+=('--run-by-hash-total')
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
-        HIGH_LEVEL_COVERAGE=NO
     fi
 
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
-    fi
-
-    if [[ "${HIGH_LEVEL_COVERAGE}" = "YES" ]]; then
-        ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
     set +e
@@ -179,17 +172,17 @@ pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhous
 #   for files >64MB, we want this files to be compressed explicitly
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
+    clickhouse-local --path /var/lib/clickhouse/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz ||:
-        clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse1/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse2/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz ||:
     fi
 done
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "
+    clickhouse-local --path /var/lib/clickhouse/ -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples

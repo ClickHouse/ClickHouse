@@ -203,7 +203,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp", "", 0);
+    global_context->setTemporaryStorage(path + "tmp");
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
@@ -226,8 +226,6 @@ void LocalServer::cleanup()
             global_context->shutdown();
             global_context.reset();
         }
-
-        /// thread status should be destructed before shared context because it relies on process list.
 
         status.reset();
 
@@ -368,7 +366,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    thread_status.emplace();
+    ThreadStatus thread_status;
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
@@ -622,13 +620,9 @@ void LocalServer::processConfig()
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        loadMetadata(global_context);
         startupSystemTables();
-
-        if (!config().has("only-system-tables"))
-        {
-            loadMetadata(global_context);
-            DatabaseCatalog::instance().loadDatabases();
-        }
+        DatabaseCatalog::instance().loadDatabases();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -719,7 +713,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
-        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
@@ -748,8 +741,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-structure", options["structure"].as<std::string>());
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
-    if (options.count("only-system-tables"))
-        config().setBool("only-system-tables", true);
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());

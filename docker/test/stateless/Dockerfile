@@ -11,7 +11,6 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             awscli \
             brotli \
-            lz4 \
             expect \
             golang \
             lsof \
@@ -36,12 +35,11 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            rustc \
-            cargo \
             zstd \
             file \
             pv \
     && apt-get clean
+
 
 RUN pip3 install numpy scipy pandas Jinja2
 

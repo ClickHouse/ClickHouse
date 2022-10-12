@@ -3,33 +3,6 @@
 ARG FROM_TAG=latest
 FROM clickhouse/test-util:$FROM_TAG
 
-# Rust toolchain and libraries
-ENV RUSTUP_HOME=/rust/rustup
-ENV CARGO_HOME=/rust/cargo
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
-RUN chmod 777 -R /rust
-ENV PATH="/rust/cargo/env:${PATH}"
-ENV PATH="/rust/cargo/bin:${PATH}"
-RUN rustup target add aarch64-unknown-linux-gnu && \
-        rustup target add x86_64-apple-darwin && \
-        rustup target add x86_64-unknown-freebsd && \
-        rustup target add aarch64-apple-darwin && \
-        rustup target add powerpc64le-unknown-linux-gnu
-RUN apt-get install \
-        gcc-aarch64-linux-gnu \
-        build-essential \
-        libc6 \
-        libc6-dev \
-        libc6-dev-arm64-cross \
-        --yes
-
-# Install CMake 3.20+ for Rust compilation
-# Used https://askubuntu.com/a/1157132 as reference
-RUN apt purge cmake --yes
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
-RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
-RUN apt update && apt install cmake --yes
-
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
@@ -93,6 +66,21 @@ ENV GOCACHE=/workdir/
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
+
+# NOTE: thread sanitizer is broken in clang-14, we have to build it with clang-15
+# https://github.com/ClickHouse/ClickHouse/pull/39450
+# https://github.com/google/sanitizers/issues/1540
+# https://github.com/google/sanitizers/issues/1552
+
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-15 main" >> \
+        /etc/apt/sources.list.d/clang.list \
+    && apt-get update \
+    && apt-get install \
+        clang-15 \
+        clang-tidy-15 \
+        --yes --no-install-recommends \
+    && apt-get clean
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

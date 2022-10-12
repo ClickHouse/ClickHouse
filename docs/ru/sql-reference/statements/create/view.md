@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: "Представление"
 ---
@@ -11,7 +10,7 @@ sidebar_label: "Представление"
 ## Обычные представления {#normal}
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
 
 Обычные представления не хранят никаких данных, они выполняют чтение данных из другой таблицы при каждом доступе. Другими словами, обычное представление — это не что иное, как сохраненный запрос. При чтении данных из представления этот сохраненный запрос используется как подзапрос в секции [FROM](../../../sql-reference/statements/select/from.md).

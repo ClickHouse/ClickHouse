@@ -911,10 +911,10 @@ protected:
     bool ALWAYS_INLINE emplaceIfZero(const Key & x, LookupResult & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
-        if constexpr (!Cell::need_zero_value_storage)
+        if (!Cell::need_zero_value_storage)
             return false;
 
-        if (unlikely(Cell::isZero(x, *this)))
+        if (Cell::isZero(x, *this))
         {
             it = this->zeroValue();
 
@@ -990,11 +990,6 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
-    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
-    {
-        const auto place = grower.place(hash_key);
-        __builtin_prefetch(&buf[place]);
-    }
 
 public:
     void reserve(size_t num_elements)
@@ -1019,6 +1014,7 @@ public:
         return res;
     }
 
+
     /// Reinsert node pointed to by iterator
     void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
     {
@@ -1029,13 +1025,6 @@ public:
                 Cell::move(it.getPtr(), &buf[place_value]);
     }
 
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
-    {
-        const auto & key = keyHolderGetKey(key_holder);
-        const auto key_hash = hash(key);
-        prefetchByHash(key_hash);
-    }
 
     /** Insert the key.
       * Return values:

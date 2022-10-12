@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/functions
----
 # system.functions {#system-functions}
 
 Содержит информацию об обычных и агрегатных функциях.

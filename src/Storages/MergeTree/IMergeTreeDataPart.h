@@ -23,7 +23,6 @@
 
 #include <shared_mutex>
 
-
 namespace zkutil
 {
     class ZooKeeper;
@@ -159,7 +158,7 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
+    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -412,7 +411,7 @@ public:
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 
     /// [Re]writes file with transactional metadata on disk
-    void storeVersionMetadata(bool force = false) const;
+    void storeVersionMetadata() const;
 
     /// Appends the corresponding CSN to file on disk (without fsync)
     void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
@@ -501,7 +500,6 @@ protected:
 
     void initializePartMetadataManager();
 
-    void initializeIndexGranularityInfo();
 
 private:
     /// In compact parts order of columns is necessary
@@ -584,8 +582,5 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
-inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
-bool isCompressedFromIndexExtension(const String & index_extension);
 
 }

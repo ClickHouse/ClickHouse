@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -29,7 +29,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_download_retries_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)

@@ -71,8 +71,6 @@ public:
 
     void restart(ContextPtr context);
 
-    DiskPtr getNestedDisk() const override;
-
 private:
     friend class RestartAwareReadBuffer;
     friend class RestartAwareWriteBuffer;

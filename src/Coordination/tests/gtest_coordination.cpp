@@ -6,7 +6,7 @@
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NURAFT
 #include <Poco/ConsoleChannel.h>
@@ -137,7 +137,7 @@ struct SimpliestRaftServer
         if (!raft_instance)
         {
             std::cerr << "Failed to initialize launcher" << std::endl;
-            _exit(1);
+            exit(-1);
         }
 
         std::cout << "init Raft instance " << server_id;
@@ -1339,7 +1339,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
             nuraft::async_result<bool>::handler_type when_done = [&snapshot_created] (bool & ret, nuraft::ptr<std::exception> &/*exception*/)
             {
                 snapshot_created = ret;
-                std::cerr << "Snapshot finished\n";
+                std::cerr << "Snapshot finised\n";
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -2139,38 +2139,6 @@ TEST_P(CoordinationTest, TestCurrentApiVersion)
     DB::ReadBufferFromOwnString buf(get_response.data);
     DB::readIntText(keeper_version, buf);
     EXPECT_EQ(keeper_version, static_cast<uint8_t>(current_keeper_api_version));
-}
-
-TEST_P(CoordinationTest, TestSystemNodeModify)
-{
-    using namespace Coordination;
-    int64_t zxid{0};
-
-    // On INIT we abort when a system path is modified
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
-    KeeperStorage storage{500, "", keeper_context};
-    const auto assert_create = [&](const std::string_view path, const auto expected_code)
-    {
-        auto request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = path;
-        storage.preprocessRequest(request, 0, 0, zxid);
-        auto responses = storage.processRequest(request, 0, zxid);
-        ASSERT_FALSE(responses.empty());
-
-        const auto & response = responses[0];
-        ASSERT_EQ(response.response->error, expected_code) << "Unexpected error for path " << path;
-
-        ++zxid;
-    };
-
-    assert_create("/keeper", Error::ZBADARGUMENTS);
-    assert_create("/keeper/with_child", Error::ZBADARGUMENTS);
-    assert_create(DB::keeper_api_version_path, Error::ZBADARGUMENTS);
-
-    assert_create("/keeper_map", Error::ZOK);
-    assert_create("/keeper1", Error::ZOK);
-    assert_create("/keepe", Error::ZOK);
-    assert_create("/keeper1/test", Error::ZOK);
 }
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,

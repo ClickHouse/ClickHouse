@@ -12,7 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>

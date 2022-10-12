@@ -32,15 +32,11 @@ AzureObjectStorage::AzureObjectStorage(
     , settings(std::move(settings_))
     , log(&Poco::Logger::get("AzureObjectStorage"))
 {
-    data_source_description.type = DataSourceType::AzureBlobStorage;
-    data_source_description.description = client.get()->GetUrl();
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
 }
 
 std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString(32);
+    return getRandomASCIIString();
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -107,12 +103,12 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
+        auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl), disk_read_settings);
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }

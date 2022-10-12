@@ -64,7 +64,6 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
 JSONEachRowWithProgress
-JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -252,7 +251,6 @@ dragonbox
 durations
 endian
 enum
-exFAT
 fastops
 fcoverage
 filesystem
@@ -301,7 +299,6 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
 jsonstringseachrowwithprogress
@@ -409,7 +406,6 @@ requestor
 resultset
 rethrow
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock
@@ -502,7 +498,3 @@ zkcopy
 zlib
 znodes
 zstd
-NYPD
-denormalizing
-ConnectionDetails
-SelfManaged

@@ -2,7 +2,7 @@
 
 #include "DiskFactory.h"
 
-#include "config.h"
+#include <Common/config.h>
 
 namespace DB
 {

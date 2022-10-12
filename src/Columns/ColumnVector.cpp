@@ -84,7 +84,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = hashCRC32(*begin, *hash_data);
+        *hash_data = intHashCRC32(*begin, *hash_data);
         ++begin;
         ++hash_data;
     }
@@ -808,7 +808,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = static_cast<T>(default_field.safeGet<T>());
+    T default_value = safeGet<T>(default_field);
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];
