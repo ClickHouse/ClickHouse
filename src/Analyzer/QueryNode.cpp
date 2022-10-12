@@ -14,8 +14,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/Utils.h>
 
@@ -412,6 +411,13 @@ ASTPtr QueryNode::toASTImpl() const
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST());
+
+    if (hasSettingsChanges())
+    {
+        auto settings_query = std::make_shared<ASTSetQuery>();
+        settings_query->changes = settings_changes;
+        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
+    }
 
     auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
     result_select_query->union_mode = SelectUnionMode::UNION_DEFAULT;

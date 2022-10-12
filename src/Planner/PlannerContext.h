@@ -96,6 +96,12 @@ public:
         return query_context;
     }
 
+    /// Get planner context query context
+    ContextPtr & getQueryContext()
+    {
+        return query_context;
+    }
+
     /// Get global planner context
     const GlobalPlannerContextPtr & getGlobalPlannerContext() const
     {
