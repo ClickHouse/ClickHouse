@@ -16,8 +16,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Common/config.h>
-#include "AggregateFunctionNull.h"
-#include "Core/Types.h"
+#include <AggregateFunctionNull.h>
+#include <Core/Types.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
