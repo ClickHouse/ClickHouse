@@ -46,7 +46,6 @@ namespace DB
         void process_readable_sockets(std::span<pollfd> readable_sockets);
 
         ares_channel channel;
-        static std::mutex mutex;
     };
 }
 
