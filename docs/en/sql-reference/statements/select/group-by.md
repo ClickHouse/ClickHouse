@@ -243,6 +243,32 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](../../../sql-reference/statements/select/join.md) clause (in this case, the respective total values are combined).
 
+## GROUP BY ALL
+
+`GROUP BY ALL` is equivalent to listing all the SELECT-ed columns that are not expressions of the aggregate functions.
+
+For example:
+
+``` sql
+SELECT
+    a,
+    b,
+    count(c),
+FROM t
+GROUP BY ALL
+```
+
+is the same as
+
+``` sql
+SELECT
+    a,
+    b,
+    count(c),
+FROM t
+GROUP BY a, b
+```
+
 ## Examples
 
 Example:
