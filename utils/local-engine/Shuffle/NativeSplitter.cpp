@@ -140,7 +140,7 @@ int64_t NativeSplitter::inputNext()
     }
     return result;
 }
-std::unique_ptr<NativeSplitter> NativeSplitter::create(std::string short_name, Options options_, jobject input)
+std::unique_ptr<NativeSplitter> NativeSplitter::create(const std::string & short_name, Options options_, jobject input)
 {
     if (short_name == "rr")
     {

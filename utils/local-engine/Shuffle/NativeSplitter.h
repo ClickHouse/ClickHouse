@@ -24,7 +24,7 @@ public:
     static jclass iterator_class;
     static jmethodID iterator_has_next;
     static jmethodID iterator_next;
-    static std::unique_ptr<NativeSplitter> create(std::string short_name, Options options, jobject input);
+    static std::unique_ptr<NativeSplitter> create(const std::string & short_name, Options options, jobject input);
 
     NativeSplitter(Options options, jobject input);
     bool hasNext();

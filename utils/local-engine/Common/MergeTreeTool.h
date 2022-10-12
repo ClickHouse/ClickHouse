@@ -34,5 +34,6 @@ struct MergeTreeTable
     std::string toString() const;
 };
 
-MergeTreeTable parseMergeTreeTableString(std::string & info);
+MergeTreeTable parseMergeTreeTableString(const std::string & info);
+
 }

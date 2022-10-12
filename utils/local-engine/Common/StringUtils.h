@@ -10,7 +10,7 @@ using PartitionValues = std::vector<PartitionValue>;
 class StringUtils
 {
 public:
-    static PartitionValues parsePartitionTablePath(std::string file);
-    static bool isNullPartitionValue(std::string value);
+    static PartitionValues parsePartitionTablePath(const std::string & file);
+    static bool isNullPartitionValue(const std::string & value);
 };
 }

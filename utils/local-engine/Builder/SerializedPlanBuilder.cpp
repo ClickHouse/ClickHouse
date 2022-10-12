@@ -85,8 +85,7 @@ SchemaPtr SerializedSchemaBuilder::build()
     }
     return std::move(this->schema);
 }
-
-SerializedSchemaBuilder & SerializedSchemaBuilder::column(std::string name, std::string type, bool nullable)
+SerializedSchemaBuilder & SerializedSchemaBuilder::column(const std::string & name, const std::string & type, bool nullable)
 {
     this->type_map.emplace(name, type);
     this->nullability_map.emplace(name, nullable);
@@ -95,7 +94,7 @@ SerializedSchemaBuilder & SerializedSchemaBuilder::column(std::string name, std:
 SerializedSchemaBuilder::SerializedSchemaBuilder() : schema(new substrait::NamedStruct())
 {
 }
-SerializedPlanBuilder & SerializedPlanBuilder::registerFunction(int id, std::string name)
+SerializedPlanBuilder & SerializedPlanBuilder::registerFunction(int id, const std::string & name)
 {
     auto * extension = this->plan->mutable_extensions()->Add();
     auto * function_mapping = extension->mutable_extension_function();
@@ -139,7 +138,7 @@ SerializedPlanBuilder & SerializedPlanBuilder::filter(substrait::Expression * co
     return *this;
 }
 
-SerializedPlanBuilder & SerializedPlanBuilder::read(std::string path, SchemaPtr schema)
+SerializedPlanBuilder & SerializedPlanBuilder::read(const std::string & path, SchemaPtr schema)
 {
     substrait::Rel * rel = new substrait::Rel();
     auto * read = rel->mutable_read();
@@ -150,7 +149,13 @@ SerializedPlanBuilder & SerializedPlanBuilder::read(std::string path, SchemaPtr 
     return *this;
 }
 
-SerializedPlanBuilder& SerializedPlanBuilder::readMergeTree(std::string database, std::string table, std::string relative_path,int min_block, int max_block, SchemaPtr schema)
+SerializedPlanBuilder & SerializedPlanBuilder::readMergeTree(
+    const std::string & database,
+    const std::string & table,
+    const std::string & relative_path,
+    int min_block,
+    int max_block,
+    SchemaPtr schema)
 {
     substrait::Rel * rel = new substrait::Rel();
     auto * read = rel->mutable_read();
@@ -234,7 +239,7 @@ substrait::Expression * literal(int32_t value)
     return rel;
 }
 
-substrait::Expression * literal(std::string value)
+substrait::Expression * literal(const std::string & value)
 {
     substrait::Expression * rel = new substrait::Expression();
     auto * literal = rel->mutable_literal();

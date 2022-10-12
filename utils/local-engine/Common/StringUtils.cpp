@@ -4,7 +4,7 @@
 
 namespace local_engine
 {
-PartitionValues StringUtils::parsePartitionTablePath(std::string file)
+PartitionValues StringUtils::parsePartitionTablePath(const std::string & file)
 {
     PartitionValues result;
     Poco::StringTokenizer path(file, "/");
@@ -18,7 +18,7 @@ PartitionValues StringUtils::parsePartitionTablePath(std::string file)
     }
     return result;
 }
-bool StringUtils::isNullPartitionValue(std::string value)
+bool StringUtils::isNullPartitionValue(const std::string & value)
 {
     return value == "__HIVE_DEFAULT_PARTITION__";
 }

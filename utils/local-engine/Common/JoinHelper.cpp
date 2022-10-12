@@ -7,7 +7,7 @@ using namespace DB;
 namespace local_engine
 {
 
-JoinOptimizationInfo parseJoinOptimizationInfo(std::string optimization)
+JoinOptimizationInfo parseJoinOptimizationInfo(const std::string & optimization)
 {
     JoinOptimizationInfo info;
     ReadBufferFromString in(optimization);

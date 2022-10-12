@@ -80,8 +80,8 @@ extern "C" {
 #endif
 
 extern void registerAllFunctions();
-extern void init();
-extern char * createExecutor(std::string plan_string);
+extern void init(const std::string &);
+extern char * createExecutor(const std::string &);
 
 namespace dbms
 {
@@ -164,10 +164,14 @@ void JNI_OnUnload(JavaVM * vm, void * /*reserved*/)
     local_engine::BroadCastJoinBuilder::clean();
 }
 
-void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv * env, jobject, jbyteArray)
+void Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeInitNative(JNIEnv * env, jobject, jbyteArray plan)
 {
     LOCAL_ENGINE_JNI_METHOD_START
-    init();
+    jsize plan_buf_size = env->GetArrayLength(plan);
+    jbyte * plan_buf_addr = env->GetByteArrayElements(plan, nullptr);
+    std::string plan_str;
+    plan_str.assign(reinterpret_cast<const char *>(plan_buf_addr), plan_buf_size);
+    init(plan_str);
     LOCAL_ENGINE_JNI_METHOD_END(env, )
 }
 

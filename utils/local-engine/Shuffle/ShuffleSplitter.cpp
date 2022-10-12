@@ -150,7 +150,7 @@ ShuffleSplitter::ShuffleSplitter(SplitOptions && options_) : options(options_)
     init();
 }
 
-ShuffleSplitter::Ptr ShuffleSplitter::create(std::string short_name, SplitOptions options_)
+ShuffleSplitter::Ptr ShuffleSplitter::create(const std::string & short_name, SplitOptions options_)
 {
     if (short_name == "rr")
     {

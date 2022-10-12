@@ -42,7 +42,7 @@ std::unique_ptr<SelectQueryInfo> buildQueryInfo(NamesAndTypesList& names_and_typ
 }
 
 
-MergeTreeTable parseMergeTreeTableString(std::string & info)
+MergeTreeTable parseMergeTreeTableString(const std::string & info)
 {
     ReadBufferFromString in(info);
     assertString("MergeTree;", in);

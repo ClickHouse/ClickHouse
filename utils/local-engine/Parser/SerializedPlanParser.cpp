@@ -806,8 +806,7 @@ NamesAndTypesList SerializedPlanParser::blockToNameAndTypeList(const Block & hea
     return types;
 }
 
-/// TODO spark中cast会被转化为Expression_Cast，而不是Expression_ScalarFunction
-std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Expression_ScalarFunction & function)
+std::string SerializedPlanParser::getFunctionName(const std::string & function_signature, const substrait::Expression_ScalarFunction & function)
 {
     const auto & output_type = function.output_type();
     auto args = function.arguments();
@@ -1365,7 +1364,7 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
     }
 }
 
-QueryPlanPtr SerializedPlanParser::parse(std::string & plan)
+QueryPlanPtr SerializedPlanParser::parse(const std::string & plan)
 {
     auto plan_ptr = std::make_unique<substrait::Plan>();
     plan_ptr->ParseFromString(plan);
@@ -1382,7 +1381,7 @@ SerializedPlanParser::SerializedPlanParser(const ContextPtr & context_) : contex
 }
 ContextMutablePtr SerializedPlanParser::global_context = nullptr;
 
-Context::ConfigurationPtr SerializedPlanParser::config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+Context::ConfigurationPtr SerializedPlanParser::config = nullptr;
 
 void SerializedPlanParser::collectJoinKeys(
     const substrait::Expression & condition, std::vector<std::pair<int32_t, int32_t>> & join_keys, int32_t right_key_start)

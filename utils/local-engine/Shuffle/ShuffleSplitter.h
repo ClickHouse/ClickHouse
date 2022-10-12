@@ -55,7 +55,7 @@ class ShuffleSplitter
 public:
     static const std::vector<std::string> compress_methods;
     using Ptr = std::unique_ptr<ShuffleSplitter>;
-    static Ptr create(std::string short_name, SplitOptions options_);
+    static Ptr create(const std::string & short_name, SplitOptions options_);
     explicit ShuffleSplitter(SplitOptions && options);
     virtual ~ShuffleSplitter()
     {
