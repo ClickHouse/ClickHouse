@@ -5,6 +5,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 
@@ -42,10 +45,39 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
 {
+
+/// Check if current user has privileges to SELECT columns from table
+void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
+{
+    const auto & storage_id = table_node.getStorageID();
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
+
+    if (column_names.empty())
+    {
+        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
+          * one table column is accessible.
+          */
+        auto access = query_context->getAccess();
+
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                return;
+        }
+
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
+            query_context->getUserName(),
+            storage_id.getFullTableName());
+    }
+
+    query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+}
 
 QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     SelectQueryInfo & select_query_info,
@@ -74,9 +106,17 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         else
             table_expression_query_info.table_expression_modifiers = table_function_node->getTableExpressionModifiers();
 
-        auto from_stage = storage->getQueryProcessingStage(planner_context->getQueryContext(), select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+        auto & query_context = planner_context->getQueryContext();
+
+        auto from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
         const auto & columns_names = table_expression_data.getColumnsNames();
         Names column_names(columns_names.begin(), columns_names.end());
+
+        /** The current user must have the SELECT privilege.
+          * We do not check access rights for table functions because they have beein already checked in ITablefunction::execute().
+          */
+        if (table_node)
+            checkAccessRights(*table_node, column_names, planner_context->getQueryContext());
 
         if (column_names.empty())
         {
@@ -88,7 +128,6 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
         }
 
-        const auto & query_context = planner_context->getQueryContext();
         size_t max_block_size = query_context->getSettingsRef().max_block_size;
         size_t max_streams = query_context->getSettingsRef().max_threads;
 
