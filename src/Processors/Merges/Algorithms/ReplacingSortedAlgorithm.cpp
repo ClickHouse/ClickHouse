@@ -77,6 +77,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
+        UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
+        if ((is_deleted != 1) && (is_deleted != 0))
+            throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
+                            ErrorCodes::INCORRECT_DATA);
 
         /// A non-strict comparison, since we select the last row for the same version values.
         if (version_column_number == -1
@@ -88,15 +92,12 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);
+            if (cleanup && is_deleted)
+                selected_row.clear();
+        } else {
+            if (cleanup && is_deleted)
+                current_row.clear();
         }
-
-        UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
-        if ((is_deleted != 1) && (is_deleted != 0))
-            throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
-                            ErrorCodes::INCORRECT_DATA);
-
-        if (cleanup && is_deleted)
-            current_row.clear();
 
         if (!current->isLast())
         {
