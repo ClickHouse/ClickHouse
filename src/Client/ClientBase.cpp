@@ -870,6 +870,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 &global_context->getSettingsRef(),
                 &global_context->getClientInfo(),
                 true,
+                {},
                 [&](const Progress & progress) { onProgress(progress); });
 
             if (send_external_tables)
@@ -1244,6 +1245,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         &global_context->getSettingsRef(),
         &global_context->getClientInfo(),
         true,
+        {},
         [&](const Progress & progress) { onProgress(progress); });
 
     if (send_external_tables)

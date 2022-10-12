@@ -77,6 +77,7 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
+    const std::vector<String> & /*extra_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     if (!query_parameters.empty())

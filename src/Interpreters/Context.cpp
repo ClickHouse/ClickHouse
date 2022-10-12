@@ -950,18 +950,19 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & additional_roles_)
 {
     auto lock = getLock();
 
     user_id = user_id_;
 
     access = getAccessControl().getContextAccess(
-        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
+                user_id_, /* current_roles = */ {}, additional_roles_, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
 
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
+    additional_roles = std::make_shared<std::vector<UUID>>(additional_roles_);
 
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
@@ -1033,6 +1034,7 @@ void Context::calculateAccessRights()
         access = getAccessControl().getContextAccess(
             *user_id,
             current_roles ? *current_roles : std::vector<UUID>{},
+            additional_roles ? *additional_roles : std::vector<UUID>{},
             /* use_default_roles = */ false,
             settings,
             current_database,

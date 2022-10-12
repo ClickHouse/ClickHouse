@@ -14,6 +14,7 @@
 #include <Formats/NativeWriter.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include "Common/logger_useful.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -23,6 +24,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
 #include "Core/Block.h"
+#include "Core/ProtocolDefines.h"
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -504,6 +506,7 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
+    const std::vector<String> & extra_roles,
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()");
@@ -571,6 +574,18 @@ void Connection::sendQuery(
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
+    String extra_roles_str;
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+    {
+        WriteBufferFromString buffer(extra_roles_str);
+        writeVectorBinary(extra_roles, buffer);
+        buffer.finalize();
+
+        LOG_DEBUG(log_wrapper.get(), "Sending extra roles [{}] ()", fmt::join(extra_roles, ", "));
+
+        writeStringBinary(extra_roles_str, *out);
+    }
+
     /// Interserver secret
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
@@ -588,6 +603,7 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
+            data += extra_roles_str;
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

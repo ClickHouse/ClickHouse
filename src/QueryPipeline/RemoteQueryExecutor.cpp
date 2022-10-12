@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
 #include "IO/ReadHelpers.h"
+#include "fmt/format.h"
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/Pipe.h>
@@ -27,6 +28,10 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+#include <Access/Role.h>
+#include "Poco/Logger.h"
 
 namespace CurrentMetrics
 {
@@ -249,7 +254,19 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
             connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
     }
 
-    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
+    auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
+    boost::container::flat_set<String> granted_roles;
+    if (user)
+    {
+        const auto & access_control = context->getAccessControl();
+        for (const auto & e : user->granted_roles.getElements())
+        {
+            auto names = access_control.readNames(e.ids);
+            granted_roles.insert(names.begin(), names.end());
+        }
+    }
+
+    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, std::vector(granted_roles.begin(), granted_roles.end()));
 
     established = false;
     sent_query = true;

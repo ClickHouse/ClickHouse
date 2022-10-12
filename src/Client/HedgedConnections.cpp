@@ -137,7 +137,8 @@ void HedgedConnections::sendQuery(
     const String & query_id,
     UInt64 stage,
     ClientInfo & client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    const std::vector<String> & extra_roles)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -164,7 +165,7 @@ void HedgedConnections::sendQuery(
         hedged_connections_factory.skipReplicasWithTwoLevelAggregationIncompatibility();
     }
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
+    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data, &extra_roles](ReplicaState & replica)
     {
         Settings modified_settings = settings;
 
@@ -183,7 +184,7 @@ void HedgedConnections::sendQuery(
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
         }
 
-        replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
+        replica.connection->sendQuery(timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, extra_roles, {});
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);
         replica.packet_receiver->setReceiveTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
     };

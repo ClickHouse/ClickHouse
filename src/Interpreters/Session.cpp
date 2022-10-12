@@ -4,6 +4,8 @@
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
+#include <Access/Role.h>
+#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -21,6 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -262,7 +265,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session-" + toString(auth_id)))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -303,12 +306,12 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & extra_granted_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address);
+    authenticate(BasicCredentials{user_name, password}, address, extra_granted_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & extra_granted_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -317,14 +320,22 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
 
-    LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
-            toString(auth_id), credentials_.getUserName(), address.toString());
+    LOG_DEBUG(log, "Authenticating user '{}' from {}",
+            credentials_.getUserName(), address.toString());
 
     try
     {
         user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
-        LOG_DEBUG(log, "{} Authenticated with global context as user {}",
-                toString(auth_id), toString(*user_id));
+        LOG_DEBUG(log, "Authenticated with global context as user {}",
+                toString(*user_id));
+
+        if (!extra_granted_roles_.empty() && global_context->getSettingsRef().allow_extenral_roles_in_interserver_queries)
+        {
+            extra_granted_roles = global_context->getAccessControl().find<Role>(extra_granted_roles_);
+
+            LOG_DEBUG(log, "User {} will have extra roles: [{}]",
+                    toString(*user_id), fmt::join(extra_granted_roles_, ", "));
+        }
     }
     catch (const Exception & e)
     {
@@ -338,7 +349,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
-    LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
+    LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
     {
         /// Add source address to the log
@@ -368,8 +379,8 @@ ContextMutablePtr Session::makeSessionContext()
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
-    LOG_DEBUG(log, "{} Creating session context with user_id: {}",
-            toString(auth_id), toString(*user_id));
+    LOG_DEBUG(log, "Creating session context with user_id: {}",
+            toString(*user_id));
     /// Make a new session context.
     ContextMutablePtr new_session_context;
     new_session_context = Context::createCopy(global_context);
@@ -382,7 +393,7 @@ ContextMutablePtr Session::makeSessionContext()
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id)
-        new_session_context->setUser(*user_id);
+        new_session_context->setUser(*user_id, extra_granted_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -400,8 +411,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     if (!user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
-    LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
-            toString(auth_id), session_name_, toString(*user_id));
+    LOG_DEBUG(log, "Creating named session context with name: {}, user_id: {}",
+            session_name_, toString(*user_id));
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
@@ -422,7 +433,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !new_session_context->getAccess()->tryGetUser())
-        new_session_context->setUser(*user_id);
+        new_session_context->setUser(*user_id, extra_granted_roles);
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
@@ -464,8 +475,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
-                  toString(auth_id),
+        LOG_DEBUG(log, "Creating query context from {} context, user_id: {}, parent context user: {}",
                   from_session_context ? "session" : "global",
                   toString(*user_id),
                   query_context_user->getName());
@@ -500,7 +510,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id);
+        query_context->setUser(*user_id, extra_granted_roles);
 
     /// Query context is ready.
     query_context_created = true;
