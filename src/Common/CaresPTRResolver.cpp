@@ -114,18 +114,18 @@ namespace DB
         int sockets[ARES_GETSOCK_MAXNUM];
         pollfd pollfd[ARES_GETSOCK_MAXNUM];
 
-        while(true)
+        while (true)
         {
             auto readable_sockets = get_readable_sockets(sockets, pollfd);
             auto timeout = calculate_timeout();
 
             int number_of_fds_ready = 0;
-            if(!readable_sockets.empty())
+            if (!readable_sockets.empty())
             {
                 number_of_fds_ready = poll(readable_sockets.data(), readable_sockets.size(), timeout);
             }
 
-            if(number_of_fds_ready > 0)
+            if (number_of_fds_ready > 0)
             {
                 process_readable_sockets(readable_sockets);
             }
@@ -143,7 +143,7 @@ namespace DB
 
         int number_of_sockets_to_poll = 0;
 
-        for(int i = 0; i < ARES_GETSOCK_MAXNUM; i++, number_of_sockets_to_poll++)
+        for (int i = 0; i < ARES_GETSOCK_MAXNUM; i++, number_of_sockets_to_poll++)
         {
             pollfd[i].events = 0;
             pollfd[i].revents = 0;
