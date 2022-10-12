@@ -43,8 +43,8 @@ namespace ErrorCodes
 
 namespace
 {
-    const UInt64 INITIAL_BACKUP_VERSION = 1;
-    const UInt64 CURRENT_BACKUP_VERSION = 1;
+    const int INITIAL_BACKUP_VERSION = 1;
+    const int CURRENT_BACKUP_VERSION = 1;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
     using FileInfo = IBackupCoordination::FileInfo;
@@ -259,7 +259,7 @@ void BackupImpl::writeBackupMetadata()
     assert(!is_internal_backup);
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->setUInt("version", CURRENT_BACKUP_VERSION);
+    config->setInt("version", CURRENT_BACKUP_VERSION);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
@@ -286,7 +286,7 @@ void BackupImpl::writeBackupMetadata()
     {
         String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
         config->setString(prefix + "name", info.file_name);
-        config->setUInt(prefix + "size", info.size);
+        config->setUInt64(prefix + "size", info.size);
         if (info.size)
         {
             config->setString(prefix + "checksum", hexChecksum(info.checksum));
@@ -295,7 +295,7 @@ void BackupImpl::writeBackupMetadata()
                 config->setBool(prefix + "use_base", true);
                 if (info.base_size != info.size)
                 {
-                    config->setUInt(prefix + "base_size", info.base_size);
+                    config->setUInt64(prefix + "base_size", info.base_size);
                     config->setString(prefix + "base_checksum", hexChecksum(info.base_checksum));
                 }
             }
@@ -351,7 +351,7 @@ void BackupImpl::readBackupMetadata()
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
 
-    version = config->getUInt("version");
+    version = config->getInt("version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
         throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name, version);
 
@@ -373,13 +373,13 @@ void BackupImpl::readBackupMetadata()
             String prefix = "contents." + key + ".";
             FileInfo info;
             info.file_name = config->getString(prefix + "name");
-            info.size = config->getUInt(prefix + "size");
+            info.size = config->getUInt64(prefix + "size");
             if (info.size)
             {
                 info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
 
                 bool use_base = config->getBool(prefix + "use_base", false);
-                info.base_size = config->getUInt(prefix + "base_size", use_base ? info.size : 0);
+                info.base_size = config->getUInt64(prefix + "base_size", use_base ? info.size : 0);
                 if (info.base_size)
                     use_base = true;
 
