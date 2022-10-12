@@ -658,13 +658,13 @@ void Planner::buildQueryPlanIfNeeded()
     {
         sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
 
-        bool query_has_array_join = queryHasArrayJoin(query_tree);
+        bool query_has_array_join_in_join_tree = queryHasArrayJoinInJoinTree(query_tree);
 
         UInt64 partial_sorting_limit = 0;
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN.
-        if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() && !query_has_array_join &&
-            limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() &&
+            !query_has_array_join_in_join_tree && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         {
             partial_sorting_limit = limit_length + limit_offset;
         }
@@ -815,6 +815,21 @@ void Planner::buildQueryPlanIfNeeded()
         const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
         bool always_read_till_end = settings.exact_rows_before_limit;
         bool limit_with_ties = query_node.isLimitWithTies();
+
+        /** Special cases:
+          *
+          * 1. If there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
+          *  otherwise TOTALS is counted according to incomplete data.
+          *
+          * 2. If there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
+          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
+          *  because if you cancel the query, we will not get `totals` data from the remote server.
+          */
+        if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+            always_read_till_end = true;
+
+        if (!query_node.isGroupByWithTotals() && queryHasWithTotalsInAnySubqueryInJoinTree(query_tree))
+            always_read_till_end = true;
 
         SortDescription limit_with_ties_sort_description;
 

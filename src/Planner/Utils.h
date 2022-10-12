@@ -49,6 +49,11 @@ ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & express
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);
 
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node
-bool queryHasArrayJoin(const QueryTreeNodePtr & query_node);
+bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
+
+/** Returns true if query node JOIN TREE contains QUERY node with WITH TOTALS, false otherwise.
+  * Function is applied recursively to subqueries in JOIN TREE.
+  */
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node);
 
 }
