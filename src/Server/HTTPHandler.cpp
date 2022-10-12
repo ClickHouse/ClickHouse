@@ -878,8 +878,7 @@ try
     }
     else
     {
-        assert(false);
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     used_output.finalize();
