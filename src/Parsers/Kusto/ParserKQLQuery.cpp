@@ -4,6 +4,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLTable.h>
 #include <Parsers/Kusto/ParserKQLProject.h>
+#include <Parsers/Kusto/ParserKQLDistinct.h>
 #include <Parsers/Kusto/ParserKQLFilter.h>
 #include <Parsers/Kusto/ParserKQLSort.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
@@ -181,6 +182,8 @@ std::unique_ptr<IParserBase> ParserKQLQuery::getOperator(String & op_name)
         return std::make_unique<ParserKQLLimit>();
     else if (op_name == "project")
         return std::make_unique<ParserKQLProject>();
+    else if (op_name == "distinct")
+        return std::make_unique<ParserKQLDistinct>();
     else if (op_name == "extend")
         return std::make_unique<ParserKQLExtend>();
     else if (op_name == "sort by" || op_name == "order by")
@@ -215,19 +218,20 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     std::unordered_map<std::string, KQLOperatorDataFlowState> kql_parser =
     {
-        { "filter", {"filter", false, false, 3}},
-        { "where", {"filter", false, false, 3}},
-        { "limit", {"limit", false, true, 3}},
-        { "take", {"limit", false, true, 3}},
-        { "project", {"project", false, false, 3}},
-        { "extend", {"extend", true, true, 3}},
-        { "sort by", {"order by", false, false, 4}},
-        { "order by", {"order by", false, false, 4}},
-        { "table", {"table", false, false, 3}},
-        { "print", {"print", false, true, 3}},
-        { "summarize", {"summarize", true, true, 3}},
-        { "make-series", {"make-series", true, true, 5}},
-        { "mv-expand", {"mv-expand", true, true, 5}}
+        {"filter", {"filter", false, false, 3}},
+        {"where", {"filter", false, false, 3}},
+        {"limit", {"limit", false, true, 3}},
+        {"take", {"limit", false, true, 3}},
+        {"project", {"project", false, false, 3}},
+        {"distinct", {"distinct", false, true, 3}},
+        {"extend", {"extend", true, true, 3}},
+        {"sort by", {"order by", false, false, 4}},
+        {"order by", {"order by", false, false, 4}},
+        {"table", {"table", false, false, 3}},
+        {"print", {"print", false, true, 3}},
+        {"summarize", {"summarize", true, true, 3}},
+        {"make-series", {"make-series", true, true, 5}},
+        {"mv-expand", {"mv-expand", true, true, 5}}
     };
 
     std::vector<std::pair<String, Pos>> operation_pos;
@@ -362,6 +366,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 if (!project_clause.empty() && prev_op == "project")
                     break;
+
                 set_main_query_clause(prev_op, prev_pos);
                 operation_pos.pop_back();
                 last_op = prev_op;
@@ -371,7 +376,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!operation_pos.empty()) 
         {
-            for (auto i = 0; i< kql_parser[last_op].backspace_steps; ++i)
+            for (auto i = 0; i < kql_parser[last_op].backspace_steps; ++i)
                 --last_pos;
 
             String sub_query = std::format("({})", String(operation_pos.front().second->begin, last_pos->end));
