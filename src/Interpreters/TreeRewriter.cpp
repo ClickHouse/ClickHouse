@@ -784,6 +784,36 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
 }
 
+void ExpandFromFunctionRecursively(std::shared_ptr<ASTExpressionList> group_expression_list, ASTFunction * function)
+{
+    if (function && !AggregateUtils::isAggregateFunction(*function))
+    {
+        for (auto & col : function->arguments->children)
+        {
+            if (col->as<ASTIdentifier>())
+                group_expression_list->children.push_back(col);
+            else
+                ExpandFromFunctionRecursively(group_expression_list, col->as<ASTFunction>());
+        }
+    }
+}
+
+// Expand GROUP BY ALL by listing all the SELECT-ed columns that are not expressions of the aggregate functions
+void ExpandGroupByAll(ASTSelectQuery * select_query)
+{
+    auto group_expression_list = std::make_shared<ASTExpressionList>();
+
+    for (auto & expr : select_query->select()->children)
+    {
+        if (expr->as<ASTIdentifier>())
+            group_expression_list->children.push_back(expr);
+        else
+            ExpandFromFunctionRecursively(group_expression_list, expr->as<ASTFunction>());
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
+}
+
 
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
@@ -1210,6 +1240,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+
+    // expand GROUP BY ALL
+    if (select_query->group_by_all)
+        ExpandGroupByAll(select_query);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
