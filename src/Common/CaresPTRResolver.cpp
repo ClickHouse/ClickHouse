@@ -121,16 +121,18 @@ namespace DB
 
             int number_of_fds_ready = 0;
             if(!readable_sockets.empty())
-                number_of_fds_ready = poll(readable_sockets.data(), readable_sockets.size(), timeout);
-
-            if(!number_of_fds_ready)
             {
-                process_possible_timeout();
-                break;
+                number_of_fds_ready = poll(readable_sockets.data(), readable_sockets.size(), timeout);
+            }
+
+            if(number_of_fds_ready > 0)
+            {
+                process_readable_sockets(readable_sockets);
             }
             else
             {
-                process_readable_sockets(readable_sockets);
+                process_possible_timeout();
+                break;
             }
         }
     }
