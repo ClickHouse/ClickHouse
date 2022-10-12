@@ -37,7 +37,7 @@ namespace DB
   * In SELECT, ORDER BY only columns that are specified in GROUP BY keys after GROUP BY are used.
   * GROUPING function arguments are specified in GROUP BY keys.
   * No GROUPING function if there is no GROUP BY.
-  * No aggregate functions in WHERE, PREWHERE, GROUP BY and inside another aggregate functions.
+  * No aggregate functions in JOIN TREE, WHERE, PREWHERE, GROUP BY and inside another aggregate functions.
   * GROUP BY modifiers CUBE, ROLLUP, GROUPING SETS and WITH TOTALS.
   * Table expression modifiers are disabled for subqueries in JOIN TREE.
   * For JOIN, ARRAY JOIN subqueries and table functions must have alias (Can be changed using joined_subquery_requires_alias setting).

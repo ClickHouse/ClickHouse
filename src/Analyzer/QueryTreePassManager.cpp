@@ -1,6 +1,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
@@ -28,7 +29,6 @@ namespace ErrorCodes
   * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
   * TODO: Support fuse sum count optimize_fuse_sum_count_avg, optimize_syntax_fuse_functions.
-  * TODO: Support setting optimize_functions_to_subcolumns.
   * TODO: Support setting optimize_arithmetic_operations_in_aggregate_functions.
   * TODO: Support setting convert_query_to_cnf.
   * TODO: Support setting optimize_using_constraints.
@@ -114,6 +114,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     const auto & settings = context->getSettingsRef();
 
     manager.addPass(std::make_shared<QueryAnalysisPass>());
+
+    if (settings.optimize_functions_to_subcolumns)
+        manager.addPass(std::make_shared<FunctionToSubcolumnsPass>());
 
     if (settings.count_distinct_optimization)
         manager.addPass(std::make_shared<CountDistinctPass>());
