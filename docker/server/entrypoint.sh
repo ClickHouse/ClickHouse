@@ -17,7 +17,7 @@ if [ "$(id -u)" = "0" ]; then
     GROUP=$CLICKHOUSE_GID
 else
     USER="$(id -u)"
-    GROUP="$(id -g)"
+    GROUP="$(id -gn)"
     DO_CHOWN=0
 fi
 
