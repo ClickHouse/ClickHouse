@@ -198,7 +198,7 @@ def test_alter_in_partition_merge_tree_updates_with_errors(started_cluster):
                 ]
 
             elif p % 23 == 22:
-                node1.restart_clickhouse(kill=True)
+                node1.restart_clickhouse()
 
             else:
                 node1.query(
