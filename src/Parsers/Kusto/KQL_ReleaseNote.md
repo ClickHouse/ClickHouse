@@ -1,31 +1,84 @@
 ## KQL implemented features  
 
-# October 9, 2022
-## String functions
-- [reverse](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/reversefunction)
-   `print reverse(123)`
-   `print reverse(123.34)`
-   `print reverse('clickhouse')`
-   `print reverse(3h)`
-   `print reverse(datetime(2017-1-1 12:23:34))`
+# October 9, 2022  
 
-- [parse_command_line](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-command-line)
-   `print parse_command_line('echo \"hello world!\" print$?', \"Windows\")`
+## operator  
+- [distinct](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query/distinctoperator)  
+   `Customers | distinct *`  
+   `Customers | distinct Occupation`  
+   `Customers | distinct Occupation, Education`  
+   `Customers | where Age <30 | distinct Occupation, Education`  
+   `Customers | where Age <30 | order by Age| distinct Occupation, Education`  
+
+## String functions  
+- [reverse](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/reversefunction)  
+   `print reverse(123)`  
+   `print reverse(123.34)`  
+   `print reverse('clickhouse')`  
+   `print reverse(3h)`  
+   `print reverse(datetime(2017-1-1 12:23:34))`  
+
+- [parse_command_line](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-command-line)  
+   `print parse_command_line('echo \"hello world!\" print$?', \"Windows\")`  
   
-- [parse_csv](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parsecsvfunction)
-  `print result=parse_csv('aa,b,cc')`
-  `print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z')`
+- [parse_csv](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parsecsvfunction)  
+  `print result=parse_csv('aa,b,cc')`  
+  `print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z')`  
 
-- [parse_json](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parsejsonfunction)
-   `print parse_json( dynamic([1, 2, 3]))`
-   `print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}')`
+- [parse_json](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parsejsonfunction)  
+   `print parse_json( dynamic([1, 2, 3]))`  
+   `print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}')`  
 
-- [extract_json](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractjsonfunction)
-   `print extract_json( "$.a" , '{"a":123, "b":"{\\"c\\":456}"}' , typeof(int))`
+- [extract_json](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractjsonfunction)  
+   `print extract_json( "$.a" , '{"a":123, "b":"{\\"c\\":456}"}' , typeof(int))`  
 
-- [parse_version](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-versionfunction)
- `print parse_version('1')`
- `print parse_version('1.2.3.40')`
+- [parse_version](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-versionfunction)  
+ `print parse_version('1')`  
+ `print parse_version('1.2.3.40')`  
+
+## Bug fixed
+- [correct array index in expression](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1474)  
+   array index should start with 0  
+- [Summarize should generate alias or use correct columns](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1303)
+   - if bin is used , the column should be in select list if no alias include  
+   - if no column included in aggregate functions,  ( like count() ), should has alias with fun name + '_',e.g  count_  
+   - if column name included in aggregate functions, should have fun name + "_" + column name , like count(Age) -> count_Age  
+   - if argument of an aggregate functions is an exprision, Columns1 ... Columnsn should be used as alias  
+      ```
+      Customers | summarize count() by bin(Age, 10)  
+      ┌─Age─┬─count_─┐
+      │  40 │      2 │
+      │  20 │      6 │
+      │  30 │      4 │
+      └─────┴────────┘
+      Customers | summarize count(Age) by bin(Age, 10)  
+      ┌─Age─┬─count_Age─┐
+      │  40 │         2 │
+      │  20 │         6 │
+      │  30 │         4 │
+      └─────┴───────────┘
+      Customers | summarize count(Age+1) by bin(Age+1, 10)
+      ┌─Columns1─┬─count_─┐
+      │       40 │      2 │
+      │       20 │      6 │
+      │       30 │      4 │
+      └──────────┴────────┘
+      ```
+- [extend doesn't replace existing columns](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1246)  
+
+- [throw exception if use quoted string as alias](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1470)  
+
+- [repeat() doesn't work with count argument as negative value](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1368)  
+
+- [substring() doesn't work right with negative offsets](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1336)  
+- [endofmonth() doesn't return correct result](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1370)  
+
+- [split() outputs array instead of string](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1343)  
+
+- [split() returns empty string when arg goes out of bound](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1328)  
+
+- [split() doesn't work with negative index](https://zenhub.ibm.com/workspaces/clickhouse-project-61250df53aaf060db4e08052/issues/clickhouse/issue-repo/1325)  
+
 
 # September 26, 2022
 ## Bug fixed :  
