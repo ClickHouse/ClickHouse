@@ -305,7 +305,7 @@ public:
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
-        else if (!null_is_skipped)
+        else if constexpr (!null_is_skipped)
         {
             this->setFlag(place);
             this->nested_function->addNull(this->nestedPlace(place), &nested_column, row_num, arena);
@@ -324,7 +324,7 @@ public:
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
-        if (null_is_skipped)
+        if constexpr (null_is_skipped)
         {
             this->nested_function->addBatchSinglePlaceNotNull(
                 row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);

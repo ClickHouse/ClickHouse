@@ -1424,10 +1424,8 @@ public:
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
         const Array & params, const AggregateFunctionProperties & properties) const override
     {
-        if (!is_respect_nulls)
-        {
-          return nullptr;
-        }
+        if constexpr (!is_respect_nulls)
+            return nullptr;
 
         bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
