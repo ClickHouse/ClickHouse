@@ -104,6 +104,11 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         }
     }
 
+    if (group_by_all)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
+    }
+
     if (group_by_with_rollup)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
 
