@@ -2,6 +2,8 @@
 
 #include <Common/checkStackSize.h>
 
+#include <Core/ProtocolDefines.h>
+
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -72,6 +74,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** ClickHouse query planner.
@@ -210,13 +213,44 @@ void Planner::initialize()
             "Expected QUERY or UNION node. Actual {}",
             query_tree->formatASTForErrorMessage());
 
-    const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
+    auto & query_context = planner_context->getQueryContext();
 
-    if (settings.max_subquery_depth && select_query_options.subquery_depth > settings.max_subquery_depth)
+    size_t max_subquery_depth = query_context->getSettingsRef().max_subquery_depth;
+    if (max_subquery_depth && select_query_options.subquery_depth > max_subquery_depth)
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES,
             "Too deep subqueries. Maximum: {}",
-            settings.max_subquery_depth.toString());
+            max_subquery_depth);
+
+    auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return;
+
+    bool need_apply_query_settings = query_node->hasSettingsChanges();
+
+    const auto & client_info = query_context->getClientInfo();
+    auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
+    auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
+
+    bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        client_info.connection_client_version_major < min_major &&
+        client_info.connection_client_version_minor < min_minor;
+
+    if (need_apply_query_settings || need_to_disable_two_level_aggregation)
+    {
+        auto updated_context = Context::createCopy(query_context);
+
+        if (need_apply_query_settings)
+            updated_context->applySettingsChanges(query_node->getSettingsChanges());
+
+        /// Disable two-level aggregation due to version incompatibility.
+        if (need_to_disable_two_level_aggregation)
+        {
+            updated_context->setSetting("group_by_two_level_threshold", Field(0));
+            updated_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+        }
+
+        query_context = std::move(updated_context);
+    }
 }
 
 void Planner::buildQueryPlanIfNeeded()

@@ -7,7 +7,8 @@ namespace DB
 {
 
 /** Interpolate node represents expression interpolation in INTERPOLATE section that is part of ORDER BY section in query tree.
-  * Example: SELECT * FROM test_table ORDER BY id WITH FILL INTERPOLATE value AS value + 1;
+  *
+  * Example: SELECT * FROM test_table ORDER BY id WITH FILL INTERPOLATE (value AS value + 1);
   * value - expression to interpolate.
   * value + 1 - interpolate expression.
   */

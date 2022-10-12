@@ -25,6 +25,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -216,6 +217,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setOriginalAST(select_query);
+
+    auto select_settings = select_query_typed.settings();
+    if (select_settings)
+    {
+        auto & set_query = select_settings->as<ASTSetQuery &>();
+        current_query_tree->setSettingsChanges(set_query.changes);
+    }
 
     current_query_tree->getJoinTree() = buildJoinTree(select_query_typed.tables());
 
