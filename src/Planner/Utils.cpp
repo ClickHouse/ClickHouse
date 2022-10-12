@@ -10,9 +10,11 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -195,13 +197,12 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
     return true;
 }
 
-bool queryHasArrayJoin(const QueryTreeNodePtr & query_node)
+bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
-    auto join_tree_node = query_node_typed.getJoinTree();
 
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(std::move(join_tree_node));
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
 
     while (join_tree_nodes_to_process.empty())
     {
@@ -228,7 +229,72 @@ bool queryHasArrayJoin(const QueryTreeNodePtr & query_node)
             }
             case QueryTreeNodeType::JOIN:
             {
-                auto & join_node = join_tree_node->as<JoinNode &>();
+                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                    join_tree_node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return false;
+}
+
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+
+    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+
+    while (join_tree_nodes_to_process.empty())
+    {
+        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
+        join_tree_nodes_to_process.pop_back();
+
+        auto join_tree_node_type = join_tree_node_to_process->getNodeType();
+
+        switch (join_tree_node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+                [[fallthrough]];
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
+                if (query_node_to_process.isGroupByWithTotals())
+                    return true;
+
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree());
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto & union_node = join_tree_node_to_process->as<UnionNode &>();
+                auto & union_queries = union_node.getQueries().getNodes();
+
+                for (auto & union_query : union_queries)
+                    join_tree_nodes_to_process.push_back(union_query);
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
                 join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
                 join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
                 break;
