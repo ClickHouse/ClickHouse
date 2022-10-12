@@ -5524,12 +5524,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /** Validate aggregates
       *
-      * 1. Check that there are no aggregate functions and GROUPING function in WHERE, in PREWHERE, in another aggregate functions.
-      * 2. Check that there are no window functions in WHERE, in PREWHERE, in HAVING, in WINDOW, inside another aggregate function,
+      * 1. Check that there are no aggregate functions and GROUPING function in JOIN TREE, WHERE, PREWHERE, in another aggregate functions.
+      * 2. Check that there are no window functions in JOIN TREE, WHERE, PREWHERE, HAVING, WINDOW, inside another aggregate function,
       * inside window function arguments, inside window function window definition.
       * 3. Check that there are no columns that are not specified in GROUP BY keys.
       * 4. Validate GROUP BY modifiers.
       */
+    assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+    assertNoGroupingFunction(query_node_typed.getJoinTree(), "in JOIN TREE");
+    assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+
     if (query_node_typed.hasWhere())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
