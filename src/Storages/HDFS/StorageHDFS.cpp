@@ -122,8 +122,8 @@ namespace
     {
         const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
 
-        auto pos = url.find("//");
-        if (pos != std::string::npos && std::advance(pos, 2) != url.end())
+        auto pos = uri.find("//");
+        if (pos != std::string::npos && std::advance(pos, 2) != uri.end())
         {
             pos = find('/', pos + 2);
             if (pos != std::string::npos)
