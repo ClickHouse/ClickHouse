@@ -148,7 +148,7 @@ namespace DB
             pollfd[i].events = 0;
             pollfd[i].revents = 0;
 
-            if(ARES_GETSOCK_READABLE(sockets_bitmask, i))
+            if (ARES_GETSOCK_READABLE(sockets_bitmask, i))
             {
                 pollfd[i].fd = sockets[i];
                 pollfd[i].events = POLLIN;
