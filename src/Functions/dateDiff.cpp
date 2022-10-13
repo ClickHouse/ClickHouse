@@ -263,11 +263,11 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
+            throw Exception("Second argument for function " + getName() + " must be Date, Date32, DateTime or DateTime64",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isDate(arguments[2]) && !isDate32(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
-            throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
+            throw Exception("Third argument for function " + getName() + " must be Date, Date32, DateTime or DateTime64",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 4 && !isString(arguments[3]))
