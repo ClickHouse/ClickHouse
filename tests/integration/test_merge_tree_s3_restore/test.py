@@ -273,6 +273,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
 
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3.test")
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
 
     assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(
         4096 * 4
@@ -339,6 +340,9 @@ def test_restore_different_revisions(cluster, db_atomic):
 
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3.test")
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
+
+    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "3\n"
 
     node.query("ALTER TABLE s3.test FREEZE")
     revision3 = get_revision_counter(node, 3)
@@ -347,7 +351,7 @@ def test_restore_different_revisions(cluster, db_atomic):
         4096 * 4
     )
     assert node.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
-    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "5\n"
+    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "3\n"
 
     node_another_bucket = cluster.instances["node_another_bucket"]
 
@@ -406,7 +410,7 @@ def test_restore_different_revisions(cluster, db_atomic):
         node_another_bucket.query(
             "SELECT count(*) from system.parts where table = 'test'"
         )
-        == "5\n"
+        == "3\n"
     )
 
 

@@ -191,12 +191,13 @@ function concurrent_rollback_truncate()
 
     reset_table
 
-    tx 91 "begin transaction"
-    tx 92                       "begin transaction"
-    tx 91 "truncate table tt"
+    tx 91       "begin transaction"
+    tx 92               "begin transaction"
+    tx 91       "truncate table tt"
     tx_async 91 "rollback"
-    tx 92                       "truncate table tt" | grep -vwe PART_IS_TEMPORARILY_LOCKED || true
-    tx 92                       "rollback"
+    tx 92               "truncate table tt" | grep -vwe "PART_IS_TEMPORARILY_LOCKED" -vwe "SERIALIZATION_ERROR" ||:
+    tx 92               "rollback"
+    tx_wait 91
 
     $CLICKHOUSE_CLIENT -q "select count() from tt"
 }
