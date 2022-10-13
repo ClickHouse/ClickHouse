@@ -4,6 +4,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 
 #include <sys/stat.h>
@@ -304,7 +305,7 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->one_line_query;
+                query = DB::toOneLineQuery(thread_group->query);
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())

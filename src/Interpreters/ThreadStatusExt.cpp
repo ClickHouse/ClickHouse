@@ -97,7 +97,7 @@ void CurrentThread::defaultThreadDeleter()
 
 void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 {
-    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
+    assertState(ThreadState::DetachedFromQuery, __PRETTY_FUNCTION__);
 
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
@@ -315,7 +315,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         return;
     }
 
-    assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
+    assertState(ThreadState::AttachedToQuery, __PRETTY_FUNCTION__);
 
     finalizeQueryProfiler();
     finalizePerformanceCounters();
