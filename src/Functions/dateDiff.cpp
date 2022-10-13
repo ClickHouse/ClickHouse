@@ -343,7 +343,7 @@ private:
         else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for first argument of function " + getName() + ", must be Date, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column for first argument of function " + getName() + ", must be Date, Date32, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename Transform, typename LeftColumnType>
@@ -369,7 +369,7 @@ private:
         else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
             vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date, Date32, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename Transform, typename T1>
@@ -382,10 +382,12 @@ private:
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+            constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date, Date32, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename Transform, typename LeftColumnType, typename RightColumnType>
