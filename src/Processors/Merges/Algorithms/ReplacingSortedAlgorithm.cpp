@@ -92,10 +92,12 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);
-            if (cleanup && is_deleted)
+            UInt8 selected_is_deleted = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
+            if (cleanup && selected_is_deleted)
                 selected_row.clear();
-        } else {
-            if (cleanup && is_deleted)
+        }
+        else if (cleanup && is_deleted)
+        {
                 current_row.clear();
         }
 
