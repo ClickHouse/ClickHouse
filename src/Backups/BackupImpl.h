@@ -108,7 +108,7 @@ private:
     mutable std::mutex mutex;
     std::optional<UUID> uuid;
     time_t timestamp = 0;
-    UInt64 version;
+    int version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
