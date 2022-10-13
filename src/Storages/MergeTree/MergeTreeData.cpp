@@ -1759,8 +1759,6 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             const DataPartPtr & part = *it;
 
             /// Do not remove outdated part if it may be visible for some transaction
-            LOG_TRACE(log, "grabOldParts: check {}.", part->name);
-
             if (!part->version.canBeRemoved())
             {
                 skipped_parts.push_back(part->info);
@@ -1798,7 +1796,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     }
 
     if (!res.empty())
-        LOG_TRACE(log, "Found {} old parts to remove.", res.size());
+        LOG_TRACE(log, "Found {} old parts to remove. Parts {}",
+                  res.size(), fmt::join(getPartsNames(res), ", "));
 
     return res;
 }
@@ -2939,14 +2938,11 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         {
             if ((*prev)->info.contains(part_info))
             {
-                result.covering_part = *prev;
-                return result;
+                result.covering_parts.push_back(*prev);
             }
-
-            if (!part_info.isDisjoint((*prev)->info))
+            else if (!part_info.isDisjoint((*prev)->info))
             {
-                result.intersected_part = *prev;
-                return result;
+                result.intersected_parts.push_back(*prev);
             }
 
             break;
@@ -2955,6 +2951,8 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         begin = prev;
     }
 
+    std::reverse(result.covering_parts.begin(), result.covering_parts.end());
+
     /// Go to the right.
     DataPartIteratorByStateAndInfo end = it_middle;
     while (end != committed_parts_range.end())
@@ -2962,6 +2960,7 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         if ((*end)->info == part_info)
         {
             result.duplicate_part = *end;
+            result.covering_parts.clear();
             return result;
         }
 
@@ -2969,14 +2968,11 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         {
             if ((*end)->info.contains(part_info))
             {
-                result.covering_part = *end;
-                return result;
+                result.covering_parts.push_back(*end);
             }
-
-            if (!part_info.isDisjoint((*end)->info))
+            else if (!part_info.isDisjoint((*end)->info))
             {
-                result.intersected_part = *end;
-                return result;
+                result.intersected_parts.push_back(*end);
             }
 
             break;
@@ -2985,7 +2981,8 @@ MergeTreeData::PartHierarchy MergeTreeData::getPartHierarchy(
         ++end;
     }
 
-    result.covered_parts = DataPartsVector{begin, end};
+    result.covered_parts.insert(result.covered_parts.end(), begin, end);
+
     return result;
 }
 
@@ -2993,8 +2990,12 @@ MergeTreeData::DataPartsVector MergeTreeData::getCoveredOutdatedParts(
     const DataPartPtr & part,
     DataPartsLock & data_parts_lock) const
 {
-    assert(part->getState() == DataPartState::Active);
+    part->assertState({DataPartState::Active, DataPartState::PreActive});
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Outdated, data_parts_lock);
+
+    if (hierarchy.duplicate_part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
+
     return hierarchy.covered_parts;
 }
 
@@ -3006,14 +3007,15 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 {
     PartHierarchy hierarchy = getPartHierarchy(new_part_info, DataPartState::Active, data_parts_lock);
 
-    if (hierarchy.intersected_part)
+    if (!hierarchy.intersected_parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
-                        new_part_name, hierarchy.intersected_part->getNameWithState());
+                        new_part_name, hierarchy.intersected_parts.back()->getNameWithState());
 
     if (hierarchy.duplicate_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
 
-    out_covering_part = std::move(hierarchy.covering_part);
+    if (!hierarchy.covering_parts.empty())
+        out_covering_part = std::move(hierarchy.covering_parts.back());
 
     return std::move(hierarchy.covered_parts);
 }
@@ -3043,8 +3045,8 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
 
         if (transaction.txn)
             throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
-        else
-            throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
+
+        throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
     }
 }
 
@@ -3075,8 +3077,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
     if (&out_transaction.data != this)
-        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     part->assertState({DataPartState::Temporary});
     checkPartPartition(part, lock);
@@ -3084,20 +3085,17 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Active, lock);
 
-    if (hierarchy.intersected_part)
+    if (!hierarchy.intersected_parts.empty())
     {
-        String message = fmt::format("Part {} intersects next part {}", part->name, hierarchy.intersected_part->getNameWithState());
+        String message = fmt::format("Part {} intersects next part {}", part->name, hierarchy.intersected_parts.back()->getNameWithState());
 
-        if (part->isEmpty() || hierarchy.intersected_part->isEmpty())
+        if (part->isEmpty() || (hierarchy.intersected_parts.size() == 1 && hierarchy.intersected_parts.back()->isEmpty()))
             throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, message + " It is a bug.");
-    }
+        if (hierarchy.intersected_parts.size() > 1)
+            message += fmt::format("There are {} such parts.", hierarchy.intersected_parts.size());
 
-    if (hierarchy.covering_part)
-    {
-        LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part->name, hierarchy.covering_part->getNameWithState());
-        return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, message + " It is a bug.");
     }
 
     if (part->hasLightweightDelete())
@@ -4678,17 +4676,8 @@ void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts
     std::erase_if(maybe_visible_parts, need_remove_pred);
     [[maybe_unused]] size_t visible_size = maybe_visible_parts.size();
 
-
-    auto get_part_names = [&maybe_visible_parts]() -> Strings
-    {
-        Strings visible_part_names;
-        for (const auto & p : maybe_visible_parts)
-            visible_part_names.push_back(p->name);
-        return visible_part_names;
-    };
-
     LOG_TEST(log, "Got {} parts (of {}) visible in snapshot {} (TID {}): {}",
-             visible_size, total_size, snapshot_version, current_tid, fmt::join(get_part_names(), ", "));
+             visible_size, total_size, snapshot_version, current_tid, fmt::join(getPartsNamesWithStates(maybe_visible_parts), ", "));
 }
 
 
@@ -5175,6 +5164,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
 }
 
+
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
@@ -5312,7 +5302,22 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             for (const auto & part : precommitted_parts)
             {
                 DataPartPtr covering_part;
-                DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+                DataPartsVector covered_active_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+
+                /// outdated tables should be also collected here
+                /// the visible outdated parts should be tried to be removed
+                /// more likely the conflict happens at the removing visible outdated parts, what is right actually
+                DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, *owing_parts_lock);
+
+                LOG_TEST(data.log, "Got {} oudated parts covered by {} (TID {} CSN {}): {}",
+                         covered_outdated_parts.size(), part->getNameWithState(), txn->tid, txn->getSnapshot(), fmt::join(getPartsNames(covered_outdated_parts), ", "));
+                data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
+
+                DataPartsVector covered_parts;
+                covered_parts.reserve(covered_active_parts.size() + covered_outdated_parts.size());
+                std::move(covered_active_parts.begin(), covered_active_parts.end(), std::back_inserter(covered_parts));
+                std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+
                 MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
             }
 

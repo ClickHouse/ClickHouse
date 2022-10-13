@@ -104,7 +104,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "0_4_4_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "0_8_8_0\t0\ttid5\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
-        "1_1_1_1\t0\ttid1\tcsn_1\ttid0\tcsn1_\n"
+        "1_1_1_1\t1\ttid1\tcsn_1\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
         "1_1_1_1_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
         "1_3_3_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"

@@ -1236,9 +1236,9 @@ protected:
     struct PartHierarchy
     {
         DataPartPtr duplicate_part;
-        DataPartPtr covering_part;
+        DataPartsVector covering_parts;
         DataPartsVector covered_parts;
-        DataPartPtr intersected_part;
+        DataPartsVector intersected_parts;
     };
 
     PartHierarchy getPartHierarchy(

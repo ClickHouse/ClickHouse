@@ -807,22 +807,28 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     CurrentlyMergingPartsTaggerPtr merging_tagger;
     MergeList::EntryPtr merge_entry;
 
-    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, String *) -> bool
+    auto can_merge = [this, &lock](const DataPartPtr & left, const DataPartPtr & right, const MergeTreeTransaction * tx, String * disable_reason) -> bool
     {
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
-            if (left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            if ((left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+                    || (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID)))
+            {
+                if (disable_reason)
+                    *disable_reason = "Some part is not visible in transaction";
                 return false;
-            if (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
-                return false;
+            }
 
             /// Do not try to merge parts that are locked for removal (merge will probably fail)
-            if (left && left->version.isRemovalTIDLocked())
+            if ((left && left->version.isRemovalTIDLocked())
+                    || (right && right->version.isRemovalTIDLocked()))
+            {
+                if (disable_reason)
+                    *disable_reason = "Some part is locked for removal in another cuncurrent transaction";
                 return false;
-            if (right && right->version.isRemovalTIDLocked())
-                return false;
+            }
         }
 
         /// This predicate is checked for the first part of each range.
@@ -1472,14 +1478,6 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-Strings getPartsNames(const DataPartsVector & parts)
-{
-    Strings part_names;
-    for (const auto & p : parts)
-        part_names.push_back(p->getNameWithState());
-    return part_names;
-}
-
 Strings getPartsNames(const FutureNewEmptyParts & parts)
 {
     Strings part_names;
@@ -1490,12 +1488,12 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
 
 FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
-    FutureNewEmptyParts new_parts;
+    FutureNewEmptyParts future_parts;
 
-    for (const auto & old_part: old_parts)
+    for (const auto & old_part : old_parts)
     {
-        new_parts.emplace_back();
-        auto & new_part = new_parts.back();
+        future_parts.emplace_back();
+        auto & new_part = future_parts.back();
 
         new_part.part_info = old_part->info;
         new_part.part_info.level += 1;
@@ -1503,24 +1501,24 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
         new_part.part_name = old_part->getNewName(new_part.part_info);
     }
 
-    return new_parts;
+    return future_parts;
 }
 
-StorageMergeTree::MutableDataPartsVector createNewEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & new_parts, const MergeTreeTransactionPtr & txn)
+StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
     StorageMergeTree::MutableDataPartsVector data_parts;
-    for (auto & new_part: new_parts)
-        data_parts.push_back(data.createEmptyPart(new_part.part_info, new_part.partition, new_part.part_name, txn));
+    for (auto & part: future_parts)
+        data_parts.push_back(data.createEmptyPart(part.part_info, part.partition, part.part_name, txn));
     return data_parts;
 }
 
-void captureTmpDirName(MergeTreeData & data, FutureNewEmptyParts & new_parts)
+void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
 {
-    for (auto & new_part : new_parts)
-        new_part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(new_part.getDirName());
+    for (auto & part : future_parts)
+        part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());
 }
 
-void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector &, MutableDataPartsVector & new_parts, Transaction & transaction)
+void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
     DataPartsVector covered_parts;
 
@@ -1545,7 +1543,7 @@ void StorageMergeTree::coverPartsWithEmptyParts(const DataPartsVector &, Mutable
         part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
-        for (const auto & part: covered_parts)
+        for (const auto & part : covered_parts)
             deduplication_log->dropPart(part->info);
 }
 
@@ -1564,20 +1562,23 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
         auto parts = getVisibleDataPartsVector(query_context);
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts);
+        auto future_parts = initCoverageWithNewEmptyParts(parts);
 
-        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}, ",
-                 new_parts.size(), parts.size(),
-                 fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames(parts), ", "));
+        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                 future_parts.size(), parts.size(),
+                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                 transaction.getTID());
 
-        captureTmpDirName(*this, new_parts);
-        auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
-        coverPartsWithEmptyParts(parts, new_data_parts, transaction);
+        captureTmpDirectoryHolders(*this, future_parts);
+
+        auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+        renameAndCommitEmptyParts(new_data_parts, transaction);
 
         PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
-        LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts.",
-                 parts.size(), new_parts.size());
+        LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts. With txn {}",
+                 parts.size(), future_parts.size(),
+                 transaction.getTID());
     }
 
     /// Old parts are needed to be destroyed before clearing them from filesystem.
@@ -1613,20 +1614,23 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
 
         {
-            auto new_parts = initCoverageWithNewEmptyParts({part});
+            auto future_parts = initCoverageWithNewEmptyParts({part});
 
-            LOG_TEST(log, "Made {} empty parts in order to cover {} part.",
-                     fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames({part}), ", "));
+            LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
+                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
+                     transaction.getTID());
 
-            captureTmpDirName(*this, new_parts);
-            auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
-            coverPartsWithEmptyParts({part}, new_data_parts, transaction);
+            captureTmpDirectoryHolders(*this, future_parts);
+
+            auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+            renameAndCommitEmptyParts(new_data_parts, transaction);
 
             PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
             const auto * op = detach ? "Detached" : "Dropped";
-            LOG_INFO(log, "{} {} part by replacing it with new empty {} part.",
-                 op, part->name, new_parts[0].part_name);
+            LOG_INFO(log, "{} {} part by replacing it with new empty {} part. With txn {}",
+                     op, part->name, future_parts[0].part_name,
+                     transaction.getTID());
         }
     }
 
@@ -1665,28 +1669,31 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         }
 
         if (detach)
-            for (const auto & part: parts)
+            for (const auto & part : parts)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
                 LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
                 part->makeCloneInDetached("", metadata_snapshot);
             }
 
-        auto new_parts = initCoverageWithNewEmptyParts(parts);
+        auto future_parts = initCoverageWithNewEmptyParts(parts);
 
-        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}",
-                 new_parts.size(), parts.size(),
-                 fmt::join(getPartsNames(new_parts), ", "), fmt::join(getPartsNames(parts), ", "));
+        LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                 future_parts.size(), parts.size(),
+                 fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                 transaction.getTID());
 
-        captureTmpDirName(*this, new_parts);
-        auto new_data_parts = createNewEmptyDataParts(*this, new_parts, txn);
-        coverPartsWithEmptyParts(parts, new_data_parts, transaction);
+        captureTmpDirectoryHolders(*this, future_parts);
+
+        auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+        renameAndCommitEmptyParts(new_data_parts, transaction);
 
         PartLog::addNewParts(query_context, new_data_parts, watch.elapsed());
 
         const auto * op = detach ? "Detached" : "Dropped";
-        LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts",
-             op, parts.size(), new_parts.size());
+        LOG_INFO(log, "{} partition with {} parts by replacing them with new empty {} parts. With txn {}",
+                 op, parts.size(), future_parts.size(),
+                 transaction.getTID());
     }
 
     /// Old parts are needed to be destroyed before clearing them from filesystem.
