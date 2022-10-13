@@ -24,8 +24,8 @@ namespace ErrorCodes
   */
 struct Expected
 {
-    const char * max_parsed_pos = nullptr;
     absl::InlinedVector<const char *, 7> variants;
+    const char * max_parsed_pos = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -41,7 +41,8 @@ struct Expected
         if (current_pos == max_parsed_pos)
         {
             for (auto it = variants.begin(); it != variants.end(); it++)
-                if (*it == description) break;
+                if (*it == description)
+                    return;
             variants.push_back(description);
         }
     }
