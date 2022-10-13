@@ -880,6 +880,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
@@ -1022,6 +1023,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("ask-password", true);
     if (options.count("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
+    if (options.count("ssh-key-passphrase"))
+        config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
     if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
     if (options.count("max_client_network_bandwidth"))

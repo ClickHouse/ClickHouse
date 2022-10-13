@@ -68,11 +68,17 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 #if USE_SSL
         std::string filename = config.getString("ssh-key-file");
         std::string passphrase;
-        std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
-        char buf[1000] = {};
-        if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-            passphrase = result;
-
+        if (config.has("ssh-key-passphrase"))
+        {
+            passphrase = config.getString("ssh-key-passphrase");
+        }
+        else
+        {
+            std::string prompt{"Enter your private key passphrase (leave empty for no passphrase): "};
+            char buf[1000] = {};
+            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                passphrase = result;
+        }
         ssh::SshKey key = ssh::SshKeyFactory::makePrivateFromFile(filename, passphrase);
         if (key.isPrivate())
         {
