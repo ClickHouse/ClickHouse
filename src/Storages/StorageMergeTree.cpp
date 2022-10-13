@@ -1313,8 +1313,6 @@ bool StorageMergeTree::optimize(
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
         {
-            LOG_DEBUG(log, "[StorageMergeTree::optimize] - WITH CLEANUP");
-            // TODO: create a task to schedule with cleanup where we delete data from a ReplacingMergeTree table with `is_deleted` to true and all previous version
             constexpr const char * message = "Cannot OPTIMIZE with CLEANUP table: {}";
             disable_reason = "only ReplacingMergeTree can be CLEANUP";
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
