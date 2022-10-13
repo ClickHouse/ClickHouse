@@ -218,7 +218,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
             thread_group->query = query_;
-            thread_group->one_line_query = toOneLineQuery(query_);
             thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers

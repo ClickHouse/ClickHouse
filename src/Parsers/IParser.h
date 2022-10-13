@@ -1,7 +1,7 @@
 #pragma once
 
+#include <absl/container/inlined_vector.h>
 #include <memory>
-#include <vector>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 struct Expected
 {
     const char * max_parsed_pos = nullptr;
-    std::vector<const char *> variants;
+    absl::InlinedVector<const char *, 7> variants;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -38,8 +38,12 @@ struct Expected
             return;
         }
 
-        if ((current_pos == max_parsed_pos) && (find(variants.begin(), variants.end(), description) == variants.end()))
+        if (current_pos == max_parsed_pos)
+        {
+            for (auto it = variants.begin(); it != variants.end(); it++)
+                if (*it == description) break;
             variants.push_back(description);
+        }
     }
 
     ALWAYS_INLINE void add(TokenIterator it, const char * description)

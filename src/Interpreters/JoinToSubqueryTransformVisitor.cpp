@@ -209,7 +209,7 @@ struct RewriteTablesVisitorData
     {
         if (done)
             return;
-        std::vector<ASTPtr> new_tables{left, right};
+        ASTs new_tables{left, right};
         ast->children.swap(new_tables);
         done = true;
     }
