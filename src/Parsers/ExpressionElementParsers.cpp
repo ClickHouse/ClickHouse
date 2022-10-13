@@ -36,6 +36,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
 
@@ -223,7 +224,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     std::vector<String> parts;
-    std::vector<ASTPtr> params;
+    ASTs params;
     const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
     {
