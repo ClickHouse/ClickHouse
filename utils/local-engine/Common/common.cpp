@@ -144,7 +144,7 @@ void init(const std::string & plan)
 
             /// Initialize Loggers
             auto & config = local_engine::SerializedPlanParser::config;
-            auto level = config->getString("logger.level", "trace");
+            auto level = config->getString("logger.level", "error");
             if (config->has("logger.log"))
             {
                 local_engine::Logger::initFileLogger(*config, "ClickHouseBackend");
@@ -186,7 +186,12 @@ void init(const std::string & plan)
 #if USE_EMBEDDED_COMPILER
             /// 128 MB
             constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
-            CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size_default, compiled_expression_cache_size_default);
+            size_t compiled_expression_cache_size = config->getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+
+            constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+            size_t compiled_expression_cache_elements_size = config->getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+            CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
             LOG_INFO(&Poco::Logger::get("ClickHouseBackend"), "Init compiled expressions cache factory.");
 #endif
         }
