@@ -3410,7 +3410,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     size_t background_merges_mutations_concurrency_ratio = 2;
     if (config.has("background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_pool_size"))
+    else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
     size_t background_move_pool_size = 8;
