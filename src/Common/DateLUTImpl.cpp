@@ -30,7 +30,7 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 }

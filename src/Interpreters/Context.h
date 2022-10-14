@@ -20,7 +20,7 @@
 #include <Storages/ColumnsDescription.h>
 
 
-#include "config_core.h"
+#include "config.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
@@ -87,6 +87,7 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class AsynchronousInsertLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -162,6 +163,8 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -366,6 +369,8 @@ private:
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
 
+    /// Temporary data for query execution accounting.
+    TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -439,7 +444,10 @@ public:
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const;
+    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
+
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
+    void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -450,7 +458,7 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -647,6 +655,9 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
+
+    /// Reset settings to default value
+    void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
@@ -893,8 +904,8 @@ public:
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
-
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
