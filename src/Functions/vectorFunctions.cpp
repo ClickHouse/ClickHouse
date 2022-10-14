@@ -1,5 +1,6 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -516,6 +517,172 @@ struct SubtractTupleOfIntervalsImpl
 using FunctionAddTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfIntervals<AddTupleOfIntervalsImpl>;
 
 using FunctionSubtractTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfIntervals<SubtractTupleOfIntervalsImpl>;
+
+template <bool is_minus>
+struct FunctionTupleOperationInterval : public ITupleFunction
+{
+public:
+    static constexpr auto name = is_minus ? "subtractInterval" : "addInterval";
+
+    explicit FunctionTupleOperationInterval(ContextPtr context_) : ITupleFunction(context_) {}
+
+    static FunctionPtr create(ContextPtr context_)
+    {
+        return std::make_shared<FunctionTupleOperationInterval>(context_);
+    }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isTuple(arguments[0]) && !isInterval(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, must be Tuple or Interval",
+                arguments[0]->getName(), getName());
+
+        if (!isInterval(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, must be Interval",
+                arguments[0]->getName(), getName());
+
+        DataTypes types;
+
+        const auto * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+
+        if (tuple)
+        {
+            const auto & cur_types = tuple->getElements();
+
+            for (auto & type : cur_types)
+                if (!isInterval(type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of Tuple element of first argument of function {}, must be Interval",
+                        types.back()->getName(), getName());
+
+            types = cur_types;
+        }
+        else
+        {
+            types = {arguments[0]};
+        }
+
+        const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
+        const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
+
+        if (!interval_last->equals(*interval_new))
+            types.push_back(arguments[1]);
+
+        return std::make_shared<DataTypeTuple>(types);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        if (!isInterval(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, must be Interval",
+                arguments[0].type->getName(), getName());
+
+        Columns tuple_columns;
+
+        const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const auto * first_interval = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        const auto * second_interval = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
+
+        bool can_be_merged;
+
+        if (first_interval)
+        {
+            can_be_merged = first_interval->equals(*second_interval);
+
+            if (can_be_merged)
+                tuple_columns.resize(1);
+            else
+                tuple_columns.resize(2);
+
+            tuple_columns[0] = arguments[0].column->convertToFullColumnIfConst();
+        }
+        else if (first_tuple)
+        {
+            const auto & cur_types = first_tuple->getElements();
+
+            for (auto & type : cur_types)
+                if (!isInterval(type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of Tuple element of first argument of function {}, must be Interval",
+                        type->getName(), getName());
+
+            auto cur_elements = getTupleElements(*arguments[0].column);
+            size_t tuple_size = cur_elements.size();
+
+            if (tuple_size == 0)
+            {
+                can_be_merged = false;
+            }
+            else
+            {
+                const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
+                can_be_merged = tuple_last_interval->equals(*second_interval);
+            }
+
+            if (can_be_merged)
+                tuple_columns.resize(tuple_size);
+            else
+                tuple_columns.resize(tuple_size + 1);
+
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = cur_elements[i];
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, must be Tuple or Interval",
+                arguments[0].type->getName(), getName());
+
+
+        ColumnPtr & last_column = tuple_columns.back();
+
+        if (can_be_merged)
+        {
+            ColumnWithTypeAndName left{last_column, arguments[1].type, {}};
+
+            if constexpr (is_minus)
+            {
+                auto minus = FunctionFactory::instance().get("minus", context);
+                auto elem_minus = minus->build({left, arguments[1]});
+                last_column = elem_minus->execute({left, arguments[1]}, arguments[1].type, input_rows_count)
+                                        ->convertToFullColumnIfConst();
+            }
+            else
+            {
+                auto plus = FunctionFactory::instance().get("plus", context);
+                auto elem_plus = plus->build({left, arguments[1]});
+                last_column = elem_plus->execute({left, arguments[1]}, arguments[1].type, input_rows_count)
+                                        ->convertToFullColumnIfConst();
+            }
+        }
+        else
+        {
+            if constexpr (is_minus)
+            {
+                auto negate = FunctionFactory::instance().get("negate", context);
+                auto elem_negate = negate->build({arguments[1]});
+                last_column = elem_negate->execute({arguments[1]}, arguments[1].type, input_rows_count);
+            }
+            else
+            {
+                last_column = arguments[1].column;
+            }
+        }
+
+        return ColumnTuple::create(tuple_columns);
+    }
+};
+
+using FunctionTupleAddInterval = FunctionTupleOperationInterval<false>;
+
+using FunctionTupleSubtractInterval = FunctionTupleOperationInterval<true>;
+
 
 /// this is for convenient usage in LNormalize
 template <class FuncLabel>
@@ -1384,8 +1551,64 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>();
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>();
+    factory.registerFunction<FunctionAddTupleOfIntervals>(
+        {
+            R"(
+Consecutively adds a tuple of intervals to a Date or a DateTime.
+[example:tuple]
+)",
+            Documentation::Examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+                },
+            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+        });
+
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(
+        {
+            R"(
+Consecutively subtracts a tuple of intervals from a Date or a DateTime.
+[example:tuple]
+)",
+            Documentation::Examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+                },
+            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+        });
+
+    factory.registerFunction<FunctionTupleAddInterval>(
+        {
+            R"(
+Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
+[example:tuple]
+[example:interval1]
+
+If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
+[example:interval2]
+)",
+            Documentation::Examples{
+                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
+                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
+                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)"},
+                },
+            Documentation::Categories{"Tuple", "Interval"}
+        });
+    factory.registerFunction<FunctionTupleSubtractInterval>(
+        {
+            R"(
+Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
+[example:tuple]
+[example:interval1]
+
+If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
+[example:interval2]
+)",
+            Documentation::Examples{
+                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
+                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
+                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)"},
+                },
+            Documentation::Categories{"Tuple", "Interval"}
+        });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
