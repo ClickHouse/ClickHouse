@@ -24,8 +24,8 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#include "config.h"
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
