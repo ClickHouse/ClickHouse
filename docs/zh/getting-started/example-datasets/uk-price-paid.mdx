@@ -8,7 +8,7 @@ title: "英国房地产支付价格"
 该数据集包含自 1995 年以来有关英格兰和威尔士房地产价格的数据。未压缩的大小约为 4 GiB，在 ClickHouse 中大约需要 278 MiB。
 
 来源：https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads 
-字段说明：https://www.gov.uk/guidance/about-the-price-付费数据
+字段说明：https://www.gov.uk/guidance/about-the-price-data
 
 包含 HM Land Registry data © Crown copyright and database right 2021.。此数据集需在 Open Government License v3.0 的许可下使用。
 
@@ -40,10 +40,11 @@ ORDER BY (postcode1, postcode2, addr1, addr2);
 
 我们将使用 `url` 函数将数据流式传输到 ClickHouse。我们需要首先预处理一些传入的数据，其中包括： 
 
-- 将`postcode` 拆分为两个不同的列 - `postcode1` 和 `postcode2`，这更适合存储和查询 
+- 将`postcode` 拆分为两个不同的列 - `postcode1` 和 `postcode2`，因为这更适合存储和查询 
 - 将`time` 字段转换为日期为它只包含 00:00 时间 
 - 忽略 [UUid](../../sql-reference/data-types/uuid.md) 字段，因为我们不需要它进行分析 
-- 转换 `type` 和 `duration ` 使用 [transform](../../sql-reference/functions/other-functions.md#transform) 函数将 `Enum` 字段转换为更易读的 `Enum` 字段 
+- 使用 [
+](../../sql-reference/functions/other-functions.md#transform) 函数将 `type` 和 `duration ` 转换为更易读的 `Enum` 字段 
 - 将 `is_new` 字段从单字符串（` Y`/`N`) 到 [UInt8](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64 -int128-int256) 字段为 0 或 1 
 - 删除最后两列，因为它们都具有相同的值（即 0）
 
