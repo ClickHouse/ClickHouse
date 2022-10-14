@@ -672,13 +672,16 @@ function insertChart(i) {
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
     charts.appendChild(chart);
-};
+    return chart;
+}
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
-    insertChart(plots.length);
+    const chartElement = insertChart(plots.length);
     plots.push(null);
     resize();
+    chartElement.scrollIntoView();
+    chartElement.querySelector('input.edit-title').focus();
 });
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
