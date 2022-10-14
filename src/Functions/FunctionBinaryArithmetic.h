@@ -749,7 +749,7 @@ class FunctionBinaryArithmetic : public IFunction
     getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
         /// Special case when the function is plus or minus, first argument is Interval or Tuple of Intervals
-        ///  and the second argument is the Inteval of a different kind.
+        ///  and the second argument is the Interval of a different kind.
         /// We construct another function (example: addIntervals) and call it
 
         if constexpr (!is_plus && !is_minus)
