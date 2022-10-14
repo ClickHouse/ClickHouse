@@ -141,7 +141,7 @@ describe('dashboard.html', () => {
     });
 });
 
-/** Enters 'play' username into the user input and waits until all charts are loaded. */
+/** Enters username into the user input and waits until all charts are loaded. */
 async function enterUsername(username = defaultUsername) {
     await DashboardPage.userInput.setValue(username);
     await browser.keys(['Enter']);
