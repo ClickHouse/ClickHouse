@@ -1460,7 +1460,6 @@ void IMergeTreeDataPart::remove() const
         return CanRemoveDescription{.can_remove_anything = can_remove, .files_not_to_remove = files_not_to_remove };
     };
 
-
     if (!isStoredOnDisk())
         return;
 

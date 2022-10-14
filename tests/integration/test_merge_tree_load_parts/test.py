@@ -1,12 +1,23 @@
 import pytest
 import helpers.client
 import helpers.cluster
+import time
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/fast_background_pool.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/fast_background_pool.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -35,14 +46,14 @@ def test_merge_tree_load_parts(started_cluster):
 
     node1.restart_clickhouse(kill=True)
     for i in range(1, 21):
-        assert node1.contains_in_log(f"Loading part 44_{i}_{i}_0")
+        assert node1.contains_in_log(f"Loading Active part 44_{i}_{i}_0")
 
     node1.query("OPTIMIZE TABLE mt_load_parts FINAL")
     node1.restart_clickhouse(kill=True)
 
-    assert node1.contains_in_log("Loading part 44_1_20")
+    assert node1.contains_in_log("Loading Active part 44_1_20")
     for i in range(1, 21):
-        assert not node1.contains_in_log(f"Loading part 44_{i}_{i}_0")
+        assert not node1.contains_in_log(f"Loading Active part 44_{i}_{i}_0")
 
     assert node1.query("SELECT count() FROM mt_load_parts") == "20\n"
     assert (
@@ -51,6 +62,45 @@ def test_merge_tree_load_parts(started_cluster):
         )
         == "1\n"
     )
+
+    MAX_RETRY = 20
+
+    all_outdated_loaded = False
+    for _ in range(MAX_RETRY):
+        all_outdated_loaded = all(
+            [
+                node1.contains_in_log(f"Loading Outdated part 44_{i}_{i}_0")
+                for i in range(1, 21)
+            ]
+        )
+        if all_outdated_loaded:
+            break
+        time.sleep(2)
+
+    assert all_outdated_loaded
+
+    node1.query("ALTER TABLE mt_load_parts MODIFY SETTING old_parts_lifetime = 1")
+    node1.query("DETACH TABLE mt_load_parts")
+    node1.query("ATTACH TABLE mt_load_parts")
+
+    table_path = node1.query(
+        "SELECT data_paths[1] FROM system.tables WHERE table = 'mt_load_parts'"
+    ).strip()
+
+    part_dirs_ok = False
+    for _ in range(MAX_RETRY):
+        part_dirs = node1.exec_in_container(
+            ["bash", "-c", f"ls {table_path}"], user="root"
+        )
+        part_dirs = list(
+            set(part_dirs.strip().split("\n")) - {"detached", "format_version.txt"}
+        )
+        part_dirs_ok = len(part_dirs) == 1 and part_dirs[0].startswith("44_1_20")
+        if part_dirs_ok:
+            break
+        time.sleep(2)
+
+    assert part_dirs_ok
 
 
 def test_merge_tree_load_parts_corrupted(started_cluster):
@@ -66,6 +116,7 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
         node1.query(
             f"INSERT INTO mt_load_parts_2 VALUES ({partition}, 0, randomPrintableASCII(10))"
         )
+
         node1.query(
             f"INSERT INTO mt_load_parts_2 VALUES ({partition}, 1, randomPrintableASCII(10))"
         )
@@ -101,18 +152,18 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
     def check_parts_loading(node, partition, loaded, failed, skipped):
         for (min_block, max_block) in loaded:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert node.contains_in_log(f"Loading part {part_name}")
-            assert node.contains_in_log(f"Finished part {part_name}")
+            assert node.contains_in_log(f"Loading Active part {part_name}")
+            assert node.contains_in_log(f"Finished loading Active part {part_name}")
 
         for (min_block, max_block) in failed:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert node.contains_in_log(f"Loading part {part_name}")
-            assert not node.contains_in_log(f"Finished part {part_name}")
+            assert node.contains_in_log(f"Loading Active part {part_name}")
+            assert not node.contains_in_log(f"Finished loading Active part {part_name}")
 
         for (min_block, max_block) in skipped:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert not node.contains_in_log(f"Loading part {part_name}")
-            assert not node.contains_in_log(f"Finished part {part_name}")
+            assert not node.contains_in_log(f"Loading Active part {part_name}")
+            assert not node.contains_in_log(f"Finished loading Active part {part_name}")
 
     check_parts_loading(
         node1, 111, loaded=[(0, 1), (2, 2)], failed=[(0, 2)], skipped=[(0, 0), (1, 1)]
