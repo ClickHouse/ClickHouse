@@ -543,4 +543,4 @@ add_library(_rocksdb ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
 target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
 # SYSTEM is required to overcome some issues
-target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include" "${ROCKSDB_SOURCE_DIR}")

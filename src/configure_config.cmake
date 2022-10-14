@@ -138,3 +138,7 @@ endif()
 if (NOT ENABLE_EXTERNAL_OPENSSL)
     set(USE_BORINGSSL 1)
 endif ()
+if (ARCH_PPC64LE)
+    set (ARCH_PPC64LE 1)
+endif()
+
