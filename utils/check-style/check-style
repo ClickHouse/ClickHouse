@@ -60,7 +60,7 @@ EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
 declare -A EXTERN_ALLOWED_CHARS
-EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Z'
+EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Za-z'
 EXTERN_ALLOWED_CHARS[ProfileEvents]='_A-Za-z'
 EXTERN_ALLOWED_CHARS[CurrentMetrics]='_A-Za-z'
 EXTERN_TYPES_EXCLUDES=(
