@@ -50,7 +50,7 @@ public:
     void attachChild(const SchedulerNodePtr & child) override
     {
         // Take ownership
-        assert(child->parent == nullptr);
+        chassert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
