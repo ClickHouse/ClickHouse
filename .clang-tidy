@@ -1,7 +1,7 @@
 # To run clang-tidy from CMake, build ClickHouse with -DENABLE_CLANG_TIDY=1. To show all warnings, it is
 # recommended to pass "-k0" to Ninja.
 
-# Enable all checks + disale selected checks. Feel free to remove disabled checks from below list if
+# Enable all checks + disable selected checks. Feel free to remove disabled checks from below list if
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 

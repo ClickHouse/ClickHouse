@@ -45,6 +45,8 @@ elseif (ARCH_AARCH64)
         # dotprod: Scalar vector product (SDOT and UDOT instructions). Probably the most obscure extra flag with doubtful performance benefits
         #          but it has been activated since always, so why not enable it. It's not 100% clear in which revision this flag was
         #          introduced as optional, either in v8.2 [7] or in v8.4 [8].
+        # ldapr:   Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
+        #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton 2+, Azure and GCP instances. Generated from clang 15.
         #
         # [1] https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2] https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
@@ -54,7 +56,8 @@ elseif (ARCH_AARCH64)
         # [6] https://developer.arm.com/documentation/100067/0612/armclang-Command-line-Options/-mcpu?lang=en
         # [7] https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
         # [8] https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs")
+        # [9] https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
     endif ()
 
 elseif (ARCH_PPC64LE)

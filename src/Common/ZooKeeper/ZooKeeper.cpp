@@ -6,6 +6,8 @@
 #include <functional>
 #include <filesystem>
 
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
@@ -989,6 +991,24 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     return future;
 }
 
+std::future<Coordination::ListResponse>
+ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->list(path, list_request_type, std::move(callback), {});
+    return future;
+}
+
 std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
@@ -1206,6 +1226,37 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->version = version;
     return request;
 }
+
+Coordination::RequestPtr makeGetRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::GetRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
+    request->path = path;
+    request->list_request_type = list_request_type;
+    return request;
+}
+
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSimpleListRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeExistsRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperExistsRequest>();
+    request->path = path;
+    return request;
+}
+
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
