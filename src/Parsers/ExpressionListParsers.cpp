@@ -46,16 +46,15 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!elem_parser->parse(pos, element, expected))
             return false;
 
-        elements.push_back(element);
+        elements.push_back(std::move(element));
         return true;
     };
 
     if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
         return false;
 
-    auto list = std::make_shared<ASTExpressionList>(result_separator);
-    list->children = std::move(elements);
-    node = list;
+    node = std::make_shared<ASTExpressionList>(result_separator);
+    node->children = std::move(elements);
 
     return true;
 }
@@ -76,7 +75,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!elem_parser.parse(pos, element, expected))
             return false;
 
-        elements.push_back(element);
+        elements.push_back(std::move(element));
         return true;
     };
 
@@ -120,9 +119,8 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    auto list = std::make_shared<ASTExpressionList>();
-    list->children = std::move(elements);
-    node = list;
+    node = std::make_shared<ASTExpressionList>();
+    node->children = std::move(elements);
     return true;
 }
 
@@ -242,7 +240,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             if (!elem_parser->parse(pos, elem, expected))
                 return false;
 
-            node = elem;
+            node = std::move(elem);
             first = false;
         }
         else
@@ -1398,7 +1396,7 @@ public:
             return false;
 
         auto subquery = std::make_shared<ASTSubquery>();
-        subquery->children.push_back(node);
+        subquery->children.push_back(std::move(node));
         elements = {makeASTFunction("exists", subquery)};
 
         finished = true;
