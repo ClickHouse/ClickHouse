@@ -21,25 +21,19 @@ limitations under the License. */
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
-#include "QueryPipeline/printPipeline.h"
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
 #include <Storages/LiveView/LiveViewSink.h>
 #include <Storages/LiveView/LiveViewEventsSource.h>
 #include <Storages/LiveView/StorageBlocks.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
 #include <Storages/StorageFactory.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
@@ -312,12 +306,6 @@ StorageLiveView::StorageLiveView(
 
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
-    if (query.live_view_timeout)
-    {
-        is_temporary = true;
-        temporary_live_view_timeout = Seconds {*query.live_view_timeout};
-    }
-
     if (query.live_view_periodic_refresh)
     {
         is_periodically_refreshed = true;
@@ -456,9 +444,6 @@ void StorageLiveView::checkTableCanBeDropped() const
 
 void StorageLiveView::startup()
 {
-    if (is_temporary)
-        TemporaryLiveViewCleaner::instance().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
-
     if (is_periodically_refreshed)
         periodic_refresh_task->activate();
 }

@@ -153,7 +153,13 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
+        bool try_infer_objects = false;
     } json;
+
+    struct
+    {
+        String column_for_object_name;
+    } json_object_each_row;
 
     struct
     {

@@ -1,8 +1,15 @@
 ---
 slug: /en/getting-started/example-datasets/cell-towers
 sidebar_label: Cell Towers
+sidebar_position: 3
 title: "Cell Towers"
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import ActionsMenu from '@site/docs/en/_snippets/_service_actions_menu.md';
+import SQLConsoleDetail from '@site/docs/en/_snippets/_launch_sql_console.md';
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
@@ -12,6 +19,26 @@ OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4
 
 
 ## Get the Dataset {#get-the-dataset}
+
+<Tabs groupId="deployMethod">
+<TabItem value="serverless" label="ClickHouse Cloud" default>
+
+ClickHouse Cloud provides an easy-button for uploading this dataset from S3.  Log in to your ClickHouse Cloud organization, or create a free trial at [ClickHouse.cloud](https://clickhouse.cloud).
+<ActionsMenu menu="Load Data" />
+
+Choose the **Cell Towers** dataset from the **Sample data** tab, and **Load data**:
+
+![Load cell towers dataset](@site/docs/en/_snippets/images/cloud-load-data-sample.png)
+
+Examine the schema of the cell_towers table:
+```sql
+DESCRIBE TABLE cell_towers
+```
+
+<SQLConsoleDetail />
+
+</TabItem>
+<TabItem value="selfmanaged" label="Self-managed">
 
 1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
 
@@ -56,7 +83,10 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
 
-## Examples {#examples}
+</TabItem>
+</Tabs>
+
+## Example queries {#examples}
 
 1. A number of cell towers by type:
 
@@ -101,17 +131,30 @@ So, the top countries are: the USA, Germany, and Russia.
 
 You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
 
-
-## Use case {#use-case}
+## Use case: Incorporate geo data {#use-case}
 
 Using `pointInPolygon` function.
 
 1. Create a table where we will store polygons:
 
+<Tabs groupId="deployMethod">
+<TabItem value="serverless" label="ClickHouse Cloud" default>
+
+```sql
+CREATE TABLE moscow (polygon Array(Tuple(Float64, Float64)))
+ORDER BY polygon;
+```
+
+</TabItem>
+<TabItem value="selfmanaged" label="Self-managed">
+
 ```sql
 CREATE TEMPORARY TABLE
 moscow (polygon Array(Tuple(Float64, Float64)));
 ```
+
+</TabItem>
+</Tabs>
 
 2. This is a rough shape of Moscow (without "new Moscow"):
 
