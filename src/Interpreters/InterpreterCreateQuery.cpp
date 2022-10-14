@@ -12,17 +12,14 @@
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -37,7 +34,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -56,11 +52,9 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/hasNullable.h>
-#include <DataTypes/transformTypesRecursively.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -485,13 +479,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            auto callback = [&](DataTypePtr & type)
-            {
-                const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-                if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
-                    aggregate_function_type->setVersion(0, /* if_empty */true);
-            };
-            callOnNestedSimpleTypes(column_type, callback);
+            if (attach)
+                setVersionToAggregateFunctions(column_type, true);
 
             if (col_decl.null_modifier)
             {

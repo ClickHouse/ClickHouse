@@ -14,7 +14,6 @@
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/transformTypesRecursively.h>
 
 namespace DB
 {
@@ -116,24 +115,7 @@ void NativeWriter::write(const Block & block)
         writeStringBinary(column.name, ostr);
 
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        auto callback = [&](DataTypePtr & type)
-        {
-            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-            {
-                if (include_version)
-                {
-                    auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
-                    aggregate_function_data_type->setVersion(version, /* if_empty */true);
-                }
-                else
-                {
-                    aggregate_function_data_type->setVersion(0, /* if_empty */false);
-                }
-            }
-        };
-
-        callOnNestedSimpleTypes(column.type, callback);
+        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
         /// Type
         String type_name = column.type->getName();

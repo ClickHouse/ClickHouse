@@ -196,7 +196,7 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    template <bool merge>
+    template <bool MergeResult>
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto arguments = this->data(place).getArguments(this->argument_types);
@@ -206,7 +206,7 @@ public:
 
         assert(!arguments.empty());
         nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
-        if constexpr (merge)
+        if constexpr (MergeResult)
             nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
         else
             nested_func->insertResultInto(getNestedPlace(place), to, arena);
