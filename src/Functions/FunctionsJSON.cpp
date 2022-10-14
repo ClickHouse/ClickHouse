@@ -76,6 +76,18 @@ static Int64 adjustIndex(Int64 index, UInt64 array_size)
     return index >= 0 ? index - 1 : index + array_size;
 }
 
+static bool isDummyTuple(const IDataType & type)
+{
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
+    if (!type_tuple || !type_tuple->haveExplicitNames())
+        return false;
+
+    const auto & tuple_names = type_tuple->getElementNames();
+    return tuple_names.size() == 1
+        && tuple_names[0] == ColumnObject::COLUMN_NAME_DUMMY
+        && isUInt8(type_tuple->getElement(0));
+}
+
 /// Functions to parse JSONs and extract values from it.
 /// The first argument of all these functions gets a JSON,
 /// after that there are any number of arguments specifying path to a desired part from the JSON's root.
@@ -239,7 +251,7 @@ public:
     public:
         using Element = typename JSONParser::Element;
 
-        JSONElementIterator(Element element_) : element(std::move(element_)) {}
+        explicit JSONElementIterator(Element element_) : element(std::move(element_)) {}
 
         /// Performs moves of types MoveType::Key and MoveType::ConstKey
         bool moveToElementByKey(std::string_view key)
@@ -325,6 +337,9 @@ public:
         {
             if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
             {
+                if (isDummyTuple(*type))
+                    return false;
+
                 const auto & elements = type_tuple->getElements();
                 index = adjustIndex(index, elements.size());
                 if (static_cast<UInt64>(index) >= elements.size())
@@ -577,7 +592,7 @@ public:
                 temp_arguments[0].column = ColumnConst::create(temp_arguments[0].column, column_const->size());
         }
 
-        auto temporary_result = FunctionJSONHelpers::ExecutorObject<Name, Impl>::run(temp_arguments, result_type, input_rows_count);
+        auto temporary_result = FunctionJSONHelpers::ExecutorObject<Name, Impl>::run(temp_arguments, json_return_type, input_rows_count);
         if (null_presence.has_nullable)
             return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
         return temporary_result;
@@ -763,18 +778,6 @@ struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
 struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
-
-static bool isDummyTuple(const IDataType & type)
-{
-    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
-    if (!type_tuple || !type_tuple->haveExplicitNames())
-        return false;
-
-    const auto & tuple_names = type_tuple->getElementNames();
-    return tuple_names.size() == 1
-        && tuple_names[0] == ColumnObject::COLUMN_NAME_DUMMY
-        && isUInt8(type_tuple->getElement(0));
-}
 
 template <typename Iterator>
 class JSONHasImpl
@@ -1594,7 +1597,7 @@ struct JSONExtractTree
 
             for (auto value : array)
             {
-                if (nested->insertResultToColumn(data, value))
+                if (nested->insertResultToColumn(data, Iterator{value}))
                     were_valid_elements = true;
                 else
                     data.insertDefault();
@@ -1715,7 +1718,7 @@ struct JSONExtractTree
 
                 for (size_t index = 0; (index != this->nested.size()) && (it != array.end()); ++index)
                 {
-                    if (this->nested[index]->insertResultToColumn(tuple.getColumn(index), *it++))
+                    if (this->nested[index]->insertResultToColumn(tuple.getColumn(index), Iterator{*it++}))
                         were_valid_elements = true;
                     else
                         tuple.getColumn(index).insertDefault();
@@ -1733,7 +1736,7 @@ struct JSONExtractTree
                     auto it = object.begin();
                     for (size_t index = 0; (index != this->nested.size()) && (it != object.end()); ++index)
                     {
-                        if (this->nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second))
+                        if (this->nested[index]->insertResultToColumn(tuple.getColumn(index), Iterator{(*it++).second}))
                             were_valid_elements = true;
                         else
                             tuple.getColumn(index).insertDefault();
@@ -1746,7 +1749,7 @@ struct JSONExtractTree
                         auto index = this->name_to_index_map.find(key);
                         if (index != this->name_to_index_map.end())
                         {
-                            if (this->nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value))
+                            if (this->nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), Iterator{value}))
                                 were_valid_elements = true;
                         }
                     }

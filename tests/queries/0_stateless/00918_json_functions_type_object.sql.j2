@@ -109,6 +109,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":
 
 SELECT '--const/non-const mixed--';
 SELECT JSONExtractString('{"arr": ["a", "b", "c", "d", "e"]}'::{{ type }}, 'arr', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
+SELECT JSONExtractString(''::JSON, idx) FROM (SELECT arrayJoin([1023, 2147483647, -1, NULL, 100]) AS idx);
 SELECT JSONExtractString(json::{{ type }}, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
 
 {% endfor -%}
