@@ -121,7 +121,7 @@ namespace
     std::pair<String, String> getPathFromUriAndUriWithoutPath(const String & uri)
     {
         auto pos = uri.find("//");
-        if (pos != std::string::npos && pos + 2 != uri.end())
+        if (pos != std::string::npos && pos + 2 < uri.length())
         {
             pos = uri.find('/', pos + 2);
             if (pos != std::string::npos)
