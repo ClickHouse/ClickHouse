@@ -40,10 +40,8 @@ struct Expected
 
         if (current_pos == max_parsed_pos)
         {
-            for (auto it = variants.begin(); it != variants.end(); it++)
-                if (*it == description)
-                    return;
-            variants.push_back(description);
+            if ((current_pos == max_parsed_pos) && (std::find(variants.begin(), variants.end(), description) == variants.end()))
+                variants.push_back(description);
         }
     }
 
