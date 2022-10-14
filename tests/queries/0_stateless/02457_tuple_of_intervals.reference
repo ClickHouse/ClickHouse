@@ -1,17 +1,16 @@
 SELECT (toIntervalSecond(-1), toIntervalMinute(2), toIntervalMonth(-3), toIntervalYear(1))
--
-2022-11-12
-2022-11-12
-2022-11-12
--
-2023-07-11 00:01:59
-2023-07-11 00:01:59
-2023-07-11 00:01:59
--
-2021-07-31 23:00:00
-2021-07-31 23:00:00
-2021-07-31 23:00:00
--
-2021-06-10 23:59:59.000
-2021-06-10 23:59:59.000
-2021-06-10 23:59:59.000
+---
+3	IntervalSecond
+(1,2)	Tuple(IntervalHour, IntervalSecond)
+(1,1,1)	Tuple(IntervalSecond, IntervalHour, IntervalSecond)
+(2,1)	Tuple(IntervalSecond, IntervalHour)
+---
+-3	IntervalSecond
+(-1,-2)	Tuple(IntervalHour, IntervalSecond)
+(-1,-1,-1)	Tuple(IntervalSecond, IntervalHour, IntervalSecond)
+(-2,-1)	Tuple(IntervalSecond, IntervalHour)
+---
+1
+1
+1
+1
