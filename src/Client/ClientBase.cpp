@@ -6,6 +6,8 @@
 #include <map>
 #include <unordered_map>
 
+#include "config.h"
+
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
@@ -17,14 +19,14 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
+
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
@@ -1498,6 +1500,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             if (!old_settings)
                 old_settings.emplace(global_context->getSettingsRef());
             global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            global_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -1543,6 +1546,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 else
                     global_context->applySettingChange(change);
             }
+            global_context->resetSettingsToDefaultValue(set_query->default_settings);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {

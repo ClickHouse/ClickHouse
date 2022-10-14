@@ -907,6 +907,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart

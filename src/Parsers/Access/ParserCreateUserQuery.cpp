@@ -16,7 +16,7 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include <Common/config.h>
+#include "config.h"
 #include <Common/hex.h>
 #if USE_SSL
 #     include <openssl/crypto.h>

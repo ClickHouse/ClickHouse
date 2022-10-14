@@ -237,6 +237,7 @@ Block NativeReader::read()
             else
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
         }
+        tmp_res.info = res.info;
 
         res.swap(tmp_res);
     }
