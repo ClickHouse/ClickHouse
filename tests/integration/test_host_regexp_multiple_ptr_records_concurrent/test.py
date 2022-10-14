@@ -71,4 +71,3 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
     )
 
     assert "1\n" == client.exec_in_container(["python3", f"stress_test.py", server_ip])
-
