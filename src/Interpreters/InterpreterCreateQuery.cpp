@@ -582,6 +582,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.default_expression)
         {
+            if (context_->hasQueryContext() && context_->getQueryContext().get() == context_.get())
+            {
+                /// Normalize query only for original CREATE query, not on metadata loading.
+                /// And for CREATE query we can pass local context, because result will not change after restart.
+                NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context_};
+                NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+                visitor.visit(col_decl.default_expression);
+            }
+
             ASTPtr default_expr =
                 col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
                     std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
@@ -664,6 +673,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
             throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
 
+        /// Dictionaries have dictionary_attributes_list instead of columns_list
+        assert(!create.is_dictionary);
+
         if (create.columns_list->columns)
         {
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
@@ -725,6 +737,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.is_dictionary)
     {
+        if (!create.dictionary || !create.dictionary->source)
+            return {};
+
+        /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
+        NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
+        NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+        visitor.visit(create.dictionary->source->ptr());
+
         return {};
     }
     else if (!create.storage || !create.storage->engine)

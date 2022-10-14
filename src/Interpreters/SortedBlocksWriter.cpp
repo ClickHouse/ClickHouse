@@ -264,7 +264,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
 Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file->path(), materializeBlock(sample_block)));
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file->getPath(), materializeBlock(sample_block)));
 }
 
 
