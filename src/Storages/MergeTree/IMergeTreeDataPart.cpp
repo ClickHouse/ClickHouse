@@ -30,7 +30,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/transformTypesRecursively.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
 
@@ -1192,15 +1191,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         loaded_columns.readText(*in);
 
         for (auto & column : loaded_columns)
-        {
-            auto callback = [](DataTypePtr & type)
-            {
-                const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-                if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-                    aggregate_function_data_type->setVersion(0, /* if_empty */true);
-            };
-            callOnNestedSimpleTypes(column.type, callback);
-        }
+            setVersionToAggregateFunctions(column.type, true);
     }
 
     SerializationInfo::Settings settings =
