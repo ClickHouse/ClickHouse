@@ -25,7 +25,7 @@ public:
 
     ssh_string get() { return string; }
 
-    String toString() { return String(ssh_string_to_char(string), ssh_string_len(string)); }
+    String toString() { return String(ssh_string_get_char(string), ssh_string_len(string)); }
 
     ~SshString() { ssh_string_free(string); }
 
