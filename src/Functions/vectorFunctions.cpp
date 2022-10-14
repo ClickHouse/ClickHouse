@@ -555,7 +555,7 @@ public:
         {
             const auto & cur_types = tuple->getElements();
 
-            for (auto & type : cur_types)
+            for (const auto & type : cur_types)
                 if (!isInterval(type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of Tuple element of first argument of function {}, must be Interval",
@@ -607,7 +607,7 @@ public:
         {
             const auto & cur_types = first_tuple->getElements();
 
-            for (auto & type : cur_types)
+            for (const auto & type : cur_types)
                 if (!isInterval(type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of Tuple element of first argument of function {}, must be Interval",
