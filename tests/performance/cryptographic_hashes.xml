@@ -8,7 +8,6 @@
                <value>SHA224</value>
                <value>SHA256</value>
                <value>halfMD5</value>
-               <value>BLAKE3</value>
           </values>
         </substitution>
         <substitution>

@@ -32,7 +32,9 @@ OffsetTransform::OffsetTransform(
 }
 
 
-IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+IProcessor::Status OffsetTransform::prepare(
+        const PortNumbers & updated_input_ports,
+        const PortNumbers & updated_output_ports)
 {
     bool has_full_port = false;
 
@@ -61,7 +63,9 @@ IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_po
                 return;
             default:
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Unexpected status for OffsetTransform::preparePair : {}", IProcessor::statusToName(status));
+                        "Unexpected status for OffsetTransform::preparePair : " + IProcessor::statusToName(status),
+                        ErrorCodes::LOGICAL_ERROR);
+
         }
     };
 
@@ -84,7 +88,7 @@ IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_po
 OffsetTransform::Status OffsetTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception("prepare without arguments is not supported for multi-port OffsetTransform",
+        throw Exception("prepare without arguments is not supported for multi-port OffsetTransform.",
                         ErrorCodes::LOGICAL_ERROR);
 
     return prepare({0}, {0});

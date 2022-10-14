@@ -245,7 +245,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
 
         /// Stack memory is not enough, allocate larger buffer.
         use_stack_memory = false;
-        memory.resize(std::max(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), new_size));
+        memory.resize(std::max(size_t(DBMS_DEFAULT_BUFFER_SIZE), new_size));
         memcpy(memory.data(), stack_memory, sizeof(stack_memory));
         if (need_update_checkpoint)
             checkpoint.emplace(memory.data() + offset);

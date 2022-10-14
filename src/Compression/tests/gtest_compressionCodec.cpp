@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <cstring>
+#include <string.h>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -175,7 +175,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoadLE<T>(data);
+        current_value = unalignedLoad<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -371,7 +371,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -393,7 +393,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = gen(static_cast<T>(i));
 
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -790,7 +790,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     }
 
     return sequences;
-}
+};
 
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator
@@ -1019,7 +1019,7 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
             Codec("Gorilla")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(M_E, 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5)))
         )
     )
@@ -1032,7 +1032,7 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
             Codec("Gorilla")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(-1 * M_E, 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5)))
         )
     )

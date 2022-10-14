@@ -315,7 +315,7 @@ void FunctionArrayUniq::executeHashed(
 }
 
 
-REGISTER_FUNCTION(ArrayUniq)
+void registerFunctionArrayUniq(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayUniq>();
 }

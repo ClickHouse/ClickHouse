@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_BZIP2
 #    include <IO/Bzip2WriteBuffer.h>

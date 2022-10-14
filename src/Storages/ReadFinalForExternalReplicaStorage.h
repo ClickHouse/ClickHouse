@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL || USE_LIBPQXX
 
@@ -13,8 +13,7 @@ namespace DB
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage);
 
-void readFinalFromNestedStorage(
-    QueryPlan & query_plan,
+Pipe readFinalFromNestedStorage(
     StoragePtr nested_storage,
     const Names & column_names,
     SelectQueryInfo & query_info,

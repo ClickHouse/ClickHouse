@@ -1,0 +1,1 @@
+../../../en/operations/system-tables/query_log.md

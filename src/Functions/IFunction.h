@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #include <memory>
 
@@ -63,11 +63,6 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** Default implementation in presence of arguments with type Nothing is the following:
-      *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
-
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:
       *  arguments are converted to ordinary columns with single value, then function is executed as usual,
@@ -104,9 +99,6 @@ private:
 
     ColumnPtr defaultImplementationForNulls(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
-    ColumnPtr defaultImplementationForNothing(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -171,11 +163,11 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** If function isSuitableForConstantFolding then, this method will be called during query analysis
+    /** If function isSuitableForConstantFolding then, this method will be called during query analyzis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
       * return they result based on some constant arguments.
-      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
-      * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
+      * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
+      * useDefaultImplementationForLowCardinality are not applied.
       */
     virtual ColumnPtr getConstantResultForNonConstArguments(
         const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
@@ -265,10 +257,9 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;   /// Is the function monotonous (non-decreasing or non-increasing).
-        bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
-        bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -363,13 +354,7 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNothing() is true, then change arguments for getReturnType() and build():
-      *  if some of arguments are Nothing then don't call getReturnType(), call build() with return_type = Nothing,
-      * Otherwise build returns build(arguments, getReturnType(arguments));
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
-
-    /** If useDefaultImplementationForLowCardinalityColumns() is true, then change arguments for getReturnType() and build().
+    /** If useDefaultImplementationForNulls() is true, then change arguments for getReturnType() and build().
       * If function arguments has low cardinality types, convert them to ordinary types.
       * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
@@ -395,7 +380,7 @@ private:
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 /// Old function interface. Check documentation in IFunction.h.
-/// If client do not need stateful properties it can implement this interface.
+/// If client do not need statefull properties it can implement this interface.
 class IFunction
 {
 public:
@@ -417,11 +402,6 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** Default implementation in presence of arguments with type Nothing is the following:
-      *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
-      */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
 
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:

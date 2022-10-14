@@ -1,11 +1,9 @@
 #include "StoragePolicy.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
-#include "createVolume.h"
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
-#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
 #include <set>
@@ -40,7 +38,6 @@ StoragePolicy::StoragePolicy(
     const String & config_prefix,
     DiskSelectorPtr disks)
     : name(std::move(name_))
-    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     String volumes_prefix = config_prefix + ".volumes";
@@ -65,12 +62,7 @@ StoragePolicy::StoragePolicy(
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
-        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME,
-            std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)},
-            /* max_data_part_size_= */ 0,
-            /* are_merges_avoided_= */ false,
-            /* perform_ttl_move_on_insert_= */ true,
-            VolumeLoadBalancing::ROUND_ROBIN);
+        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, false);
         volumes.emplace_back(std::move(default_volume));
     }
 
@@ -83,15 +75,11 @@ StoragePolicy::StoragePolicy(
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
-    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
 StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
-    : volumes(std::move(volumes_))
-    , name(std::move(name_))
-    , move_factor(move_factor_)
-    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
+    : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
 {
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " must contain at least one Volume.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
@@ -100,7 +88,6 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + " in storage policy " + backQuote(name), ErrorCodes::LOGICAL_ERROR);
 
     buildVolumeIndices();
-    LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
 
@@ -220,8 +207,6 @@ ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) con
         if (reservation)
             return reservation;
     }
-    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
-
     return {};
 }
 
@@ -297,7 +282,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
     for (const auto & volume : getVolumes())
     {
-        if (!new_volume_names.contains(volume->getName()))
+        if (new_volume_names.count(volume->getName()) == 0)
             throw Exception("New storage policy " + backQuote(name) + " shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_set<String> new_disk_names;
@@ -305,7 +290,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
             new_disk_names.insert(disk->getName());
 
         for (const auto & disk : volume->getDisks())
-            if (!new_disk_names.contains(disk->getName()))
+            if (new_disk_names.count(disk->getName()) == 0)
                 throw Exception("New storage policy " + backQuote(name) + " shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
     }
 }
@@ -318,15 +303,6 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
         return it->second;
     else
         throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
-}
-
-
-VolumePtr StoragePolicy::tryGetVolumeByDisk(const DiskPtr & disk_ptr) const
-{
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
-    if (it == volume_index_by_disk_name.end())
-        return nullptr;
-    return getVolume(it->second);
 }
 
 
@@ -411,7 +387,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (!result->policies.contains(name))
+        if (result->policies.count(name) == 0)
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);

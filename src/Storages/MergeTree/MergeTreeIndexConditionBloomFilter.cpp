@@ -256,7 +256,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -542,10 +542,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             {
                 out.function = RPNElement::FUNCTION_HAS;
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                if (converted_field.isNull())
-                    return false;
-
+                Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
@@ -568,11 +565,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                     if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
                         return false;
 
-                    auto converted = convertFieldToType(f, *actual_type);
-                    if (converted.isNull())
-                        return false;
-
-                    mutable_column->insert(converted);
+                    mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
                 }
 
                 column = std::move(mutable_column);
@@ -590,10 +583,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-            if (converted_field.isNull())
-                return false;
-
+            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 
@@ -621,11 +611,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-        if (converted_field.isNull())
-            return false;
-
+        Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+
         return true;
     }
 
@@ -635,7 +623,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const Tuple & tuple = value_field.get<const Tuple &>();
+            const Tuple & tuple = get<const Tuple &>(value_field);
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
@@ -713,15 +701,16 @@ SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
     if (header.has(node->getColumnName()))
     {
         const auto & column_and_type = header.getByName(node->getColumnName());
-        auto set_key = getPreparedSetKey(node, column_and_type.type);
-        if (auto prepared_set = query_info.prepared_sets->get(set_key))
-            return prepared_set;
+        const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(node, column_and_type.type));
+
+        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
+            return prepared_set_it->second;
     }
     else
     {
-        for (const auto & set : query_info.prepared_sets->getByTreeHash(node->getTreeHash()))
-            if (set->hasExplicitSetElements())
-                return set;
+        for (const auto & prepared_set_it : query_info.sets)
+            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set_it.second->hasExplicitSetElements())
+                return prepared_set_it.second;
     }
 
     return DB::SetPtr();

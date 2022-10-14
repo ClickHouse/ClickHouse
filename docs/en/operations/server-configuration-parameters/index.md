@@ -1,11 +1,10 @@
 ---
-slug: /en/operations/server-configuration-parameters/
-sidebar_position: 54
-sidebar_label: Server Configuration Parameters
-pagination_next: en/operations/server-configuration-parameters/settings
+toc_folder_title: Server Configuration Parameters
+toc_priority: 54
+toc_title: Introduction
 ---
 
-# Server Configuration Parameters 
+# Server Configuration Parameters {#server-settings}
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 

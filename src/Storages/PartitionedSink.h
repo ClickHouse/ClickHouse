@@ -22,8 +22,6 @@ public:
 
     void consume(Chunk chunk) override;
 
-    void onException() override;
-
     void onFinish() override;
 
     virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;

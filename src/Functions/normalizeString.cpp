@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_ICU
 #include <Functions/FunctionFactory.h>
@@ -8,7 +8,7 @@
 #include <unicode/unorm2.h>
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -95,8 +95,6 @@ struct NormalizeUTF8Impl
         size_t size = offsets.size();
         res_offsets.resize(size);
 
-        res_data.reserve(data.size() * 2);
-
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
 
@@ -169,7 +167,7 @@ using FunctionNormalizeUTF8NFKC = FunctionStringToString<NormalizeUTF8Impl<Norma
 using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKDImpl>, NormalizeNFKDImpl>;
 }
 
-REGISTER_FUNCTION(NormalizeUTF8)
+void registerFunctionNormalizeUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNormalizeUTF8NFC>();
     factory.registerFunction<FunctionNormalizeUTF8NFD>();

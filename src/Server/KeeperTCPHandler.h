@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 
@@ -8,6 +9,7 @@
 #include <Common/MultiVersion.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
+#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ConcurrentBoundedQueue.h>

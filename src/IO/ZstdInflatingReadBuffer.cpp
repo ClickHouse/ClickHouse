@@ -8,8 +8,8 @@ namespace ErrorCodes
     extern const int ZSTD_DECODER_FAILED;
 }
 
-ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
-    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
     dctx = ZSTD_createDCtx();
     input = {nullptr, 0, 0};
@@ -18,12 +18,6 @@ ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
     if (dctx == nullptr)
     {
         throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
-    }
-
-    size_t ret = ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, zstd_window_log_max);
-    if (ZSTD_isError(ret))
-    {
-        throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: {}", ZSTD_getErrorName(ret));
     }
 }
 

@@ -52,7 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, file_size.value_or(-1));
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
@@ -77,21 +77,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
@@ -104,7 +96,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(__FreeBSD__)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
         /** O_DIRECT
