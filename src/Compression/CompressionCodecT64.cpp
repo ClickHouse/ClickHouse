@@ -315,7 +315,7 @@ void load(const char * src, T * buf, UInt32 tail = 64)
     {
         /// Since the algorithm uses little-endian integers, data is loaded
         /// as little-endian types on big-endian machine(s390x, etc.)
-        for (UInt32 i = 0; i < tail; i++)
+        for (UInt32 i = 0; i < tail; ++i)
         {
             buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
         }
