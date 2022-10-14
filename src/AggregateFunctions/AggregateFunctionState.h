@@ -37,11 +37,6 @@ public:
         return getStateType();
     }
 
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
     DataTypePtr getStateType() const override
     {
         return nested_func->getStateType();

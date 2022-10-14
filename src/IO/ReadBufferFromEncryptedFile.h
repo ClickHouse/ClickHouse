@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #include <IO/ReadBufferFromFileBase.h>
@@ -38,7 +38,6 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     off_t offset = 0;
-
     bool need_seek = false;
 
     Memory<> encrypted_buffer;

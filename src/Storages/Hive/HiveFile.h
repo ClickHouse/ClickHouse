@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HIVE
 
@@ -170,7 +170,7 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
-using HiveFilesCache = CacheBase<String, IHiveFile>;
+using HiveFilesCache = LRUCache<String, IHiveFile>;
 using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
 class HiveTextFile : public IHiveFile

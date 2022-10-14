@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/statements/check-table
 sidebar_position: 41
-sidebar_label: CHECK TABLE
-title: "CHECK TABLE Statement"
+sidebar_label: CHECK
 ---
+
+# CHECK TABLE Statement
 
 Checks if the data in the table is corrupted.
 

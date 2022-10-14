@@ -12,13 +12,15 @@
 namespace DB
 {
 
-/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
-/// Contains helper methods to check/start bridge sync
+/// Common base class for XDBC and Library bridge helpers.
+/// Contains helper methods to check/start bridge sync.
 class IBridgeHelper: protected WithContext
 {
 
 public:
     static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
+    static constexpr inline auto PING_HANDLER = "/ping";
+    static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
@@ -29,9 +31,9 @@ public:
 
     virtual ~IBridgeHelper() = default;
 
-    virtual Poco::URI getMainURI() const = 0;
+    Poco::URI getMainURI() const;
 
-    virtual Poco::URI getPingURI() const = 0;
+    Poco::URI getPingURI() const;
 
     void startBridgeSync();
 
@@ -39,6 +41,7 @@ protected:
     /// Check bridge is running. Can also check something else in the mean time.
     virtual bool bridgeHandShake() = 0;
 
+    /// clickhouse-odbc-bridge, clickhouse-library-bridge
     virtual String serviceAlias() const = 0;
 
     virtual String serviceFileName() const = 0;

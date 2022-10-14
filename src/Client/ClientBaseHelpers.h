@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_REPLXX
 #   include <base/ReplxxLineReader.h>

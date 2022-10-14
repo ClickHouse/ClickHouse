@@ -708,7 +708,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
         bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -927,11 +927,7 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-        {
-            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
-            /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
-        }
+            command = fmt::format("clickhouse su '{}' {}", user, command);
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);

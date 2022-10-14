@@ -90,8 +90,6 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"removal_tid",                                 getTransactionIDDataType()},
         {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
-
-        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
     }
     )
 {
@@ -100,7 +98,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 void StorageSystemParts::processNextStorage(
     ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
-    using State = MergeTreeDataPartState;
+    using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
@@ -307,8 +305,6 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->hasLightweightDelete());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

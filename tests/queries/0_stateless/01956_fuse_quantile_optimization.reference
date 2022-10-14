@@ -95,5 +95,4 @@ FROM
     FROM numbers(10)
 )
 GROUP BY b
-ORDER BY b ASC
 1	1	1

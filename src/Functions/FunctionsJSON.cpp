@@ -43,7 +43,7 @@
 #include <Interpreters/Context.h>
 
 
-#include "config.h"
+#include "config_functions.h"
 
 
 namespace DB
@@ -683,7 +683,7 @@ public:
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
                 /// But it will be more convenient for user to perform conversion.
-                value = static_cast<NumberType>(element.getDouble());
+                value = element.getDouble();
             }
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
@@ -813,8 +813,8 @@ struct JSONExtractTree
             auto from_col = dictionary_type->createColumn();
             if (impl->insertResultToColumn(*from_col, element))
             {
-                std::string_view value = from_col->getDataAt(0).toView();
-                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data(), value.size());
+                StringRef value = from_col->getDataAt(0);
+                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data, value.size);
                 return true;
             }
             return false;
@@ -1443,7 +1443,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(JSON)
+void registerFunctionsJSON(FunctionFactory & factory)
 {
     factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();

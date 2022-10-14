@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_ICU
 #include <Functions/FunctionFactory.h>
@@ -169,7 +169,7 @@ using FunctionNormalizeUTF8NFKC = FunctionStringToString<NormalizeUTF8Impl<Norma
 using FunctionNormalizeUTF8NFKD = FunctionStringToString<NormalizeUTF8Impl<NormalizeNFKDImpl>, NormalizeNFKDImpl>;
 }
 
-REGISTER_FUNCTION(NormalizeUTF8)
+void registerFunctionNormalizeUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNormalizeUTF8NFC>();
     factory.registerFunction<FunctionNormalizeUTF8NFD>();

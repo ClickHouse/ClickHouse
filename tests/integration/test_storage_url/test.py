@@ -70,8 +70,8 @@ def test_table_function_url_access_rights():
         user="u1",
     ) == TSV(
         [
-            ["c1", "Nullable(Int64)"],
-            ["c2", "Nullable(Int64)"],
-            ["c3", "Nullable(Int64)"],
+            ["c1", "Nullable(Float64)"],
+            ["c2", "Nullable(Float64)"],
+            ["c3", "Nullable(Float64)"],
         ]
     )

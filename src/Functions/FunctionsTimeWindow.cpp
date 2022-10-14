@@ -194,7 +194,7 @@ struct TimeWindowImpl<TUMBLE>
             default:
                 throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
@@ -397,7 +397,7 @@ struct TimeWindowImpl<HOP>
             default:
                 throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
@@ -546,7 +546,7 @@ struct TimeWindowImpl<WINDOW_ID>
             default:
                 throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
@@ -684,7 +684,7 @@ ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & a
     return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
 }
 
-REGISTER_FUNCTION(TimeWindow)
+void registerFunctionsTimeWindow(FunctionFactory& factory)
 {
     factory.registerFunction<FunctionTumble>();
     factory.registerFunction<FunctionHop>();

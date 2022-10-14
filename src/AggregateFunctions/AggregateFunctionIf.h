@@ -5,7 +5,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -54,16 +54,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        return nested_func->getNormalizedStateType();
     }
 
     bool isVersioned() const override

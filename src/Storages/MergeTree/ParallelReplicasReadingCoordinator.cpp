@@ -125,7 +125,7 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         }
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)

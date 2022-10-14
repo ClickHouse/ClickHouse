@@ -12,8 +12,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSetQuery.h>
 
 using namespace std::literals;
 
@@ -549,8 +549,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     {
                         if (i != 0)
                             settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-                        if (arguments->children[i]->as<ASTSetQuery>())
-                            settings.ostr << "SETTINGS ";
                         arguments->children[i]->formatImpl(settings, state, nested_need_parens);
                     }
                     if (frame.need_parens)
@@ -567,8 +565,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (i != 0)
                     settings.ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ']' << (settings.hilite ? hilite_none : "");
@@ -582,8 +578,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (i != 0)
                     settings.ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
@@ -597,8 +591,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             {
                 if (i != 0)
                     settings.ostr << ", ";
-                if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
@@ -633,8 +625,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         {
             if (i != 0)
                 settings.ostr << ", ";
-            if (arguments->children[i]->as<ASTSetQuery>())
-                settings.ostr << "SETTINGS ";
 
             bool special_hilite = false;
             if (i == 1 && special_hilite_regexp)

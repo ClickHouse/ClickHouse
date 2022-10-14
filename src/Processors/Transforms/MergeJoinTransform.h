@@ -245,10 +245,10 @@ public:
 
 private:
     std::optional<Status> handleAnyJoinState();
-    Status anyJoin(JoinKind kind);
+    Status anyJoin(ASTTableJoin::Kind kind);
 
     std::optional<Status> handleAllJoinState();
-    Status allJoin(JoinKind kind);
+    Status allJoin(ASTTableJoin::Kind kind);
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;

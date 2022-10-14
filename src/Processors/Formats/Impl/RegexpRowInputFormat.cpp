@@ -133,6 +133,7 @@ RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & 
         buf,
         format_settings_,
         getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
+    , format_settings(format_settings_)
     , field_extractor(format_settings)
     , buf(in_)
 {
@@ -156,12 +157,6 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
-void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule);
-}
-
-
 void registerInputFormatRegexp(FormatFactory & factory)
 {
     factory.registerInputFormat("Regexp", [](
@@ -174,7 +169,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
     });
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool need_more_data = true;
@@ -182,28 +177,17 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
         else if (pos == in.buffer().end())
             continue;
 
-        ++number_of_rows;
-        if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
+        if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
             need_more_data = false;
 
-        if (*pos == '\n')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\r')
-                ++pos;
-        }
-        else if (*pos == '\r')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                ++pos;
-        }
+        ++pos;
+        ++number_of_rows;
     }
 
     saveUpToPosition(in, memory, pos);
@@ -221,11 +205,6 @@ void registerRegexpSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<RegexpSchemaReader>(buf, settings);
-    });
-    factory.registerAdditionalInfoForSchemaCacheGetter("Regexp", [](const FormatSettings & settings)
-    {
-        auto result = getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
-        return result + fmt::format(", regexp={}", settings.regexp.regexp);
     });
 }
 

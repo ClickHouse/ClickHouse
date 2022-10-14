@@ -513,7 +513,7 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
@@ -567,7 +567,7 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
 {
 }
 
@@ -633,10 +633,6 @@ void registerValuesSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<ValuesSchemaReader>(buf, settings);
-    });
-    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
-    {
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

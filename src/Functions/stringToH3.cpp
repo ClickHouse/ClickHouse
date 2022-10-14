@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -100,7 +100,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(StringToH3)
+void registerFunctionStringToH3(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionStringToH3>();
 }

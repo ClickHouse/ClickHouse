@@ -1,6 +1,6 @@
 #include "UseSSL.h"
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>

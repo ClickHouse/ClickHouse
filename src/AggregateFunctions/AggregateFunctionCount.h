@@ -5,14 +5,12 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -104,19 +102,6 @@ public:
         }
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        /// Return normalized state type: count()
-        AggregateFunctionProperties properties;
-        return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
-    }
-
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
@@ -169,7 +154,7 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * count_value_ptr = aggregate_data_ptr;
+        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
         auto * count_value = b.CreateLoad(return_type, count_value_ptr);
         auto * updated_count_value = b.CreateAdd(count_value, llvm::ConstantInt::get(return_type, 1));
 
@@ -182,10 +167,10 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * count_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * count_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
         auto * count_value_dst = b.CreateLoad(return_type, count_value_dst_ptr);
 
-        auto * count_value_src_ptr = aggregate_data_src_ptr;
+        auto * count_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
         auto * count_value_src = b.CreateLoad(return_type, count_value_src_ptr);
 
         auto * count_value_dst_updated = b.CreateAdd(count_value_dst, count_value_src);
@@ -198,7 +183,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, getReturnType());
-        auto * count_value_ptr = aggregate_data_ptr;
+        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         return b.CreateLoad(return_type, count_value_ptr);
     }
@@ -255,19 +240,6 @@ public:
         }
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        /// Return normalized state type: count()
-        AggregateFunctionProperties properties;
-        return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
-    }
-
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
@@ -316,7 +288,7 @@ public:
         auto * is_null_value = b.CreateExtractValue(values[0], {1});
         auto * increment_value = b.CreateSelect(is_null_value, llvm::ConstantInt::get(return_type, 0), llvm::ConstantInt::get(return_type, 1));
 
-        auto * count_value_ptr = aggregate_data_ptr;
+        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
         auto * count_value = b.CreateLoad(return_type, count_value_ptr);
         auto * updated_count_value = b.CreateAdd(count_value, increment_value);
 
@@ -329,10 +301,10 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * count_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * count_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
         auto * count_value_dst = b.CreateLoad(return_type, count_value_dst_ptr);
 
-        auto * count_value_src_ptr = aggregate_data_src_ptr;
+        auto * count_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
         auto * count_value_src = b.CreateLoad(return_type, count_value_src_ptr);
 
         auto * count_value_dst_updated = b.CreateAdd(count_value_dst, count_value_src);
@@ -345,7 +317,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, getReturnType());
-        auto * count_value_ptr = aggregate_data_ptr;
+        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         return b.CreateLoad(return_type, count_value_ptr);
     }

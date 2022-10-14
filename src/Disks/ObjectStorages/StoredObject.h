@@ -3,7 +3,6 @@
 #include <string>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 
-
 namespace DB
 {
 
@@ -21,7 +20,6 @@ struct StoredObject
         const IObjectStorage & object_storage,
         const std::string & object_path,
         size_t object_size = 0,
-        bool exists = false,
         bool object_bypasses_cache = false);
 
     /// Optional hint for cache. Use delayed initialization
@@ -34,7 +32,5 @@ struct StoredObject
         uint64_t bytes_size_ = 0,
         PathKeyForCacheCreator && path_key_for_cache_creator_ = {});
 };
-
-using StoredObjects = std::vector<StoredObject>;
 
 }

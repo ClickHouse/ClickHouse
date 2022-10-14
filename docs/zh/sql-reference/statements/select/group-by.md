@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 

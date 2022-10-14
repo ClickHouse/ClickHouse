@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/intervalLengthSum
 sidebar_position: 146
 sidebar_label: intervalLengthSum
 ---
@@ -21,7 +20,6 @@ intervalLengthSum(start, end)
 
 :::info "Примечание"
     Аргументы должны быть одного типа. В противном случае ClickHouse сгенерирует исключение.
-:::
 
 **Возвращаемое значение**
 

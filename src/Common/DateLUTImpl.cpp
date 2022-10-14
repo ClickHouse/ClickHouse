@@ -30,7 +30,7 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 }
@@ -121,6 +121,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         {
             values.time_at_offset_change_value = (transition.from - cctz::civil_second(date)) / Values::OffsetChangeFactor;
             values.amount_of_offset_change_value = (transition.to - transition.from) / Values::OffsetChangeFactor;
+
+//            std::cerr << time_zone << ", " << date << ": change from " << transition.from << " to " << transition.to << "\n";
+//            std::cerr << time_zone << ", " << date << ": change at " << values.time_at_offset_change() << " with " << values.amount_of_offset_change() << "\n";
 
             /// We don't support too large changes.
             if (values.amount_of_offset_change_value > 24 * 4)

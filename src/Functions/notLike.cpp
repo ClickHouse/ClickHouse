@@ -16,7 +16,7 @@ using FunctionNotLike = FunctionsStringSearch<MatchImpl<NameNotLike, MatchTraits
 
 }
 
-REGISTER_FUNCTION(NotLike)
+void registerFunctionNotLike(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNotLike>();
 }

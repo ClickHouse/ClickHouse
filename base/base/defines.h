@@ -123,15 +123,11 @@
 ///     - tries to print failed assertion into server log
 /// It can be used for all assertions except heavy ones.
 /// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
-/// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
-/// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
         #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
-        #define UNREACHABLE() abort()
     #else
         #define chassert(x) ((void)0)
-        #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
 
@@ -146,11 +142,9 @@
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
-/// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
-/// suppressing them in the whole function
-/// Consider adding a comment when using these macros.
-#   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
-#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }())
+/// Consider adding a comment before using these macros.
+#   define TSA_SUPPRESS_WARNING_FOR_READ(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
+#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
 
 /// This macro is useful when only one thread writes to a member
 /// and you want to read this member from the same thread without locking a mutex.
@@ -165,9 +159,9 @@
 #    define TSA_REQUIRES_SHARED(...)
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
 
-#    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
-#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)
-#    define TSA_READ_ONE_THREAD(x) TSA_SUPPRESS_WARNING_FOR_READ(x)
+#    define TSA_SUPPRESS_WARNING_FOR_READ(x)
+#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x)
+#    define TSA_READ_ONE_THREAD(x)
 #endif
 
 /// A template function for suppressing warnings about unused variables or function results.

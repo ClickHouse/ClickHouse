@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/RangeGenerator.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -72,8 +72,6 @@ public:
     Range getRemainingReadRange() const override;
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
-
-    bool supportsRightBoundedReads() const override { return true; }
 
     String getFileName() const override { return bucket + "/" + key; }
 

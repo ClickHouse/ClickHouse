@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/special-data-types/set
 sidebar_position: 59
 sidebar_label: Set
 ---

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>
@@ -54,7 +54,7 @@ public:
         ProtobufWriter & writer);
 };
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields);
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor);
 
 }
 #endif

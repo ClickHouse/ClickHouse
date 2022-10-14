@@ -19,6 +19,10 @@ def build(args):
 
     if not args.skip_website:
         website.build_website(args)
+
+    if not args.skip_website:
+        website.process_benchmark_results(args)
+        website.minify_website(args)
         redirects.build_static_redirects(args)
 
 
@@ -70,5 +74,9 @@ if __name__ == "__main__":
         new_args = sys.executable + " " + " ".join(new_args)
 
         server = livereload.Server()
+        server.watch(
+            args.website_dir + "**/*",
+            livereload.shell(new_args, cwd="tools", shell=True),
+        )
         server.serve(root=args.output_dir, host="0.0.0.0", port=args.livereload)
         sys.exit(0)

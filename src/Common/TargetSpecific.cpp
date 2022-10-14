@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Common/TargetSpecific.h>
 
 #include <Common/CpuId.h>
@@ -43,7 +42,7 @@ String toString(TargetArch arch)
         case TargetArch::AVX512VBMI: return "avx512vbmi";
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 }

@@ -296,7 +296,7 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
@@ -895,7 +895,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
@@ -923,7 +923,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
@@ -1127,7 +1127,7 @@ Pipe StorageWindowView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
+        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
     }
 
     auto reader = std::make_shared<WindowViewSource>(

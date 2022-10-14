@@ -41,7 +41,7 @@ using FunctionSigmoid = FunctionMathUnary<UnaryFunctionVectorized<SigmoidName, s
 
 }
 
-REGISTER_FUNCTION(Sigmoid)
+void registerFunctionSigmoid(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSigmoid>();
 }

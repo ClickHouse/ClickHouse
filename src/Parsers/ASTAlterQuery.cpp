@@ -124,7 +124,7 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
         case MODIFY_COMMENT: return "MODIFY_COMMENT";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

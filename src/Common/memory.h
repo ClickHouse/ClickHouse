@@ -7,7 +7,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>

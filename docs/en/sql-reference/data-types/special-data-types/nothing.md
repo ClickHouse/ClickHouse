@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/special-data-types/nothing
 sidebar_position: 60
 sidebar_label: Nothing
 ---

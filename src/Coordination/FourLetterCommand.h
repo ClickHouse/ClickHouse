@@ -7,7 +7,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromString.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 namespace DB
 {
@@ -314,17 +314,5 @@ struct RecoveryCommand : public IFourLetterCommand
     String name() override { return "rcvr"; }
     String run() override;
     ~RecoveryCommand() override = default;
-};
-
-struct ApiVersionCommand : public IFourLetterCommand
-{
-    explicit ApiVersionCommand(KeeperDispatcher & keeper_dispatcher_)
-        : IFourLetterCommand(keeper_dispatcher_)
-    {
-    }
-
-    String name() override { return "apiv"; }
-    String run() override;
-    ~ApiVersionCommand() override = default;
 };
 }
