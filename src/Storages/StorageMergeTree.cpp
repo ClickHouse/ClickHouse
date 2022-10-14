@@ -110,7 +110,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
-
     loadDeduplicationLog();
 }
 
@@ -136,6 +135,7 @@ void StorageMergeTree::startup()
     try
     {
         background_operations_assignee.start();
+        scheduleOutdatedDataPartsLoadingJob(background_operations_assignee);
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -1215,6 +1215,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
+
 
     return scheduled;
 }

@@ -1021,7 +1021,6 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
-
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;
 
@@ -1260,6 +1259,53 @@ protected:
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
+    class PartLoadingTree
+    {
+    public:
+        struct Node
+        {
+            Node(const MergeTreePartInfo & info_, const String & name_, const DiskPtr & disk_)
+                : info(info_), name(name_), disk(disk_)
+            {
+            }
+
+            const MergeTreePartInfo info;
+            const String name;
+            const DiskPtr disk;
+
+            bool is_loaded = false;
+            std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
+        };
+
+        using NodePtr = std::shared_ptr<Node>;
+        using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
+
+        static PartLoadingTree build(std::vector<PartLoadingInfo> nodes);
+
+        template <typename Func>
+        void traverse(bool recursive, Func && func);
+
+    private:
+        void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
+
+        std::unordered_map<String, NodePtr> root_by_partition;
+    };
+
+    using PartLoadingTreeNodes = std::vector<PartLoadingTree::NodePtr>;
+
+    struct LoadPartResult
+    {
+        bool is_broken = false;
+        std::optional<size_t> size_of_part;
+        MutableDataPartPtr part;
+    };
+
+    mutable std::mutex unloaded_outdated_parts_mutex;
+    PartLoadingTreeNodes unloaded_outdated_parts TSA_GUARDED_BY(unloaded_outdated_parts_mutex);
+
+    void loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load);
+    void scheduleOutdatedDataPartsLoadingJob(BackgroundJobsAssignee & assignee);
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1333,49 +1379,20 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
-    class PartLoadingTree
-    {
-    public:
-        struct Node
-        {
-            Node(const MergeTreePartInfo & info_, const String & name_, const DiskPtr & disk_)
-                : info(info_), name(name_), disk(disk_)
-            {
-            }
+    LoadPartResult loadDataPart(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        const DiskPtr & part_disk_ptr,
+        MergeTreeDataPartState to_state,
+        std::mutex & part_loading_mutex);
 
-            const MergeTreePartInfo info;
-            const String name;
-            const DiskPtr disk;
-
-            std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
-        };
-
-        using NodePtr = std::shared_ptr<Node>;
-        using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
-
-        static PartLoadingTree build(std::vector<PartLoadingInfo> nodes);
-        void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
-        const std::unordered_map<String, NodePtr> & getRoots() const { return root_by_partition; }
-
-    private:
-        std::unordered_map<String, NodePtr> root_by_partition;
-    };
-
-    using PartLoadingTreeNodes = std::vector<PartLoadingTree::NodePtr>;
-
-    void loadDataPartsFromDisk(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
+    std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,
         size_t num_parts,
         std::queue<PartLoadingTreeNodes> & parts_queue,
-        bool skip_sanity_checks,
         const MergeTreeSettingsPtr & settings);
 
-    void loadDataPartsFromWAL(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
-        MutableDataPartsVector & parts_from_wal);
+    void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
