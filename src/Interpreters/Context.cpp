@@ -1246,8 +1246,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
                 Names columns_names;
-                bool have_asteriks = false;
-                /// First, check if we have only identifiers, asteriks and literals in select expression,
+                bool have_asterisk = false;
+                /// First, check if we have only identifiers, asterisk and literals in select expression,
                 /// and if no, we cannot use the structure from insertion table.
                 for (const auto & expression : expression_list->children)
                 {
@@ -1257,7 +1257,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     }
                     else if (expression->as<ASTAsterisk>())
                     {
-                        have_asteriks = true;
+                        have_asterisk = true;
                     }
                     else if (!expression->as<ASTLiteral>())
                     {
@@ -1276,10 +1276,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     }
                 }
 
-                /// If we don't have asteriks but only subset of columns, we should use
+                /// If we don't have asterisk but only subset of columns, we should use
                 /// structure from insertion table only in case when table function
                 /// supports reading subset of columns from data.
-                if (use_columns_from_insert_query && !have_asteriks && !columns_names.empty())
+                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
                 {
                     /// For input function we should check if input format supports reading subset of columns.
                     if (table_function_ptr->getName() == "input")
