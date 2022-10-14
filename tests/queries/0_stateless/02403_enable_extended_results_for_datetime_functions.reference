@@ -26,6 +26,22 @@ toLastDayOfMonth;toDate32;true	1920-02-29
 type;toLastDayOfMonth;toDate32;true	Date32
 toLastDayOfMonth;toDateTime64;true	1920-02-29
 type;toLastDayOfMonth;toDateTime64;true	Date32
+toStartOfDay;toDateTime64;true	1920-02-02 00:00:00.000
+type;toStartOfDay;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfHour;toDateTime64;true	1920-02-02 10:00:00.000
+type;toStartOfHour;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfMinute;toDateTime64;true	1920-02-02 10:23:00.000
+type;toStartOfMinute;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfFiveMinutes;toDateTime64;true	1920-02-02 10:20:00.000
+type;toStartOfFiveMinutes;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfTenMinutes;toDateTime64;true	1920-02-02 10:20:00.000
+type;toStartOfTenMinutes;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfFifteenMinutes;toDateTime64;true	1920-02-02 10:15:00.000
+type;toStartOfFifteenMinutes;toDateTime64;true	DateTime64(3, \'UTC\')
+timeSlot;toDateTime64;true	1920-02-02 10:00:00.000
+type;timeSlot;toDateTime64;true	DateTime64(3, \'UTC\')
+toStartOfDay;toDate32;true	1920-02-02 00:00:00.000
+type;toStartOfDay;toDate32;true	DateTime64(3, \'UTC\')
 toStartOfYear;toDate32;false	1970-01-01
 type;toStartOfYear;toDate32;false	Date
 toStartOfYear;toDateTime64;false	1970-01-01
@@ -54,3 +70,19 @@ toLastDayOfMonth;toDate32;false	1970-01-01
 type;toLastDayOfMonth;toDate32;false	Date
 toLastDayOfMonth;toDateTime64;false	1970-01-01
 type;toLastDayOfMonth;toDateTime64;false	Date
+toStartOfDay;toDateTime64;false	1970-01-01 00:00:00
+type;toStartOfDay;toDateTime64;false	DateTime(\'UTC\')
+toStartOfHour;toDateTime64;false	1970-01-01 00:00:00
+type;toStartOfHour;toDateTime64;false	DateTime(\'UTC\')
+toStartOfMinute;toDateTime64;false	1970-01-01 00:00:00
+type;toStartOfMinute;toDateTime64;false	DateTime(\'UTC\')
+toStartOfFiveMinutes;toDateTime64;false	2056-03-09 16:48:16
+type;toStartOfFiveMinutes;toDateTime64;false	DateTime(\'UTC\')
+toStartOfTenMinutes;toDateTime64;false	2056-03-09 16:48:16
+type;toStartOfTenMinutes;toDateTime64;false	DateTime(\'UTC\')
+toStartOfFifteenMinutes;toDateTime64;false	2056-03-09 16:43:16
+type;toStartOfFifteenMinutes;toDateTime64;false	DateTime(\'UTC\')
+timeSlot;toDateTime64;false	2056-03-09 16:58:16
+type;timeSlot;toDateTime64;false	DateTime(\'UTC\')
+toStartOfDay;toDate32;false	1970-01-01 00:00:00
+type;toStartOfDay;toDate32;false	DateTime(\'UTC\')

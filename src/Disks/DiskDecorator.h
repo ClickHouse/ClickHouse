@@ -107,6 +107,8 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
 
+    virtual DiskPtr getNestedDisk() const;
+
 protected:
     Executor & getExecutor() override;
 
