@@ -25,22 +25,7 @@ private:
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
 
-    const Token & operator[] (size_t index)
-    {
-        while (true)
-        {
-            if (index < data.size())
-                return data[index];
-
-            if (!data.empty() && data.back().isEnd())
-                return data.back();
-
-            Token token = lexer.nextToken();
-
-            if (token.isSignificant())
-                data.emplace_back(token);
-        }
-    }
+    const Token & operator[](size_t index);
 
     const Token & max()
     {

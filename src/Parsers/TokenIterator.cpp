@@ -4,6 +4,25 @@
 namespace DB
 {
 
+const Token & Tokens::operator[](size_t index)
+{
+    if (likely(index < data.size()))
+        return data[index];
+
+    while (data.empty() || !data.back().isEnd())
+    {
+        Token token = lexer.nextToken();
+
+        if (token.isSignificant())
+        {
+            data.emplace_back(std::move(token));
+            if (index < data.size())
+                return data[index];
+        }
+    }
+    return data.back();
+}
+
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 {
     /// We have just two kind of parentheses: () and [].
