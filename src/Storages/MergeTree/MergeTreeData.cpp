@@ -1256,7 +1256,6 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
         threads_queue.push(i);
     }
 
-    std::vector<LoadPartResult> loaded_parts;
     while (!parts_queue.empty())
     {
         assert(!threads_queue.empty());
@@ -1295,6 +1294,9 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     {
         return !parts.empty();
     }));
+
+    std::mutex loaded_parts_mutex;
+    std::vector<LoadPartResult> loaded_parts;
 
     try
     {
@@ -1335,8 +1337,8 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 
                     thread_part->is_loaded = true;
                     auto res = loadDataPart(thread_part->info, thread_part->name, thread_part->disk, DataPartState::Active, part_loading_mutex);
-                    bool is_active_part = res.part->getState() == DataPartState::Active && !res.part->is_duplicate;
 
+                    bool is_active_part = res.part->getState() == DataPartState::Active && !res.part->is_duplicate;
                     if (!is_active_part && !thread_part->children.empty())
                     {
                         std::lock_guard lock{part_select_mutex};
@@ -1345,7 +1347,10 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                         remaining_thread_parts.insert(thread);
                     }
 
-                    loaded_parts.push_back(std::move(res));
+                    {
+                        std::lock_guard lock(loaded_parts_mutex);
+                        loaded_parts.push_back(std::move(res));
+                    }
                 }
             });
         }
