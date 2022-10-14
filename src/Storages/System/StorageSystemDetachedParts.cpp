@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -16,15 +17,17 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"name", std::make_shared<DataTypeString>()},
-        {"disk", std::make_shared<DataTypeString>()},
-        {"reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"database",         std::make_shared<DataTypeString>()},
+        {"table",            std::make_shared<DataTypeString>()},
+        {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"name",             std::make_shared<DataTypeString>()},
+        {"bytes_on_disk",    std::make_shared<DataTypeUInt64>()},
+        {"disk",             std::make_shared<DataTypeString>()},
+        {"path",             std::make_shared<DataTypeString>()},
+        {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
-        {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
+        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
     }});
     setInMemoryMetadata(storage_metadata);
 }
@@ -50,11 +53,14 @@ Pipe StorageSystemDetachedParts::read(
         for (const auto & p : parts)
         {
             size_t i = 0;
+            String detached_part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
             new_columns[i++]->insert(info.database);
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
+            new_columns[i++]->insert(DataPartStorageOnDisk::calculateTotalSizeOnDisk(p.disk, fs::path(info.data->getRelativeDataPath()) / detached_part_path));
             new_columns[i++]->insert(p.disk->getName());
+            new_columns[i++]->insert((fs::path(info.data->getFullPathOnDisk(p.disk)) / detached_part_path).string());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
             new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
             new_columns[i++]->insert(p.valid_name ? p.max_block : Field());
