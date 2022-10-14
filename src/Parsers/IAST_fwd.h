@@ -1,8 +1,8 @@
 #pragma once
 
-#include <absl/container/inlined_vector.h>
 #include <algorithm>
 #include <memory>
+#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
