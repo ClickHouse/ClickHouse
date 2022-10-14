@@ -18,15 +18,11 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-set (CONFIG_VERSION "${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h")
-set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
-
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
-configure_file (Common/config.h.in ${CONFIG_COMMON})
-configure_file (Common/config_version.h.in ${CONFIG_VERSION})
-configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
+configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
+configure_file (Common/config_version.h.in ${CONFIG_INCLUDE_PATH}/config_version.h)
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
@@ -75,7 +71,6 @@ add_subdirectory (AggregateFunctions)
 add_subdirectory (Client)
 add_subdirectory (TableFunctions)
 add_subdirectory (Processors)
-add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
@@ -153,7 +148,6 @@ else()
 endif ()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
-list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
 list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)
@@ -247,7 +241,13 @@ add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-add_object_library(clickhouse_compression Compression)
+if (NOT ENABLE_EXTERNAL_OPENSSL)
+    add_object_library(clickhouse_compression Compression)
+else ()
+    add_headers_and_sources(dbms Compression)
+    list(REMOVE_ITEM dbms_headers Compression/CompressionCodecEncrypted.h)
+    list(REMOVE_ITEM dbms_sources Compression/CompressionCodecEncrypted.cpp)
+endif ()
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -368,8 +368,6 @@ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
-        PRIVATE
-            ${EXECINFO_LIBRARIES}
         PUBLIC
             boost::program_options
             boost::system

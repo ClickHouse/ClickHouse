@@ -502,3 +502,7 @@ zkcopy
 zlib
 znodes
 zstd
+NYPD
+denormalizing
+ConnectionDetails
+SelfManaged
