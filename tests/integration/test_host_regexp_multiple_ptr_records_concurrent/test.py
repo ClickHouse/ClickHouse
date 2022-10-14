@@ -66,18 +66,9 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
     setup_ch_server(dns_server_ip)
 
     current_dir = os.path.dirname(__file__)
-    client.copy_file_to_container(os.path.join(current_dir, "scripts", "stress_test.py"), "stress_test.py")
+    client.copy_file_to_container(
+        os.path.join(current_dir, "scripts", "stress_test.py"), "stress_test.py"
+    )
 
     assert "1\n" == client.exec_in_container(["python3", f"stress_test.py", server_ip])
 
-    # benchmark_command = f"echo 'select 1' | clickhouse benchmark -h {server_ip} --user test_dns -c 10 --reconnect"
-
-    # assert "1\n" == client.exec_in_container((["bash", "-c", benchmark_command]))
-# container_id = cluster.get_container_id("resolver")
-# current_dir = os.path.dirname(__file__)
-# cluster.copy_file_to_container(
-#     container_id,
-#     os.path.join(current_dir, "s3_endpoint", "endpoint.py"),
-#     "endpoint.py",
-# )
-# cluster.exec_in_container(container_id, ["python", "endpoint.py"], detach=True)
