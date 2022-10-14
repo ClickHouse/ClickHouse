@@ -128,7 +128,10 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     try
     {
+        Stopwatch watch;
+        LOG_DEBUG(log, "Trying to establish new connection");
         storage.setZooKeeper();
+        LOG_DEBUG(log, "Establishing a new connection took {} ms", watch.elapsedMilliseconds());
     }
     catch (const Coordination::Exception &)
     {
@@ -158,12 +161,15 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
 
+    LOG_DEBUG(log, "Everything is Ok. Table started successfully!");
+
     return true;
 }
 
 
 bool ReplicatedMergeTreeRestartingThread::tryStartup()
 {
+    LOG_DEBUG(log, "Trying to start replica up");
     try
     {
         removeFailedQuorumParts();
@@ -345,7 +351,15 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 
     storage.partial_shutdown_called = true;
     storage.partial_shutdown_event.set();
-    storage.replica_is_active_node = nullptr;
+
+    try
+    {
+        storage.replica_is_active_node = nullptr;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while removing `is_active` node. Probably this is because session is already expired");
+    }
 
     LOG_TRACE(log, "Waiting for threads to finish");
 
