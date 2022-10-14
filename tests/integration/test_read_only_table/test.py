@@ -5,6 +5,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
+
 def fill_nodes(nodes):
     for node in nodes:
         node.query(
@@ -48,7 +49,7 @@ def test_restart_zookeeper(start_cluster):
     node1.query("INSERT INTO test_table VALUES (1), (2), (3), (4), (5);")
 
     def get_zookeeper_which_node_connected_to(node):
-        line =  str(
+        line = str(
             node.exec_in_container(
                 [
                     "bash",
@@ -62,7 +63,9 @@ def test_restart_zookeeper(start_cluster):
 
         pattern = re.compile(r"zoo[0-9]+", re.IGNORECASE)
         result = pattern.findall(line)
-        assert len(result) == 1, "ClickHouse must be connected only to one Zookeeper at a time"
+        assert (
+            len(result) == 1
+        ), "ClickHouse must be connected only to one Zookeeper at a time"
         return result[0]
 
     node1_zk = get_zookeeper_which_node_connected_to(node1)
