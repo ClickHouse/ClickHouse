@@ -20,7 +20,7 @@ class client(object):
         self.client.command = command
         self.client.eol("\r")
         self.client.logger(log, prefix=name)
-        self.client.timeout(5)
+        self.client.timeout(120)
         self.client.expect("[#\$] ", timeout=60)
         self.client.send(command)
 
