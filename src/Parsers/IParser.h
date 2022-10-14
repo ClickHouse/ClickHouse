@@ -38,11 +38,8 @@ struct Expected
             return;
         }
 
-        if (current_pos == max_parsed_pos)
-        {
-            if ((current_pos == max_parsed_pos) && (std::find(variants.begin(), variants.end(), description) == variants.end()))
-                variants.push_back(description);
-        }
+        if ((current_pos == max_parsed_pos) && (std::find(variants.begin(), variants.end(), description) == variants.end()))
+            variants.push_back(description);
     }
 
     ALWAYS_INLINE void add(TokenIterator it, const char * description)
