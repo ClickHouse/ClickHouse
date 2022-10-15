@@ -17,6 +17,7 @@ class ParserSetQuery : public IParserBase
 public:
     explicit ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
     static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected);
+    static bool parseNameValuePairWithDefault(SettingChange & change, String & default_settings, IParser::Pos & pos, Expected & expected);
 protected:
     const char * getName() const override { return "SET query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

@@ -5,8 +5,8 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Interpreters/UserDefinedExecutableFunction.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunction.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 

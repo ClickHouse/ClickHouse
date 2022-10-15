@@ -109,6 +109,21 @@ Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> &
     return DecimalField<T>(value, type.getScale());
 }
 
+template <typename From, typename T>
+Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+{
+    From value = from.get<From>();
+    if (!type.canStoreWhole(value))
+        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    //String sValue = convertFieldToString(from);
+    //int fromScale = sValue.length()- sValue.find('.') - 1;
+    UInt32 scale = type.getScale();
+
+    auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(value, scale);
+    return DecimalField<T>(scaled_value, scale);
+}
+
 template <typename To>
 Field convertDecimalType(const Field & from, const To & type)
 {
@@ -134,6 +149,9 @@ Field convertDecimalType(const Field & from, const To & type)
         return convertDecimalToDecimalType<Decimal64>(from, type);
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
+
+    if (from.getType() == Field::Types::Float64)
+        return convertFloatToDecimalType<Float64>(from, type);
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
         type.getName(), from.getType());
