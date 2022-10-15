@@ -51,8 +51,7 @@ describe('dashboard.html', () => {
 
         // Reload page and check that username is preserved and charts are shown.
         const url = await browser.getUrl();
-        const pageSettingsJson = Buffer.from(url.substring(url.indexOf('#') + 1), 'base64').toString();
-        const pageSettings = JSON.parse(pageSettingsJson);
+        const pageSettings = parseSettingsFromUrl(url);
         expect(pageSettings).toEqual({
             'host': 'https://play.clickhouse.com/',
             'user': 'play',
@@ -132,13 +131,34 @@ describe('dashboard.html', () => {
         await browser.waitUntil(async () => await DashboardPage.uplotChartCount === defaultChartCount);
         await DashboardPage.addChartButton.click();
         const titleInputs = await DashboardPage.chartTitleInputs;
-        await titleInputs[titleInputs.length - 1].setValue('Hello chart');
+        await titleInputs[titleInputs.length - 1].setValue('Hello Chart');
         const queryInputs = await DashboardPage.chartQueryInputs;
         await queryInputs[queryInputs.length - 1].setValue('SELECT 4, 2');
         const confirmButtons = await DashboardPage.confirmAddChartButtons;
         await confirmButtons[confirmButtons.length - 1].click();
         await browser.waitUntil(async () => await DashboardPage.uplotChartCount === defaultChartCount + 1);
     });
+
+    it('allows to edit charts', async () => {
+        await enterUsername();
+        await browser.waitUntil(async () => await DashboardPage.uplotChartCount === defaultChartCount);
+        const firstChart = (await DashboardPage.getUplotChartByIndex(0)).parentElement();
+
+        // Hover over the plot to reveal buttons.
+        firstChart.moveTo({xOffset: 20, yOffset: 20});
+        const editButtonSelector = 'a*=✎';
+        await $(editButtonSelector).click();
+        const newChartTitle = 'Hello Chart';
+        const newChartQuery = 'SELECT 4, 2';
+        await firstChart.$('input.edit-title').setValue(newChartTitle);
+        await firstChart.$('textarea[placeholder=Query]').setValue(newChartQuery);
+        await firstChart.$('input.edit-confirm').click();
+        const pageSettings = parseSettingsFromUrl(await browser.getUrl());
+        const pageSettingsAsString = JSON.stringify(pageSettings);
+        expect(pageSettingsAsString).toContain(newChartTitle);
+        expect(pageSettingsAsString).toContain(newChartQuery);
+    });
+
 });
 
 /** Enters username into the user input and waits until all charts are loaded. */
@@ -147,4 +167,10 @@ async function enterUsername(username = defaultUsername) {
     await browser.keys(['Enter']);
 }
 
+/** Parses a serialized JSON object after # symbol in the url. Returns a JS object */
+function parseSettingsFromUrl(url: string): object | undefined {
+    const pageSettingsJson = Buffer.from(url.substring(url.indexOf('#') + 1), 'base64').toString();
+    const result = JSON.parse(pageSettingsJson);
+    return typeof result === 'object' ? result : undefined;
+}
 

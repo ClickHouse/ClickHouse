@@ -29,10 +29,10 @@ class DashboardPage extends Page {
 
     get emptyChartCount(): Promise<number> { return $$('div.chart:not(div.uplot)').length; }
 
-    get uplotChartCount(): Promise<number> {return $$('div.chart div.uplot canvas').length;}
+    get uplotChartCount(): Promise<number> {return $$('div.chart div.uplot').length;}
 
     async getUplotChartByIndex(index: number): Promise<WebdriverIO.Element | undefined> {
-        const elements = await $$('div.uplot canvas');
+        const elements = await $$('div.uplot');
         return elements.at(index);
     }
 
