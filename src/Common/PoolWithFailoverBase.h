@@ -353,7 +353,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     }
 
 private:
-    std::minstd_rand rng = std::minstd_rand(randomSeed());
+    std::minstd_rand rng = std::minstd_rand(static_cast<uint_fast32_t>(randomSeed()));
 };
 
 template <typename TNestedPool>
