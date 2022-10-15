@@ -976,3 +976,134 @@ CREATE TABLE system.settings_profiles
 )
 ENGINE = SystemSettingsProfiles
 COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.stack_trace
+(
+    `thread_name` String,
+    `thread_id` UInt64,
+    `query_id` String,
+    `trace` Array(UInt64)
+)
+ENGINE = SystemStackTrace
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.storage_policies
+(
+    `policy_name` String,
+    `volume_name` String,
+    `volume_priority` UInt64,
+    `disks` Array(String),
+    `volume_type` String,
+    `max_data_part_size` UInt64,
+    `move_factor` Float32,
+    `prefer_not_to_merge` UInt8
+)
+ENGINE = SystemStoragePolicies
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.table_engines
+(
+    `name` String,
+    `supports_settings` UInt8,
+    `supports_skipping_indices` UInt8,
+    `supports_projections` UInt8,
+    `supports_sort_order` UInt8,
+    `supports_ttl` UInt8,
+    `supports_replication` UInt8,
+    `supports_deduplication` UInt8,
+    `supports_parallel_insert` UInt8
+)
+ENGINE = SystemTableEngines
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.table_functions
+(
+    `name` String,
+    `description` String
+)
+ENGINE = SystemTableFunctions
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.tables
+(
+    `database` String,
+    `name` String,
+    `uuid` UUID,
+    `engine` String,
+    `is_temporary` UInt8,
+    `data_paths` Array(String),
+    `metadata_path` String,
+    `metadata_modification_time` DateTime,
+    `dependencies_database` Array(String),
+    `dependencies_table` Array(String),
+    `create_table_query` String,
+    `engine_full` String,
+    `as_select` String,
+    `partition_key` String,
+    `sorting_key` String,
+    `primary_key` String,
+    `sampling_key` String,
+    `storage_policy` String,
+    `total_rows` Nullable(UInt64),
+    `total_bytes` Nullable(UInt64),
+    `lifetime_rows` Nullable(UInt64),
+    `lifetime_bytes` Nullable(UInt64),
+    `comment` String,
+    `has_own_data` UInt8,
+    `loading_dependencies_database` Array(String),
+    `loading_dependencies_table` Array(String),
+    `loading_dependent_database` Array(String),
+    `loading_dependent_table` Array(String),
+    `table` String
+)
+ENGINE = SystemTables
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.time_zones
+(
+    `time_zone` String
+)
+ENGINE = SystemTimeZones
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.user_directories
+(
+    `name` String,
+    `type` String,
+    `params` String,
+    `precedence` UInt64
+)
+ENGINE = SystemUserDirectories
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.users
+(
+    `name` String,
+    `id` UUID,
+    `storage` String,
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6),
+    `auth_params` String,
+    `host_ip` Array(String),
+    `host_names` Array(String),
+    `host_names_regexp` Array(String),
+    `host_names_like` Array(String),
+    `default_roles_all` UInt8,
+    `default_roles_list` Array(String),
+    `default_roles_except` Array(String),
+    `grantees_any` UInt8,
+    `grantees_list` Array(String),
+    `grantees_except` Array(String),
+    `default_database` String
+)
+ENGINE = SystemUsers
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.warnings
+(
+    `message` String
+)
+ENGINE = SystemWarnings
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.zeros
+(
+    `zero` UInt8
+)
+ENGINE = SystemZeros
+COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.zeros_mt
+(
+    `zero` UInt8
+)
+ENGINE = SystemZeros
+COMMENT 'SYSTEM TABLE is built on the fly.'
