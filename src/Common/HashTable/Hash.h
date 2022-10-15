@@ -8,7 +8,7 @@
 
 #include <type_traits>
 #include <util/crc32c_ppc.h>
-#include <Common/config.h>
+#include "config.h"
 
 /** Hash functions that are better than the trivial function std::hash.
   *
