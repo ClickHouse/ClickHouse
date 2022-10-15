@@ -616,7 +616,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         logQuery(query_for_logging, context, internal, stage);
 
-        if (!internal)
+        bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+        if (!internal && is_initial_query)
         {
             bool need_reattach_tables = settings.reattach_tables_before_query_execution;
             auto reattach_probability = settings.reattach_tables_before_query_execution_probability;
