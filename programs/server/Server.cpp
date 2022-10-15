@@ -53,7 +53,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -62,6 +61,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -971,10 +971,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
+        std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        std::string temporary_policy = config().getString("tmp_policy", "");
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -1008,12 +1008,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
         fs::create_directories(user_scripts_path);
-    }
-
-    {
-        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
-        global_context->setUserDefinedPath(user_defined_path);
-        fs::create_directories(user_defined_path);
     }
 
     /// top_level_domains_lists
@@ -1559,18 +1553,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
@@ -1598,6 +1580,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
+        /// Load user-defined SQL functions.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {

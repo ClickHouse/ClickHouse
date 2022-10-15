@@ -58,7 +58,7 @@ void DisksApp::addOptions(
         ("disk", po::value<String>(), "Set disk name")
         ("command_name", po::value<String>(), "Name for command to do")
         ("send-logs", "Send logs")
-        ("log-level", "Logging level")
+        ("log-level", po::value<String>(), "Logging level")
         ;
 
     positional_options_description.add("command_name", 1);
