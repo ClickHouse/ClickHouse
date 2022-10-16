@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -13,6 +14,6 @@ bool canContainPassword(const IAST & ast);
 /// This function is used to prepare a query for storing in logs (we don't want logs to contain sensitive information).
 /// The function changes only following types of queries:
 /// CREATE/ALTER USER.
-void wipePasswordFromQuery(ASTPtr ast);
+void wipePasswordFromQuery(ASTPtr ast, const ContextPtr & context);
 
 }

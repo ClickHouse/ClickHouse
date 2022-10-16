@@ -151,6 +151,10 @@ def subprocess_check_call(args, detach=False, nothrow=False):
     return run_and_check(args, detach=detach, nothrow=nothrow)
 
 
+def escape_substring_for_grep(substring):
+    return substring.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+
+
 def get_odbc_bridge_path():
     path = os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH")
     if path is None:
@@ -3419,13 +3423,14 @@ class ClickHouseInstance:
     def contains_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log"
     ):
+        escaped_substring = escape_substring_for_grep(substring)
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{escaped_substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3433,20 +3438,21 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{escaped_substring}" /var/log/clickhouse-server/{filename} || true',
                 ]
             )
         return len(result) > 0
 
     def grep_in_log(self, substring, from_host=False, filename="clickhouse-server.log"):
         logging.debug(f"grep in log called %s", substring)
+        escaped_substring = escape_substring_for_grep(substring)
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{escaped_substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3454,19 +3460,20 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{escaped_substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
+        escaped_substring = escape_substring_for_grep(substring)
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
                 'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(
-                    substring
+                    escaped_substring
                 ),
             ]
         )
