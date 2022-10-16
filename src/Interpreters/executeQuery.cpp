@@ -34,7 +34,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -56,6 +55,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/wipePasswordFromQuery.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -119,7 +119,7 @@ static String prepareQueryForLogging(const String & query, const ASTPtr & parsed
     if (parsed_query && canContainPassword(*parsed_query))
     {
         ASTPtr ast_for_logging = parsed_query->clone();
-        wipePasswordFromQuery(ast_for_logging);
+        wipePasswordFromQuery(ast_for_logging, context);
         res = serializeAST(*ast_for_logging);
     }
 
