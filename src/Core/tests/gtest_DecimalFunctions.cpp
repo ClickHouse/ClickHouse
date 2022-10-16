@@ -23,7 +23,7 @@ class DecimalUtilsSplitAndCombineTest : public ::testing::TestWithParam<DecimalU
 template <typename DecimalType>
 void testSplit(const DecimalUtilsSplitAndCombineTestParam & param)
 {
-    const DecimalType decimal_value(static_cast<typename DecimalType::NativeType>(param.decimal_value));
+    const DecimalType decimal_value(static_cast<typename DecimalType::NativeType>(param.decimal_value.value));
     const auto & actual_components = DecimalUtils::split(decimal_value, param.scale);
 
     EXPECT_EQ(param.components.whole, actual_components.whole);
@@ -45,7 +45,7 @@ void testGetWhole(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.whole,
               DecimalUtils::getWholePart(
-                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value)},
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value.value)},
                   param.scale));
 }
 
@@ -54,7 +54,7 @@ void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
 {
     EXPECT_EQ(param.components.fractional,
               DecimalUtils::getFractionalPart(
-                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value)},
+                  DecimalType{static_cast<typename DecimalType::NativeType>(param.decimal_value.value)},
                   param.scale));
 }
 
