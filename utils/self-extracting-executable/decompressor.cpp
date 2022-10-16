@@ -329,7 +329,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
     int read_exe_path(char *exe, size_t buf_sz)
     {
-        uint32_t size = buf_sz;
+        uint32_t size = static_cast<uint32_t>(buf_sz);
         char apple[size];
         if (_NSGetExecutablePath(apple, &size) != 0)
             return 1;

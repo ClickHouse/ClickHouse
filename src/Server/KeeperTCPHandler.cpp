@@ -157,7 +157,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
