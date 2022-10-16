@@ -13,6 +13,10 @@
 
 #include <cmath>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 
 namespace DB
 {
@@ -173,19 +177,32 @@ namespace
         else
             return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
     }
+
+    size_t getPreferredBlockSize()
+    {
+        size_t l1_size = 0;
+
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL1_DCACHE_SIZE); ret != -1)
+            l1_size = ret;
+#endif
+
+        /// 8KB looks like a reasonable default L1 size.
+        return std::max<size_t>(l1_size, 8 * 1024) / 2;
+    }
 }
 
-SettingFieldMaxThreads::SettingFieldMaxThreads(const Field & f) : SettingFieldMaxThreads(fieldToMaxThreads(f))
+SettingFieldAuto::SettingFieldAuto(const Field & f) : SettingFieldAuto(fieldToMaxThreads(f))
 {
 }
 
-SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
+SettingFieldAuto & SettingFieldAuto::operator=(const Field & f)
 {
     *this = fieldToMaxThreads(f);
     return *this;
 }
 
-String SettingFieldMaxThreads::toString() const
+String SettingFieldAuto::toString() const
 {
     if (is_auto)
         return "'auto(" + ::DB::toString(value) + ")'";
@@ -193,17 +210,17 @@ String SettingFieldMaxThreads::toString() const
         return ::DB::toString(value);
 }
 
-void SettingFieldMaxThreads::parseFromString(const String & str)
+void SettingFieldAuto::parseFromString(const String & str)
 {
     *this = stringToMaxThreads(str);
 }
 
-void SettingFieldMaxThreads::writeBinary(WriteBuffer & out) const
+void SettingFieldAuto::writeBinary(WriteBuffer & out) const
 {
     writeVarUInt(is_auto ? 0 : value, out);
 }
 
-void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
+void SettingFieldAuto::readBinary(ReadBuffer & in)
 {
     UInt64 x = 0;
     readVarUInt(x, in);
@@ -213,6 +230,11 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 UInt64 SettingFieldMaxThreads::getAuto()
 {
     return getNumberOfPhysicalCPUCores();
+}
+
+UInt64 SettingFieldPreferredBlockSize::getAuto()
+{
+    return getPreferredBlockSize();
 }
 
 namespace
