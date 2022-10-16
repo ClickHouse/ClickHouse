@@ -44,5 +44,3 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
         add_subdirectory (memcpy-bench)
     endif ()
 endif ()
-
-add_subdirectory (package)

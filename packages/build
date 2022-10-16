@@ -26,6 +26,7 @@ SOURCE=${SOURCE:-$PKG_ROOT}
 HELP="${0} [--test] [--rpm] [-h|--help]
   --test - adds '+test' prefix to version
   --apk - build APK packages
+  --archlinux - build archlinux packages
   --rpm - build RPM packages
   --tgz - build tarball package
   --deb - build deb package
@@ -59,6 +60,9 @@ do
             shift ;;
         --apk )
             MAKE_APK=1
+            shift ;;
+        --archlinux )
+            MAKE_ARCHLINUX=1
             shift ;;
         --rpm )
             MAKE_RPM=1
@@ -147,6 +151,10 @@ for config in clickhouse*.yaml; do
     if [ -n "$MAKE_APK" ]; then
       echo "Building apk package for $config"
       nfpm package --target "$OUTPUT_DIR" --config "$config" --packager apk
+    fi
+    if [ -n "$MAKE_ARCHLINUX" ]; then
+      echo "Building archlinux package for $config"
+      nfpm package --target "$OUTPUT_DIR" --config "$config" --packager archlinux
     fi
     if [ -n "$MAKE_RPM" ]; then
       echo "Building rpm package for $config"
