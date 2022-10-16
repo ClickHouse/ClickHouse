@@ -811,6 +811,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key32;
             if (size_of_field == 8)
                 return AggregatedDataVariants::Type::low_cardinality_key64;
+            if (size_of_field == 16)
+                return AggregatedDataVariants::Type::low_cardinality_keys128;
+            if (size_of_field == 32)
+                return AggregatedDataVariants::Type::low_cardinality_keys256;
         }
 
         if (size_of_field == 1)
@@ -3019,7 +3023,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
+    LOG_DEBUG(log, "Merging partially aggregated blocks (bucket = {}) with method {}.", bucket_num, method_chosen);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
@@ -3044,6 +3048,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 #undef M
 
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
+
+    LOG_DEBUG(log, "Merging partially aggregated blocks (bucket = {}) with method {}.", bucket_num, method_chosen);
 
     /// Temporary data for aggregation.
     AggregatedDataVariants result;
