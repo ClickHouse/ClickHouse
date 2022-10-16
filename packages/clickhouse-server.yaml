@@ -42,8 +42,11 @@ deb:
     Source: clickhouse
 
 contents:
-- src: root/etc/clickhouse-server
-  dst: /etc/clickhouse-server
+- src: root/etc/clickhouse-server/config.xml
+  dst: /etc/clickhouse-server/config.xml
+  type: config
+- src: root/etc/clickhouse-server/users.xml
+  dst: /etc/clickhouse-server/users.xml
   type: config
 - src: clickhouse-server.init
   dst: /etc/init.d/clickhouse-server
