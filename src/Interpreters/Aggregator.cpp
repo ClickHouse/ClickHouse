@@ -3023,7 +3023,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_DEBUG(log, "Merging partially aggregated blocks (bucket = {}) with method {}.", bucket_num, method_chosen);
+    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
@@ -3048,8 +3048,6 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 #undef M
 
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
-
-    LOG_DEBUG(log, "Merging partially aggregated blocks (bucket = {}) with method {}.", bucket_num, method_chosen);
 
     /// Temporary data for aggregation.
     AggregatedDataVariants result;
