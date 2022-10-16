@@ -1,3 +1,4 @@
+#include "Interpreters/ActionLocksManager.h"
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -421,12 +422,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             continue;
 
         /// If table doesn't store data on disk, the data will be lost after detach.
-        /// Since it will affect future queries do not detach in that case.
+        /// If table has lock for any action, it will be removed after detach.
+        /// Since it will affect future queries do not detach in those cases.
         auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
         if (!database
             || !database->supportsAttachingAndDetachingTables()
             || !table
-            || !table->storesDataOnDisk())
+            || !table->storesDataOnDisk()
+            || context->getActionLocksManager()->hasAny(table))
             continue;
 
         auto uuid = table->getStorageID().uuid;
@@ -617,7 +620,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-        if (!internal && is_initial_query)
+        if (!internal && is_initial_query && !context->getCurrentTransaction())
         {
             bool need_reattach_tables = settings.reattach_tables_before_query_execution;
             auto reattach_probability = settings.reattach_tables_before_query_execution_probability;
