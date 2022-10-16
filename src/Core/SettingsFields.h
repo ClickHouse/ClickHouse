@@ -134,17 +134,21 @@ using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
  * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
  */
-struct SettingFieldMaxThreads
+struct SettingFieldAuto
 {
     bool is_auto;
     UInt64 value;
     bool changed = false;
 
-    explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
-    explicit SettingFieldMaxThreads(const Field & f);
+    explicit SettingFieldAuto(UInt64 x = 0) : is_auto(!x), value(x) { }
+    explicit SettingFieldAuto(const Field & f);
+    SettingFieldAuto(const SettingFieldAuto &) = default;
 
-    SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
-    SettingFieldMaxThreads & operator=(const Field & f);
+    virtual ~SettingFieldAuto() = default;
+
+    SettingFieldAuto & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
+    SettingFieldAuto & operator=(const Field & f);
+    SettingFieldAuto & operator=(const SettingFieldAuto & other) = default;
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
@@ -156,10 +160,29 @@ struct SettingFieldMaxThreads
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 
-private:
-    static UInt64 getAuto();
+protected:
+    virtual UInt64 getAuto() = 0;
 };
 
+struct SettingFieldMaxThreads : SettingFieldAuto
+{
+    using SettingFieldAuto::SettingFieldAuto;
+    using SettingFieldAuto::operator=;
+
+    explicit SettingFieldMaxThreads(UInt64 x = 0) : SettingFieldAuto(!x ? getAuto() : x) { }
+
+    UInt64 getAuto() override;
+};
+
+struct SettingFieldPreferredBlockSize : SettingFieldAuto
+{
+    using SettingFieldAuto::SettingFieldAuto;
+    using SettingFieldAuto::operator=;
+
+    explicit SettingFieldPreferredBlockSize(UInt64 x = 0) : SettingFieldAuto(!x ? getAuto() : x) { }
+
+    UInt64 getAuto() override;
+};
 
 enum class SettingFieldTimespanUnit { Millisecond, Second };
 
