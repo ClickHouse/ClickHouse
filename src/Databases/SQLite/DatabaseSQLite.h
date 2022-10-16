@@ -22,7 +22,7 @@ public:
 
     String getEngineName() const override { return "SQLite"; }
 
-    bool supportsAttachingAndDetachingTables() const override { return false; }
+    bool supportsDetachingTables() const override { return false; }
 
     bool canContainMergeTreeTables() const override { return false; }
 

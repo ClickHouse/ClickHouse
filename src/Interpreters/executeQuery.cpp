@@ -1,4 +1,3 @@
-#include "Interpreters/ActionLocksManager.h"
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -60,6 +59,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -421,12 +421,19 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (table_id.getDatabaseName() == "system")
             continue;
 
+        if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
+            continue;
+
+        auto loading_dependencies = DatabaseCatalog::instance().getLoadingDependenciesInfo(table_id);
+        if (!loading_dependencies.dependencies.empty() || !loading_dependencies.dependent_database_objects.empty())
+            continue;
+
         /// If table doesn't store data on disk, the data will be lost after detach.
         /// If table has lock for any action, it will be removed after detach.
         /// Since it will affect future queries do not detach in those cases.
         auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
         if (!database
-            || !database->supportsAttachingAndDetachingTables()
+            || !database->supportsDetachingTables()
             || !table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
@@ -620,7 +627,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-        if (!internal && is_initial_query && !context->getCurrentTransaction())
+        bool has_transaction = context->getCurrentTransaction() || settings.implicit_transaction;
+        if (!internal && is_initial_query && !has_transaction)
         {
             bool need_reattach_tables = settings.reattach_tables_before_query_execution;
             auto reattach_probability = settings.reattach_tables_before_query_execution_probability;
