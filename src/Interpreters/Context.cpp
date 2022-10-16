@@ -57,7 +57,9 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/createUserDefinedSQLObjectsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -186,7 +188,6 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
-    String user_defined_path;                               /// Path to the directory with user defined objects.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -194,15 +195,17 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
-    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
 
     scope_guard models_repository_guard;
 
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
     scope_guard dictionaries_xmls;
 
+    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
     scope_guard user_defined_executable_functions_xmls;
+
+    mutable std::unique_ptr<IUserDefinedSQLObjectsLoader> user_defined_sql_objects_loader;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -420,6 +423,8 @@ struct ContextSharedPart : boost::noncopyable
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
             external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
+        if (user_defined_sql_objects_loader)
+            user_defined_sql_objects_loader->stopWatching();
 
         Session::shutdownNamedSessions();
 
@@ -450,6 +455,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
+        std::unique_ptr<IUserDefinedSQLObjectsLoader> delete_user_defined_sql_objects_loader;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
@@ -488,6 +494,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
+            delete_user_defined_sql_objects_loader = std::move(user_defined_sql_objects_loader);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
@@ -515,6 +522,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
+        delete_user_defined_sql_objects_loader.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
@@ -658,12 +666,6 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-String Context::getUserDefinedPath() const
-{
-    auto lock = getLock();
-    return shared->user_defined_path;
-}
-
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -726,9 +728,6 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
-
-    if (shared->user_defined_path.empty())
-        shared->user_defined_path = shared->path + "user_defined/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name, size_t max_size)
@@ -802,12 +801,6 @@ void Context::setUserScriptsPath(const String & path)
 {
     auto lock = getLock();
     shared->user_scripts_path = path;
-}
-
-void Context::setUserDefinedPath(const String & path)
-{
-    auto lock = getLock();
-    shared->user_defined_path = path;
 }
 
 void Context::addWarningMessage(const String & msg) const
@@ -1650,6 +1643,22 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
     auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
     shared->user_defined_executable_functions_config_repository = repository.get();
     shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
+}
+
+const IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader() const
+{
+    auto lock = getLock();
+    if (!shared->user_defined_sql_objects_loader)
+        shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
+    return *shared->user_defined_sql_objects_loader;
+}
+
+IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader()
+{
+    auto lock = getLock();
+    if (!shared->user_defined_sql_objects_loader)
+        shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
+    return *shared->user_defined_sql_objects_loader;
 }
 
 #if USE_NLP
@@ -3410,7 +3419,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     size_t background_merges_mutations_concurrency_ratio = 2;
     if (config.has("background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_pool_size"))
+    else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
     size_t background_move_pool_size = 8;
