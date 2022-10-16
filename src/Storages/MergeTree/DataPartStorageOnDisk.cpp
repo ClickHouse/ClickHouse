@@ -112,7 +112,18 @@ UInt32 DataPartStorageOnDisk::getRefCount(const String & file_name) const
 static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from)
 {
     if (disk->isFile(from))
-        return disk->getFileSize(from);
+    {
+        try
+        {
+            return disk->getFileSize(from);
+        }
+        catch (...)
+        {
+            /// Files of detached part may be not exist, and then set file size is 0.
+            return 0;
+        }
+    }
+
     std::vector<std::string> files;
     disk->listFiles(from, files);
     UInt64 res = 0;
