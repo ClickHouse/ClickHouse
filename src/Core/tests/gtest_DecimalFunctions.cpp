@@ -17,11 +17,6 @@ struct DecimalUtilsSplitAndCombineTestParam
     DecimalUtils::DecimalComponents<Decimal64> components;
 };
 
-std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param)
-{
-    return ostr << param.description;
-}
-
 class DecimalUtilsSplitAndCombineTest : public ::testing::TestWithParam<DecimalUtilsSplitAndCombineTestParam>
 {};
 
@@ -150,6 +145,17 @@ TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64
 }
 
 }
+
+namespace std
+{
+
+std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param)
+{
+    return ostr << param.description;
+}
+
+}
+
 
 // Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
 INSTANTIATE_TEST_SUITE_P(Basic,
