@@ -4,6 +4,7 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <functional>
 
+
 namespace DB
 {
 
@@ -34,6 +35,7 @@ class ReadProgressCallback;
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
+
 class QueryPipeline
 {
 public:
@@ -58,23 +60,23 @@ public:
     /// completed
     QueryPipeline(
         QueryPlanResourceHolder resources_,
-        Processors processors_);
+        std::shared_ptr<Processors> processors_);
 
     /// pushing
     QueryPipeline(
         QueryPlanResourceHolder resources_,
-        Processors processors_,
+        std::shared_ptr<Processors> processors_,
         InputPort * input_);
 
     /// pulling
     QueryPipeline(
         QueryPlanResourceHolder resources_,
-        Processors processors_,
+        std::shared_ptr<Processors> processors_,
         OutputPort * output_,
         OutputPort * totals_ = nullptr,
         OutputPort * extremes_ = nullptr);
 
-    bool initialized() const { return !processors.empty(); }
+    bool initialized() const { return !processors->empty(); }
     /// When initialized, exactly one of the following is true.
     /// Use PullingPipelineExecutor or PullingAsyncPipelineExecutor.
     bool pulling() const { return output != nullptr; }
@@ -119,7 +121,7 @@ public:
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline other);
 
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
@@ -134,7 +136,7 @@ private:
     std::shared_ptr<const EnabledQuota> quota;
     bool update_profile_events = true;
 
-    Processors processors;
+    std::shared_ptr<Processors> processors;
 
     InputPort * input = nullptr;
 

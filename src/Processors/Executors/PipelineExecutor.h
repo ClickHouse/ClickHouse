@@ -10,6 +10,7 @@
 #include <queue>
 #include <mutex>
 
+
 namespace DB
 {
 
@@ -30,7 +31,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors, QueryStatus * elem);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatus * elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.

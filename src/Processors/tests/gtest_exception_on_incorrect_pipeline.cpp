@@ -23,9 +23,9 @@ TEST(Processors, PortsConnected)
 
     connect(source->getPort(), sink->getPort());
 
-    Processors processors;
-    processors.emplace_back(std::move(source));
-    processors.emplace_back(std::move(sink));
+    auto processors = std::make_shared<Processors>();
+    processors->emplace_back(std::move(source));
+    processors->emplace_back(std::move(sink));
 
     QueryStatus * element = nullptr;
     PipelineExecutor executor(processors, element);
@@ -46,9 +46,9 @@ TEST(Processors, PortsNotConnected)
 
     /// connect(source->getPort(), sink->getPort());
 
-    Processors processors;
-    processors.emplace_back(std::move(source));
-    processors.emplace_back(std::move(sink));
+    auto processors = std::make_shared<Processors>();
+    processors->emplace_back(std::move(source));
+    processors->emplace_back(std::move(sink));
 
 #ifndef ABORT_ON_LOGICAL_ERROR
     try
