@@ -42,7 +42,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
   */
 
 #define COMMON_SETTINGS(M) \
-    M(Dialect, dialect, Dialect::clickhouse, "Which SQL dialect will be used to parse query", 0)\
+    M(Dialect, dialect, Dialect::clickhouse, "Which dialect will be used to parse query", 0)\
     M(UInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.", 0) \
     M(UInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.", 0) \
     M(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading", 0) \
@@ -501,7 +501,6 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, validate_polygons, true, "Throw exception if polygon is invalid in function pointInPolygon (e.g. self-tangent, self-intersecting). If the setting is false, the function will accept invalid polygons but may silently return wrong result.", 0) \
     M(UInt64, max_parser_depth, DBMS_DEFAULT_MAX_PARSER_DEPTH, "Maximum parser depth (recursion depth of recursive descend parser).", 0) \
     M(Bool, allow_settings_after_format_in_insert, false, "Allow SETTINGS after FORMAT, but note, that this is not always safe (note: this is a compatibility setting).", 0) \
-    M(Seconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC, "Timeout after which temporary live view is deleted.", 0) \
     M(Seconds, periodic_live_view_refresh, DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC, "Interval after which periodically refreshed live view is forced to refresh.", 0) \
     M(Bool, transform_null_in, false, "If enabled, NULL values will be matched with 'IN' operator as if they are considered equal.", 0) \
     M(Bool, allow_nondeterministic_mutations, false, "Allow non-deterministic functions in ALTER UPDATE/ALTER DELETE statements", 0) \
@@ -692,7 +691,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     MAKE_OBSOLETE(M, UInt64, background_message_broker_schedule_pool_size, 16) \
     MAKE_OBSOLETE(M, UInt64, background_distributed_schedule_pool_size, 16) \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
-    MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
+    MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0)                                                                                 \
+    MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
@@ -775,6 +775,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, output_format_json_named_tuples_as_objects, true, "Serialize named tuple columns as JSON objects.", 0) \
     M(Bool, output_format_json_array_of_rows, false, "Output a JSON array of all rows in JSONEachRow(Compact) format.", 0) \
     M(Bool, output_format_json_validate_utf8, false, "Validate UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8", 0) \
+    \
+    M(String, format_json_object_each_row_column_for_object_name, "", "The name of column that will be used as object names in JSONObjectEachRow format. Column type should be String", 0) \
     \
     M(UInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_column_pad_width, 250, "Maximum width to pad all values in a column in Pretty formats.", 0) \
@@ -889,6 +891,8 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
 
     void set(std::string_view name, const Field & value) override;
+
+    void setDefaultValue(const String & name) { resetToDefault(name); }
 
 private:
     void applyCompatibilitySetting();
