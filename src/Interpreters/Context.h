@@ -366,6 +366,8 @@ private:
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
+
+    bool is_parameterized_view = false;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -939,6 +941,9 @@ public:
 
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
+    bool isParameterizedView() const { return is_parameterized_view; }
+    void setIsParameterizedView(bool is_parameterized_view_) { is_parameterized_view = is_parameterized_view_; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

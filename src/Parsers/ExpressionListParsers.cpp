@@ -62,7 +62,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserUnionQueryElement elem_parser(allow_query_parameters);
+    ParserUnionQueryElement elem_parser;
     ParserKeyword s_union_parser("UNION");
     ParserKeyword s_all_parser("ALL");
     ParserKeyword s_distinct_parser("DISTINCT");
@@ -1997,9 +1997,9 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     else
     {
         bool has_database_name = false;
-        if (const auto *compound_identifier  = identifier->as<ASTIdentifier>())
+        if (const auto *ast_identifier  = identifier->as<ASTIdentifier>())
         {
-            if (!compound_identifier->isShort())
+            if (ast_identifier->compound())
                 has_database_name = true;
         }
         return std::make_unique<OrdinaryFunctionLayer>(function_name, allow_function_parameters_, has_database_name);

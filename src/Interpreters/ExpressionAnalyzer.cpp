@@ -1286,9 +1286,9 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     getRootActions(select_query->where(), only_types, step.actions());
 
-    //For creating parameterized view, query parameters are allowed in select
-    //As select will be stored without substituting query parameters, we don't want to evaluate the where expression
-    if (select_query->allow_query_parameters && select_query->hasQueryParameters())
+    /// For creating parameterized view, query parameters are allowed in select
+    /// As select will be stored without substituting query parameters, we don't want to evaluate the where expression
+    if (this->getContext()->isParameterizedView())
         return true;
 
     auto where_column_name = select_query->where()->getColumnName();
@@ -1910,8 +1910,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
                     //For creating parameterized view, query parameters are allowed in select
                     //As select will be stored without substituting query parameters, we don't want to evaluate the where expression
-                    bool has_query_parameters = query.allow_query_parameters && query.hasQueryParameters();
-                    if (!has_query_parameters)
+                    if (!context->isParameterizedView())
                     {
                         auto & column_elem
                             = before_where_sample.getByName(query.where()->getColumnName());
@@ -2081,7 +2080,7 @@ void ExpressionAnalysisResult::finalize(
 {
     //For creating parameterized view, query parameters are allowed in select
     //As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
-    if (query.allow_query_parameters && query.hasQueryParameters())
+    if (chain.getContext()->isParameterizedView())
         return;
 
     if (prewhere_step_num >= 0)

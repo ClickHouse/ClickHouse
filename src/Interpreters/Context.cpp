@@ -1229,71 +1229,68 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
-    if (auto * function = table_expression->as<ASTFunction>())
+    const ASTFunction * function = assert_cast<const ASTFunction *>(table_expression.get());
+    String database_name = getCurrentDatabase();
+    String table_name = function->name;
+
+    if (function->has_database_name)
     {
-        String database_name = getCurrentDatabase();
-        String table_name = function->name;
+        std::vector<std::string> parts;
+        splitInto<'.'>(parts, function->name);
 
-        if (function->has_database_name)
+        if (parts.size() == 2)
         {
-            std::vector<std::string> parts;
-            splitInto<'.'>(parts, function->name);
-
-            if (parts.size() == 2)
-            {
-                database_name = parts[0];
-                table_name = parts[1];
-            }
+            database_name = parts[0];
+            table_name = parts[1];
         }
-
-        if (DatabaseCatalog::instance().isTableExist({database_name, table_name}, getQueryContext()))
-        {
-            StoragePtr res = DatabaseCatalog::instance().getTable({database_name, table_name}, getQueryContext());
-            if (res.get()->isView() && res->as<StorageView>()->isParameterizedView())
-                return res;
-        }
-        auto hash = table_expression->getTreeHash();
-        String key = toString(hash.first) + '_' + toString(hash.second);
-        StoragePtr & res = table_function_results[key];
-        if (!res)
-        {
-            TableFunctionPtr table_function_ptr;
-            try
-            {
-                table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(" or incorrect parameterized view");
-                throw;
-            }
-            if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
-            {
-                const auto & insertion_table = getInsertionTable();
-                if (!insertion_table.empty())
-                {
-                    const auto & structure_hint
-                        = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                    table_function_ptr->setStructureHint(structure_hint);
-                }
-            }
-
-            res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
-
-            /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
-            ///
-            ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
-            ///
-            auto new_hash = table_expression->getTreeHash();
-            if (hash != new_hash)
-            {
-                key = toString(new_hash.first) + '_' + toString(new_hash.second);
-                table_function_results[key] = res;
-            }
-        }
-        return res;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to fetch function from query");
+
+    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    if (table)
+    {
+        if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
+            return table;
+    }
+    auto hash = table_expression->getTreeHash();
+    String key = toString(hash.first) + '_' + toString(hash.second);
+    StoragePtr & res = table_function_results[key];
+    if (!res)
+    {
+        TableFunctionPtr table_function_ptr;
+        try
+        {
+            table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(" or incorrect parameterized view");
+            throw;
+        }
+        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+        {
+            const auto & insertion_table = getInsertionTable();
+            if (!insertion_table.empty())
+            {
+                const auto & structure_hint
+                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
+                table_function_ptr->setStructureHint(structure_hint);
+            }
+        }
+
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+
+        /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
+        ///
+        ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
+        ///
+        auto new_hash = table_expression->getTreeHash();
+        if (hash != new_hash)
+        {
+            key = toString(new_hash.first) + '_' + toString(new_hash.second);
+            table_function_results[key] = res;
+        }
+    }
+    return res;
 }
 
 

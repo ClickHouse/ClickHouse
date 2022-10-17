@@ -84,11 +84,6 @@ private:
 class ParserUnionList : public IParserBase
 {
 public:
-    explicit ParserUnionList(bool allow_query_parameters_ = false)
-        : allow_query_parameters(allow_query_parameters_)
-    {
-    }
-
     template <typename ElemFunc, typename SepFunc>
     static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
     {
@@ -113,7 +108,6 @@ public:
     }
 
     auto getUnionModes() const { return union_modes; }
-    bool allow_query_parameters;
 
 protected:
     const char * getName() const override { return "list of union elements"; }

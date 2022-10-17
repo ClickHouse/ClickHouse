@@ -743,7 +743,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     if (const auto * node = index.tryGetNode(child_column_name))
         return NameAndTypePair(child_column_name, node->result_type);
 
-    if (!data.only_consts && analyzeReceiveQueryParams(ast).empty())
+    if (!data.only_consts && data.getContext()->isParameterizedView() && analyzeReceiveQueryParams(ast).empty())
     {
         throw Exception(
             "Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
