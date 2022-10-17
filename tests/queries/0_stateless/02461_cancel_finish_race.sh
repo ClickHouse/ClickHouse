@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function thread_query()
 {
     while true; do
-        $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.numbers_mt WHERE rand() = 0 FORMAT Null";
+        $CLICKHOUSE_CLIENT --query "SELECT count() FROM numbers_mt(10000) WHERE rand() = 0 FORMAT Null";
     done
 }
 
