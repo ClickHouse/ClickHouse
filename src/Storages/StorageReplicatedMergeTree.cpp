@@ -7769,13 +7769,18 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             /// Very complex case. It means that lock already doesn't exist when we tried to remove it.
             /// So we don't know are we owner of this part or not. Maybe we just mutated it, renamed on disk and failed to lock in ZK.
             /// But during mutation we can have hardlinks to another part. So it's not Ok to remove blobs of this part if it was mutated.
-            if (ec == Coordination::Error::ZNONODE && has_parent)
+            if (ec == Coordination::Error::ZNONODE)
             {
-                LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
-                return {false, {}};
+                if (has_parent)
+                {
+                    LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
+                    return {false, {}};
+                }
             }
-
-            throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+            else
+            {
+                throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+            }
         }
 
         /// Check, maybe we were the last replica and can remove part forever
