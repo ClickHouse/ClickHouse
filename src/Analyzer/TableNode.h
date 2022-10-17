@@ -16,10 +16,6 @@ namespace DB
 /** Table node represents table in query tree.
   * Example: SELECT a FROM test_table.
   * test_table - is identifier, that during query analysis pass must be resolved into table node.
-  *
-  * During construction table node:
-  * 1. Lock storage for share. Later lock can be moved out of node using `moveTableLock` method.
-  * 2. Take storage snapshot.
   */
 class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;

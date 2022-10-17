@@ -74,7 +74,7 @@ public:
         return is_subquery;
     }
 
-    /// Set query node is subquery
+    /// Set query node is subquery value
     void setIsSubquery(bool is_subquery_value)
     {
         is_subquery = is_subquery_value;

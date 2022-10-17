@@ -41,9 +41,11 @@ UnionNode::UnionNode()
 NamesAndTypes UnionNode::computeProjectionColumns() const
 {
     std::vector<NamesAndTypes> projections;
-    const auto & query_nodes = getQueries().getNodes();
 
     NamesAndTypes query_node_projection;
+
+    const auto & query_nodes = getQueries().getNodes();
+    projections.reserve(query_nodes.size());
 
     for (const auto & query_node : query_nodes)
     {
@@ -234,7 +236,7 @@ ASTPtr UnionNode::toASTImpl() const
 
     if (union_mode != SelectUnionMode::UNION_DEFAULT &&
         union_mode != SelectUnionMode::EXCEPT_DEFAULT &&
-        union_mode != SelectUnionMode::EXCEPT_DEFAULT)
+        union_mode != SelectUnionMode::INTERSECT_DEFAULT)
         select_with_union_query->is_normalized = true;
 
     select_with_union_query->list_of_modes = union_modes;
