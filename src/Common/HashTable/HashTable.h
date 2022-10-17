@@ -353,11 +353,11 @@ struct HashTableFixedGrower
 
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
-    /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
+    /// You could write UNREACHABLE(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }
     bool overflow(size_t /*elems*/) const { return false; }
 
-    void increaseSize() { __builtin_unreachable(); }
+    void increaseSize() { UNREACHABLE(); }
     void set(size_t /*num_elems*/) {}
     void setBufSize(size_t /*buf_size_*/) {}
 };

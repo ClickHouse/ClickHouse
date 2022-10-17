@@ -5,10 +5,6 @@
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric TotalTemporaryFiles;
-}
 
 namespace DB
 {
@@ -36,7 +32,7 @@ private:
     /// Relative path in disk to the temporary file or directory
     String relative_path;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::TotalTemporaryFiles};
+    CurrentMetrics::Increment metric_increment;
 
     /// Specified if we know what for file is used (sort/aggregate/join).
     std::optional<CurrentMetrics::Increment> sub_metric_increment = {};

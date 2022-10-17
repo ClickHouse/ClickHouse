@@ -1513,8 +1513,8 @@ Default value: `0`.
 
 -   [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
 -   [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
--   [tmp_path](#tmp_path)
--   [tmp_policy](#tmp_policy)
+-   [tmp_path](#tmp-path)
+-   [tmp_policy](#tmp-policy)
 -   [max_server_memory_usage](#max_server_memory_usage)
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
