@@ -133,25 +133,27 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 
 void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQueryOptions & select_query_options, const PlannerContextPtr & planner_context)
 {
-    if (select_query_options.is_subquery)
-        return;
-
     PreparedSets::SubqueriesForSets subqueries_for_sets;
-    const auto & subquery_node_to_sets = planner_context->getGlobalPlannerContext()->getSubqueryNodesForSets();
+    const auto & set_key_to_planner_set = planner_context->getRegisteredSets();
 
-    for (auto [key, subquery_node_for_set] : subquery_node_to_sets)
+    for (auto [key, planner_set] : set_key_to_planner_set)
     {
+        const auto subquery_node = planner_set.getSubqueryNode();
+        if (!subquery_node)
+            continue;
+
         auto subquery_context = buildSubqueryContext(planner_context->getQueryContext());
         auto subquery_options = select_query_options.subquery();
+
         Planner subquery_planner(
-            subquery_node_for_set.subquery_node,
+            subquery_node,
             subquery_options,
             std::move(subquery_context),
             planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         SubqueryForSet subquery_for_set;
-        subquery_for_set.set = subquery_node_for_set.set;
+        subquery_for_set.set = planner_set.getSet();
         subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
         subqueries_for_sets.emplace(key, std::move(subquery_for_set));
