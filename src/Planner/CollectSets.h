@@ -8,8 +8,8 @@ namespace DB
 {
 
 /** Collect prepared sets and sets for subqueries that are necessary to execute IN function and its variations.
-  * Collected sets are registered in global planner context.
+  * Collected sets are registered in planner context.
   */
-void collectSets(const QueryTreeNodePtr & node, const PlannerContext & planner_context);
+void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context);
 
 }

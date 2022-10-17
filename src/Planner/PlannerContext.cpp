@@ -11,52 +11,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-GlobalPlannerContext::SetKey GlobalPlannerContext::createSetKey(const QueryTreeNodePtr & set_source_node)
-{
-    auto set_source_hash = set_source_node->getTreeHash();
-    return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
-}
-
-void GlobalPlannerContext::registerSet(const SetKey & key, SetPtr set)
-{
-    set_key_to_set.emplace(key, std::move(set));
-}
-
-SetPtr GlobalPlannerContext::getSetOrNull(const SetKey & key) const
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        return nullptr;
-
-    return it->second;
-}
-
-SetPtr GlobalPlannerContext::getSetOrThrow(const SetKey & key) const
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "No set is registered for key {}",
-            key);
-
-    return it->second;
-}
-
-void GlobalPlannerContext::registerSubqueryNodeForSet(const SetKey & key, SubqueryNodeForSet subquery_node_for_set)
-{
-    auto node_type = subquery_node_for_set.subquery_node->getNodeType();
-    if (node_type != QueryTreeNodeType::QUERY &&
-        node_type != QueryTreeNodeType::UNION)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid node for set table expression. Expected query or union. Actual {}",
-            subquery_node_for_set.subquery_node->formatASTForErrorMessage());
-    if (!subquery_node_for_set.set)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Set must be initialized");
-
-    set_key_to_subquery_node.emplace(key, std::move(subquery_node_for_set));
-}
-
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
 {
     const auto & column_node_typed = column_node->as<ColumnNode &>();
@@ -164,6 +118,57 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
         return nullptr;
 
     return table_expression_data->getColumnIdentifierOrNull(column_name);
+}
+
+PlannerContext::SetKey PlannerContext::createSetKey(const QueryTreeNodePtr & set_source_node)
+{
+    auto set_source_hash = set_source_node->getTreeHash();
+    return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
+}
+
+void PlannerContext::registerSet(const SetKey & key, PlannerSet planner_set)
+{
+    if (!planner_set.getSet())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Set must be initialized");
+
+    const auto & subquery_node = planner_set.getSubqueryNode();
+    if (subquery_node)
+    {
+        auto node_type = subquery_node->getNodeType();
+
+        if (node_type != QueryTreeNodeType::QUERY &&
+            node_type != QueryTreeNodeType::UNION)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid node for set table expression. Expected query or union. Actual {}",
+                subquery_node->formatASTForErrorMessage());
+    }
+
+    set_key_to_set.emplace(key, std::move(planner_set));
+}
+
+bool PlannerContext::hasSet(const SetKey & key) const
+{
+    return set_key_to_set.contains(key);
+}
+
+const PlannerSet & PlannerContext::getSetOrThrow(const SetKey & key) const
+{
+    auto it = set_key_to_set.find(key);
+    if (it == set_key_to_set.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "No set is registered for key {}",
+            key);
+
+    return it->second;
+}
+
+const PlannerSet * PlannerContext::getSetOrNull(const SetKey & key) const
+{
+    auto it = set_key_to_set.find(key);
+    if (it == set_key_to_set.end())
+        return nullptr;
+
+    return &it->second;
 }
 
 }

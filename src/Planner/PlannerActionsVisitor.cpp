@@ -349,16 +349,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     const auto & function_node = node->as<FunctionNode &>();
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
-    const auto & global_planner_context = planner_context->getGlobalPlannerContext();
-    auto set_key = global_planner_context->createSetKey(in_second_argument);
-    auto prepared_set = global_planner_context->getSetOrThrow(set_key);
+    auto set_key = planner_context->createSetKey(in_second_argument);
+    auto planner_set = planner_context->getSetOrThrow(set_key);
 
     ColumnWithTypeAndName column;
     column.name = set_key;
     column.type = std::make_shared<DataTypeSet>();
 
-    bool set_is_created = prepared_set->isCreated();
-    auto column_set = ColumnSet::create(1, std::move(prepared_set));
+    bool set_is_created = planner_set.getSet()->isCreated();
+    auto column_set = ColumnSet::create(1, planner_set.getSet());
 
     if (set_is_created)
         column.column = ColumnConst::create(std::move(column_set), 1);
@@ -527,7 +526,7 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
                 if (isNameOfInFunction(function_node.getFunctionName()))
                 {
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = planner_context.getGlobalPlannerContext()->createSetKey(in_second_argument_node);
+                    in_function_second_argument_node_name = planner_context.createSetKey(in_second_argument_node);
                 }
 
                 WriteBufferFromOwnString buffer;
