@@ -161,7 +161,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
 
-    LOG_DEBUG(log, "Everything is Ok. Table started successfully!");
+    LOG_DEBUG(log, "Table started successfully");
 
     return true;
 }
