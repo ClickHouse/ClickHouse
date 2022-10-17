@@ -4,23 +4,18 @@
 namespace DB
 {
 
-const Token & Tokens::operator[](size_t index)
+Tokens::Tokens(const char * begin, const char * end, size_t max_query_size)
 {
-    if (likely(index < data.size()))
-        return data[index];
+    Lexer lexer(begin, end, max_query_size);
 
-    while (data.empty() || !data.back().isEnd())
+    bool stop = false;
+    do
     {
         Token token = lexer.nextToken();
-
+        stop = token.isEnd() || token.type == TokenType::ErrorMaxQuerySizeExceeded;
         if (token.isSignificant())
-        {
             data.emplace_back(std::move(token));
-            if (index < data.size())
-                return data[index];
-        }
-    }
-    return data.back();
+    } while (!stop);
 }
 
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
