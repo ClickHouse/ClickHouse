@@ -59,7 +59,7 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
 
-            size_t bytes_on_disk = 0;
+            UInt64 bytes_on_disk = 0;
             try
             {
                 /// Files of detached part may be not exist, and then set file size is 0.
