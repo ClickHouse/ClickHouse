@@ -236,7 +236,7 @@ private:
                 }
                 catch (...)
                 {
-                    if constexpr(std::is_same_v<Result, std::string>)
+                    if constexpr (std::is_same_v<Result, std::string>)
                         fault_after_op_cleanup(res);
                     else
                         fault_after_op_cleanup("");
