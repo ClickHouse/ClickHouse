@@ -129,7 +129,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     try
     {
         Stopwatch watch;
-        LOG_DEBUG(log, "Trying to establish new connection");
+        LOG_DEBUG(log, "Trying to establish a new connection");
         storage.setZooKeeper();
         LOG_DEBUG(log, "Establishing a new connection took {} ms", watch.elapsedMilliseconds());
     }
