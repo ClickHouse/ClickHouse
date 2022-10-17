@@ -90,17 +90,23 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;
+    char previous = ' ';
     for (const auto & letter : almost_res)
     {
-        if ((letter == '?') || (letter == '*'))
+        if (previous == '*' && letter == '*')
+        {
+            buf_final_processing << "[^{}]";
+        }
+        else if ((letter == '?') || (letter == '*'))
         {
             buf_final_processing << "[^/]";   /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
-        if ((letter == '.') || (letter == '{') || (letter == '}'))
+        else if ((letter == '.') || (letter == '{') || (letter == '}'))
             buf_final_processing << '\\';
         buf_final_processing << letter;
+        previous = letter;
     }
     return buf_final_processing.str();
 }
