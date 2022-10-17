@@ -68,7 +68,6 @@ void ReplicatedMergeTreeRestartingThread::run()
             LOG_TEST(log, "Replica appeared not to be active. Resheduling restarting thread immediately");
             task->schedule();
         }
-            
     }
     catch (...)
     {
@@ -121,7 +120,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     try
     {
-        storage.setZooKeeper();   
+        storage.setZooKeeper();
     }
     catch (const Coordination::Exception &)
     {
