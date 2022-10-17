@@ -10,6 +10,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     SortDescription description_,
     const String & version_column,
     size_t max_block_size,
+    bool use_minimum_version_in_replacing_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
@@ -17,6 +18,8 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
 {
     if (!version_column.empty())
         version_column_number = header_.getPositionByName(version_column);
+
+    use_minimum_version_in_replacing = use_minimum_version_in_replacing_;
 }
 
 void ReplacingSortedAlgorithm::insertRow()
@@ -74,10 +77,11 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         /// A non-strict comparison, since we select the last row for the same version values.
         if (version_column_number == -1
             || selected_row.empty()
-            || current->all_columns[version_column_number]->compareAt(
+            || (current->all_columns[version_column_number]->compareAt(
                 current->getRow(), selected_row.row_num,
                 *(*selected_row.all_columns)[version_column_number],
-                /* nan_direction_hint = */ 1) >= 0)
+                /* nan_direction_hint = */ 1) >= 0 ? !use_minimum_version_in_replacing : use_minimum_version_in_replacing)
+            || (*(*selected_row.all_columns)[version_column_number])[selected_row.row_num].isNull())
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);

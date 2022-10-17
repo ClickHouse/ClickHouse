@@ -15,6 +15,7 @@ public:
         const Block & header, size_t num_inputs,
         SortDescription description_, const String & version_column,
         size_t max_block_size,
+        bool use_minimum_version_in_replacing,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform(
@@ -24,6 +25,7 @@ public:
             std::move(description_),
             version_column,
             max_block_size,
+            use_minimum_version_in_replacing,
             out_row_sources_buf_,
             use_average_block_sizes)
     {
