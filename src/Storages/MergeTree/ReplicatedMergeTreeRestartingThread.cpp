@@ -338,7 +338,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 
     storage.partial_shutdown_called = true;
     storage.partial_shutdown_event.set();
-    storage.replica_is_active_node.reset();
+    storage.replica_is_active_node = nullptr;
 
 
     Stopwatch watch;
