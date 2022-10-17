@@ -100,11 +100,11 @@ bool ReadIndirectBufferFromRemoteFS::nextImpl()
     chassert(offset <= size);
     chassert(size <= internal_buffer.size());
 
-    if (size)
-    {
-        file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    size_t bytes_read = size - offset;
+    if (bytes_read)
         working_buffer = Buffer(internal_buffer.begin() + offset, internal_buffer.begin() + size);
-    }
+
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
 
     /// In case of multiple files for the same file in clickhouse (i.e. log family)
     /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
@@ -112,7 +112,7 @@ bool ReadIndirectBufferFromRemoteFS::nextImpl()
     chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
-    return size;
+    return bytes_read;
 }
 
 }
