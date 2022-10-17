@@ -620,9 +620,10 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -643,9 +644,10 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }

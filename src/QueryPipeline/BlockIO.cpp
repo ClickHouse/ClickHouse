@@ -53,9 +53,8 @@ void BlockIO::setAllDataSent() const
     /// - internal
     /// - SHOW PROCESSLIST
     if (process_list_entry)
-        (*process_list_entry)->setAllDataSent();
+        process_list_entry->getQueryStatus()->setAllDataSent();
 }
 
 
 }
-

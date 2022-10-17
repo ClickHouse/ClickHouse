@@ -537,7 +537,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     addTransform(std::move(processor));
 }
 
-void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
+void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
 }

@@ -477,7 +477,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
-void QueryPipeline::setProcessListElement(QueryStatus * elem)
+void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
 

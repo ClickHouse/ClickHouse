@@ -24,8 +24,8 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatus * elem)
-    : process_list_element(elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+    : process_list_element(std::move(elem))
 {
     if (process_list_element)
     {
