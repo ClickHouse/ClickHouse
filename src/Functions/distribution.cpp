@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_SLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
@@ -179,7 +178,7 @@ struct PoissonDistribution
 };
 
 }
-/// Function which will generate values according to the distibution
+/// Function which will generate values according to the distribution
 /// Accepts only constant arguments
 template <typename Distribution>
 class FunctionDistribution : public IFunction
@@ -303,7 +302,7 @@ Typical usage:
     factory.registerFunction<FunctionDistribution<NormalDistribution>>(
     {
     R"(
-Returns a random number from the normal distribuion.
+Returns a random number from the normal distribution.
 Accepts two parameters - mean and variance.
 
 Typical usage:
@@ -318,7 +317,7 @@ Typical usage:
     factory.registerFunction<FunctionDistribution<LogNormalDistribution>>(
     {
     R"(
-Returns a random number from the lognormal distribuion (a distribution of a random variable whose logarithm is normally distributed).
+Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
 Accepts two parameters - mean and variance.
 
 Typical usage:
@@ -333,7 +332,7 @@ Typical usage:
     factory.registerFunction<FunctionDistribution<ExponentialDistribution>>(
     {
     R"(
-Returns a random number from the exponential distribuion.
+Returns a random number from the exponential distribution.
 Accepts one parameter.
 
 Typical usage:
@@ -348,7 +347,7 @@ Typical usage:
     factory.registerFunction<FunctionDistribution<ChiSquaredDistribution>>(
     {
     R"(
-Returns a random number from the chi-squared distribuion (a distribution of a sum of the squares of k independent standart normal random variables).
+Returns a random number from the chi-squared distribution (a distribution of a sum of the squares of k independent standard normal random variables).
 Accepts one parameter - degree of freedom.
 
 Typical usage:
