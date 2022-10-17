@@ -13,9 +13,6 @@
 
 #include <random>
 
-#include <boost/random.hpp>
-#include <boost/random/uniform_real_distribution.hpp>
-
 namespace DB
 {
 
@@ -27,14 +24,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
 struct UniformDistribution
 {
     static constexpr const char * getName() { return "uniformDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 min, Float64 max, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::uniform_real_distribution<>(parameters[0], parameters[1]);
+        auto distribution = std::uniform_real_distribution<>(min, max);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -45,9 +44,9 @@ struct NormalDistribution
     static constexpr const char * getName() { return "normalDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::normal_distribution<>(parameters[0], parameters[1]);
+        auto distribution = std::normal_distribution<>(mean, variance);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -58,9 +57,22 @@ struct LogNormalDistribution
     static constexpr const char * getName() { return "logNormalDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::lognormal_distribution<>(parameters[0], parameters[1]);
+        auto distribution = std::lognormal_distribution<>(mean, variance);
+        for (auto & elem : container)
+            elem = distribution(thread_local_rng);
+    }
+};
+
+struct ExponentialDistribution
+{
+    static constexpr const char * getName() { return "exponentialDistribution"; }
+    static constexpr size_t getNumberOfArguments() { return 1; }
+
+    void generate(Float64 lambda, ColumnFloat64::Container & container) const
+    {
+        auto distribution = std::exponential_distribution<>(lambda);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -71,9 +83,9 @@ struct ChiSquaredDistribution
     static constexpr const char * getName() { return "chiSquaredDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::chi_squared_distribution<>(parameters[0]);
+        auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -84,9 +96,9 @@ struct StudentTDistribution
     static constexpr const char * getName() { return "studentTDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::student_t_distribution<>(parameters[0]);
+        auto distribution = std::student_t_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -95,17 +107,78 @@ struct StudentTDistribution
 struct FisherFDistribution
 {
     static constexpr const char * getName() { return "fisherFDistribution"; }
-    static constexpr size_t getNumberOfArguments() { return 1; }
+    static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(std::vector<Float64> & parameters, ColumnFloat64::Container & container) const
+    void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container) const
     {
-        auto distribution = std::fisher_f_distribution<>(parameters[0]);
+        auto distribution = std::fisher_f_distribution<>(d1, d2);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
 };
 
+struct BernoulliDistribution
+{
+    static constexpr const char * getName() { return "bernoulliDistribution"; }
+    static constexpr size_t getNumberOfArguments() { return 1; }
 
+    void generate(Float64 p, ColumnUInt8::Container & container) const
+    {
+        if (p < 0.0f || p > 1.0f)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
+
+        auto distribution = std::bernoulli_distribution(p);
+        for (auto & elem : container)
+            elem = static_cast<UInt8>(distribution(thread_local_rng));
+    }
+};
+
+struct BinomialDistribution
+{
+    static constexpr const char * getName() { return "binomialDistribution"; }
+    static constexpr size_t getNumberOfArguments() { return 2; }
+
+    void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container) const
+    {
+        if (p < 0.0f || p > 1.0f)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
+
+        auto distribution = std::binomial_distribution(t, p);
+        for (auto & elem : container)
+            elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+};
+
+struct NegativeBinomialDistribution
+{
+    static constexpr const char * getName() { return "negativeBinomialDistribution"; }
+    static constexpr size_t getNumberOfArguments() { return 2; }
+
+    void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container) const
+    {
+        if (p < 0.0f || p > 1.0f)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
+
+        auto distribution = std::negative_binomial_distribution(t, p);
+        for (auto & elem : container)
+            elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+};
+
+struct PoissonDistribution
+{
+    static constexpr const char * getName() { return "poissonDistribution"; }
+    static constexpr size_t getNumberOfArguments() { return 1; }
+
+    void generate(UInt64 n, ColumnUInt64::Container & container) const
+    {
+        auto distribution = std::poisson_distribution(n);
+        for (auto & elem : container)
+            elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+};
+
+}
 /// Function which will generate values according to the distibution
 /// Accepts only constant arguments
 template <typename Distribution>
@@ -113,6 +186,22 @@ class FunctionDistribution : public IFunction
 {
 private:
     mutable Distribution distribution;
+
+    template <typename ResultType>
+    ResultType getParameterFromConstColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments) const
+    {
+        const IColumn * col = arguments[parameter_number].column.get();
+
+        if (!isColumnConst(*col))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Parameter number {} of function must be constant.", parameter_number, getName());
+
+        auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
+
+        if (isNaN(parameter) || !std::isfinite(parameter))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
+
+        return parameter;
+    }
 
 public:
     static FunctionPtr create(ContextPtr)
@@ -138,30 +227,59 @@ public:
                     "Illegal type {} of argument of function {}, expected Float64", type->getName(), getName());
         }
 
-        return std::make_shared<DataTypeFloat64>();
+        if constexpr (std::is_same_v<Distribution, BernoulliDistribution>)
+            return std::make_shared<DataTypeUInt8>();
+        else if constexpr (
+            std::is_same_v<Distribution, BinomialDistribution>
+            || std::is_same_v<Distribution, NegativeBinomialDistribution>
+            || std::is_same_v<Distribution, PoissonDistribution>)
+            return std::make_shared<DataTypeUInt64>();
+        else
+            return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        std::vector<Float64> parameters(arguments.size());
-        for (size_t i = 0; i < parameters.size(); ++i)
+        if constexpr (std::is_same_v<Distribution, BernoulliDistribution>)
         {
-            const IColumn * col = arguments[i].column.get();
-
-            if (!isColumnConst(*col))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The {}th argument of function must be constant.", getName());
-
-            parameters[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
-
-            if (isNaN(parameters[i]) || !std::isfinite(parameters[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", i, getName());
+            auto res_column = ColumnUInt8::create(input_rows_count);
+            auto & res_data = res_column->getData();
+            distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
+            return res_column;
         }
+        else if constexpr (std::is_same_v<Distribution, BinomialDistribution> || std::is_same_v<Distribution, NegativeBinomialDistribution>)
+        {
+            auto res_column = ColumnUInt64::create(input_rows_count);
+            auto & res_data = res_column->getData();
+            distribution.generate(getParameterFromConstColumn<UInt64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
+            return res_column;
+        }
+        else if constexpr (std::is_same_v<Distribution, PoissonDistribution>)
+        {
+            auto res_column = ColumnUInt64::create(input_rows_count);
+            auto & res_data = res_column->getData();
+            distribution.generate(getParameterFromConstColumn<UInt64>(0, arguments), res_data);
+            return res_column;
+        }
+        else
+        {
+            auto res_column = ColumnFloat64::create(input_rows_count);
+            auto & res_data = res_column->getData();
+            if constexpr (Distribution::getNumberOfArguments() == 1)
+            {
+                distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
+            }
+            else if constexpr (Distribution::getNumberOfArguments() == 2)
+            {
+                distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than two argument specified for function", getName());
+            }
 
-        auto res_column = ColumnFloat64::create(input_rows_count);
-        auto & res_data = res_column->getData();
-        distribution.generate(parameters, res_data);
-
-        return res_column;
+            return res_column;
+        }
     }
 };
 
@@ -178,7 +296,7 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT uniformDistribution(0, 1) FROM numbers(100000)"}},
+        {"typical", "SELECT uniformDistribution(0, 1) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
@@ -192,7 +310,7 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT normalDistribution(0, 5) FROM numbers(100000)"}},
+        {"typical", "SELECT normalDistribution(0, 5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
@@ -207,7 +325,22 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT logNormalDistribution(0, 5) FROM numbers(100000)"}},
+        {"typical", "SELECT logNormalDistribution(0, 5) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<ExponentialDistribution>>(
+    {
+    R"(
+Returns a random number from the exponential distribuion.
+Accepts one parameter.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT exponentialDistribution(0, 5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
@@ -222,7 +355,7 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT chiSquaredDistribution(5) FROM numbers(100000)"}},
+        {"typical", "SELECT chiSquaredDistribution(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
@@ -236,7 +369,7 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000)"}},
+        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
@@ -252,12 +385,69 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000)"}},
+        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<FisherFDistribution>>();
+    factory.registerFunction<FunctionDistribution<BernoulliDistribution>>(
+    {
+    R"(
+Returns a random number from the Bernoulli distribution.
+Accepts two parameters - probability of success.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT bernoulliDistribution(0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<BinomialDistribution>>(
+    {
+    R"(
+Returns a random number from the binomial distribution.
+Accepts two parameters - number of experiments and probability of success in each experiment.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT binomialDistribution(10, 0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<NegativeBinomialDistribution>>(
+    {
+    R"(
+Returns a random number from the negative binomial distribution.
+Accepts two parameters - number of experiments and probability of success in each experiment.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT negativeBinomialDistribution(10, 0.1) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<PoissonDistribution>>(
+    {
+    R"(
+Returns a random number from the poisson distribution.
+Accepts two parameters - the mean number of occurrences.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT poissonDistribution(3) FROM numbers(100000);"}},
+    Documentation::Categories{"Distribution"}
+    });
 }
 
 }
