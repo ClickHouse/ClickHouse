@@ -168,11 +168,95 @@ public:
 
 REGISTER_FUNCTION(Distribution)
 {
-    factory.registerFunction<FunctionDistribution<UniformDistribution>>();
-    factory.registerFunction<FunctionDistribution<NormalDistribution>>();
-    factory.registerFunction<FunctionDistribution<LogNormalDistribution>>();
-    factory.registerFunction<FunctionDistribution<ChiSquaredDistribution>>();
-    factory.registerFunction<FunctionDistribution<StudentTDistribution>>();
+    factory.registerFunction<FunctionDistribution<UniformDistribution>>(
+    {
+    R"(
+Returns a random number from the uniform distribution in the specified range.
+Accepts two parameters - minimum bound and maximum bound.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT uniformDistribution(0, 1) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+    factory.registerFunction<FunctionDistribution<NormalDistribution>>(
+    {
+    R"(
+Returns a random number from the normal distribuion.
+Accepts two parameters - mean and variance.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT normalDistribution(0, 5) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<LogNormalDistribution>>(
+    {
+    R"(
+Returns a random number from the lognormal distribuion (a distribution of a random variable whose logarithm is normally distributed).
+Accepts two parameters - mean and variance.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT logNormalDistribution(0, 5) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<ChiSquaredDistribution>>(
+    {
+    R"(
+Returns a random number from the chi-squared distribuion (a distribution of a sum of the squares of k independent standart normal random variables).
+Accepts one parameter - degree of freedom.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT chiSquaredDistribution(5) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+    factory.registerFunction<FunctionDistribution<StudentTDistribution>>(
+    {
+    R"(
+Returns a random number from the t-distribution.
+Accepts one parameter - degree of freedom.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
+    factory.registerFunction<FunctionDistribution<FisherFDistribution>>(
+    {
+    R"(
+Returns a random number from the f-distribution.
+The F-distribution is the distribution of X = (S1 / d1) / (S2 / d2) where d1 and d2 are degrees of freedom.
+Accepts two parameters - degrees of freedom.
+
+Typical usage:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000)"}},
+    Documentation::Categories{"Distribution"}
+    });
+
+
     factory.registerFunction<FunctionDistribution<FisherFDistribution>>();
 }
 
