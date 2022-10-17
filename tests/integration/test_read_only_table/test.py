@@ -8,6 +8,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 NUM_TABLES = 10
 
+
 def fill_nodes(nodes):
     for table_id in range(NUM_TABLES):
         for node in nodes:
@@ -17,7 +18,6 @@ def fill_nodes(nodes):
                     ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/replicated/{table_id}', '{node.name}') ORDER BY tuple();
                 """
             )
-            
 
 
 cluster = ClickHouseCluster(__file__)
@@ -51,7 +51,9 @@ def start_cluster():
 def test_restart_zookeeper(start_cluster):
 
     for table_id in range(NUM_TABLES):
-        node1.query(f"INSERT INTO test_table_{table_id} VALUES (1), (2), (3), (4), (5);")
+        node1.query(
+            f"INSERT INTO test_table_{table_id} VALUES (1), (2), (3), (4), (5);"
+        )
         # sync_replicas(f"test_table_{table_id}")
 
     logging.info("Inserted test data and initialized all tables")
@@ -83,4 +85,6 @@ def test_restart_zookeeper(start_cluster):
     time.sleep(10)
 
     for table_id in range(NUM_TABLES):
-        node1.query(f"INSERT INTO test_table_{table_id} VALUES (6), (7), (8), (9), (10);")
+        node1.query(
+            f"INSERT INTO test_table_{table_id} VALUES (6), (7), (8), (9), (10);"
+        )
