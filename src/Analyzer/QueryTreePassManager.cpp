@@ -1,13 +1,14 @@
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
-#include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/CustomizeFunctionsPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 
@@ -36,7 +37,7 @@ namespace ErrorCodes
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support GROUP BY functions of other keys elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
-  * TODO: Support setting optimize_rewrite_sum_if_to_count_if.
+  * TODO: Support setting optimize_injective_functions_inside_uniq.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_redundant_functions_in_order_by.
@@ -120,6 +121,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.count_distinct_optimization)
         manager.addPass(std::make_shared<CountDistinctPass>());
+
+    if (settings.optimize_rewrite_sum_if_to_count_if)
+        manager.addPass(std::make_shared<SumIfToCountIfPass>());
 
     if (settings.optimize_normalize_count_variants)
         manager.addPass(std::make_shared<NormalizeCountVariantsPass>());

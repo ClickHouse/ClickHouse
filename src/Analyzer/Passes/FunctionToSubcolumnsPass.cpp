@@ -6,14 +6,15 @@
 
 #include <Storages/IStorage.h>
 
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
-#include <Functions/FunctionFactory.h>
-
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -123,9 +124,7 @@ public:
                     resolveOrdinaryFunctionNode(*not_function, "not");
 
                     auto & not_function_arguments = not_function->getArguments().getNodes();
-                    not_function_arguments.reserve(2);
                     not_function_arguments.push_back(std::make_shared<ColumnNode>(column, column_source));
-                    not_function_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
                     node = std::move(not_function);
                 }
@@ -182,7 +181,7 @@ public:
                     return;
                 }
 
-                column.name += ".";
+                column.name += '.';
                 column.name += subcolumn_name;
 
                 size_t subcolumn_position = data_type_tuple.getPositionByName(subcolumn_name);
@@ -212,6 +211,7 @@ public:
         }
     }
 
+private:
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function_result_type = function_node.getResultType();
@@ -219,7 +219,6 @@ public:
         function_node.resolveAsFunction(function, std::move(function_result_type));
     }
 
-private:
     ContextPtr & context;
 };
 
