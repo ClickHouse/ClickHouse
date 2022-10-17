@@ -34,7 +34,6 @@ namespace ErrorCodes
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
-    select_query->allow_query_parameters = allow_query_parameters;
     node = select_query;
 
     ParserKeyword s_select("SELECT");

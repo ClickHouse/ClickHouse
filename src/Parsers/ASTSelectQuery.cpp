@@ -41,7 +41,6 @@ ASTPtr ASTSelectQuery::clone() const
     for (const auto & child : children)
         res->children.push_back(child->clone());
 
-    res->allow_query_parameters = allow_query_parameters;
     res->has_query_parameters = has_query_parameters;
 
     return res;

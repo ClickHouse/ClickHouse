@@ -24,7 +24,6 @@ public:
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
-    bool allow_query_parameters = false;
 
     String getID(char) const override { return "Storage definition"; }
 

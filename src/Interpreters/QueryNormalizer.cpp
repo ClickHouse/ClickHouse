@@ -122,13 +122,13 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     }
 }
 
-void QueryNormalizer::visit(ASTQueryParameter & node, const ASTPtr & ast, Data & data)
+void QueryNormalizer::visit(ASTQueryParameter & node, Data & data)
 {
-    auto it_alias = data.aliases.find(node.name);
-    if (it_alias != data.aliases.end())
+    auto it_alias = data.query_parameters.find(node.name);
+    if (it_alias != data.query_parameters.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Same alias used multiple times {} ", backQuote(node.name));
 
-    data.aliases[node.name] = ast;
+    data.query_parameters.insert(node.name);
 }
 
 
@@ -152,8 +152,6 @@ static bool needVisitChild(const ASTPtr & child)
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
-    data.allow_query_parameters = select.allow_query_parameters;
-
     for (auto & child : select.children)
     {
         if (needVisitChild(child))
@@ -270,8 +268,8 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
     {
-        if (data.allow_query_parameters)
-            visit(*node_param, ast, data);
+        if (data.is_parameterized_view)
+            visit(*node_param, data);
         else
             throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
     }

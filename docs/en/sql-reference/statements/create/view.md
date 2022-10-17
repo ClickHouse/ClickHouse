@@ -42,7 +42,7 @@ This is similar to normal view but can be created with parameter instead of lite
 ``` sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
 ```
-The above creates a view for table which can be used as table function by substituting parameters as show below.
+The above creates a view for table which can be used as table function by substituting parameters as shown below.
 
 ``` sql
 SELECT * FROM view(column1=value1, column2=value2 ...)

@@ -115,16 +115,4 @@ void ASTSelectWithUnionQuery::setHasQueryParameters()
     }
 }
 
-void ASTSelectWithUnionQuery::clearAllowQueryParameters() // NOLINT
-{
-    if (!list_of_selects)
-        return;
-
-    for (const auto & child : list_of_selects->children)
-    {
-        if (auto * select_node = child->as<ASTSelectQuery>())
-            select_node->allow_query_parameters = false;
-    }
-}
-
 }

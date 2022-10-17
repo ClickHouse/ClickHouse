@@ -10,7 +10,7 @@ namespace DB
 bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list_node;
-    ParserUnionList parser(allow_query_parameters);
+    ParserUnionList parser;
 
     if (!parser.parse(pos, list_node, expected))
         return false;
