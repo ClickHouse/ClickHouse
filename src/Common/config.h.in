@@ -52,3 +52,4 @@
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_BORINGSSL
 #cmakedefine01 USE_BLAKE3
+#cmakedefine01 ARCH_PPC64LE
