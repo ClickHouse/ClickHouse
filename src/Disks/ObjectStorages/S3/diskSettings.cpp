@@ -125,7 +125,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
+    client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
 
