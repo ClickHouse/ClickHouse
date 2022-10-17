@@ -28,7 +28,7 @@ class Pipe
 public:
     /// Default constructor creates empty pipe. Generally, you cannot do anything with it except to check it is empty().
     /// You cannot get empty pipe in any other way. All transforms check that result pipe is not empty.
-    Pipe() = default;
+    Pipe();
     /// Create from source. Source must have no input ports and single output.
     explicit Pipe(ProcessorPtr source);
     /// Create from source with specified totals end extremes (may be nullptr). Ports should be owned by source.

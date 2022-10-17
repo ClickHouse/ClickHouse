@@ -102,7 +102,12 @@ static OutputPort * uniteTotals(const OutputPortRawPtrs & ports, const Block & h
     return totals_port;
 }
 
+Pipe::Pipe() : processors(std::make_shared<Processors>())
+{
+}
+
 Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes)
+    : processors(std::make_shared<Processors>())
 {
     if (!source->getInputs().empty())
         throw Exception(
@@ -160,6 +165,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
 }
 
 Pipe::Pipe(ProcessorPtr source)
+    : processors(std::make_shared<Processors>())
 {
     checkSource(*source);
 
