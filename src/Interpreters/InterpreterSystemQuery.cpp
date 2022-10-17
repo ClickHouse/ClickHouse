@@ -12,7 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -33,6 +33,7 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
@@ -57,7 +58,7 @@
 #include <csignal>
 #include <algorithm>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -523,7 +524,8 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); },
                 [&] { if (auto transactions_info_log = getContext()->getTransactionsInfoLog()) transactions_info_log->flush(true); },
                 [&] { if (auto processors_profile_log = getContext()->getProcessorsProfileLog()) processors_profile_log->flush(true); },
-                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); }
+                [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
+                [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
             );
             break;
         }

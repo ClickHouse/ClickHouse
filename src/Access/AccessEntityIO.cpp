@@ -145,7 +145,7 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     {
         e.addMessage("Could not parse " + file_path);
         e.rethrow();
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 

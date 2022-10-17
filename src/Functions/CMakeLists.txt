@@ -1,6 +1,3 @@
-include(configure_config.cmake)
-configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
-
 add_subdirectory(divide)
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")

@@ -688,7 +688,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     /// The size without taking into account the row in which data is written for the calculation of TOTALS.
@@ -705,7 +705,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     const char * getMethodName() const
@@ -721,7 +721,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     bool isTwoLevel() const
@@ -737,7 +737,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
