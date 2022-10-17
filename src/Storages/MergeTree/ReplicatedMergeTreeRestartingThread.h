@@ -40,7 +40,7 @@ private:
     String active_node_identifier;
 
     BackgroundSchedulePool::TaskHolder task;
-    Int64 check_period_ms;            /// The frequency of checking expiration of session in ZK.
+    Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     bool first_time = true;                 /// Activate replica for the first time.
 
     void run();
