@@ -1708,7 +1708,7 @@ ProgressCallback Context::getProgressCallback() const
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
-    process_list_elem = std::move(elem);
+    process_list_elem = elem;
 }
 
 QueryStatusPtr Context::getProcessListElement() const
