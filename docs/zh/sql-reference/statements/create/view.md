@@ -13,7 +13,7 @@ sidebar_label: VIEW
 语法:
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
 ```
 
 普通视图不存储任何数据。 他们只是在每次访问时从另一个表执行读取。换句话说，普通视图只不过是一个保存的查询。 从视图中读取时，此保存的查询用作[FROM](../../../sql-reference/statements/select/from.md)子句中的子查询.
@@ -164,23 +164,6 @@ SELECT * FROM [db.]live_view WHERE ...
 
 您可以使用`ALTER LIVE VIEW [db.]table_name REFRESH`语法.
 
-### WITH TIMEOUT条件 {#live-view-with-timeout}
-
-当使用`WITH TIMEOUT`子句创建实时视图时，[WATCH](../../../sql-reference/statements/watch.md)观察实时视图的查询。
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
-```
-
-如果未指定超时值，则由指定的值[temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout)决定.
-
-**示例:**
-
-```sql
-CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
-```
-
 ### WITH REFRESH条件 {#live-view-with-refresh}
 
 当使用`WITH REFRESH`子句创建实时视图时，它将在自上次刷新或触发后经过指定的秒数后自动刷新。
@@ -209,20 +192,6 @@ WATCH lv
 │ 2021-02-21 08:47:15 │        3 │
 └─────────────────────┴──────────┘
 ```
-
-您可以使用`AND`子句组合`WITH TIMEOUT`和`WITH REFRESH`子句。
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
-```
-
-**示例:**
-
-```sql
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
-```
-
-15 秒后，如果没有活动的`WATCH`查询，实时视图将自动删除。
 
 ```sql
 WATCH lv

@@ -268,15 +268,17 @@ Result:
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
-* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOf*`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results. In case argument is out of normal range:
+* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results. In case argument is out of normal range:
   * If the argument is smaller than 1970, the result will be calculated from the argument `1970-01-01 (00:00:00)` instead.
   * If the return type is `DateTime` and the argument is larger than `2106-02-07 08:28:15`, the result will be calculated from the argument `2106-02-07 08:28:15` instead.
   * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
   *  If `toLastDayOfMonth` is called with an argument greater then `2149-05-31`, the result will be calculated from the argument `2149-05-31` instead.
-* `enable_extended_results_for_datetime_functions = 1`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+* `enable_extended_results_for_datetime_functions = 1`:
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
 ## toStartOfYear

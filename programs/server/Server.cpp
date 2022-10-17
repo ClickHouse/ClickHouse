@@ -53,7 +53,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -62,6 +61,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -79,7 +79,9 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
+#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
+#endif
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/CertificateReloader.h>
@@ -88,8 +90,8 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#include "config.h"
+#include "config_version.h"
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
@@ -209,7 +211,7 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
     }
 }
 catch (...)
@@ -969,9 +971,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        std::string temporary_policy = config().getString("tmp_policy", "");
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -1005,12 +1008,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
         fs::create_directories(user_scripts_path);
-    }
-
-    {
-        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
-        global_context->setUserDefinedPath(user_defined_path);
-        fs::create_directories(user_defined_path);
     }
 
     /// top_level_domains_lists
@@ -1263,8 +1260,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-
+#if USE_BORINGSSL
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1417,8 +1415,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             settings.async_insert_threads,
-            settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
+            settings.async_insert_cleanup_timeout_ms));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1470,9 +1467,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-
+#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+#endif
 
     SCOPE_EXIT({
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
@@ -1555,18 +1553,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
@@ -1594,6 +1580,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
+        /// Load user-defined SQL functions.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {

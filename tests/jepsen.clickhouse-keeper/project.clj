@@ -7,7 +7,8 @@
   :main jepsen.clickhouse-keeper.main
   :plugins [[lein-cljfmt "0.7.0"]]
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [jepsen "0.2.6"]
+                 [jepsen "0.2.7"]
                  [zookeeper-clj "0.9.4"]
+                 [com.hierynomus/sshj "0.34.0"]
                  [org.apache.zookeeper/zookeeper "3.6.1" :exclusions [org.slf4j/slf4j-log4j12]]]
   :repl-options {:init-ns jepsen.clickhouse-keeper.main})

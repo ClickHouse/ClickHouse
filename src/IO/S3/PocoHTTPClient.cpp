@@ -1,5 +1,5 @@
 #include "Common/DNSResolver.h"
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 

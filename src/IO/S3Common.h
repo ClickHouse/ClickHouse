@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/config.h>
 #include <Storages/HeaderCollection.h>
 #include <IO/S3/PocoHTTPClient.h>
 
 #include <string>
 #include <optional>
+
+#include "config.h"
 
 #if USE_AWS_S3
 

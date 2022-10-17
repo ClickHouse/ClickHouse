@@ -24,8 +24,8 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#include "config.h"
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -490,8 +490,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 void Keeper::logRevision() const
 {
     Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", " + build_id_info
+        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
+        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
         + ", PID " + std::to_string(getpid()));
 }
 

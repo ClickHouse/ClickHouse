@@ -1,8 +1,8 @@
 #include <IO/S3Common.h>
 
-#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -917,6 +917,8 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     headers = from.headers;
     region = from.region;
     server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
+    use_environment_credentials = from.use_environment_credentials;
+    use_insecure_imds_request = from.use_insecure_imds_request;
 }
 
 }

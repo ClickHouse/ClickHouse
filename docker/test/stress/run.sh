@@ -13,25 +13,28 @@ sysctl kernel.core_pattern='core.%e.%p-%P'
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
+# Temporarily disable ThreadFuzzer with tsan because of https://github.com/google/sanitizers/issues/1540
+is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
+if [ "$is_tsan_build" -eq "0" ]; then
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+    export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US=100000
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+fi
 
 
 function install_packages()
@@ -255,6 +258,7 @@ start
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
 stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.

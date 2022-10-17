@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
-#include <config_core.h>
+#include "config.h"
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #if USE_AWS_S3
@@ -22,7 +22,7 @@ public:
     KeeperSnapshotManagerS3();
 
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config);
-    void uploadSnapshot(const std::string & path);
+    void uploadSnapshot(const std::string & path, bool async_upload = true);
 
     void startup(const Poco::Util::AbstractConfiguration & config);
     void shutdown();
@@ -41,9 +41,14 @@ private:
 
     Poco::Logger * log;
 
+    UUID uuid;
+
+    std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
+
+    void uploadSnapshotImpl(const std::string & snapshot_path);
+
     /// Thread upload snapshots to S3 in the background
     void snapshotS3Thread();
-    std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
 };
 #else
 class KeeperSnapshotManagerS3
