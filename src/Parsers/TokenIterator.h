@@ -20,19 +20,18 @@ class Tokens
 {
 private:
     std::vector<Token> data;
-    Lexer lexer;
+    std::size_t last_accessed_index = 0;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0);
 
-    const Token & operator[](size_t index);
-
-    const Token & max()
+    ALWAYS_INLINE inline const Token & operator[](size_t index)
     {
-        if (data.empty())
-            return (*this)[0];
-        return data.back();
+        last_accessed_index = std::max(last_accessed_index, index);
+        return data[index];
     }
+
+    ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
 };
 
 
