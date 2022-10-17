@@ -1130,7 +1130,8 @@ private:
 
     void prepare()
     {
-        ctx->data_part_storage_builder->createDirectories();
+        if (ctx->new_data_part->isStoredOnDisk())
+            ctx->data_part_storage_builder->createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())

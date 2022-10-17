@@ -416,6 +416,10 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     CollectTablesInQueryVisitor::Data data(context);
     CollectTablesInQueryVisitor(data).visit(query);
 
+    /// Keep old settings, because they may be changed
+    /// during execution of ATTACH/DETACH queries.
+    auto old_settings = context->getSettings();
+
     for (const auto & table_id : data.tables)
     {
         if (table_id.getDatabaseName() == "system")
@@ -454,6 +458,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         auto attach = executeQuery(attach_query, context, true);
         executeTrivialBlockIO(attach, context);
     }
+
+    context->setSettings(old_settings);
 }
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(

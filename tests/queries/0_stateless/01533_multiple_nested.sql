@@ -1,5 +1,5 @@
--- Tags: no-s3-storage
--- no-s3 because read FileOpen metric
+-- Tags: no-s3-storage, no-random-detach
+-- no-s3-storage and no-random-detach because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;

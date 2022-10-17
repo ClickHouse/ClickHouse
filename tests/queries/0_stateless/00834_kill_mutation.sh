@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-parallel
+# Tags: no-debug, no-parallel, no-random-detach
+# Tag no-random-detach: mutation_id may be affected by DETACH/ATTACH
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- Tag no-random-detach: data is lost in memory disk after detach.
+
 DROP TABLE IF EXISTS log;
 
 CREATE TABLE log (x UInt8) ENGINE = StripeLog () SETTINGS disk = 'disk_memory';

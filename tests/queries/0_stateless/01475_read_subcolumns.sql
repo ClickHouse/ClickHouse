@@ -1,4 +1,5 @@
--- Tags: no-s3-storage, no-random-settings
+-- Tags: no-s3-storage, no-random-settings, no-random-detach
+-- Tag no-random-detach: extra FileOpen while attach.
 
 SET use_uncompressed_cache = 0;
 
