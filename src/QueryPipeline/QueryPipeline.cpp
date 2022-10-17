@@ -30,7 +30,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-QueryPipeline::QueryPipeline() = default;
+QueryPipeline::QueryPipeline()
+    : processors(std::make_shared<Processors>())
+{
+}
+
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
 QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
 QueryPipeline::~QueryPipeline() = default;
@@ -306,6 +310,7 @@ QueryPipeline::QueryPipeline(Chain chain)
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
+    : processors(std::make_shared<Processors>())
 {
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
     auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
