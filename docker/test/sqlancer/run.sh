@@ -47,7 +47,7 @@ export NUM_QUERIES=1000
 
 pkill -F /clickhouse-server.pid
 
-for i in $(seq 1 30); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
+for _ in $(seq 1 30); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
 
 ls /var/log/clickhouse-server/
 tar czf /workplace/logs.tar.gz -C /var/log/clickhouse-server/ .
