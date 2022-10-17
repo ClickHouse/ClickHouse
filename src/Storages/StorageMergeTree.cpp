@@ -436,7 +436,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     std::optional<String> partition;
     if (partitions.size() == 1)
     {
-        partition.emplace(std::move(*partitions.begin()));
+        partition.emplace(*partitions.begin());
     }
 
     /// Choose any disk, because when we load mutations we search them at each disk
@@ -455,7 +455,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), std::move(partition), current_tid, getContext()->getWriteSettings());
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), partition, current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -824,7 +824,7 @@ void StorageMergeTree::loadMutations()
 
                 if (entry.partition_id)
                 {
-                    if (auto last_mutation = last_mutation_by_partition[*entry.partition_id]; last_mutation < block_number)
+                    if (auto & last_mutation = last_mutation_by_partition[*entry.partition_id]; last_mutation < block_number)
                     {
                         last_mutation = block_number;
                     }

@@ -52,7 +52,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     DiskPtr disk_,
     const String & path_prefix_,
     UInt64 tmp_number,
-    const std::optional<String> & partition_id_,
+    std::optional<String> partition_id_,
     const TransactionID & tid_,
     const WriteSettings & settings
 )
@@ -62,7 +62,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
-    , partition_id(partition_id_)
+    , partition_id(std::move(partition_id_))
     , tid(tid_)
 {
     try
