@@ -145,9 +145,7 @@ void KeeperDispatcher::requestThread()
 
                 /// Read request always goes after write batch (last request)
                 if (has_read_request)
-                {
                     processReadRequest(coordination_settings, request);
-                }
             }
         }
         catch (...)
@@ -222,9 +220,9 @@ void KeeperDispatcher::processReadRequest(
                 {
                     auto & leader_waiter = leader_waiters[leader_info];
                     auto & task = leader_waiter.emplace_back(
-                        [&, request_for_session]
+                        [this, request_for_session]
                         {
-                            processReadRequestLocally(read_request);
+                            processReadRequestLocally(request_for_session);
                         });
 
                     auto read_request_task_future = task.get_future();
