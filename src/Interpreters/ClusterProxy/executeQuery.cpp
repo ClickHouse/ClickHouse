@@ -106,7 +106,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
     if (query_info && query_info->additional_filter_ast)
     {
         Tuple tuple;
-        tuple.push_back(main_table.getFullTableName());
+        tuple.push_back(main_table.getShortName());
         tuple.push_back(queryToString(query_info->additional_filter_ast));
         new_settings.additional_table_filters.value.push_back(std::move(tuple));
     }
