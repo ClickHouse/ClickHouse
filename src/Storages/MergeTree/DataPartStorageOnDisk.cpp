@@ -123,17 +123,7 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
 
 UInt64 DataPartStorageOnDisk::calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
-    try
-    {
-        /// Files of detached part may be not exist, and then set file size is 0.
-        if (!disk->exists(from))
-            return 0;
-        return calculateTotalSizeOnDiskImpl(disk, from);
-    }
-    catch (...)
-    {
-        return 0;
-    }
+    return calculateTotalSizeOnDiskImpl(disk, from);
 }
 
 UInt64 DataPartStorageOnDisk::calculateTotalSizeOnDisk() const

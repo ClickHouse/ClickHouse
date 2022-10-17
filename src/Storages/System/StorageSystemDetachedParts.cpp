@@ -58,7 +58,18 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
-            new_columns[i++]->insert(DataPartStorageOnDisk::calculateTotalSizeOnDisk(p.disk, fs::path(info.data->getRelativeDataPath()) / detached_part_path));
+
+            size_t bytes_on_disk = 0;
+            try
+            {
+                /// Files of detached part may be not exist, and then set file size is 0.
+                bytes_on_disk = DataPartStorageOnDisk::calculateTotalSizeOnDisk(
+                        p.disk, fs::path(info.data->getRelativeDataPath()) / detached_part_path);
+            }
+            catch (...)
+            {}
+
+            new_columns[i++]->insert(bytes_on_disk);
             new_columns[i++]->insert(p.disk->getName());
             new_columns[i++]->insert((fs::path(info.data->getFullPathOnDisk(p.disk)) / detached_part_path).string());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
