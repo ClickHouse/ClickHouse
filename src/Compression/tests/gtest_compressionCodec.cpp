@@ -1213,7 +1213,13 @@ auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
         static const size_t count = sizeof(vals)/sizeof(vals[0]);
 
         using T = decltype(i);
-        return static_cast<T>(vals[i % count] * static_cast<T>(multiplier));
+        UInt64 ret;
+        do {
+            ret = static_cast<UInt64>(vals[i % count]) * multiplier;
+            --i;
+        } while (ret > std::numeric_limits<T>::max());
+
+        return static_cast<T>(ret);
     };
 };
 
