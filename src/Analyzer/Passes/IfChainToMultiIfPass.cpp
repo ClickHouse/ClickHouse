@@ -19,7 +19,7 @@ public:
         : multi_if_function_ptr(std::move(multi_if_function_ptr_))
     {}
 
-    void visit(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "if" || function_node->getArguments().getNodes().size() != 3)
