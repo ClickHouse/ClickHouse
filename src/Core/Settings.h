@@ -776,6 +776,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, output_format_json_array_of_rows, false, "Output a JSON array of all rows in JSONEachRow(Compact) format.", 0) \
     M(Bool, output_format_json_validate_utf8, false, "Validate UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate utf8", 0) \
     \
+    M(String, format_json_object_each_row_column_for_object_name, "", "The name of column that will be used as object names in JSONObjectEachRow format. Column type should be String", 0) \
+    \
     M(UInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_column_pad_width, 250, "Maximum width to pad all values in a column in Pretty formats.", 0) \
     M(UInt64, output_format_pretty_max_value_width, 10000, "Maximum width of value to display in Pretty formats. If greater - it will be cut.", 0) \
@@ -889,6 +891,8 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
 
     void set(std::string_view name, const Field & value) override;
+
+    void setDefaultValue(const String & name) { resetToDefault(name); }
 
 private:
     void applyCompatibilitySetting();
