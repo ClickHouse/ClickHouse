@@ -298,7 +298,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config);
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
 
     try
     {
@@ -360,8 +360,6 @@ void KeeperDispatcher::shutdown()
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
-
-            snapshot_s3.shutdown();
 
             update_configuration_queue.finish();
             if (update_configuration_thread.joinable())
@@ -428,6 +426,8 @@ void KeeperDispatcher::shutdown()
 
         if (server)
             server->shutdown();
+
+        snapshot_s3.shutdown();
 
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
 

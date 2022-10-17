@@ -2,11 +2,13 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage.h>
+
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
 
 
 namespace DB
@@ -26,6 +28,8 @@ public:
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
+        bool upload_snapshot_on_exit_,
+        KeeperSnapshotManagerS3 & snapshot_manager_s3_,
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot
@@ -146,6 +150,9 @@ private:
     const std::string superdigest;
 
     KeeperContextPtr keeper_context;
+
+    const bool upload_snapshot_on_exit;
+    KeeperSnapshotManagerS3 & snapshot_manager_s3;
 };
 
 }
