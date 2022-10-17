@@ -722,7 +722,7 @@ template <typename T>
 struct RandomGenerator
 {
     explicit RandomGenerator(T seed = 0, T value_min = std::numeric_limits<T>::min(), T value_max = std::numeric_limits<T>::max())
-        : random_engine(seed),
+        : random_engine(static_cast<uint_fast32_t>(seed)),
           distribution(value_min, value_max)
     {
     }
