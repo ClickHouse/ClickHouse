@@ -3490,16 +3490,6 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
-#############################################################################################
-###################################### JEPSEN TESTS #########################################
-#############################################################################################
-  Jepsen:
-    # This is special test NOT INCLUDED in FinishCheck
-    # When it's skipped, all dependent tasks will be skipped too.
-    # DO NOT add it there
-    if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
-    needs: [BuilderBinRelease]
-    uses: ./.github/workflows/jepsen.yml
 ##############################################################################################
 ###################################### SQLANCER FUZZERS ######################################
 ##############################################################################################
@@ -3537,6 +3527,16 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
+#############################################################################################
+###################################### JEPSEN TESTS #########################################
+#############################################################################################
+  Jepsen:
+    # This is special test NOT INCLUDED in FinishCheck
+    # When it's skipped, all dependent tasks will be skipped too.
+    # DO NOT add it there
+    if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
+    needs: [BuilderBinRelease]
+    uses: ./.github/workflows/jepsen.yml
   FinishCheck:
     needs:
       - StyleCheck
