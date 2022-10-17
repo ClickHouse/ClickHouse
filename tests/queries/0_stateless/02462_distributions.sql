@@ -20,5 +20,3 @@ SELECT DISTINCT if (a >= toFloat64(0), 'Ok', 'Fail') FROM (SELECT binomialDistri
 SELECT DISTINCT if (a >= toFloat64(0), 'Ok', 'Fail') FROM (SELECT negativeBinomialDistribution(3, 0.5) AS a FROM numbers(100000));
 # Values should be >= 0
 SELECT DISTINCT if (a >= toFloat64(0), 'Ok', 'Fail') FROM (SELECT poissonDistribution(44) AS a FROM numbers(100000));
-# Values should be >= 0
-SELECT DISTINCT if (a >= toFloat64(0), 'Ok', 'Fail') FROM (SELECT exponentialDistribution(23) AS a FROM numbers(100000));
