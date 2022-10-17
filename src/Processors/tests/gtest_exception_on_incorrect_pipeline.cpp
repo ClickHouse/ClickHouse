@@ -27,7 +27,7 @@ TEST(Processors, PortsConnected)
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(sink));
 
-    QueryStatus * element = nullptr;
+    QueryStatusPtr element;
     PipelineExecutor executor(processors, element);
     executor.execute(1);
 }
@@ -53,7 +53,7 @@ TEST(Processors, PortsNotConnected)
 #ifndef ABORT_ON_LOGICAL_ERROR
     try
     {
-        QueryStatus * element = nullptr;
+        QueryStatusPtr element;
         PipelineExecutor executor(processors, element);
         executor.execute(1);
         ASSERT_TRUE(false) << "Should have thrown.";

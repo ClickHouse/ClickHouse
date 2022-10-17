@@ -16,6 +16,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
 class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -99,7 +100,7 @@ public:
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
-    void setProcessListElement(QueryStatus * elem);
+    void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
@@ -144,7 +145,7 @@ private:
     OutputPort * totals = nullptr;
     OutputPort * extremes = nullptr;
 
-    QueryStatus * process_list_element = nullptr;
+    QueryStatusPtr process_list_element;
 
     IOutputFormat * output_format = nullptr;
 

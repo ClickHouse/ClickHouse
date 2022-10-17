@@ -68,6 +68,7 @@ class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class Macros;
 struct Progress;
 struct FileProgress;
@@ -230,7 +231,7 @@ private:
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
-    QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
+    std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
@@ -750,9 +751,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(QueryStatus * elem);
+    void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    QueryStatus * getProcessListElement() const;
+    QueryStatusPtr getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
