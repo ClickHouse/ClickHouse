@@ -57,7 +57,7 @@ public:
     KeeperSnapshotManagerS3() = default;
 
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &) {}
-    void uploadSnapshot(const std::string &) {}
+    void uploadSnapshot(const std::string &, [[maybe_unused]] bool async_upload = true) {}
 
     void startup(const Poco::Util::AbstractConfiguration &) {}
 
