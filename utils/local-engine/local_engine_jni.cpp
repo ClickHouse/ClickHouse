@@ -3,7 +3,6 @@
 #include <string>
 #include <jni.h>
 #include <Builder/BroadCastJoinBuilder.h>
-#include <Builder/SerializedPlanBuilder.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Operator/BlockCoalesceOperator.h>
 #include <Parser/CHColumnToSparkRow.h>
@@ -44,7 +43,7 @@ std::vector<std::string> stringSplit(const std::string & str, char delim)
     }
 }
 
-DB::ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * /*env*/, jobject  /*obj*/, jlong block_address, jint column_position)
+DB::ColumnWithTypeAndName inline getColumnFromColumnVector(JNIEnv * /*env*/, jobject obj, jlong block_address, jint column_position)
 {
     DB::Block * block = reinterpret_cast<DB::Block *>(block_address);
     return block->getByPosition(column_position);
@@ -480,15 +479,80 @@ jint Java_io_glutenproject_vectorized_CHNativeBlock_nativeNumColumns(JNIEnv * en
     LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 
-jbyteArray Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv * env, jobject /*obj*/, jlong block_address, jint position)
+jstring Java_io_glutenproject_vectorized_CHNativeBlock_nativeColumnType(JNIEnv * env, jobject /*obj*/, jlong block_address, jint position)
 {
     LOCAL_ENGINE_JNI_METHOD_START
     auto * block = reinterpret_cast<DB::Block *>(block_address);
-    const auto & col = block->getByPosition(position);
-    std::string substrait_type;
-    dbms::SerializedPlanBuilder::buildType(col.type, substrait_type);
-    return local_engine::stringTojbyteArray(env, substrait_type);
-    LOCAL_ENGINE_JNI_METHOD_END(env, local_engine::stringTojbyteArray(env, ""))
+    DB::WhichDataType which(block->getByPosition(position).type);
+    std::string type;
+    if (which.isNullable())
+    {
+        const auto * nullable = checkAndGetDataType<DB::DataTypeNullable>(block->getByPosition(position).type.get());
+        which = DB::WhichDataType(nullable->getNestedType());
+    }
+
+    if (which.isDate32())
+    {
+        type = "Date";
+    }
+    else if (which.isDateTime64())
+    {
+        type = "Timestamp";
+    }
+    else if (which.isFloat32())
+    {
+        type = "Float";
+    }
+    else if (which.isFloat64())
+    {
+        type = "Double";
+    }
+    else if (which.isInt32())
+    {
+        type = "Integer";
+    }
+    else if (which.isInt64())
+    {
+        type = "Long";
+    }
+    else if (which.isUInt64())
+    {
+        type = "Long";
+    }
+    else if (which.isInt8())
+    {
+        type = "Byte";
+    }
+    else if (which.isInt16())
+    {
+        type = "Short";
+    }
+    else if (which.isUInt16())
+    {
+        type = "Integer";
+    }
+    else if (which.isUInt8())
+    {
+        type = "Boolean";
+    }
+    else if (which.isString())
+    {
+        type = "String";
+    }
+    else if (which.isAggregateFunction())
+    {
+        type = "Binary";
+    }
+    else
+    {
+        auto type_name = std::string(block->getByPosition(position).type->getName());
+        auto col_name = block->getByPosition(position).name;
+        LOG_ERROR(&Poco::Logger::get("jni"), "column {}, unsupported datatype {}", col_name, type_name);
+        throw std::runtime_error("unsupported datatype " + type_name);
+    }
+
+    return local_engine::charTojstring(env, type.c_str());
+    LOCAL_ENGINE_JNI_METHOD_END(env, local_engine::charTojstring(env, ""))
 }
 
 jlong Java_io_glutenproject_vectorized_CHNativeBlock_nativeTotalBytes(JNIEnv * env, jobject /*obj*/, jlong block_address)
@@ -632,13 +696,13 @@ jobject Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_stop(JNIEnv
     local_engine::SplitterHolder * splitter = reinterpret_cast<local_engine::SplitterHolder *>(splitterId);
     auto result = splitter->splitter->stop();
     const auto & partition_lengths = result.partition_length;
-    auto *partition_length_arr = env->NewLongArray(partition_lengths.size());
-    const auto *src = reinterpret_cast<const jlong *>(partition_lengths.data());
+    auto partition_length_arr = env->NewLongArray(partition_lengths.size());
+    auto src = reinterpret_cast<const jlong *>(partition_lengths.data());
     env->SetLongArrayRegion(partition_length_arr, 0, partition_lengths.size(), src);
 
     const auto & raw_partition_lengths = result.raw_partition_length;
-    auto *raw_partition_length_arr = env->NewLongArray(raw_partition_lengths.size());
-    const auto *raw_src = reinterpret_cast<const jlong *>(raw_partition_lengths.data());
+    auto raw_partition_length_arr = env->NewLongArray(raw_partition_lengths.size());
+    auto raw_src = reinterpret_cast<const jlong *>(raw_partition_lengths.data());
     env->SetLongArrayRegion(raw_partition_length_arr, 0, raw_partition_lengths.size(), raw_src);
 
     jobject split_result = env->NewObject(
@@ -694,37 +758,35 @@ void Java_io_glutenproject_vectorized_BlockNativeConverter_freeMemory(JNIEnv * e
 {
     LOCAL_ENGINE_JNI_METHOD_START
     local_engine::CHColumnToSparkRow converter;
-    converter.freeMem(reinterpret_cast<char *>(address), size);
+    converter.freeMem(reinterpret_cast<uint8_t *>(address), size);
     LOCAL_ENGINE_JNI_METHOD_END(env,)
 }
 
 jlong Java_io_glutenproject_vectorized_BlockNativeConverter_convertSparkRowsToCHColumn(
-    JNIEnv * env, jobject, jobject java_iter, jobjectArray names, jobjectArray types)
+    JNIEnv * env, jobject, jobject java_iter, jobjectArray names, jobjectArray types, jbooleanArray is_nullables)
 {
     LOCAL_ENGINE_JNI_METHOD_START
     using namespace std;
+    int column_size = env->GetArrayLength(names);
 
-    int num_columns = env->GetArrayLength(names);
     vector<string> c_names;
     vector<string> c_types;
-    c_names.reserve(num_columns);
-    for (int i = 0; i < num_columns; i++)
+    vector<bool> c_isnullables;
+    jboolean * p_booleans = env->GetBooleanArrayElements(is_nullables, nullptr);
+    for (int i = 0; i < column_size; i++)
     {
         auto * name = static_cast<jstring>(env->GetObjectArrayElement(names, i));
-        c_names.emplace_back(std::move(jstring2string(env, name)));
+        auto * type = static_cast<jstring>(env->GetObjectArrayElement(types, i));
+        c_names.push_back(jstring2string(env, name));
+        c_types.push_back(jstring2string(env, type));
+        c_isnullables.push_back(p_booleans[i] == JNI_TRUE);
 
-        auto * type = static_cast<jbyteArray>(env->GetObjectArrayElement(types, i));
-        auto type_length = env->GetArrayLength(type);
-        jbyte * type_ptr = env->GetByteArrayElements(type, nullptr);
-        string str_type(reinterpret_cast<const char *>(type_ptr), type_length);
-        c_types.emplace_back(std::move(str_type));
-
-        env->ReleaseByteArrayElements(type, type_ptr, JNI_ABORT);
         env->DeleteLocalRef(name);
         env->DeleteLocalRef(type);
     }
+    env->ReleaseBooleanArrayElements(is_nullables, p_booleans, JNI_ABORT);
     local_engine::SparkRowToCHColumn converter;
-    return reinterpret_cast<jlong>(converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types));
+    return reinterpret_cast<jlong>(converter.convertSparkRowItrToCHColumn(java_iter, c_names, c_types, c_isnullables));
     LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 

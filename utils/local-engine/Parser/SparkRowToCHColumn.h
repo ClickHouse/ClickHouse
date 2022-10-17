@@ -5,62 +5,123 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Parser/SerializedPlanParser.h>
 #include <Parser/CHColumnToSparkRow.h>
 #include <base/StringRef.h>
 #include <Common/JNIUtils.h>
-#include <substrait/type.pb.h>
 #include <jni/jni_common.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-    extern const int CANNOT_PARSE_PROTOBUF_SCHEMA;
-}
-}
 namespace local_engine
 {
 using namespace DB;
 using namespace std;
+
+
 struct SparkRowToCHColumnHelper
 {
-    DataTypes data_types;
-    Block header;
-    MutableColumns mutable_columns;
-
-    SparkRowToCHColumnHelper(vector<string> & names, vector<string> & types)
-        : data_types(names.size())
+    SparkRowToCHColumnHelper(vector<string>& names, vector<string>& types, vector<bool>& isNullables)
     {
-        assert(names.size() == types.size());
-
-        ColumnsWithTypeAndName columns(names.size());
+        internal_cols = std::make_unique<std::vector<ColumnWithTypeAndName>>();
+        internal_cols->reserve(names.size());
+        typePtrs = std::make_unique<std::vector<DataTypePtr>>();
+        typePtrs->reserve(names.size());
         for (size_t i = 0; i < names.size(); ++i)
         {
-            data_types[i] = parseType(types[i]);
-            columns[i] = std::move(ColumnWithTypeAndName(data_types[i], names[i]));
+            const auto & name = names[i];
+            const auto & type = types[i];
+            const bool is_nullable = isNullables[i];
+            auto data_type = parseType(type, is_nullable);
+            internal_cols->push_back(ColumnWithTypeAndName(data_type, name));
+            typePtrs->push_back(data_type);
         }
-
-        header = std::move(Block(columns));
-        resetMutableColumns();
+        header = std::make_shared<Block>(*std::move(internal_cols));
+        resetWrittenColumns();
     }
 
-    ~SparkRowToCHColumnHelper() = default;
+    unique_ptr<vector<ColumnWithTypeAndName>> internal_cols; //for headers
+    unique_ptr<vector<MutableColumnPtr>> cols;
+    unique_ptr<vector<DataTypePtr>> typePtrs;
+    shared_ptr<Block> header;
 
-    void resetMutableColumns()
+    void resetWrittenColumns()
     {
-        mutable_columns = std::move(header.mutateColumns());
+        cols = make_unique<vector<MutableColumnPtr>>();
+        for (size_t i = 0; i < internal_cols->size(); i++)
+        {
+            cols->push_back(internal_cols->at(i).type->createColumn());
+        }
     }
 
-    static DataTypePtr parseType(const string & type)
+    static DataTypePtr inline wrapNullableType(bool isNullable, DataTypePtr nested_type)
     {
-        auto substrait_type = std::make_unique<substrait::Type>();
-        auto ok = substrait_type->ParseFromString(type);
-        if (!ok)
-            throw Exception(ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA, "Parse substrait::Type from string failed");
-        return std::move(SerializedPlanParser::parseType(*substrait_type));
+        if (isNullable)
+        {
+            return std::make_shared<DataTypeNullable>(nested_type);
+        }
+        else
+        {
+            return nested_type;
+        }
+    }
+
+    //parse Spark type name to CH DataType
+    DataTypePtr parseType(const string & type, const bool isNullable)
+    {
+        DataTypePtr internal_type = nullptr;
+        auto & factory = DataTypeFactory::instance();
+        if ("boolean" == type)
+        {
+            internal_type = factory.get("UInt8");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("byte" == type)
+        {
+            internal_type = factory.get("Int8");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("short" == type)
+        {
+            internal_type = factory.get("Int16");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("integer" == type)
+        {
+            internal_type = factory.get("Int32");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("long" == type)
+        {
+            internal_type = factory.get("Int64");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("string" == type)
+        {
+            internal_type = factory.get("String");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("float" == type)
+        {
+            internal_type = factory.get("Float32");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("double" == type)
+        {
+            internal_type = factory.get("Float64");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("date" == type)
+        {
+            internal_type = factory.get("Date32");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else if ("timestamp" == type)
+        {
+            internal_type = factory.get("DateTime64(6)");
+            internal_type = wrapNullableType(isNullable, internal_type);
+        }
+        else
+            throw Exception(0, "doesn't support spark type {}", type);
+
+        return internal_type;
     }
 };
 
@@ -73,13 +134,12 @@ public:
     static jmethodID spark_row_iterator_nextBatch;
 
     // case 1: rows are batched (this is often directly converted from Block)
-    static std::unique_ptr<Block> convertSparkRowInfoToCHColumn(const SparkRowInfo & spark_row_info, const Block & header);
+    static std::unique_ptr<Block> convertSparkRowInfoToCHColumn(SparkRowInfo & spark_row_info, Block & header);
 
     // case 2: provided with a sequence of spark UnsafeRow, convert them to a Block
-    static Block *
-    convertSparkRowItrToCHColumn(jobject java_iter, vector<string> & names, vector<string> & types)
+    static Block* convertSparkRowItrToCHColumn(jobject java_iter, vector<string>& names, vector<string>& types, vector<bool>& isNullables)
     {
-        SparkRowToCHColumnHelper helper(names, types);
+        SparkRowToCHColumnHelper helper(names, types, isNullables);
 
         int attached;
         JNIEnv * env = JNIUtils::getENV(&attached);
@@ -93,110 +153,33 @@ public:
             while (len > 0)
             {
                 rows_buf_ptr += 4;
-                appendSparkRowToCHColumn(helper, rows_buf_ptr, len);
+                appendSparkRowToCHColumn(helper, reinterpret_cast<int64_t>(rows_buf_ptr), len);
                 rows_buf_ptr += len;
                 len = *(reinterpret_cast<int*>(rows_buf_ptr));
             }
             // Try to release reference.
             env->DeleteLocalRef(rows_buf);
         }
-        return getBlock(helper);
+        return getWrittenBlock(helper);
     }
 
-    static void freeBlock(Block * block)
-    {
-        delete block;
-        block = nullptr;
-    }
+    static void freeBlock(Block * block) { delete block; }
 
 private:
-    static void appendSparkRowToCHColumn(SparkRowToCHColumnHelper & helper, char * buffer, int32_t length);
-    static Block * getBlock(SparkRowToCHColumnHelper & helper);
+    static void appendSparkRowToCHColumn(SparkRowToCHColumnHelper & helper, int64_t address, int32_t size);
+    static Block* getWrittenBlock(SparkRowToCHColumnHelper & helper);
 };
 
-class VariableLengthDataReader
-{
-public:
-    explicit VariableLengthDataReader(const DataTypePtr& type_);
-    virtual ~VariableLengthDataReader() = default;
-
-    virtual Field read(const char * buffer, size_t length) const;
-    virtual StringRef readUnalignedBytes(const char * buffer, size_t length) const;
-
-private:
-    virtual Field readDecimal(const char * buffer, size_t length) const;
-    virtual Field readString(const char * buffer, size_t length) const;
-    virtual Field readArray(const char * buffer, size_t length) const;
-    virtual Field readMap(const char * buffer, size_t length) const;
-    virtual Field readStruct(const char * buffer, size_t length) const;
-
-    const DataTypePtr type;
-    const DataTypePtr type_without_nullable;
-    const WhichDataType which;
-};
-
-class FixedLengthDataReader
-{
-public:
-    explicit FixedLengthDataReader(const DB::DataTypePtr & type_);
-    virtual ~FixedLengthDataReader() = default;
-
-    virtual Field read(const char * buffer) const;
-    virtual StringRef unsafeRead(const char * buffer) const;
-
-private:
-    const DB::DataTypePtr type;
-    const DB::DataTypePtr type_without_nullable;
-    const DB::WhichDataType which;
-    size_t value_size;
-};
 class SparkRowReader
 {
 public:
-    explicit SparkRowReader(const DataTypes & field_types_)
-        : field_types(field_types_)
-        , num_fields(field_types.size())
-        , bit_set_width_in_bytes(calculateBitSetWidthInBytes(num_fields))
-        , field_offsets(num_fields)
-        , support_raw_datas(num_fields)
-        , fixed_length_data_readers(num_fields)
-        , variable_length_data_readers(num_fields)
+    bool isSet(int index) const
     {
-        for (auto ordinal = 0; ordinal < num_fields; ++ordinal)
-        {
-            const auto type_without_nullable = removeNullable(field_types[ordinal]);
-            field_offsets[ordinal] = bit_set_width_in_bytes + ordinal * 8L;
-            support_raw_datas[ordinal] = BackingDataLengthCalculator::isDataTypeSupportRawData(type_without_nullable);
-            if (BackingDataLengthCalculator::isFixedLengthDataType(type_without_nullable))
-                fixed_length_data_readers[ordinal] = std::make_shared<FixedLengthDataReader>(field_types[ordinal]);
-            else if (BackingDataLengthCalculator::isVariableLengthDataType(type_without_nullable))
-                variable_length_data_readers[ordinal] = std::make_shared<VariableLengthDataReader>(field_types[ordinal]);
-            else
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "SparkRowReader doesn't support type {}", field_types[ordinal]->getName());
-        }
-    }
-
-    const DataTypes & getFieldTypes() const
-    {
-        return field_types;
-    }
-
-    bool supportRawData(int ordinal) const
-    {
-        assertIndexIsValid(ordinal);
-        return support_raw_datas[ordinal];
-    }
-
-    std::shared_ptr<FixedLengthDataReader> getFixedLengthDataReader(int ordinal) const
-    {
-        assertIndexIsValid(ordinal);
-        return fixed_length_data_readers[ordinal];
-    }
-
-    std::shared_ptr<VariableLengthDataReader> getVariableLengthDataReader(int ordinal) const
-    {
-        assertIndexIsValid(ordinal);
-        return variable_length_data_readers[ordinal];
+        assert(index >= 0);
+        int64_t mask = 1 << (index & 63);
+        int64_t word_offset = base_offset + static_cast<int64_t>(index >> 6) * 8L;
+        int64_t word = *reinterpret_cast<int64_t *>(word_offset);
+        return (word & mask) != 0;
     }
 
     void assertIndexIsValid([[maybe_unused]] int index) const
@@ -208,153 +191,103 @@ public:
     bool isNullAt(int ordinal) const
     {
         assertIndexIsValid(ordinal);
-        return isBitSet(buffer, ordinal);
+        return isSet(ordinal);
     }
 
-    const char* getRawDataForFixedNumber(int ordinal) const
+    char* getRawDataForFixedNumber(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return reinterpret_cast<const char *>(getFieldOffset(ordinal));
+        return reinterpret_cast<char *>(getFieldOffset(ordinal));
     }
 
-    int8_t getByte(int ordinal) const
+    int8_t getByte(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const int8_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int8_t *>(getFieldOffset(ordinal));
     }
 
-    uint8_t getUnsignedByte(int ordinal) const
+    uint8_t getUnsignedByte(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const uint8_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint8_t *>(getFieldOffset(ordinal));
     }
 
-    int16_t getShort(int ordinal) const
+
+    int16_t getShort(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const int16_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int16_t *>(getFieldOffset(ordinal));
     }
 
-    uint16_t getUnsignedShort(int ordinal) const
+    uint16_t getUnsignedShort(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const uint16_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint16_t *>(getFieldOffset(ordinal));
     }
 
-    int32_t getInt(int ordinal) const
+    int32_t getInt(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const int32_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int32_t *>(getFieldOffset(ordinal));
     }
 
-    uint32_t getUnsignedInt(int ordinal) const
+    uint32_t getUnsignedInt(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const uint32_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<uint32_t *>(getFieldOffset(ordinal));
     }
 
-    int64_t getLong(int ordinal) const
+    int64_t getLong(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const int64_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<int64_t *>(getFieldOffset(ordinal));
     }
 
-    float_t getFloat(int ordinal) const
+    float_t getFloat(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const float_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<float_t *>(getFieldOffset(ordinal));
     }
 
-    double_t getDouble(int ordinal) const
+    double_t getDouble(int ordinal)
     {
         assertIndexIsValid(ordinal);
-        return *reinterpret_cast<const double_t *>(getFieldOffset(ordinal));
+        return *reinterpret_cast<double_t *>(getFieldOffset(ordinal));
     }
 
-    StringRef getString(int ordinal) const
+    StringRef getString(int ordinal)
     {
         assertIndexIsValid(ordinal);
         int64_t offset_and_size = getLong(ordinal);
         int32_t offset = static_cast<int32_t>(offset_and_size >> 32);
         int32_t size = static_cast<int32_t>(offset_and_size);
-        return StringRef(reinterpret_cast<const char *>(this->buffer + offset), size);
+        return StringRef(reinterpret_cast<char *>(this->base_offset + offset), size);
     }
 
-    int32_t getStringSize(int ordinal) const
+    int32_t getStringSize(int ordinal)
     {
         assertIndexIsValid(ordinal);
         return static_cast<int32_t>(getLong(ordinal));
     }
 
-    void pointTo(const char * buffer_, int32_t length_)
+    void pointTo(int64_t base_offset_, int32_t size_in_bytes_)
     {
-        buffer = buffer_;
-        length = length_;
+        this->base_offset = base_offset_;
+        this->size_in_bytes = size_in_bytes_;
     }
 
-    StringRef getStringRef(int ordinal) const
+    explicit SparkRowReader(int32_t numFields) : num_fields(numFields)
     {
-        assertIndexIsValid(ordinal);
-        if (!support_raw_datas[ordinal])
-            throw Exception(
-                ErrorCodes::UNKNOWN_TYPE, "SparkRowReader::getStringRef doesn't support type {}", field_types[ordinal]->getName());
-
-        if (isNullAt(ordinal))
-            return EMPTY_STRING_REF;
-
-        const auto & fixed_length_data_reader = fixed_length_data_readers[ordinal];
-        const auto & variable_length_data_reader = variable_length_data_readers[ordinal];
-        if (fixed_length_data_reader)
-            return std::move(fixed_length_data_reader->unsafeRead(getFieldOffset(ordinal)));
-        else if (variable_length_data_reader)
-        {
-            int64_t offset_and_size = 0;
-            memcpy(&offset_and_size, buffer + bit_set_width_in_bytes + ordinal * 8, 8);
-            const int64_t offset = BackingDataLengthCalculator::extractOffset(offset_and_size);
-            const int64_t size = BackingDataLengthCalculator::extractSize(offset_and_size);
-            return std::move(variable_length_data_reader->readUnalignedBytes(buffer + offset, size));
-        }
-        else
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "SparkRowReader::getStringRef doesn't support type {}", field_types[ordinal]->getName());
-    }
-
-    Field getField(int ordinal) const
-    {
-        assertIndexIsValid(ordinal);
-
-        if (isNullAt(ordinal))
-            return std::move(Null{});
-
-        const auto & fixed_length_data_reader = fixed_length_data_readers[ordinal];
-        const auto & variable_length_data_reader = variable_length_data_readers[ordinal];
-
-        if (fixed_length_data_reader)
-            return std::move(fixed_length_data_reader->read(getFieldOffset(ordinal)));
-        else if (variable_length_data_reader)
-        {
-            int64_t offset_and_size = 0;
-            memcpy(&offset_and_size, buffer + bit_set_width_in_bytes + ordinal * 8, 8);
-            const int64_t offset = BackingDataLengthCalculator::extractOffset(offset_and_size);
-            const int64_t size = BackingDataLengthCalculator::extractSize(offset_and_size);
-            return std::move(variable_length_data_reader->read(buffer + offset, size));
-        }
-        else
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "SparkRowReader::getField doesn't support type {}", field_types[ordinal]->getName());
+        this->bit_set_width_in_bytes = local_engine::calculateBitSetWidthInBytes(numFields);
     }
 
 private:
-    const char * getFieldOffset(int ordinal) const { return buffer + field_offsets[ordinal]; }
+    int64_t getFieldOffset(int ordinal) const { return base_offset + bit_set_width_in_bytes + ordinal * 8L; }
 
-    const DataTypes field_types;
-    const int32_t num_fields;
-    const int32_t bit_set_width_in_bytes;
-    std::vector<int64_t> field_offsets;
-    std::vector<bool> support_raw_datas;
-    std::vector<std::shared_ptr<FixedLengthDataReader>> fixed_length_data_readers;
-    std::vector<std::shared_ptr<VariableLengthDataReader>> variable_length_data_readers;
-
-    const char * buffer;
-    int32_t length;
+    int64_t base_offset;
+    [[maybe_unused]] int32_t num_fields;
+    int32_t size_in_bytes;
+    int32_t bit_set_width_in_bytes;
 };
 
 }

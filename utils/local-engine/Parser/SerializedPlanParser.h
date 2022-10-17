@@ -78,9 +78,6 @@ struct QueryContext
     std::shared_ptr<CustomStorageMergeTree> custom_storage_merge_tree;
 };
 
-DataTypePtr wrapNullableType(substrait::Type_Nullability nullable, DataTypePtr nested_type);
-DataTypePtr wrapNullableType(bool nullable, DataTypePtr nested_type);
-
 class SerializedPlanParser
 {
 public:
@@ -135,8 +132,6 @@ private:
     void wrapNullable(std::vector<String> columns, ActionsDAGPtr actionsDag);
     std::string getUniqueName(const std::string & name) { return name + "_" + std::to_string(name_no++); }
 
-    static std::pair<DataTypePtr, Field> parseLiteral(const substrait::Expression_Literal & literal);
-
     static Aggregator::Params getAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
     {
         Settings settings;
@@ -174,7 +169,7 @@ private:
 
 struct SparkBuffer
 {
-    char * address;
+    uint8_t * address;
     size_t size;
 };
 

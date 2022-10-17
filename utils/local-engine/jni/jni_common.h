@@ -2,7 +2,6 @@
 #include <exception>
 #include <stdexcept>
 #include <jni.h>
-#include <string>
 #include <Common/Exception.h>
 
 namespace DB
@@ -24,8 +23,6 @@ jmethodID GetMethodID(JNIEnv* env, jclass this_class, const char* name, const ch
 jmethodID GetStaticMethodID(JNIEnv * env, jclass this_class, const char * name, const char * sig);
 
 jstring charTojstring(JNIEnv* env, const char* pat);
-
-jbyteArray stringTojbyteArray(JNIEnv* env, const std::string & str);
 
 #define LOCAL_ENGINE_JNI_JMETHOD_START
 #define LOCAL_ENGINE_JNI_JMETHOD_END(env) \

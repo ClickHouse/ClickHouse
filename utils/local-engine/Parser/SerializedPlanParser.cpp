@@ -1,5 +1,4 @@
 #include <base/logger_useful.h>
-#include <base/Decimal.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Builder/BroadCastJoinBuilder.h>
@@ -11,12 +10,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/registerFunctions.h>
 #include <Interpreters/ActionsDAG.h>
@@ -59,7 +54,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_DATA_PART;
     extern const int UNKNOWN_FUNCTION;
-    extern const int CANNOT_PARSE_PROTOBUF_SCHEMA;
 }
 }
 
@@ -78,10 +72,71 @@ void join(ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
     }
 }
 
-bool isTypeMatched(const substrait::Type & substrait_type, const DataTypePtr & ch_type)
+std::string typeName(const substrait::Type & type)
 {
-    const auto parsed_ch_type = SerializedPlanParser::parseType(substrait_type);
-    return parsed_ch_type->equals(*ch_type);
+    if (type.has_string())
+    {
+        return "String";
+    }
+    else if (type.has_i8())
+    {
+        return "I8";
+    }
+    else if (type.has_i16())
+    {
+        return "I16";
+    }
+    else if (type.has_i32())
+    {
+        return "I32";
+    }
+    else if (type.has_i64())
+    {
+        return "I64";
+    }
+    else if (type.has_fp32())
+    {
+        return "FP32";
+    }
+    else if (type.has_fp64())
+    {
+        return "FP64";
+    }
+    else if (type.has_bool_())
+    {
+        return "Boolean";
+    }
+    else if (type.has_date())
+    {
+        return "Date";
+    }
+    else if (type.has_timestamp())
+    {
+        return "Timestamp";
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "unknown type {}", magic_enum::enum_name(type.kind_case()));
+}
+
+bool isTypeSame(const substrait::Type & type, DataTypePtr data_type)
+{
+    static const std::map<std::string, std::string> type_mapping
+        = {{"I8", "Int8"},
+           {"I16", "Int16"},
+           {"I32", "Int32"},
+           {"I64", "Int64"},
+           {"FP32", "Float32"},
+           {"FP64", "Float64"},
+           {"Date", "Date32"},
+           {"Timestamp", "DateTime64(6)"},
+           {"String", "String"},
+           {"Boolean", "UInt8"}};
+
+    std::string type_name = typeName(type);
+    if (!type_mapping.contains(type_name))
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", type_name);
+
+    return type_mapping.at(type_name) == data_type->getName();
 }
 
 std::string getCastFunction(const substrait::Type & type)
@@ -130,8 +185,6 @@ std::string getCastFunction(const substrait::Type & type)
     }
     else
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support cast type {}", type.DebugString());
-
-    /// TODO(taiyang-li): implement cast functions of other types
 
     return ch_function_name;
 }
@@ -257,116 +310,77 @@ Block SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struc
     return Block(*std::move(internal_cols));
 }
 
-DataTypePtr wrapNullableType(substrait::Type_Nullability nullable, DataTypePtr nested_type)
+static DataTypePtr wrapNullableType(substrait::Type_Nullability nullable, DataTypePtr nested_type)
 {
-    return wrapNullableType(nullable == substrait::Type_Nullability_NULLABILITY_NULLABLE, nested_type);
-}
-
-DataTypePtr wrapNullableType(bool nullable, DataTypePtr nested_type)
-{
-    if (nullable)
+    if (nullable == substrait::Type_Nullability_NULLABILITY_NULLABLE)
+    {
         return std::make_shared<DataTypeNullable>(nested_type);
+    }
     else
+    {
         return nested_type;
+    }
 }
 
-DataTypePtr SerializedPlanParser::parseType(const substrait::Type & substrait_type)
+DataTypePtr SerializedPlanParser::parseType(const substrait::Type & type)
 {
-    DataTypePtr ch_type;
-    if (substrait_type.has_bool_())
+    DataTypePtr internal_type = nullptr;
+    auto & factory = DataTypeFactory::instance();
+    if (type.has_bool_())
     {
-        ch_type = std::make_shared<DataTypeUInt8>();
-        ch_type = wrapNullableType(substrait_type.bool_().nullability(), ch_type);
+        internal_type = factory.get("UInt8");
+        internal_type = wrapNullableType(type.bool_().nullability(), internal_type);
     }
-    else if (substrait_type.has_i8())
+    else if (type.has_i8())
     {
-        ch_type = std::make_shared<DataTypeInt8>();
-        ch_type = wrapNullableType(substrait_type.i8().nullability(), ch_type);
+        internal_type = factory.get("Int8");
+        internal_type = wrapNullableType(type.i8().nullability(), internal_type);
     }
-    else if (substrait_type.has_i16())
+    else if (type.has_i16())
     {
-        ch_type = std::make_shared<DataTypeInt16>();
-        ch_type = wrapNullableType(substrait_type.i16().nullability(), ch_type);
+        internal_type = factory.get("Int16");
+        internal_type = wrapNullableType(type.i16().nullability(), internal_type);
     }
-    else if (substrait_type.has_i32())
+    else if (type.has_i32())
     {
-        ch_type = std::make_shared<DataTypeInt32>();
-        ch_type = wrapNullableType(substrait_type.i32().nullability(), ch_type);
+        internal_type = factory.get("Int32");
+        internal_type = wrapNullableType(type.i32().nullability(), internal_type);
     }
-    else if (substrait_type.has_i64())
+    else if (type.has_i64())
     {
-        ch_type = std::make_shared<DataTypeInt64>();
-        ch_type = wrapNullableType(substrait_type.i64().nullability(), ch_type);
+        internal_type = factory.get("Int64");
+        internal_type = wrapNullableType(type.i64().nullability(), internal_type);
     }
-    else if (substrait_type.has_string() || substrait_type.has_binary())
+    else if (type.has_string())
     {
-        ch_type = std::make_shared<DataTypeString>();
-        ch_type = wrapNullableType(substrait_type.string().nullability(), ch_type);
+        internal_type = factory.get("String");
+        internal_type = wrapNullableType(type.string().nullability(), internal_type);
     }
-    else if (substrait_type.has_fp32())
+    else if (type.has_fp32())
     {
-        ch_type = std::make_shared<DataTypeFloat32>();
-        ch_type = wrapNullableType(substrait_type.fp32().nullability(), ch_type);
+        internal_type = factory.get("Float32");
+        internal_type = wrapNullableType(type.fp32().nullability(), internal_type);
     }
-    else if (substrait_type.has_fp64())
+    else if (type.has_fp64())
     {
-        ch_type = std::make_shared<DataTypeFloat64>();
-        ch_type = wrapNullableType(substrait_type.fp64().nullability(), ch_type);
+        internal_type = factory.get("Float64");
+        internal_type = wrapNullableType(type.fp64().nullability(), internal_type);
     }
-    else if (substrait_type.has_timestamp())
+    else if (type.has_date())
     {
-        ch_type = std::make_shared<DataTypeDateTime64>(6);
-        ch_type = wrapNullableType(substrait_type.timestamp().nullability(), ch_type);
+        internal_type = factory.get("Date32");
+        internal_type = wrapNullableType(type.date().nullability(), internal_type);
     }
-    else if (substrait_type.has_date())
+    else if (type.has_timestamp())
     {
-        ch_type = std::make_shared<DataTypeDate32>();
-        ch_type = wrapNullableType(substrait_type.date().nullability(), ch_type);
-    }
-    else if (substrait_type.has_decimal())
-    {
-        UInt32 precision = substrait_type.decimal().precision();
-        UInt32 scale = substrait_type.decimal().scale();
-        if (precision <= DataTypeDecimal32::maxPrecision())
-            ch_type = std::make_shared<DataTypeDecimal32>(precision, scale);
-        else if (precision <= DataTypeDecimal64::maxPrecision())
-            ch_type = std::make_shared<DataTypeDecimal64>(precision, scale);
-        else if (precision <= DataTypeDecimal128::maxPrecision())
-            ch_type = std::make_shared<DataTypeDecimal128>(precision, scale);
-        else
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support decimal type with precision {}", precision);
-
-        ch_type = wrapNullableType(substrait_type.decimal().nullability(), ch_type);
-    }
-    else if (substrait_type.has_struct_())
-    {
-        assert(substrait_type.struct_().nullability() == substrait::Type_Nullability_NULLABILITY_REQUIRED);
-
-        DataTypes ch_field_types(substrait_type.struct_().types().size());
-        for (size_t i = 0; i < ch_field_types.size(); ++i)
-            ch_field_types[i] = std::move(parseType(substrait_type.struct_().types()[i]));
-        ch_type = std::make_shared<DataTypeTuple>(ch_field_types);
-    }
-    else if (substrait_type.has_list())
-    {
-        assert(substrait_type.struct_().nullability() == substrait::Type_Nullability_NULLABILITY_REQUIRED);
-
-        auto ch_nested_type = parseType(substrait_type.list().type());
-        ch_type = std::make_shared<DataTypeArray>(ch_nested_type);
-    }
-    else if (substrait_type.has_map())
-    {
-        assert(substrait_type.map().nullability() == substrait::Type_Nullability_NULLABILITY_REQUIRED);
-
-        auto ch_key_type = parseType(substrait_type.map().key());
-        auto ch_val_type = parseType(substrait_type.map().value());
-        ch_type = std::make_shared<DataTypeMap>(ch_key_type, ch_val_type);
+        internal_type = factory.get("DateTime64(6)");
+        internal_type = wrapNullableType(type.timestamp().nullability(), internal_type);
     }
     else
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support type {}", substrait_type.DebugString());
-
-    /// TODO(taiyang-li): consider Time/IntervalYear/IntervalDay/TimestampTZ/UUID/FixedChar/VarChar/FixedBinary/UserDefined
-    return std::move(ch_type);
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "doesn't support type {}", type.DebugString());
+    }
+    return internal_type;
 }
 QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
 {
@@ -567,7 +581,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
 
                 for (size_t i = 0; i < measure_positions.size(); i++)
                 {
-                    if (!isTypeMatched(measure_types[i], source[measure_positions[i]].type))
+                    if (!isTypeSame(measure_types[i], source[measure_positions[i]].type))
                     {
                         auto target_type = parseType(measure_types[i]);
                         target[measure_positions[i]].type = target_type;
@@ -796,8 +810,8 @@ std::string SerializedPlanParser::getFunctionName(const std::string & function_s
 {
     const auto & output_type = function.output_type();
     auto args = function.arguments();
-    auto pos = function_signature.find(':');
-    auto function_name = function_signature.substr(0, pos);
+    auto function_name_idx = function_signature.find(':');
+    auto function_name = function_signature.substr(0, function_name_idx);
     if (!SCALAR_FUNCTIONS.contains(function_name))
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unsupported function {}", function_name);
 
@@ -889,20 +903,18 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
         {
             required_columns.emplace_back(args[0]->result_name);
         }
-
         if (function_signature.find("extract:", 0) != function_signature.npos)
         {
             // delete the first arg
             args.erase(args.begin());
         }
-
         auto function_builder = FunctionFactory::instance().get(function_name, this->context);
         std::string args_name;
         join(args, ',', args_name);
         result_name = function_name + "(" + args_name + ")";
         const auto * function_node = &actions_dag->addFunction(function_builder, args, result_name);
         result_node = function_node;
-        if (!isTypeMatched(rel.scalar_function().output_type(), function_node->result_type))
+        if (!isTypeSame(rel.scalar_function().output_type(), function_node->result_type))
         {
             auto cast_function = getCastFunction(rel.scalar_function().output_type());
             DB::ActionsDAG::NodeRawConstPtrs cast_args({function_node});
@@ -946,151 +958,234 @@ SerializedPlanParser::toFunctionNode(ActionsDAGPtr action_dag, const String & fu
     return function_node;
 }
 
-std::pair<DataTypePtr, Field> SerializedPlanParser::parseLiteral(const substrait::Expression_Literal & literal)
-{
-    DataTypePtr type;
-    Field field;
-
-    switch (literal.literal_type_case())
-    {
-        case substrait::Expression_Literal::kFp64: {
-            type = std::make_shared<DataTypeFloat64>();
-            field = literal.fp64();
-            break;
-        }
-        case substrait::Expression_Literal::kFp32: {
-            type = std::make_shared<DataTypeFloat32>();
-            field = literal.fp32();
-            break;
-        }
-        case substrait::Expression_Literal::kString: {
-            type = std::make_shared<DataTypeString>();
-            field = literal.string();
-            break;
-        }
-        case substrait::Expression_Literal::kBinary: {
-            type = std::make_shared<DataTypeString>();
-            field = literal.binary();
-            break;
-        }
-        case substrait::Expression_Literal::kI64: {
-            type = std::make_shared<DataTypeInt64>();
-            field = literal.i64();
-            break;
-        }
-        case substrait::Expression_Literal::kI32: {
-            type = std::make_shared<DataTypeInt32>();
-            field = literal.i32();
-            break;
-        }
-        case substrait::Expression_Literal::kBoolean: {
-            type = std::make_shared<DataTypeUInt8>();
-            field = literal.boolean() ? UInt8(1) : UInt8(0);
-            break;
-        }
-        case substrait::Expression_Literal::kI16: {
-            type = std::make_shared<DataTypeInt16>();
-            field = literal.i16();
-            break;
-        }
-        case substrait::Expression_Literal::kI8: {
-            type = std::make_shared<DataTypeInt8>();
-            field = literal.i8();
-            break;
-        }
-        case substrait::Expression_Literal::kDate: {
-            type = std::make_shared<DataTypeDate32>();
-            field = literal.date();
-            break;
-        }
-        case substrait::Expression_Literal::kTimestamp: {
-            type = std::make_shared<DataTypeDateTime64>(6);
-            field = DecimalField<DateTime64>(literal.timestamp(), 6);
-            break;
-        }
-        case substrait::Expression_Literal::kDecimal: {
-            UInt32 precision = literal.decimal().precision();
-            UInt32 scale = literal.decimal().scale();
-            const auto & bytes = literal.decimal().value();
-
-            if (precision <= DataTypeDecimal32::maxPrecision())
-            {
-                type = std::make_shared<DataTypeDecimal32>(precision, scale);
-                auto value = *reinterpret_cast<const Int32 *>(bytes.data());
-                field = DecimalField<Decimal32>(value, scale);
-            }
-            else if (precision <= DataTypeDecimal64::maxPrecision())
-            {
-                type = std::make_shared<DataTypeDecimal64>(precision, scale);
-                auto value = *reinterpret_cast<const Int64 *>(bytes.data());
-                field = DecimalField<Decimal64>(value, scale);
-            }
-            else if (precision <= DataTypeDecimal128::maxPrecision())
-            {
-                type = std::make_shared<DataTypeDecimal128>(precision, scale);
-                auto value = *reinterpret_cast<const Int128 *>(bytes.data());
-                field = DecimalField<Decimal128>(value, scale);
-            }
-            else
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support decimal type with precision {}", precision);
-            break;
-        }
-        /// TODO(taiyang-li) Other type: Struct/Map/List
-        case substrait::Expression_Literal::kList: {
-            /// TODO(taiyang-li) Implement empty list
-            if (literal.has_empty_list())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list not support!");
-
-            DataTypePtr first_type;
-            std::tie(first_type, std::ignore) = parseLiteral(literal.list().values(0));
-
-            size_t list_len = literal.list().values_size();
-            Array array(list_len);
-            for (size_t i = 0; i < list_len; ++i)
-            {
-                auto type_and_field = std::move(parseLiteral(literal.list().values(i)));
-                if (!first_type->equals(*type_and_field.first))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Literal list type mismatch:{} and {}",
-                        first_type->getName(),
-                        type_and_field.first->getName());
-                array[i] = std::move(type_and_field.second);
-            }
-
-            type = std::make_shared<DataTypeArray>(first_type);
-            field = std::move(array);
-            break;
-        }
-        case substrait::Expression_Literal::kNull: {
-            type = parseType(literal.null());
-            field = std::move(Field{});
-            break;
-        }
-        default: {
-            throw Exception(
-                ErrorCodes::UNKNOWN_TYPE, "Unsupported spark literal type {}", magic_enum::enum_name(literal.literal_type_case()));
-        }
-    }
-    return std::make_pair(std::move(type), std::move(field));
-}
-
 const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr action_dag, const substrait::Expression & rel)
 {
-    auto add_column = [&](const DataTypePtr & type, const Field & field) -> auto
-    {
-        return &action_dag->addColumn(ColumnWithTypeAndName(type->createColumnConst(1, field), type, getUniqueName(toString(field))));
-    };
-
     switch (rel.rex_type_case())
     {
         case substrait::Expression::RexTypeCase::kLiteral: {
-            DataTypePtr type;
-            Field field;
-            std::tie(type, field) = parseLiteral(rel.literal());
-            return add_column(type, field);
-        }
+            const auto & literal = rel.literal();
+            switch (literal.literal_type_case())
+            {
+                case substrait::Expression_Literal::kFp64: {
+                    auto type = std::make_shared<DataTypeFloat64>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.fp64()), type, getUniqueName(std::to_string(literal.fp64()))));
+                }
+                case substrait::Expression_Literal::kFp32: {
+                    auto type = std::make_shared<DataTypeFloat32>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.fp32()), type, getUniqueName(std::to_string(literal.fp32()))));
+                }
+                case substrait::Expression_Literal::kString: {
+                    auto type = std::make_shared<DataTypeString>();
+                    return &action_dag->addColumn(
+                        ColumnWithTypeAndName(type->createColumnConst(1, literal.string()), type, getUniqueName(literal.string())));
+                }
+                case substrait::Expression_Literal::kI64: {
+                    auto type = std::make_shared<DataTypeInt64>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.i64()), type, getUniqueName(std::to_string(literal.i64()))));
+                }
+                case substrait::Expression_Literal::kI32: {
+                    auto type = std::make_shared<DataTypeInt32>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.i32()), type, getUniqueName(std::to_string(literal.i32()))));
+                }
+                case substrait::Expression_Literal::kBoolean: {
+                    auto type = std::make_shared<DataTypeUInt8>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.boolean() ? 1 : 0), type, getUniqueName(std::to_string(literal.boolean()))));
+                }
+                case substrait::Expression_Literal::kI16: {
+                    auto type = std::make_shared<DataTypeInt16>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.i16()), type, getUniqueName(std::to_string(literal.i16()))));
+                }
+                case substrait::Expression_Literal::kI8: {
+                    auto type = std::make_shared<DataTypeInt8>();
+                    return &action_dag->addColumn(
+                        ColumnWithTypeAndName(type->createColumnConst(1, literal.i8()), type, getUniqueName(std::to_string(literal.i8()))));
+                }
+                case substrait::Expression_Literal::kDate: {
+                    auto type = std::make_shared<DataTypeDate32>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.date()), type, getUniqueName(std::to_string(literal.date()))));
+                }
+                case substrait::Expression_Literal::kTimestamp: {
+                    auto type = std::make_shared<DataTypeDateTime64>(6);
+                    auto field = DecimalField<DateTime64>(literal.timestamp(), 6);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, field), type, getUniqueName(std::to_string(literal.timestamp()))));
+                }
+                case substrait::Expression_Literal::kList: {
+                    SizeLimits limit;
+                    if (literal.has_empty_list())
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
+                    }
+                    MutableColumnPtr values;
+                    DataTypePtr type;
+                    auto first_value = literal.list().values(0);
+                    if (first_value.has_boolean())
+                    {
+                        type = std::make_shared<DataTypeUInt8>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).boolean() ? 1 : 0);
+                        }
+                    }
+                    else if (first_value.has_i8())
+                    {
+                        type = std::make_shared<DataTypeInt8>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i8());
+                        }
+                    }
+                    else if (first_value.has_i16())
+                    {
+                        type = std::make_shared<DataTypeInt16>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i16());
+                        }
+                    }
+                    else if (first_value.has_i32())
+                    {
+                        type = std::make_shared<DataTypeInt32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i32());
+                        }
+                    }
+                    else if (first_value.has_i64())
+                    {
+                        type = std::make_shared<DataTypeInt64>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).i64());
+                        }
+                    }
+                    else if (first_value.has_fp32())
+                    {
+                        type = std::make_shared<DataTypeFloat32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).fp32());
+                        }
+                    }
+                    else if (first_value.has_fp64())
+                    {
+                        type = std::make_shared<DataTypeFloat64>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).fp64());
+                        }
+                    }
+                    else if (first_value.has_date())
+                    {
+                        type = std::make_shared<DataTypeDate32>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).date());
+                        }
+                    }
+                    else if (first_value.has_timestamp())
+                    {
+                        type = std::make_shared<DataTypeDateTime64>(6);
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            auto field = DecimalField<DateTime64>(literal.list().values(i).timestamp(), 6);
+                            values->insert(literal.list().values(i).timestamp());
+                        }
+                    }
+                    else if (first_value.has_string())
+                    {
+                        type = std::make_shared<DataTypeString>();
+                        values = type->createColumn();
+                        for (int i = 0; i < literal.list().values_size(); ++i)
+                        {
+                            values->insert(literal.list().values(i).string());
+                        }
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "unsupported literal list type. {}",
+                            magic_enum::enum_name(first_value.literal_type_case()));
+                    }
+                    auto set = std::make_shared<Set>(limit, true, false);
+                    Block values_block;
+                    auto name = getUniqueName("__set");
+                    values_block.insert(ColumnWithTypeAndName(std::move(values), type, name));
+                    set->setHeader(values_block.getColumnsWithTypeAndName());
+                    set->insertFromBlock(values_block.getColumnsWithTypeAndName());
+                    set->finishInsert();
 
+                    auto arg = ColumnSet::create(set->getTotalRowCount(), set);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name));
+                }
+                case substrait::Expression_Literal::kNull: {
+                    DataTypePtr nested_type;
+                    if (literal.null().has_i8())
+                    {
+                        nested_type = std::make_shared<DataTypeInt8>();
+                    }
+                    else if (literal.null().has_i16())
+                    {
+                        nested_type = std::make_shared<DataTypeInt16>();
+                    }
+                    else if (literal.null().has_i32())
+                    {
+                        nested_type = std::make_shared<DataTypeInt32>();
+                    }
+                    else if (literal.null().has_i64())
+                    {
+                        nested_type = std::make_shared<DataTypeInt64>();
+                    }
+                    else if (literal.null().has_bool_())
+                    {
+                        nested_type = std::make_shared<DataTypeUInt8>();
+                    }
+                    else if (literal.null().has_fp32())
+                    {
+                        nested_type = std::make_shared<DataTypeFloat32>();
+                    }
+                    else if (literal.null().has_fp64())
+                    {
+                        nested_type = std::make_shared<DataTypeFloat64>();
+                    }
+                    else if (literal.null().has_date())
+                    {
+                        nested_type = std::make_shared<DataTypeDate32>();
+                    }
+                    else if (literal.null().has_timestamp())
+                    {
+                        nested_type = std::make_shared<DataTypeDateTime64>(6);
+                    }
+                    else if (literal.null().has_string())
+                    {
+                        nested_type = std::make_shared<DataTypeString>();
+                    }
+                    auto type = std::make_shared<DataTypeNullable>(nested_type);
+                    return &action_dag->addColumn(ColumnWithTypeAndName(type->createColumnConst(1, Field()), type, getUniqueName("null")));
+                }
+                default: {
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TYPE, "unsupported constant type {}", magic_enum::enum_name(literal.literal_type_case()));
+                }
+            }
+        }
         case substrait::Expression::RexTypeCase::kSelection: {
             if (!rel.selection().has_direct_reference() || !rel.selection().direct_reference().has_struct_field())
             {
@@ -1099,7 +1194,6 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field()];
             return action_dag->tryFindInIndex(field->result_name);
         }
-
         case substrait::Expression::RexTypeCase::kCast: {
             if (!rel.cast().has_type() || !rel.cast().has_input())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Doesn't have type or input in cast node.");
@@ -1130,7 +1224,6 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             action_dag->addOrReplaceInIndex(*function_node);
             return function_node;
         }
-
         case substrait::Expression::RexTypeCase::kIfThen: {
             const auto & if_then = rel.if_then();
             auto function_multi_if = DB::FunctionFactory::instance().get("multiIf", this->context);
@@ -1165,85 +1258,118 @@ const ActionsDAG::Node * SerializedPlanParser::parseArgument(ActionsDAGPtr actio
             action_dag->addOrReplaceInIndex(*function_node);
             return function_node;
         }
-
         case substrait::Expression::RexTypeCase::kScalarFunction: {
             std::string result;
             std::vector<String> useless;
             return parseFunctionWithDAG(rel, result, useless, action_dag, false);
         }
-
         case substrait::Expression::RexTypeCase::kSingularOrList: {
             DB::ActionsDAG::NodeRawConstPtrs args;
             args.emplace_back(parseArgument(action_dag, rel.singular_or_list().value()));
-
-            /// options should be non-empty and literals
             const auto & options = rel.singular_or_list().options();
-            if (options.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty SingularOrList not supported");
-            if (!options[0].has_literal())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Options of SingularOrList must have literal type");
-
-            DataTypePtr elem_type;
-            std::tie(elem_type, std::ignore) = parseLiteral(options[0].literal());
-
-            size_t options_len = options.size();
-            MutableColumnPtr elem_column = elem_type->createColumn();
-            elem_column->reserve(options_len);
-            for (size_t i = 0; i < options_len; ++i)
-            {
-                if (!options[i].has_literal())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "in expression values must be the literal!");
-
-                auto type_and_field = std::move(parseLiteral(options[i].literal()));
-                if (!elem_type->equals(*type_and_field.first))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "SingularOrList options type mismatch:{} and {}",
-                        elem_type->getName(),
-                        type_and_field.first->getName());
-
-                elem_column->insert(type_and_field.second);
-            }
-
-            MutableColumns elem_columns;
-            elem_columns.emplace_back(std::move(elem_column));
-
-            auto name = getUniqueName("__set");
-            Block elem_block;
-            elem_block.insert(ColumnWithTypeAndName(nullptr, elem_type, name));
-            elem_block.setColumns(std::move(elem_columns));
 
             SizeLimits limit;
-            auto elem_set = std::make_shared<Set>(limit, true, false);
-            elem_set->setHeader(elem_block.getColumnsWithTypeAndName());
-            elem_set->insertFromBlock(elem_block.getColumnsWithTypeAndName());
-            elem_set->finishInsert();
+            if (options.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "empty list not support!");
+            }
+            ColumnPtr values;
+            DataTypePtr type;
+            if (!options[0].has_literal())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "in expression values must be the literal!");
+            }
+            auto first_value = options[0].literal();
+            using FieldGetter = std::function<Field (substrait::Expression_Literal)>;
+            auto fill_values = [options](DataTypePtr type, FieldGetter getter) -> ColumnPtr {
+                auto values = type->createColumn();
+                for (const auto & v : options)
+                {
+                    values->insert(getter(v.literal()));
+                }
+                return values;
+            };
+            if (first_value.has_boolean())
+            {
+                type = std::make_shared<DataTypeUInt8>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.boolean() ? 1 : 0;});
+            }
+            else if (first_value.has_i8())
+            {
+                type = std::make_shared<DataTypeInt8>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i8();});
+            }
+            else if (first_value.has_i16())
+            {
+                type = std::make_shared<DataTypeInt16>();
+                values = type->createColumn();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i16();});
+            }
+            else if (first_value.has_i32())
+            {
+                type = std::make_shared<DataTypeInt32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i32();});
+            }
+            else if (first_value.has_i64())
+            {
+                type = std::make_shared<DataTypeInt64>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.i64();});
+            }
+            else if (first_value.has_fp32())
+            {
+                type = std::make_shared<DataTypeFloat32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.fp32();});
+            }
+            else if (first_value.has_fp64())
+            {
+                type = std::make_shared<DataTypeFloat64>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.fp64();});
+            }
+            else if (first_value.has_date())
+            {
+                type = std::make_shared<DataTypeDate32>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.date();});
+            }
+            else if (first_value.has_string())
+            {
+                type = std::make_shared<DataTypeString>();
+                values = fill_values(type, [](substrait::Expression_Literal expr) -> Field {return expr.string();});
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "unsupported literal list type. {}",
+                    magic_enum::enum_name(first_value.literal_type_case()));
+            }
+            auto set = std::make_shared<Set>(limit, true, false);
+            Block values_block;
+            auto name = getUniqueName("__set");
+            values_block.insert(ColumnWithTypeAndName(values, type, name));
+            set->setHeader(values_block.getColumnsWithTypeAndName());
+            set->insertFromBlock(values_block.getColumnsWithTypeAndName());
+            set->finishInsert();
 
-            auto arg = ColumnSet::create(elem_set->getTotalRowCount(), elem_set);
+            auto arg = ColumnSet::create(set->getTotalRowCount(), set);
             args.emplace_back(&action_dag->addColumn(ColumnWithTypeAndName(std::move(arg), std::make_shared<DataTypeSet>(), name)));
 
             const auto * function_node = toFunctionNode(action_dag, "in", args);
             action_dag->addOrReplaceInIndex(*function_node);
             return function_node;
         }
-
-        default:
+        default: {
             throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported spark expression type {} : {}",
-                magic_enum::enum_name(rel.rex_type_case()),
-                rel.DebugString());
+                ErrorCodes::BAD_ARGUMENTS, "unsupported arg type {} : {}", magic_enum::enum_name(rel.rex_type_case()), rel.DebugString());
+        }
     }
 }
 
 QueryPlanPtr SerializedPlanParser::parse(const std::string & plan)
 {
     auto plan_ptr = std::make_unique<substrait::Plan>();
-    auto ok = plan_ptr->ParseFromString(plan);
-    if (!ok)
-        throw Exception(ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA, "Parse substrait::Plan from string failed");
-
-    return std::move(parse(std::move(plan_ptr)));
+    plan_ptr->ParseFromString(plan);
+    LOG_DEBUG(&Poco::Logger::get("SerializedPlanParser"), "parse plan \n{}", plan_ptr->DebugString());
+    return parse(std::move(plan_ptr));
 }
 void SerializedPlanParser::initFunctionEnv()
 {

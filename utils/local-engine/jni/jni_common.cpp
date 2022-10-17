@@ -66,12 +66,4 @@ jstring charTojstring(JNIEnv* env, const char* pat) {
     env->DeleteLocalRef(encoding);
     return result;
 }
-
-jbyteArray stringTojbyteArray(JNIEnv* env, const std::string & str) {
-    const auto * ptr = reinterpret_cast<const jbyte *>(str.c_str()) ;
-    jbyteArray jarray = env->NewByteArray(str.size());
-    env->SetByteArrayRegion(jarray, 0, str.size(), ptr);
-    return jarray;
-}
-
 }

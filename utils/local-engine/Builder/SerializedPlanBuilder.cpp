@@ -1,24 +1,7 @@
 #include "SerializedPlanBuilder.h"
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Functions/FunctionHelpers.h>
-
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-}
-}
 
 namespace dbms
 {
-
-using namespace DB;
 SchemaPtr SerializedSchemaBuilder::build()
 {
     for (const auto & [name, type] : this->type_map)
@@ -188,11 +171,9 @@ std::unique_ptr<substrait::Plan> SerializedPlanBuilder::build()
 {
     return std::move(this->plan);
 }
-
 SerializedPlanBuilder::SerializedPlanBuilder() : plan(std::make_unique<substrait::Plan>())
 {
 }
-
 SerializedPlanBuilder & SerializedPlanBuilder::aggregate(std::vector<int32_t>  /*keys*/, std::vector<substrait::AggregateRel_Measure *> aggregates)
 {
     substrait::Rel * rel = new substrait::Rel();
@@ -207,7 +188,6 @@ SerializedPlanBuilder & SerializedPlanBuilder::aggregate(std::vector<int32_t>  /
     this->prev_rel = rel;
     return *this;
 }
-
 SerializedPlanBuilder & SerializedPlanBuilder::project(std::vector<substrait::Expression *> projections)
 {
     substrait::Rel * project = new substrait::Rel();
@@ -219,94 +199,6 @@ SerializedPlanBuilder & SerializedPlanBuilder::project(std::vector<substrait::Ex
     this->prev_rel = project;
     return *this;
 }
-
-std::shared_ptr<substrait::Type> SerializedPlanBuilder::buildType(const DB::DataTypePtr & ch_type)
-{
-    const auto * ch_type_nullable = checkAndGetDataType<DataTypeNullable>(ch_type.get());
-    const bool is_nullable = (ch_type_nullable != nullptr);
-    auto type_nullability
-        = is_nullable ? substrait::Type_Nullability_NULLABILITY_NULLABLE : substrait::Type_Nullability_NULLABILITY_REQUIRED;
-
-    const auto ch_type_without_nullable = DB::removeNullable(ch_type);
-    const DB::WhichDataType which(ch_type_without_nullable);
-
-    auto res = std::make_shared<substrait::Type>();
-    if (which.isUInt8())
-        res->mutable_bool_()->set_nullability(type_nullability);
-    else if (which.isInt8())
-        res->mutable_i8()->set_nullability(type_nullability);
-    else if (which.isInt16())
-        res->mutable_i16()->set_nullability(type_nullability);
-    else if (which.isInt32())
-        res->mutable_i32()->set_nullability(type_nullability);
-    else if (which.isInt64())
-        res->mutable_i64()->set_nullability(type_nullability);
-    else if (which.isString() || which.isAggregateFunction())
-        res->mutable_binary()->set_nullability(type_nullability); /// Spark Binary type is more similiar to CH String type
-    else if (which.isFloat32())
-        res->mutable_fp32()->set_nullability(type_nullability);
-    else if (which.isFloat64())
-        res->mutable_fp64()->set_nullability(type_nullability);
-    else if (which.isFloat64())
-        res->mutable_fp64()->set_nullability(type_nullability);
-    else if (which.isDateTime64())
-    {
-        const auto * ch_type_datetime64 = checkAndGetDataType<DataTypeDateTime64>(ch_type_without_nullable.get());
-        if (ch_type_datetime64->getScale() != 6)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support converting from {}", ch_type->getName());
-        res->mutable_timestamp()->set_nullability(type_nullability);
-    }
-    else if (which.isDate32())
-        res->mutable_date()->set_nullability(type_nullability);
-    else if (which.isDecimal())
-    {
-        if (which.isDecimal256())
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support converting from {}", ch_type->getName());
-
-        const auto scale = getDecimalScale(*ch_type_without_nullable, 0);
-        const auto precision = getDecimalPrecision(*ch_type_without_nullable);
-        if (scale == 0 && precision == 0)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support converting from {}", ch_type->getName());
-        res->mutable_decimal()->set_nullability(type_nullability);
-        res->mutable_decimal()->set_scale(scale);
-        res->mutable_decimal()->set_precision(precision);
-    }
-    else if (which.isTuple())
-    {
-        const auto * ch_tuple_type = checkAndGetDataType<DataTypeTuple>(ch_type_without_nullable.get());
-        const auto & ch_field_types = ch_tuple_type->getElements();
-        res->mutable_struct_()->set_nullability(type_nullability);
-        for (const auto & ch_field_type: ch_field_types)
-            res->mutable_struct_()->mutable_types()->Add(std::move(*buildType(ch_field_type)));
-    }
-    else if (which.isArray())
-    {
-        const auto * ch_array_type = checkAndGetDataType<DataTypeArray>(ch_type_without_nullable.get());
-        const auto & ch_nested_type = ch_array_type->getNestedType();
-        res->mutable_list()->set_nullability(type_nullability);
-        *(res->mutable_list()->mutable_type()) = *buildType(ch_nested_type);
-    }
-    else if (which.isMap())
-    {
-        const auto & ch_map_type = checkAndGetDataType<DataTypeMap>(ch_type_without_nullable.get());
-        const auto & ch_key_type = ch_map_type->getKeyType();
-        const auto & ch_val_type = ch_map_type->getValueType();
-        res->mutable_map()->set_nullability(type_nullability);
-        *(res->mutable_map()->mutable_key()) = *buildType(ch_key_type);
-        *(res->mutable_map()->mutable_value()) = *buildType(ch_val_type);
-    }
-    else
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Spark doesn't support converting from {}", ch_type->getName());
-
-    return std::move(res);
-}
-
-void SerializedPlanBuilder::buildType(const DB::DataTypePtr & ch_type, String & substrait_type)
-{
-    auto pb = buildType(ch_type);
-    substrait_type = pb->SerializeAsString();
-}
-
 
 substrait::Expression * selection(int32_t field_id)
 {

@@ -187,9 +187,6 @@ if (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
     endif()
-
-    # set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
-    # set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
 endif ()
 
 # If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,

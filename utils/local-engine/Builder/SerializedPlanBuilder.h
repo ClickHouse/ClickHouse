@@ -53,9 +53,6 @@ public:
         SchemaPtr schema);
     std::unique_ptr<substrait::Plan> build();
 
-    static std::shared_ptr<substrait::Type> buildType(const DB::DataTypePtr & ch_type);
-    static void buildType(const DB::DataTypePtr & ch_type, String & substrait_type);
-
 private:
     void setInputToPrev(substrait::Rel * input);
     substrait::Rel * prev_rel = nullptr;
