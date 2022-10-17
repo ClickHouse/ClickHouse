@@ -97,6 +97,12 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
         new_settings.limit.changed = false;
     }
 
+    /// Setting additional_table_filters may be applied to Distributed table.
+    /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
+    /// We need to propagate the setting, but change the table name from distributed to source.
+    ///
+    /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
+    /// It's just easier to add this filter for a source table.
     if (query_info && query_info->additional_filter_ast)
     {
         Tuple tuple;
