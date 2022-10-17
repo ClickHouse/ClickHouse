@@ -196,7 +196,7 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            [[maybe_unused]] auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
 
             if (snapshot_path.empty())
                 continue;

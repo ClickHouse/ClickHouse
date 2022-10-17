@@ -135,9 +135,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         if (s3_client == nullptr)
             return;
 
-        LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
-        ReadBufferFromFile snapshot_file(snapshot_path);
-
         S3Settings::ReadWriteSettings read_write_settings;
         read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
 
@@ -151,9 +148,6 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
                 read_write_settings
             };
         };
-
-        auto snapshot_name = fs::path(snapshot_path).filename().string();
-        auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
         const auto file_exists = [&](const auto & key)
         {
@@ -171,6 +165,13 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
 
             return false;
         };
+
+
+        LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
+        ReadBufferFromFile snapshot_file(snapshot_path);
+
+        auto snapshot_name = fs::path(snapshot_path).filename().string();
+        auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
         if (file_exists(snapshot_name))
         {
@@ -193,20 +194,18 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
-        std::string read_uuid;
+        ReadBufferFromS3 lock_reader
         {
-            ReadBufferFromS3 lock_reader
-            {
-                s3_client->client,
-                s3_client->uri.bucket,
-                lock_file,
-                "",
-                1,
-                {}
-            };
+            s3_client->client,
+            s3_client->uri.bucket,
+            lock_file,
+            "",
+            1,
+            {}
+        };
 
-            readStringUntilEOF(read_uuid, lock_reader);
-        }
+        std::string read_uuid;
+        readStringUntilEOF(read_uuid, lock_reader);
 
         if (read_uuid != toString(uuid))
         {
