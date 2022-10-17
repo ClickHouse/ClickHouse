@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
 
+#include <cassert>
 #include <vector>
 
 
@@ -27,6 +28,7 @@ public:
 
     ALWAYS_INLINE inline const Token & operator[](size_t index)
     {
+        assert(index < data.size());
         last_accessed_index = std::max(last_accessed_index, index);
         return data[index];
     }
