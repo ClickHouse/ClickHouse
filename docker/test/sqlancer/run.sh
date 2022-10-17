@@ -1,13 +1,10 @@
 #!/bin/bash
+set -exu
+trap "exit" INT TERM
 
-set -e -x
+/clickhouse server -P /clickhouse-server.pid -L /clickhouse-server.log -E /clickhouse-server.log.err --daemon
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
-
-service clickhouse-server start && sleep 5
+for i in `seq 1 30`; do if [[ `wget -q 'localhost:8123' -O-` == 'Ok.' ]]; then break ; else sleep 1; fi ; done
 
 cd /sqlancer/sqlancer-master
 
@@ -21,7 +18,10 @@ export NUM_QUERIES=1000
 ( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /test_output/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPDistinct.err
 ( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /test_output/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPAggregate.err
 
-service clickhouse stop
+pkill -F ./clickhouse-server.pid
+
+for i in `seq 1 30`; do if [[ `wget -q 'localhost:8123' -O-` == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
+
 
 ls /var/log/clickhouse-server/
 tar czf /test_output/logs.tar.gz -C /var/log/clickhouse-server/ .
