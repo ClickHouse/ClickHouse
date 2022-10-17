@@ -342,7 +342,7 @@ LIMIT 100
 
 ## 使用 Projection 加速查询 {#speedup-with-projections}
 
-[Projections](../../sql-reference/statements/alter/projection.md) 允许我们通过存储任意格式的预先聚合的数据来提高查询速度。在此示例中，我们创建了一个按年份、地区和城镇分组的房产的平均价格、总价格和数量的 Projection。在执行时，如果 ClickHouse 认为 Projection 可以提高查询的性能，它将使用 Projection（何时使用由 ClickHouse 决定）。
+Projections 允许我们通过存储任意格式的预先聚合的数据来提高查询速度。在此示例中，我们创建了一个按年份、地区和城镇分组的房产的平均价格、总价格和数量的 Projection。在执行时，如果 ClickHouse 认为 Projection 可以提高查询的性能，它将使用 Projection（何时使用由 ClickHouse 决定）。
 
 ### 构建投影{#build-projection}
 
