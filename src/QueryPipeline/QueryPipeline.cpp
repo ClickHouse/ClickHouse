@@ -290,6 +290,7 @@ QueryPipeline::QueryPipeline(Pipe pipe)
 
 QueryPipeline::QueryPipeline(Chain chain)
     : resources(chain.detachResources())
+    , processors(std::make_shared<Processors>())
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
