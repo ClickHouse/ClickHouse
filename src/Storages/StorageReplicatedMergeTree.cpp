@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 
+#include <ranges>
 #include "Common/hex.h"
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -136,6 +137,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int REPLICA_IS_NOT_IN_QUORUM;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_DROPPED;
     extern const int NOT_FOUND_NODE;
     extern const int NO_ACTIVE_REPLICAS;
     extern const int NOT_A_LEADER;
@@ -279,7 +281,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
     , renaming_restrictions(renaming_restrictions_)
-    , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
+    , replicated_fetches_pool_size(getContext()->getFetchesExecutor()->getMaxTasksCount())
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
@@ -443,7 +445,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
     syncPinnedPartUUIDs();
 
-    createTableSharedID();
+    if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
+        createTableSharedID();
 
     initialization_done = true;
 }
@@ -4180,6 +4183,7 @@ void StorageReplicatedMergeTree::startupImpl()
         /// And this is just a callback
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
+            LOG_TEST(log, "Received event for expired session. Waking up restarting thread");
             restarting_thread.start();
         });
 
@@ -7442,10 +7446,22 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (maybe_has_metadata_in_zookeeper && table_shared_id == UUIDHelpers::Nil)
-        createTableSharedID();
+    if (table_shared_id == UUIDHelpers::Nil)
+    {
+        if (has_metadata_in_zookeeper.has_value())
+        {
+            if (*has_metadata_in_zookeeper)
+                createTableSharedID();
+            else
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped", getStorageID().getNameForLogs());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "No connection to ZooKeeper, cannot get shared table ID for table {}. "
+                            "It will be resolve automatically when connection will be established", getStorageID().getNameForLogs());
+        }
+    }
 
     return toString(table_shared_id);
 }
@@ -7621,6 +7637,10 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
         return std::make_pair(true, NameSet{});
     }
 
+    /// If table was completely dropped (no meta in zookeeper) we can safely remove parts
+    if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
+        return std::make_pair(true, NameSet{});
+
     /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
     /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
     /// context.
@@ -7630,14 +7650,93 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     else
         zookeeper = getZooKeeper();
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), part.name, replica_name, part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log,
-        zookeeper_path);
+    /// It can happen that we didn't had the connection to zookeeper during table creation, but actually
+    /// table is completely dropped, so we can drop it without any additional checks.
+    if (!has_metadata_in_zookeeper.has_value() && !zookeeper->exists(zookeeper_path))
+        return std::make_pair(true, NameSet{});
+
+    return unlockSharedDataByID(
+        part.getUniqueId(), getTableSharedID(), part.name, replica_name,
+        part.data_part_storage->getDiskType(), zookeeper, *getSettings(), log, zookeeper_path, format_version);
+}
+
+namespace
+{
+
+/// What is going on here?
+/// Actually we need this code because of flaws in hardlinks tracking. When we create child part during mutation we can hardlink some files from parent part, like
+/// all_0_0_0:
+///                     a.bin a.mrk2 columns.txt ...
+/// all_0_0_0_1:          ^     ^
+///                     a.bin a.mrk2 columns.txt
+/// So when we deleting all_0_0_0 it doesn't remove blobs for a.bin and a.mrk2 because all_0_0_0_1 use them.
+/// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
+/// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
+/// still need parent part.
+NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+{
+    NameSet files_not_to_remove;
+
+    MergeTreePartInfo part_info = MergeTreePartInfo::fromPartName(part_info_str, format_version);
+    /// No mutations -- no hardlinks -- no issues
+    if (part_info.mutation == 0)
+        return files_not_to_remove;
+
+    /// Getting all zero copy parts
+    Strings parts_str;
+    zookeeper_ptr->tryGetChildren(zero_copy_part_path_prefix, parts_str);
+
+    /// Parsing infos. It's hard to convert info -> string for old-format merge tree
+    /// so storing string as is.
+    std::vector<std::pair<MergeTreePartInfo, std::string>> parts_infos;
+    for (const auto & part_str : parts_str)
+    {
+        MergeTreePartInfo parent_candidate_info = MergeTreePartInfo::fromPartName(part_str, format_version);
+        parts_infos.emplace_back(parent_candidate_info, part_str);
+    }
+
+    /// Sort is important. We need to find our closest parent, like:
+    /// for part all_0_0_0_64 we can have parents
+    /// all_0_0_0_6 < we need the closest parent, not others
+    /// all_0_0_0_1
+    /// all_0_0_0
+    std::sort(parts_infos.begin(), parts_infos.end());
+
+    /// In reverse order to process from bigger to smaller
+    for (const auto & [parent_candidate_info, part_candidate_info_str] : parts_infos | std::views::reverse)
+    {
+        if (parent_candidate_info == part_info)
+            continue;
+
+        /// We are mutation child of this parent
+        if (part_info.isMutationChildOf(parent_candidate_info))
+        {
+            LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info_str);
+            /// Get hardlinked files
+            String files_not_to_remove_str;
+            Coordination::Error code;
+            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
+            if (code != Coordination::Error::ZOK)
+                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+
+            if (!files_not_to_remove_str.empty())
+            {
+                boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+                LOG_TRACE(log, "Found files not to remove from parent part {}: [{}]", part_candidate_info_str, fmt::join(files_not_to_remove, ", "));
+            }
+
+            break;
+        }
+    }
+    return files_not_to_remove;
+}
+
 }
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, std::string disk_type, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
-        Poco::Logger * logger, const String & zookeeper_path_old)
+        Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
 
@@ -7654,6 +7753,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         files_not_to_remove.clear();
         if (!files_not_to_remove_str.empty())
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
+
+        auto parent_not_to_remove = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version, logger);
+        files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
@@ -7732,7 +7834,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         else
         {
             LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                      zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
         }
     }
 
@@ -8268,9 +8370,14 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         {
             String id = disk->getUniqueId(checksums);
             bool can_remove = false;
-            std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                detached_replica_name, toString(disk->getDataSourceDescription().type), zookeeper, local_context->getReplicatedMergeTreeSettings(), &Poco::Logger::get("StorageReplicatedMergeTree"),
-                detached_zookeeper_path);
+            std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(
+                id, table_uuid, part_name,
+                detached_replica_name,
+                toString(disk->getDataSourceDescription().type),
+                zookeeper, local_context->getReplicatedMergeTreeSettings(),
+                &Poco::Logger::get("StorageReplicatedMergeTree"),
+                detached_zookeeper_path,
+                MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 
             keep_shared = !can_remove;
         }
