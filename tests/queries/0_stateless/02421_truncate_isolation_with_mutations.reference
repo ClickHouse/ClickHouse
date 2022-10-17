@@ -17,8 +17,8 @@ tx31	3
 0
 concurrent_optimize_table_not_start
 tx41	4
-1	all_2_2_0
 3	all_1_1_0
+1	all_2_2_0
 concurrent_optimize_table
 tx43	5
 SERIALIZATION_ERROR
@@ -28,10 +28,10 @@ INVALID_TRANSACTION
 concurrent_optimize_table_before
 3	all_1_1_0
 drop_parts_which_already_outdated
-tx69	before optimize	1	all_2_2_0
 tx69	before optimize	3	all_1_1_6
-tx69	after optimize	1	all_2_2_0
+tx69	before optimize	1	all_2_2_0
 tx69	after optimize	3	all_1_1_6
+tx69	after optimize	1	all_2_2_0
 SERIALIZATION_ERROR
 at the end	4	all_1_2_7
 unable_drop_one_part_which_outdated_but_visible
@@ -43,18 +43,18 @@ NO_SUCH_DATA_PART
 at the end	3	all_1_1_2
 at the end	1	all_2_2_0
 drop_one_part_which_outdated_and_reverted
-tx89	before optimize	1	all_2_2_0
 tx89	before optimize	3	all_1_1_1
-tx89	after optimize	1	all_2_2_0
+tx89	before optimize	1	all_2_2_0
 tx89	after optimize	3	all_1_1_1
-tx89	after rollback	1	all_2_2_0
+tx89	after optimize	1	all_2_2_0
 tx89	after rollback	3	all_1_1_1
+tx89	after rollback	1	all_2_2_0
 at the end	3	all_1_1_1
 drop_one_part_which_outdated_and_reverted_no_name_intersection
-tx99	before optimize	1	all_2_2_0
 tx99	before optimize	3	all_1_1_0
-tx99	after optimize	1	all_2_2_0
+tx99	before optimize	1	all_2_2_0
 tx99	after optimize	3	all_1_1_0
-tx99	after rollback	1	all_2_2_0
+tx99	after optimize	1	all_2_2_0
 tx99	after rollback	3	all_1_1_0
+tx99	after rollback	1	all_2_2_0
 at the end	3	all_1_1_0

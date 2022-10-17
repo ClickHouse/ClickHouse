@@ -1198,6 +1198,7 @@ protected:
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
+    std::chrono::time_point<std::chrono::system_clock> last_report_grab_old_parts;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
