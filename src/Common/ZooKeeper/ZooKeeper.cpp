@@ -99,7 +99,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             if (dns_error)
                 throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
             else
-                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
+                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZCONNECTIONLOSS);
         }
 
         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
