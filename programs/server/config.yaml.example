@@ -909,7 +909,7 @@ query_masking_rules:
 # methods - to match request method, you can use commas to separate multiple method matches(optional)
 # headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
 # handler is request handler
-# type - supported types: static, dynamic_query_handler, predefined_query_handler
+# type - supported types: static, dynamic_query_handler, predefined_query_handler, predefined_insert_handler
 # query - use with predefined_query_handler type, executes query when the handler is called
 # query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
 # status - use with static type, response status code
@@ -931,6 +931,12 @@ query_masking_rules:
 #         handler:
 #           type: predefined_query_handler
 #           query: 'SELECT * FROM system.settings'
+#     - rule:
+#         url: /predefined_insert
+#         methods: POST,GET
+#         handler:
+#           type: predefined_insert_handler
+#           query: TO BE DISCUSSED 
 #     - rule:
 #         handler:
 #           type: static

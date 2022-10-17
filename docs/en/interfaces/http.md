@@ -437,6 +437,42 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
 Next are the configuration methods for different `type`.
 
+### predefined_insert_handler {#predefined_insert_handler}
+
+`predefined_insert_handler` supports setting `Settings` and `insert_params` values. You can configure `insert` in the type of `predefined_insert_handler`.
+
+`insert` value is a predefined insert of `predefined_insert_handler`, which is executed by ClickHouse when an HTTP request is matched and the result of the insert is returned. It is a must configuration.
+
+The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
+
+:::warning
+To keep the default `handlers` such as` query`, ` insert`, `play`,` ping`, add the `<defaults/>` rule.
+:::
+
+Example:
+
+``` xml
+<http_handlers>
+    <rule>
+        <url><![CDATA[/insert_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))(/(?P<name_3>[^/]+))?]]></url>
+        <methods>GET</methods>
+        <headers>
+            <XXX>TEST_HEADER_VALUE</XXX>
+            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))(/(?P<name_3>[^/]+))?]]></PARAMS_XXX>
+        </headers>
+        <handler>
+            <type>predefined_insert_handler</type>
+            <insert>INSERT INTO table = ${name_1:String}  VALUES value = ${name_2:String}</insert>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+``` bash
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/insert_param_with_url/1/max_threads/max_final_threads/database?max_threads=1&max_final_threads=2&database=db'
+```
+
 ### predefined_query_handler {#predefined_query_handler}
 
 `predefined_query_handler` supports setting `Settings` and `query_params` values. You can configure `query` in the type of `predefined_query_handler`.
@@ -446,7 +482,7 @@ Next are the configuration methods for different `type`.
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
 :::warning
-To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
+To keep the default `handlers` such as` query`, ` insert`, `play`,` ping`, add the `<defaults/>` rule.
 :::
 
 Example:

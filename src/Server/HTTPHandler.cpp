@@ -1202,10 +1202,15 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix)
 {
-    if (!config.has(config_prefix + ".handler.query"))
-        throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    std::string handler_path; 
+    if (config.has(config_prefix + ".handler.insert"))
+        handler_path = ".handler.insert";
+    else if (!config.has(config_prefix + ".handler.query"))
+        handler_path = ".handler.query";
+    else
+        throw Exception("Incorrect path configuration.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    std::string predefined_query = config.getString(config_prefix + ".handler.query");
+    std::string predefined_query = config.getString(config_prefix + handler_path);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;

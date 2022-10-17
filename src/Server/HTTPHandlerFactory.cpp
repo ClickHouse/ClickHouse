@@ -94,6 +94,8 @@ static inline auto createHandlersFactoryFromConfig(
                 main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key));
             else if (handler_type == "predefined_query_handler")
                 main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key));
+            else if (handler_type == "predefined_insert_handler")
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key));
             else if (handler_type == "prometheus")
                 main_handler_factory->addHandler(createPrometheusHandlerFactory(server, config, async_metrics, prefix + "." + key));
             else if (handler_type == "replicas_status")
