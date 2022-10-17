@@ -482,8 +482,11 @@ struct ZTestMoments
 template <typename T>
 struct AnalysisOfVarianceMoments
 {
+    /// Sums of values within a group
     std::vector<T> xs1{};
+    /// Sums of squared values within a group
     std::vector<T> xs2{};
+    /// Sizes of each group. Total number of observations is just a sum of all these values
     std::vector<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)

@@ -31,7 +31,7 @@ def test_and_check(rvs, n_groups, f_stat, p_value, precision=1e-2):
     real_p_value = real['p_value'][0]
     assert(abs(real_f_stat - np.float64(f_stat)) < precision), f"clickhouse_f_stat {real_f_stat}, py_f_stat {f_stat}"
     assert(abs(real_p_value - np.float64(p_value)) < precision), f"clickhouse_p_value {real_p_value}, py_p_value {p_value}"
-    # client.query("DROP TABLE IF EXISTS anova;")
+    client.query("DROP TABLE IF EXISTS anova;")
 
 
 def test_anova():

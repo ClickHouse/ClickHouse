@@ -26,6 +26,13 @@ class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceM
 {
 };
 
+
+/// One way analysis of variance
+/// Provides a statistical test of whether two or more population means are equal (null hypothesis)
+/// Has an assumption that subjects from group i have normal distribution.
+/// Accepts two arguments - a value and a group number which this value belongs to.
+/// Groups are enumerated starting from 0 and there should be at least two groups to perform a test
+/// Moreover there should be at least one group with the number of observations greater than one.
 class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataHelper<AggregateFunctionAnalysisOfVarianceData, AggregateFunctionAnalysisOfVariance>
 {
 public:
@@ -43,7 +50,7 @@ public:
         );
     }
 
-    String getName() const override { return "anova"; }
+    String getName() const override { return "analysisOfVariance"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
