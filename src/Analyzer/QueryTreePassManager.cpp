@@ -10,6 +10,7 @@
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/CustomizeFunctionsPass.h>
+#include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 
 #include <IO/WriteHelpers.h>
@@ -37,7 +38,6 @@ namespace ErrorCodes
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support GROUP BY functions of other keys elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
-  * TODO: Support setting optimize_injective_functions_inside_uniq.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_redundant_functions_in_order_by.
@@ -129,6 +129,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
         manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_shared<CustomizeFunctionsPass>());
+
+    if (settings.optimize_injective_functions_inside_uniq)
+        manager.addPass(std::make_shared<UniqInjectiveFunctionsEliminationPass>());
 
     if (settings.optimize_multiif_to_if)
         manager.addPass(std::make_shared<MultiIfToIfPass>());
