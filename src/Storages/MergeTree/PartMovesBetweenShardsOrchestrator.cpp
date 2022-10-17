@@ -610,7 +610,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         }
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)

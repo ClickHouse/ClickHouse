@@ -549,15 +549,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query)
         {
             if (insert_query->table_id)
-            {
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
-            }
             else if (auto table = insert_query->getTable(); !table.empty())
-            {
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
-            }
         }
 
         if (insert_query && insert_query->select)
@@ -881,7 +875,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto progress_callback = context->getProgressCallback();
                     if (progress_callback)
                     {
-                        Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                        Progress p;
                         p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
                         progress_callback(p);
                     }

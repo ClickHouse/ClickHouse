@@ -319,7 +319,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
-All the rules above are also true for the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
+All the rules above are also true for the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
