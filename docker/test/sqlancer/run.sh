@@ -55,6 +55,5 @@ tail -n 1000 /var/log/clickhouse-server/stderr.log > /workplace/stderr.log
 tail -n 1000 /var/log/clickhouse-server/stdout.log > /workplace/stdout.log
 tail -n 1000 /var/log/clickhouse-server/clickhouse-server.log > /workplace/clickhouse-server.log
 
-for f in $(ls /workspace/)
 /process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /workplace/check_status.tsv
 ls /workplace
