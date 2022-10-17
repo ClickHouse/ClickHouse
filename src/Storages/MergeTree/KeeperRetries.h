@@ -19,7 +19,7 @@ struct ZooKeeperRetriesInfo
         : name(std::move(name_))
         , logger(logger_)
         , max_retries(max_retries_)
-        , curr_backoff_ms(initial_backoff_ms_)
+        , curr_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_))
         , max_backoff_ms(max_backoff_ms_)
     {
     }
