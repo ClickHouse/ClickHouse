@@ -690,7 +690,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
         full_key_paths.emplace_back(fullPathForKey(key));
     }
 
-    auto values = client->get(full_key_paths);
+    auto values = client->tryGet(full_key_paths);
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
