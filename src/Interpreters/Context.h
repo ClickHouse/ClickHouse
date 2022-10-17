@@ -54,6 +54,7 @@ enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
+class IUserDefinedSQLObjectsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -435,7 +436,6 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
-    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -450,7 +450,6 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
-    void setUserDefinedPath(const String & path);
 
     void addWarningMessage(const String & msg) const;
 
@@ -653,16 +652,19 @@ public:
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
-    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
-    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
-    EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+
+    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
+    const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
+    IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
