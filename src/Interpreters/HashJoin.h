@@ -278,7 +278,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -294,7 +294,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -310,7 +310,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
     };
 

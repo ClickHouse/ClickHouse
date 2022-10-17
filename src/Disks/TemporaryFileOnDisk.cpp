@@ -10,6 +10,12 @@ namespace ProfileEvents
     extern const Event ExternalProcessingFilesTotal;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric TotalTemporaryFiles;
+}
+
+
 namespace DB
 {
 
@@ -30,6 +36,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::
 
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix)
     : disk(disk_)
+    , metric_increment(CurrentMetrics::TotalTemporaryFiles)
 {
     if (!disk)
         throw Exception("Disk is not specified", ErrorCodes::LOGICAL_ERROR);

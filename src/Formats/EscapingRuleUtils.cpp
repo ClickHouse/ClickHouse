@@ -70,7 +70,7 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
         case FormatSettings::EscapingRule::Raw:
             return "Raw";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
@@ -99,7 +99,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readStringInto(out, buf);
             break;
         default:
-            __builtin_unreachable();
+            UNREACHABLE();
     }
 }
 
