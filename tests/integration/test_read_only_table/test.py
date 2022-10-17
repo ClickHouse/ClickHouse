@@ -1,19 +1,23 @@
 import time
 import re
+import logging
 
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
+NUM_TABLES = 10
 
 def fill_nodes(nodes):
-    for node in nodes:
-        node.query(
-            f"""
-                CREATE TABLE test_table(a UInt64)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/replicated', '{node.name}') ORDER BY tuple();
-            """
-        )
+    for table_id in range(NUM_TABLES):
+        for node in nodes:
+            node.query(
+                f"""
+                    CREATE TABLE test_table_{table_id}(a UInt64)
+                    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/replicated/{table_id}', '{node.name}') ORDER BY tuple();
+                """
+            )
+            
 
 
 cluster = ClickHouseCluster(__file__)
@@ -33,7 +37,7 @@ def start_cluster():
     try:
         cluster.start()
 
-        fill_nodes([node1, node2, node3])
+        fill_nodes(nodes)
 
         yield cluster
 
@@ -46,7 +50,11 @@ def start_cluster():
 
 def test_restart_zookeeper(start_cluster):
 
-    node1.query("INSERT INTO test_table VALUES (1), (2), (3), (4), (5);")
+    for table_id in range(NUM_TABLES):
+        node1.query(f"INSERT INTO test_table_{table_id} VALUES (1), (2), (3), (4), (5);")
+        # sync_replicas(f"test_table_{table_id}")
+
+    logging.info("Inserted test data and initialized all tables")
 
     def get_zookeeper_which_node_connected_to(node):
         line = str(
@@ -74,4 +82,5 @@ def test_restart_zookeeper(start_cluster):
     cluster.stop_zookeeper_nodes([node1_zk])
     time.sleep(10)
 
-    node1.query("INSERT INTO test_table VALUES (6), (7), (8), (9), (10);")
+    for table_id in range(NUM_TABLES):
+        node1.query(f"INSERT INTO test_table_{table_id} VALUES (6), (7), (8), (9), (10);")
