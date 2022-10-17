@@ -936,7 +936,7 @@ query_masking_rules:
 #         methods: POST,GET
 #         handler:
 #           type: predefined_insert_handler
-#           query: TO BE DISCUSSED 
+#           query: TO BE DISCUSSED
 #     - rule:
 #         handler:
 #           type: static

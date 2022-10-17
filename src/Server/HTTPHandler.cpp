@@ -1202,7 +1202,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix)
 {
-    std::string handler_path; 
+    std::string handler_path;
     if (config.has(config_prefix + ".handler.insert"))
         handler_path = ".handler.insert";
     else if (!config.has(config_prefix + ".handler.query"))
