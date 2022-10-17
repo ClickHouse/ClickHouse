@@ -815,6 +815,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_keys128;
             if (size_of_field == 32)
                 return AggregatedDataVariants::Type::low_cardinality_keys256;
+            throw Exception("Logical error: low cardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
         }
 
         if (size_of_field == 1)
