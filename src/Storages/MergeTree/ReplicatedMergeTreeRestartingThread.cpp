@@ -30,11 +30,6 @@ namespace ErrorCodes
 
 }
 
-namespace
-{
-    constexpr auto retry_period_ms = 1000;
-}
-
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
@@ -58,25 +53,31 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    size_t reschedule_period_ms = check_period_ms;
+    /// Shedule ourselves according to the timetable
+    /// Will reshedule in case of any errors
+    /// Note: sheduling ourselves from the middle of running function is safe
+    /// because TaskHolder has mutex inside and another thread which may pick up
+    /// us will wait until current execution will be finished.
+    task->scheduleAfter(check_period_ms);
 
     try
     {
         bool replica_is_active = runImpl();
         if (!replica_is_active)
-            reschedule_period_ms = retry_period_ms;
-    }
-    catch (const Exception & e)
-    {
-        /// We couldn't activate table let's set it into readonly mode
-        partialShutdown();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-        if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
-            reschedule_period_ms = 0;
+        {
+            LOG_TEST(log, "Replica appeared not to be active. Resheduling restarting thread immediately");
+            task->schedule();
+        }
+            
     }
     catch (...)
     {
+        LOG_TEST(log, "Exception occured while activating replica. Task will be resheduled immediately");
+        /// In case of any exceptions we want to rerun the this task as fast as possible
+        /// And we do this before any other actions, because another exceptions may occur
+        task->schedule();
+
+        /// We couldn't activate table let's set it into readonly mode
         partialShutdown();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
@@ -92,14 +93,6 @@ void ReplicatedMergeTreeRestartingThread::run()
         storage.startup_event.set();
         first_time = false;
     }
-
-    if (need_stop)
-        return;
-
-    if (reschedule_period_ms)
-        task->scheduleAfter(reschedule_period_ms);
-    else
-        task->schedule();
 }
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
@@ -128,10 +121,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     try
     {
-        Stopwatch watch;
-        LOG_DEBUG(log, "Trying to establish a new connection");
-        storage.setZooKeeper();
-        LOG_DEBUG(log, "Establishing a new connection took {} ms", watch.elapsedMilliseconds());
+        storage.setZooKeeper();   
     }
     catch (const Coordination::Exception &)
     {
@@ -183,9 +173,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         try
         {
             storage.queue.initialize(zookeeper);
-
             storage.queue.load(zookeeper);
-
             storage.queue.createLogEntriesToFetchBrokenParts();
 
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
@@ -351,17 +339,11 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 
     storage.partial_shutdown_called = true;
     storage.partial_shutdown_event.set();
+    storage.replica_is_active_node.reset();
 
-    try
-    {
-        storage.replica_is_active_node = nullptr;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while removing `is_active` node. Probably this is because session is already expired");
-    }
 
-    LOG_TRACE(log, "Waiting for threads to finish");
+    Stopwatch watch;
+    LOG_TRACE(log, "Waiting for background threads to finish");
 
     storage.merge_selecting_task->deactivate();
     storage.queue_updating_task->deactivate();
@@ -379,7 +361,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
         storage.background_operations_assignee.finish();
     }
 
-    LOG_TRACE(log, "Threads finished");
+    LOG_TRACE(log, "Threads finished after {} ms", watch.elapsedMilliseconds());
 }
 
 
