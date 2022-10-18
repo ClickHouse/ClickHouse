@@ -74,12 +74,12 @@ public:
 
     bool supportParallelJoin() const override { return true; }
 
-    std::unique_ptr<IBlocksStream>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Open iterator over joined blocks.
     /// Must be called after all @joinBlock calls.
-    std::unique_ptr<IBlocksStream> getDelayedBlocks() override;
+    IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
