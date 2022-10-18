@@ -52,7 +52,7 @@ def test_without_auto_optimize_merge_tree(start_cluster):
 
 def test_auto_optimize_merge_tree(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS auto_optimize_partition_after_seconds=5;"
+        "CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS auto_optimize_partition_interval_seconds=5;"
     )
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
@@ -66,7 +66,7 @@ def test_auto_optimize_merge_tree(start_cluster):
 
 def test_auto_optimize_replicated_merge_tree(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS auto_optimize_partition_after_seconds=5;"
+        "CREATE TABLE test (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS auto_optimize_partition_interval_seconds=5;"
     )
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
