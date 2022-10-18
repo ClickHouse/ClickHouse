@@ -68,7 +68,7 @@ IProcessor::Status LimitTransform::prepare(
     auto process_pair = [&](size_t pos)
     {
         //auto status = is_negative ? preparePairNegative(ports_data[pos]) : preparePair(ports_data[pos]);
-        auto status = preparePair(ports_data[pos]);
+        auto status = is_negative ? preparePairNegative(ports_data[pos]) : preparePair(ports_data[pos]);
 
         switch (status)
         {
@@ -169,9 +169,10 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
     if (input.isFinished())
     {
         input_finished = true;
-        if (rows_in_queue <= offset)
+        if (rows_in_queue <= offset || num_finished_port_pairs != ports_data.size() - 1)
         {
-            queue.clear();
+            if (num_finished_port_pairs == ports_data.size() - 1)
+                queue.clear();
             output.finish();
             return Status::Finished;
         }
