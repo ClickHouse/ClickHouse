@@ -176,69 +176,51 @@ void KeeperDispatcher::processReadRequest(
 
     // we just want to know what's the current latest committed log on Leader node
     auto leader_info_result = server->getLeaderInfo();
-    if (leader_info_result)
+    if (!leader_info_result)
     {
-        leader_info_result->when_ready(
-            [&, request_for_session = std::move(read_request)](
-                nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & result, nuraft::ptr<std::exception> & exception) mutable
-            {
-                if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-                {
-                    addErrorResponses({request_for_session}, Coordination::Error::ZOPERATIONTIMEOUT);
-                    return;
-                }
-
-                if (result.get_result_code() != nuraft::cmd_result_code::OK)
-                {
-                    addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
-
-                if (exception)
-                {
-                    LOG_INFO(log, "Got exception while waiting for read results {}", exception->what());
-                    addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
-
-                auto & leader_info_ctx = result.get();
-
-                if (!leader_info_ctx)
-                {
-                    addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
-                    return;
-                }
-
-                KeeperServer::NodeInfo leader_info;
-                leader_info.term = leader_info_ctx->get_ulong();
-                leader_info.last_committed_index = leader_info_ctx->get_ulong();
-                std::unique_lock lock(leader_waiter_mutex);
-                auto node_info = server->getNodeInfo();
-
-                /// we're behind, we need to wait
-                if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
-                {
-                    auto & leader_waiter = leader_waiters[leader_info];
-                    auto & task = leader_waiter.emplace_back(
-                        [this, request_for_session]
-                        {
-                            processReadRequestLocally(request_for_session);
-                        });
-
-                    auto read_request_task_future = task.get_future();
-                    std::chrono::milliseconds operation_timeout_ms{coordination_settings->operation_timeout_ms.totalMilliseconds()};
-                    if (read_request_task_future.wait_for(operation_timeout_ms) != std::future_status::ready)
-                        addErrorResponses({request_for_session}, Coordination::Error::ZCONNECTIONLOSS);
-
-                    return;
-                }
-
-                if (server->isLeaderAlive())
-                    server->putLocalReadRequest(read_request);
-                else
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-            });
+        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+        return;
     }
+
+    auto leader_info_ctx = leader_info_result->get();
+    if (!leader_info_result->get_accepted() || leader_info_result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+    {
+        addErrorResponses({read_request}, Coordination::Error::ZOPERATIONTIMEOUT);
+        return;
+    }
+
+    if (leader_info_result->get_result_code() != nuraft::cmd_result_code::OK || !leader_info_ctx)
+    {
+        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+        return;
+    }
+
+    KeeperServer::NodeInfo leader_info;
+    leader_info.term = leader_info_ctx->get_ulong();
+    leader_info.last_committed_index = leader_info_ctx->get_ulong();
+
+    std::unique_lock lock(leader_waiter_mutex);
+    auto node_info = server->getNodeInfo();
+
+    /// we're behind, we need to wait
+    if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
+    {
+        auto & leader_waiter = leader_waiters[leader_info];
+        auto & task = leader_waiter.emplace_back(
+            [this, read_request]
+            {
+                processReadRequestLocally(read_request);
+            });
+
+        auto read_request_task_future = task.get_future();
+        std::chrono::milliseconds operation_timeout_ms{coordination_settings->operation_timeout_ms.totalMilliseconds()};
+        if (read_request_task_future.wait_for(operation_timeout_ms) != std::future_status::ready)
+            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+
+        return;
+    }
+
+    processReadRequestLocally(read_request);
 }
 
 void KeeperDispatcher::responseThread()
