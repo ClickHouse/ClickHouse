@@ -29,7 +29,7 @@ namespace
 struct UniformDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "uniformDistribution"; }
+    static constexpr const char * getName() { return "randUniform"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(Float64 min, Float64 max, ColumnFloat64::Container & container)
@@ -43,7 +43,7 @@ struct UniformDistribution
 struct NormalDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "normalDistribution"; }
+    static constexpr const char * getName() { return "randNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
@@ -57,7 +57,7 @@ struct NormalDistribution
 struct LogNormalDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "logNormalDistribution"; }
+    static constexpr const char * getName() { return "randLogNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
@@ -71,7 +71,7 @@ struct LogNormalDistribution
 struct ExponentialDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "exponentialDistribution"; }
+    static constexpr const char * getName() { return "randExponential"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
     static void generate(Float64 lambda, ColumnFloat64::Container & container)
@@ -85,7 +85,7 @@ struct ExponentialDistribution
 struct ChiSquaredDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "chiSquaredDistribution"; }
+    static constexpr const char * getName() { return "randChiSquared"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
@@ -99,7 +99,7 @@ struct ChiSquaredDistribution
 struct StudentTDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "studentTDistribution"; }
+    static constexpr const char * getName() { return "randStudentT"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
@@ -113,7 +113,7 @@ struct StudentTDistribution
 struct FisherFDistribution
 {
     using ReturnType = DataTypeFloat64;
-    static constexpr const char * getName() { return "fisherFDistribution"; }
+    static constexpr const char * getName() { return "randFisherF"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container)
@@ -127,7 +127,7 @@ struct FisherFDistribution
 struct BernoulliDistribution
 {
     using ReturnType = DataTypeUInt8;
-    static constexpr const char * getName() { return "bernoulliDistribution"; }
+    static constexpr const char * getName() { return "randBernoulli"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
     static void generate(Float64 p, ColumnUInt8::Container & container)
@@ -144,7 +144,7 @@ struct BernoulliDistribution
 struct BinomialDistribution
 {
     using ReturnType = DataTypeUInt64;
-    static constexpr const char * getName() { return "binomialDistribution"; }
+    static constexpr const char * getName() { return "randBinomial"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container)
@@ -161,7 +161,7 @@ struct BinomialDistribution
 struct NegativeBinomialDistribution
 {
     using ReturnType = DataTypeUInt64;
-    static constexpr const char * getName() { return "negativeBinomialDistribution"; }
+    static constexpr const char * getName() { return "randNegativeBinomial"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container)
@@ -178,7 +178,7 @@ struct NegativeBinomialDistribution
 struct PoissonDistribution
 {
     using ReturnType = DataTypeUInt64;
-    static constexpr const char * getName() { return "poissonDistribution"; }
+    static constexpr const char * getName() { return "randPoisson"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
     static void generate(UInt64 n, ColumnUInt64::Container & container)
@@ -193,7 +193,7 @@ struct PoissonDistribution
 /// Function which will generate values according to the distribution
 /// Accepts only constant arguments
 template <typename Distribution>
-class FunctionDistribution : public IFunction
+class FunctionRandomDistribution : public IFunction
 {
 private:
     Distribution distribution;
@@ -221,7 +221,7 @@ private:
 public:
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionDistribution<Distribution>>();
+        return std::make_shared<FunctionRandomDistribution<Distribution>>();
     }
 
     static constexpr auto name = Distribution::getName();
@@ -293,7 +293,7 @@ public:
 
 REGISTER_FUNCTION(Distribution)
 {
-    factory.registerFunction<FunctionDistribution<UniformDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(
     {
     R"(
 Returns a random number from the uniform distribution in the specified range.
@@ -303,11 +303,11 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT uniformDistribution(0, 1) FROM numbers(100000);"}},
+        {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
-    factory.registerFunction<FunctionDistribution<NormalDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
     {
     R"(
 Returns a random number from the normal distribution.
@@ -317,12 +317,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT normalDistribution(0, 5) FROM numbers(100000);"}},
+        {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<LogNormalDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(
     {
     R"(
 Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
@@ -332,12 +332,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT logNormalDistribution(0, 5) FROM numbers(100000);"}},
+        {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<ExponentialDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(
     {
     R"(
 Returns a random number from the exponential distribution.
@@ -347,12 +347,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT exponentialDistribution(0, 5) FROM numbers(100000);"}},
+        {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<ChiSquaredDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(
     {
     R"(
 Returns a random number from the chi-squared distribution (a distribution of a sum of the squares of k independent standard normal random variables).
@@ -362,11 +362,11 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT chiSquaredDistribution(5) FROM numbers(100000);"}},
+        {"typical", "SELECT randChiSquared(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
-    factory.registerFunction<FunctionDistribution<StudentTDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
     {
     R"(
 Returns a random number from the t-distribution.
@@ -376,12 +376,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000);"}},
+        {"typical", "SELECT randStudentT(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<FisherFDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(
     {
     R"(
 Returns a random number from the f-distribution.
@@ -392,12 +392,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT studentTDistribution(5) FROM numbers(100000);"}},
+        {"typical", "SELECT randFisherF(5) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<BernoulliDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(
     {
     R"(
 Returns a random number from the Bernoulli distribution.
@@ -407,12 +407,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT bernoulliDistribution(0.1) FROM numbers(100000);"}},
+        {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<BinomialDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(
     {
     R"(
 Returns a random number from the binomial distribution.
@@ -422,12 +422,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT binomialDistribution(10, 0.1) FROM numbers(100000);"}},
+        {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<NegativeBinomialDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(
     {
     R"(
 Returns a random number from the negative binomial distribution.
@@ -437,12 +437,12 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT negativeBinomialDistribution(10, 0.1) FROM numbers(100000);"}},
+        {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 
 
-    factory.registerFunction<FunctionDistribution<PoissonDistribution>>(
+    factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(
     {
     R"(
 Returns a random number from the poisson distribution.
@@ -452,7 +452,7 @@ Typical usage:
 [example:typical]
 )",
     Documentation::Examples{
-        {"typical", "SELECT poissonDistribution(3) FROM numbers(100000);"}},
+        {"typical", "SELECT randPoisson(3) FROM numbers(100000);"}},
     Documentation::Categories{"Distribution"}
     });
 }
