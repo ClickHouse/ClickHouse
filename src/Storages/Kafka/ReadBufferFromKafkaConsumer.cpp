@@ -258,7 +258,7 @@ void ReadBufferFromKafkaConsumer::commit()
                 // anything here
                 if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                     committed = true;
-                else 
+                else
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
             }
             --max_retries;
