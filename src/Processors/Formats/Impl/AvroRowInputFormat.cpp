@@ -346,6 +346,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isString())
             {
                 std::vector<std::string> symbols;
+                symbols.reserve(root_node->names());
                 for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
@@ -506,6 +507,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_UNION:
         {
             std::vector<SkipFn> union_skip_fns;
+            union_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
@@ -547,6 +549,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_RECORD:
         {
             std::vector<SkipFn> field_skip_fns;
+            field_skip_fns.reserve(root_node->leaves());
             for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
