@@ -94,8 +94,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     }
     else if (has_auth_dn_prefix || has_auth_dn_suffix)
     {
-        const auto auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
-        const auto auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        std::string auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+        std::string auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
         params.bind_dn = auth_dn_prefix + "{user_name}" + auth_dn_suffix;
     }
 
@@ -179,8 +179,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_port)
     {
-        const auto port = config.getInt64(ldap_server_config + ".port");
-        if (port < 0 || port > 65535)
+        UInt32 port = config.getUInt(ldap_server_config + ".port");
+        if (port > 65535)
             throw Exception("Bad value for 'port' entry", ErrorCodes::BAD_ARGUMENTS);
 
         params.port = port;
@@ -190,7 +190,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_search_limit)
     {
-        const auto search_limit = config.getUInt(ldap_server_config + ".search_limit");
+        UInt64 search_limit = config.getUInt64(ldap_server_config + ".search_limit");
         // Arbitrary large number.
         // Previously default value was 100, but in practice one client reported to have 120 roles for a user.
         if (search_limit >= 2048)
