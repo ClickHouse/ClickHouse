@@ -120,8 +120,15 @@ namespace
 
     std::pair<String, String> getPathFromUriAndUriWithoutPath(const String & uri)
     {
-        const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-        return {uri.substr(begin_of_path), uri.substr(0, begin_of_path)};
+        auto pos = uri.find("//");
+        if (pos != std::string::npos && pos + 2 < uri.length())
+        {
+            pos = uri.find('/', pos + 2);
+            if (pos != std::string::npos)
+                return {uri.substr(pos), uri.substr(0, pos)};
+        }
+
+        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
