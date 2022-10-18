@@ -20,6 +20,8 @@
 #include <Analyzer/ArrayJoinNode.h>
 
 #include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -320,7 +322,9 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         join_cast_plan_output_nodes(right_plan, right_plan_column_name_to_cast_type);
 
     const auto & query_context = planner_context->getQueryContext();
-    bool join_use_nulls = query_context->getSettingsRef().join_use_nulls;
+    const auto & settings = query_context->getSettingsRef();
+
+    bool join_use_nulls = settings.join_use_nulls;
     auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
 
     auto join_cast_plan_columns_to_nullable = [&](QueryPlan & plan_to_add_cast)
@@ -356,12 +360,15 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         }
     }
 
-    auto table_join = std::make_shared<TableJoin>(query_context->getSettings(), query_context->getTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, query_context->getTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
     table_join->getTableJoin().kind = join_kind;
 
     if (join_kind == JoinKind::Comma)
+    {
+        join_kind = JoinKind::Cross;
         table_join->getTableJoin().kind = JoinKind::Cross;
+    }
 
     table_join->setIsJoinWithConstant(join_constant != std::nullopt);
 
@@ -511,6 +518,66 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     }
     else
     {
+        auto add_sorting = [&] (QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
+        {
+            SortDescription sort_description;
+            sort_description.reserve(key_names.size());
+            for (const auto & key_name : key_names)
+                sort_description.emplace_back(key_name);
+
+            auto sorting_step = std::make_unique<SortingStep>(
+                plan.getCurrentDataStream(),
+                std::move(sort_description),
+                settings.max_block_size,
+                0 /*limit*/,
+                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+                settings.max_bytes_before_remerge_sort,
+                settings.remerge_sort_lowered_memory_bytes_ratio,
+                settings.max_bytes_before_external_sort,
+                query_context->getTempDataOnDisk(),
+                settings.min_free_disk_space_for_temporary_data,
+                settings.optimize_sorting_by_input_stream_properties);
+            sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
+            plan.addStep(std::move(sorting_step));
+        };
+
+        auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
+        auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_table_side)
+        {
+            auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
+                plan.getCurrentDataStream(),
+                key_names,
+                settings.max_rows_in_set_to_optimize_join,
+                crosswise_connection,
+                join_table_side);
+            creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
+
+            auto * step_raw_ptr = creating_set_step.get();
+            plan.addStep(std::move(creating_set_step));
+            return step_raw_ptr;
+        };
+
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped)
+        {
+            const auto & join_clause = table_join->getOnlyClause();
+
+            bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
+            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+            {
+                auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
+                auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
+
+                if (isInnerOrLeft(join_kind))
+                    right_set->setFiltering(left_set->getSet());
+
+                if (isInnerOrRight(join_kind))
+                    left_set->setFiltering(right_set->getSet());
+            }
+
+            add_sorting(left_plan, join_clause.key_names_left, JoinTableSide::Left);
+            add_sorting(right_plan, join_clause.key_names_right, JoinTableSide::Right);
+        }
+
         size_t max_block_size = query_context->getSettingsRef().max_block_size;
         size_t max_streams = query_context->getSettingsRef().max_threads;
 
