@@ -1,0 +1,42 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </s3>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </s3_plain>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>default</allowed_disk>
+
+        <allowed_disk>s3</allowed_disk>
+        <allowed_disk>s3_plain</allowed_disk>
+
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>

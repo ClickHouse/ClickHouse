@@ -9,21 +9,27 @@
 namespace DB
 {
 
-/// Store metadata in the disk itself.
-class FakeMetadataStorageFromDisk final : public IMetadataStorage
+/// Object storage is used as a filesystem, in a limited form:
+/// - no directory concept, files only
+/// - no stat/chmod/...
+/// - no move/...
+/// - limited unlink support
+///
+/// Also it has excessive API calls.
+///
+/// It is used to allow BACKUP/RESTORE to ObjectStorage (S3/...) with the same
+/// structure as on disk MergeTree, and does not requires metadata from local
+/// disk to restore.
+class MetadataStorageFromPlainObjectStorage final : public IMetadataStorage
 {
 private:
-    friend class FakeMetadataStorageFromDiskTransaction;
+    friend class MetadataStorageFromPlainObjectStorageTransaction;
 
-    mutable std::shared_mutex metadata_mutex;
-
-    DiskPtr disk;
     ObjectStoragePtr object_storage;
     std::string object_storage_root_path;
 
 public:
-    FakeMetadataStorageFromDisk(
-        DiskPtr disk_,
+    MetadataStorageFromPlainObjectStorage(
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
 
@@ -43,11 +49,11 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
-    bool supportsChmod() const override { return disk->supportsChmod(); }
+    bool supportsChmod() const override { return false; }
 
-    bool supportsStat() const override { return disk->supportsStat(); }
+    bool supportsStat() const override { return false; }
 
-    struct stat stat(const String & path) const override { return disk->stat(path); }
+    struct stat stat(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
@@ -59,28 +65,25 @@ public:
 
     uint32_t getHardlinkCount(const std::string & path) const override;
 
-    DiskPtr getDisk() const { return disk; }
+    DiskPtr getDisk() const { return {}; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 };
 
-class FakeMetadataStorageFromDiskTransaction final : public IMetadataTransaction
+class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction
 {
 private:
-    DiskPtr disk;
-    const FakeMetadataStorageFromDisk & metadata_storage;
+    const MetadataStorageFromPlainObjectStorage & metadata_storage;
 
     std::vector<MetadataOperationPtr> operations;
 public:
-    FakeMetadataStorageFromDiskTransaction(
-        const FakeMetadataStorageFromDisk & metadata_storage_, DiskPtr disk_)
-        : disk(disk_)
-        , metadata_storage(metadata_storage_)
+    MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
+        : metadata_storage(metadata_storage_)
     {}
 
-    ~FakeMetadataStorageFromDiskTransaction() override = default;
+    ~MetadataStorageFromPlainObjectStorageTransaction() override = default;
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
@@ -96,9 +99,9 @@ public:
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
-    bool supportsChmod() const override { return disk->supportsChmod(); }
+    bool supportsChmod() const override { return false; }
 
-    void chmod(const String & path, mode_t mode) override { disk->chmod(path, mode); }
+    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 
