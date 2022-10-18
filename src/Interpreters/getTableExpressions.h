@@ -3,7 +3,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
