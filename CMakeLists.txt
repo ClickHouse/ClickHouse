@@ -202,7 +202,11 @@ option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold lin
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
-    if (LINKER_NAME MATCHES "lld")
+    if (LINKER_NAME MATCHES "ld64.lld")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl")
+        message (STATUS "TODO: find a way to add .gdb-index in ld64.lld")
+    elseif (LINKER_NAME MATCHES "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
@@ -248,7 +252,7 @@ endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld")
+if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
