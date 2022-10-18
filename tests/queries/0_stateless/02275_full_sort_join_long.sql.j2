@@ -29,7 +29,7 @@ SELECT 'skipped';
 {% endif -%}
 {% endmacro -%}
 
-{% for join_algorithm in ['grace_hash'] -%}
+{% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
 SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}1M{% else %}0{% endif %}';
 
@@ -37,11 +37,9 @@ SELECT '-- {{ join_algorithm }} --';
 SET join_algorithm = '{{ join_algorithm }}';
 
 {% for kind in ['ALL', 'ANY'] -%}
-{% for block_size in [0, 32001, 65505, 65536] %}
+{% for block_size in [10240, 32001, 65505, 65536] %}
 
-{% if block_size -%}
 SET max_block_size = {{ block_size }};
-{%- endif %}
 
 {% if not (kind == 'ANY' and join_algorithm == 'grace_hash') -%}
 

@@ -475,7 +475,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     }
 
 
-    const Block left_header = left->getHeader();
+    Block left_header = left->getHeader();
+    Block joined_header = JoiningTransform::transformHeader(left_header, join);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto joining = std::make_shared<JoiningTransform>(
@@ -486,7 +488,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (delayed_root)
         {
             // Process delayed joined blocks when all JoiningTransform are finished.
-            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(left_header);
+            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(joined_header);
             if (delayed->getInputs().size() != 1 || delayed->getOutputs().size() != 1)
                 throw Exception("DelayedJoinedBlocksWorkerTransform should have one input and one output", ErrorCodes::LOGICAL_ERROR);
 
@@ -516,7 +518,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     if (delayed_root)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
-        auto joined_header = JoiningTransform::transformHeader(left_header, join);
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
