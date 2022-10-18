@@ -39,6 +39,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -1778,11 +1779,14 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
+                auto left_type = removeLowCardinality(removeNullable(left.type));
+                auto right_type = removeLowCardinality(removeNullable(right.type));
+
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{left.column->cloneResized(1), left.type, left.name},
-                           {removeNullable(right.type)->createColumnConst(1, point), removeNullable(right.type), right.name}};
+                        = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
+                           {right_type->createColumnConst(1, point), right_type, right.name}};
 
                     /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
                     /// It was possible to check monotonicity for nullable right type which result to exception.
@@ -1816,11 +1820,14 @@ public:
             // variable +|- constant
             else if (right.column && isColumnConst(*right.column))
             {
+                auto left_type = removeLowCardinality(removeNullable(left.type));
+                auto right_type = removeLowCardinality(removeNullable(right.type));
+
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{removeNullable(left.type)->createColumnConst(1, point), removeNullable(left.type), left.name},
-                           {right.column->cloneResized(1), right.type, right.name}};
+                        = {{left_type->createColumnConst(1, point), left_type, left.name},
+                           {right_type->createColumnConst(1, (*right.column)[0]), right_type, right.name}};
 
                     auto col = Base::executeImpl(columns_with_constant, return_type, 1);
                     Field point_transformed;
