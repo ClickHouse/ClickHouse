@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include "Common/Exception.h"
 #include <Common/NaNUtils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -190,13 +191,19 @@ struct PoissonDistribution
 };
 
 }
-/// Function which will generate values according to the distribution
-/// Accepts only constant arguments
+
+/** Function which will generate values according to the specified distribution
+  * Accepts only constant arguments
+  * Similar to the functions rand and rand64 an additional 'tag' argument could be added to the
+  * end of arguments list (this argument will be ignored) which will guarantee that functions are not sticked together
+  * during optimisations.
+  * Example: SELECT randNormal(0, 1, 1), randNormal(0, 1, 2) FROM numbers(10)
+  * This query will return two different columns
+  */
 template <typename Distribution>
 class FunctionRandomDistribution : public IFunction
 {
 private:
-    Distribution distribution;
 
     template <typename ResultType>
     ResultType getParameterFromConstColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments) const
@@ -227,6 +234,7 @@ public:
     static constexpr auto name = Distribution::getName();
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
+    bool isVariadic() const override { return true; }
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
@@ -234,8 +242,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (const auto & type : arguments)
+        auto desired = Distribution::getNumberOfArguments();
+        if (arguments.size() != desired && arguments.size() != desired + 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}. Should be {} or {}", getName(), desired, desired + 1);
+
+        for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
         {
+            auto & type = arguments[i];
             WhichDataType which(type);
             if (!which.isFloat() && !which.isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -251,21 +264,21 @@ public:
         {
             auto res_column = ColumnUInt8::create(input_rows_count);
             auto & res_data = res_column->getData();
-            distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
+            Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
             return res_column;
         }
         else if constexpr (std::is_same_v<Distribution, BinomialDistribution> || std::is_same_v<Distribution, NegativeBinomialDistribution>)
         {
             auto res_column = ColumnUInt64::create(input_rows_count);
             auto & res_data = res_column->getData();
-            distribution.generate(getParameterFromConstColumn<UInt64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
+            Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
             return res_column;
         }
         else if constexpr (std::is_same_v<Distribution, PoissonDistribution>)
         {
             auto res_column = ColumnUInt64::create(input_rows_count);
             auto & res_data = res_column->getData();
-            distribution.generate(getParameterFromConstColumn<UInt64>(0, arguments), res_data);
+            Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), res_data);
             return res_column;
         }
         else
@@ -274,11 +287,11 @@ public:
             auto & res_data = res_column->getData();
             if constexpr (Distribution::getNumberOfArguments() == 1)
             {
-                distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
+                Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data);
             }
             else if constexpr (Distribution::getNumberOfArguments() == 2)
             {
-                distribution.generate(getParameterFromConstColumn<Float64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
+                Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data);
             }
             else
             {
