@@ -32,12 +32,6 @@ private:
     UInt64 rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
-    bool limit_is_unreachable;
-    bool is_negative;
-    std::list<Chunk> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
-    UInt64 rows_in_queue = 0;
-    UInt64 rows_to_keep; /// used when limit and offset are negative, equals to limit + offset or offset when limit is unreachable
-
     /// State of port's pair.
     /// Chunks from different port pairs are not mixed for better cache locality.
     struct PortsData
@@ -52,9 +46,19 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
+    bool limit_is_unreachable;
+    bool is_negative;
+    std::list<PortsData> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
+    UInt64 rows_in_queue = 0;
+    UInt64 rows_to_keep; /// used when limit and offset are negative, equals to limit + offset or offset when limit is unreachable
+
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
+
+    bool popWithoutCut();
+    PortsData queuePop();
+    void queuePush(PortsData & data);
 
 public:
     LimitTransform(
@@ -69,10 +73,6 @@ public:
     Status preparePair(PortsData & data);
     Status preparePairNegative(PortsData & data);
     void splitChunk(PortsData & data);
-
-    bool PopWithoutCut();
-    Chunk queuePop();
-    void queuePush(Chunk data);
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
