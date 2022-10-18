@@ -159,19 +159,19 @@ struct ToExtendedRelativeHourNumImpl
 
     static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(t);
+        return time_zone.toStableRelativeHourNum(t);
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(static_cast<time_t>(t));
+        return time_zone.toStableRelativeHourNum(static_cast<time_t>(t));
     }
     static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(ExtendedDayNum(d));
+        return time_zone.toStableRelativeHourNum(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(DayNum(d));
+        return time_zone.toStableRelativeHourNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
