@@ -236,6 +236,21 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     return new_ast;
 }
 
+ASTPtr QueryFuzzer::getRandomExpressionList()
+{
+    if (column_like.empty())
+    {
+        return nullptr;
+    }
+
+    ASTPtr new_ast = std::make_shared<ASTExpressionList>();
+    for (size_t i = 0; i < fuzz_rand() % 5 + 1; ++i)
+    {
+        new_ast->children.push_back(getRandomColumnLike());
+    }
+    return new_ast;
+}
+
 void QueryFuzzer::replaceWithColumnLike(ASTPtr & ast)
 {
     if (column_like.empty())
@@ -453,6 +468,16 @@ bool QueryFuzzer::isSuitableForFuzzing(const ASTCreateQuery & create)
     return create.columns_list && create.columns_list->columns;
 }
 
+static String getOriginalTableName(const String & full_name)
+{
+    return full_name.substr(0, full_name.find("__fuzz_"));
+}
+
+static String getFuzzedTableName(const String & original_name, size_t index)
+{
+    return original_name + "__fuzz_" + toString(index);
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -486,10 +511,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     auto full_name = create.getTable();
-    auto original_name = full_name.substr(0, full_name.find("__fuzz_"));
-
+    auto original_name = getOriginalTableName(full_name);
     size_t index = index_of_fuzzed_table[original_name]++;
-    auto new_name = original_name + "__fuzz_" + toString(index);
+    auto new_name = getFuzzedTableName(original_name, index);
 
     create.setTable(new_name);
 
@@ -650,7 +674,8 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (table_id.empty())
         return;
 
-    auto it = original_table_name_to_fuzzed.find(table_id.getTableName());
+    auto original_name = getOriginalTableName(table_id.getTableName());
+    auto it = original_table_name_to_fuzzed.find(original_name);
     if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
     {
         auto new_table_name = it->second.begin();
@@ -713,7 +738,7 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
     /// Drop all created tables, not only unique ones.
     for (size_t i = 0; i < it->second; ++i)
     {
-        auto fuzzed_name = table_name + "__fuzz_" + toString(i);
+        auto fuzzed_name = getFuzzedTableName(table_name, i);
         auto & query = queries.emplace_back(drop_query.clone());
         query->as<ASTDropQuery>()->setTable(fuzzed_name);
         /// Just in case add IF EXISTS to avoid exceptions.
@@ -734,7 +759,9 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
         if (pos != std::string::npos)
         {
             auto original_name = table_name.substr(0, pos);
-            original_table_name_to_fuzzed[original_name].erase(table_name);
+            auto it = original_table_name_to_fuzzed.find(original_name);
+            if (it != original_table_name_to_fuzzed.end())
+                it->second.erase(table_name);
         }
     };
 
@@ -841,7 +868,52 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         fuzzColumnLikeExpressionList(select->select().get());
-        fuzzColumnLikeExpressionList(select->groupBy().get());
+
+        if (select->groupBy().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->groupBy()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+                select->group_by_with_grouping_sets = false;
+                select->group_by_with_rollup = false;
+                select->group_by_with_cube = false;
+                select->group_by_with_totals = true;
+            }
+            else if (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_grouping_sets = !select->group_by_with_grouping_sets;
+            }
+            else if (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_rollup = !select->group_by_with_rollup;
+            }
+            else if (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_cube = !select->group_by_with_cube;
+            }
+            else if (fuzz_rand() % 100 == 0)
+            {
+                select->group_by_with_totals = !select->group_by_with_totals;
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList());
+        }
+
+        if (select->where().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->where()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::WHERE, {});
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::WHERE, getRandomColumnLike());
+        }
         fuzzOrderByList(select->orderBy().get());
 
         fuzz(select->children);
