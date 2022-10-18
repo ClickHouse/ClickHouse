@@ -69,7 +69,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(temp_path, IMAGE_NAME)
+    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
@@ -144,27 +144,25 @@ if __name__ == "__main__":
     if paths["report.html"]:
         report_url = paths["report.html"]
 
-    # # Try to get status message saved by the SQLancer
-    # try:
-    #     with open(
-    #         os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-    #     ) as status_f:
-    #         status = status_f.readline().rstrip("\n")
+    # Try to get status message saved by the SQLancer
+    try:
+        with open(
+            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
+        ) as status_f:
+            status = status_f.readline().rstrip("\n")
 
-    #     with open(
-    #         os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
-    #     ) as desc_f:
-    #         description = desc_f.readline().rstrip("\n")[:140]
-    # except:
-    #     status = "failure"
-    #     description = "Task failed: $?=" + str(retcode)
+        with open(
+            os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
+        ) as desc_f:
+            description = desc_f.readline().rstrip("\n")[:140]
+    except:
+        status = "failure"
+        description = "Task failed: $?=" + str(retcode)
 
-    # if "fail" in status:
-    #     test_result = [(description, "FAIL")]
-    # else:
-    status = "success"
-    description = "SQLancer runs in always green mode for now"
-    test_result = [(check_name, "OK")]
+    if "fail" in status:
+        test_result = [(description, "FAIL")]
+    else:
+        status = "success"
 
     ch_helper = ClickHouseHelper()
 
