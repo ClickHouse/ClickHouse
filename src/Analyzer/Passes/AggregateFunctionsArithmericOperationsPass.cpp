@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
+
 namespace
 {
 
@@ -29,7 +34,7 @@ Field zeroField(const Field & value)
             break;
     }
 
-    throw Exception("Unexpected literal type in function", ErrorCodes::BAD_TYPE_OF_FIELD);
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
