@@ -32,6 +32,12 @@ private:
     UInt64 rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
+    bool limit_is_unreachable;
+    bool is_negative;
+    std::list<Chunk> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
+    UInt64 rows_in_queue = 0;
+    UInt64 rows_to_keep; /// used when limit and offset are negative, equals to limit + offset or offset when limit is unreachable
+
     /// State of port's pair.
     /// Chunks from different port pairs are not mixed for better cache locality.
     struct PortsData
@@ -53,7 +59,7 @@ private:
 public:
     LimitTransform(
         const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
-        bool always_read_till_end_ = false, bool with_ties_ = false,
+        bool always_read_till_end_ = false, bool with_ties_ = false, bool is_negative_ = false,
         SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
@@ -61,7 +67,12 @@ public:
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
+    Status preparePairNegative(PortsData & data);
     void splitChunk(PortsData & data);
+
+    bool PopWithoutCut();
+    Chunk queuePop();
+    void queuePush(Chunk data);
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }

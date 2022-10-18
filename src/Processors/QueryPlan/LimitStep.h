@@ -14,6 +14,7 @@ public:
         size_t limit_, size_t offset_,
         bool always_read_till_end_ = false, /// Read all data even if limit is reached. Needed for totals.
         bool with_ties_ = false, /// Limit with ties.
+        bool is_negative_ = false,
         SortDescription description_ = {});
 
     String getName() const override { return "Limit"; }
@@ -42,6 +43,7 @@ private:
     size_t limit;
     size_t offset;
     bool always_read_till_end;
+    bool is_negative;
 
     bool with_ties;
     const SortDescription description;
