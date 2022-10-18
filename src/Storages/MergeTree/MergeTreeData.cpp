@@ -1721,7 +1721,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
     const auto time_now = std::chrono::system_clock::now();
     auto now = std::chrono::system_clock::to_time_t(time_now);
-    const bool verbose_skip_part = (time_now - last_report_grab_old_parts) >= std::chrono::seconds(60);
+    const bool verbose_skip_part = (time_now - last_report_grab_old_parts) >= std::chrono::seconds(5);
     if (verbose_skip_part)
         last_report_grab_old_parts = time_now;
 
@@ -6575,12 +6575,21 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
         auto data_part_storage = part->getDataPartStoragePtr();
-        String src_part_path = data_part_storage->getRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path;
+
+        scope_guard src_flushed_tmp_dir_lock;
+        MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
+
         if (auto part_in_memory = asInMemoryPart(part))
         {
-            auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
-            data_part_storage = part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
+            auto flushed_part_path = *part_in_memory->getRelativePathForPrefix("tmp_freeze");
+            src_flushed_tmp_dir_lock = part->storage.getTemporaryPartDirectoryHolder("tmp_freeze" + part->name);
+
+            auto flushed_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+            src_flushed_tmp_part = createPart(part->name, part->info, flushed_part_storage);
+            src_flushed_tmp_part->is_temp = true;
+
+            data_part_storage = flushed_part_storage;
         }
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
