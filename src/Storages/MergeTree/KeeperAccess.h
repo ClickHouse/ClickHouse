@@ -44,7 +44,7 @@ class ZooKeeperWithFailtInjection
     UInt64 calls_total = 0;
     UInt64 calls_without_fault_injection = 0;
     const UInt64 seed = 0;
-    const std::function<void(const std::string &)> noop_cleanup = [](const std::string &) {};
+    const std::function<void()> noop_cleanup = []() {};
 
     ZooKeeperWithFailtInjection(
         zk::Ptr const & keeper_,
@@ -146,7 +146,11 @@ public:
             "tryMulti",
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMulti(requests, responses); },
-            noop_cleanup);
+            [&](Coordination::Error err)
+            {
+                if (err == Coordination::Error::ZOK)
+                    faultInjectionCleanup("tryMultiNoThrow", requests, responses);
+            });
     }
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
@@ -155,13 +159,17 @@ public:
             "tryMultiNoThrow",
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMultiNoThrow(requests, responses); },
-            noop_cleanup);
+            [&](Coordination::Error err)
+            {
+                if (err == Coordination::Error::ZOK)
+                    faultInjectionCleanup("tryMultiNoThrow", requests, responses);
+            });
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
         return access<std::string>(
-            "get", path, [&]() { return keeper->get(path, stat, watch); }, noop_cleanup);
+            "get", path, [&]() { return keeper->get(path, stat, watch); }, [](const std::string &) {});
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
@@ -180,7 +188,7 @@ public:
             {
                 try
                 {
-                    if (mode | zkutil::CreateMode::EphemeralSequential)
+                    if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
                     {
                         keeper->remove(result_path);
                         if (unlikely(logger))
@@ -205,12 +213,48 @@ public:
     Coordination::Responses multi(const Coordination::Requests & requests)
     {
         return access<Coordination::Responses>(
-            "multi", !requests.empty() ? requests.front()->getPath() : "", [&]() { return keeper->multi(requests); }, noop_cleanup);
+            "multi",
+            !requests.empty() ? requests.front()->getPath() : "",
+            [&]() { return keeper->multi(requests); },
+            [&](Coordination::Responses const & responses) { faultInjectionCleanup("multi", requests, responses); });
     }
 
 private:
-    template <typename Result, bool inject_failure_before_op = true, int inject_failure_after_op = true>
-    Result access(const char * func_name, const std::string & path, auto && operation, auto && fault_after_op_cleanup)
+    void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    {
+        if (responses.empty())
+            return;
+
+        if (responses.size() != requests.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Number of responses doesn't match number of requests: method={} requests={} responses={}",
+                method,
+                requests.size(),
+                responses.size());
+
+        /// find create request with ephemeral flag
+        std::vector<std::pair<size_t, const Coordination::CreateRequest *>> create_requests;
+        for (size_t i = 0; i < requests.size(); ++i)
+        {
+            const auto * create_req = dynamic_cast<const Coordination::CreateRequest *>(requests[i].get());
+            if (create_req && create_req->is_ephemeral)
+                create_requests.emplace_back(i, create_req);
+        }
+
+        for (auto && [i, req] : create_requests)
+        {
+            const auto * create_resp = dynamic_cast<const Coordination::CreateResponse *>(responses.at(i).get());
+            if (!create_resp)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Response should be CreateResponse: method={} index={} path={}", method, i, req->path);
+
+            keeper->remove(create_resp->path_created);
+        }
+    }
+
+    template <typename Result, bool inject_failure_before_op = true, int inject_failure_after_op = true, typename FaultCleanup>
+    Result access(const char * func_name, const std::string & path, auto && operation, FaultCleanup fault_after_op_cleanup)
     {
         try
         {
@@ -226,6 +270,11 @@ private:
             }
 
             Result res = operation();
+            if constexpr (std::is_same_v<Coordination::Error, Result>)
+            {
+                if (Coordination::isHardwareError(res))
+                    return res;
+            }
 
             if constexpr (inject_failure_after_op)
             {
@@ -234,12 +283,16 @@ private:
                     if (unlikely(fault_policy))
                         fault_policy->afterOperation();
                 }
-                catch (...)
+                catch (const zkutil::KeeperException &)
                 {
                     if constexpr (std::is_same_v<Result, std::string>)
                         fault_after_op_cleanup(res);
+                    else if constexpr (std::is_same_v<Result, Coordination::Responses>)
+                        fault_after_op_cleanup(res);
+                    else if constexpr (std::is_same_v<Result, Coordination::Error>)
+                        fault_after_op_cleanup(res);
                     else
-                        fault_after_op_cleanup("");
+                        fault_after_op_cleanup();
 
                     throw;
                 }
