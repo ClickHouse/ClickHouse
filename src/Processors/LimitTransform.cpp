@@ -157,7 +157,7 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         return Status::PortFull;
     }
 
-    // When limit is unreachable, need to return all rows before offset
+    /// When limit is unreachable, need to return all rows before offset
     if (limit_is_unreachable && PopWithoutCut())
     {
         Chunk pop(queuePop());
@@ -228,7 +228,7 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         return Status::NeedData;
     }
 
-    /// Input finished, pop chunk from queue and return
+    /// All inputs finished, pop chunk from queue and return
     output.push(queuePop());
     return Status::PortFull;
 }
@@ -254,6 +254,7 @@ Chunk LimitTransform::queuePop()
         return res;
     }
 
+    /// Then we may need to cut chunk, see all 4 cases in comments below
     Chunk res(std::move(queue.front()));
     queue.pop_front();
     rows_in_queue -= res.getNumRows();
@@ -261,6 +262,11 @@ Chunk LimitTransform::queuePop()
     if (rows_in_queue >= offset)
     {
         if (rows_in_queue + res.getNumRows() <= rows_to_keep)
+            ///                         <--------> rows_in_queue
+            ///            <---------------------> rows_to_keep
+            ///            ^limit            ^offset
+            ///                 <-------> res
+            ///                 <-------> to return
             return res;
 
         /// Need to cut chunk
@@ -268,11 +274,11 @@ Chunk LimitTransform::queuePop()
         UInt64 num_rows = res.getNumRows();
         Columns columns = res.detachColumns();
 
-        ///                                 <--------> rows_in_queue
-        ///                           <--------------> rows_to_keep
-        ///                                      ^ offset
-        ///                <----------------> res
-        ///                           <-----> to return
+        ///                         <--------> rows_in_queue
+        ///                   <--------------> rows_to_keep
+        ///                   ^limit      ^offset
+        ///        <----------------> res
+        ///                   <-----> to return
         UInt64 diff = num_rows + rows_in_queue - rows_to_keep;
         for (UInt64 i = 0; i < num_columns; ++i)
             columns[i] = columns[i]->cut(diff, num_rows - diff);
@@ -284,14 +290,36 @@ Chunk LimitTransform::queuePop()
     UInt64 num_columns = res.getNumColumns();
     UInt64 num_rows = res.getNumRows();
     Columns columns = res.detachColumns();
+    UInt64 start;
+    UInt64 length;
 
-    ///                    <------------------> rows_in_queue
-    ///  <----------------> res
-    ///             ^ offset
-    UInt64 diff = offset - rows_in_queue;
+    if (rows_in_queue + num_rows > rows_to_keep)
+    {
+        ///                    <------------------> rows_in_queue
+        ///  <----------------> res
+        ///     ^limit    ^offset
+        ///      <--------> to return (limit is reachable)
+        ///  <------------> to return (limit is unreachable)
+
+        /// When limit is unreachable, need to return all rows before offset
+        if (limit_is_unreachable)
+            start = 0;
+        else
+            start = rows_in_queue + num_rows - rows_to_keep;
+    }
+    else
+    {
+        ///                      <------------------> rows_in_queue
+        ///     <----------------> res
+        /// ^limit    ^offset
+        ///     <-----> to return
+        start = 0;
+    }
+
+    length = rows_in_queue + num_rows - offset - start;
     for (UInt64 i = 0; i < num_columns; ++i)
-        columns[i] = columns[i]->cut(0, num_rows - diff);
-    res.setColumns(std::move(columns), num_rows - diff);
+        columns[i] = columns[i]->cut(start, length);
+    res.setColumns(std::move(columns), length);
     return res;
 }
 
