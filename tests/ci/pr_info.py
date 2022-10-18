@@ -20,10 +20,12 @@ SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
+    ".mdx",
     ".yml",
     ".txt",
     ".css",
     ".js",
+    ".jsx",
     ".xml",
     ".ico",
     ".conf",
