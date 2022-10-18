@@ -21,16 +21,18 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 struct UniformDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "uniformDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(Float64 min, Float64 max, ColumnFloat64::Container & container) const
+    static void generate(Float64 min, Float64 max, ColumnFloat64::Container & container)
     {
         auto distribution = std::uniform_real_distribution<>(min, max);
         for (auto & elem : container)
@@ -40,10 +42,11 @@ struct UniformDistribution
 
 struct NormalDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "normalDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container) const
+    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
     {
         auto distribution = std::normal_distribution<>(mean, variance);
         for (auto & elem : container)
@@ -53,10 +56,11 @@ struct NormalDistribution
 
 struct LogNormalDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "logNormalDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container) const
+    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
     {
         auto distribution = std::lognormal_distribution<>(mean, variance);
         for (auto & elem : container)
@@ -66,10 +70,11 @@ struct LogNormalDistribution
 
 struct ExponentialDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "exponentialDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(Float64 lambda, ColumnFloat64::Container & container) const
+    static void generate(Float64 lambda, ColumnFloat64::Container & container)
     {
         auto distribution = std::exponential_distribution<>(lambda);
         for (auto & elem : container)
@@ -79,10 +84,11 @@ struct ExponentialDistribution
 
 struct ChiSquaredDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "chiSquaredDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container) const
+    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
         for (auto & elem : container)
@@ -92,10 +98,11 @@ struct ChiSquaredDistribution
 
 struct StudentTDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "studentTDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container) const
+    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
         for (auto & elem : container)
@@ -105,10 +112,11 @@ struct StudentTDistribution
 
 struct FisherFDistribution
 {
+    using ReturnType = DataTypeFloat64;
     static constexpr const char * getName() { return "fisherFDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container) const
+    static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container)
     {
         auto distribution = std::fisher_f_distribution<>(d1, d2);
         for (auto & elem : container)
@@ -118,10 +126,11 @@ struct FisherFDistribution
 
 struct BernoulliDistribution
 {
+    using ReturnType = DataTypeUInt8;
     static constexpr const char * getName() { return "bernoulliDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(Float64 p, ColumnUInt8::Container & container) const
+    static void generate(Float64 p, ColumnUInt8::Container & container)
     {
         if (p < 0.0f || p > 1.0f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
@@ -134,10 +143,11 @@ struct BernoulliDistribution
 
 struct BinomialDistribution
 {
+    using ReturnType = DataTypeUInt64;
     static constexpr const char * getName() { return "binomialDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container) const
+    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container)
     {
         if (p < 0.0f || p > 1.0f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
@@ -150,10 +160,11 @@ struct BinomialDistribution
 
 struct NegativeBinomialDistribution
 {
+    using ReturnType = DataTypeUInt64;
     static constexpr const char * getName() { return "negativeBinomialDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container) const
+    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container)
     {
         if (p < 0.0f || p > 1.0f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
@@ -166,10 +177,11 @@ struct NegativeBinomialDistribution
 
 struct PoissonDistribution
 {
+    using ReturnType = DataTypeUInt64;
     static constexpr const char * getName() { return "poissonDistribution"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    void generate(UInt64 n, ColumnUInt64::Container & container) const
+    static void generate(UInt64 n, ColumnUInt64::Container & container)
     {
         auto distribution = std::poisson_distribution(n);
         for (auto & elem : container)
@@ -184,11 +196,15 @@ template <typename Distribution>
 class FunctionDistribution : public IFunction
 {
 private:
-    mutable Distribution distribution;
+    Distribution distribution;
 
     template <typename ResultType>
     ResultType getParameterFromConstColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments) const
     {
+        if (parameter_number >= arguments.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Parameter number ({}) is greater than the size of arguments ({}). This is a bug", parameter_number, arguments.size());
+
         const IColumn * col = arguments[parameter_number].column.get();
 
         if (!isColumnConst(*col))
@@ -209,7 +225,7 @@ public:
     }
 
     static constexpr auto name = Distribution::getName();
-    String getName() const override { return Distribution::getName(); }
+    String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
     bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
@@ -223,18 +239,10 @@ public:
             WhichDataType which(type);
             if (!which.isFloat() && !which.isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}, expected Float64", type->getName(), getName());
+                    "Illegal type {} of argument of function {}, expected Float64 or interger", type->getName(), getName());
         }
 
-        if constexpr (std::is_same_v<Distribution, BernoulliDistribution>)
-            return std::make_shared<DataTypeUInt8>();
-        else if constexpr (
-            std::is_same_v<Distribution, BinomialDistribution>
-            || std::is_same_v<Distribution, NegativeBinomialDistribution>
-            || std::is_same_v<Distribution, PoissonDistribution>)
-            return std::make_shared<DataTypeUInt64>();
-        else
-            return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<typename Distribution::ReturnType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -274,7 +282,7 @@ public:
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than two argument specified for function", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than two argument specified for function {}", getName());
             }
 
             return res_column;
