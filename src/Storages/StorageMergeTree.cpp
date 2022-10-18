@@ -1203,7 +1203,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (!merge_entry)
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock);
 
-        if (getSettings()->auto_optimize_partition_after_seconds
+        if (getSettings()->auto_optimize_partition_interval_seconds
             && !merge_entry && !mutate_entry
             && time_after_previous_optimize_one_partition.compareAndRestartDeferred(getSettings()->auto_optimize_partition_interval_seconds))
         {
