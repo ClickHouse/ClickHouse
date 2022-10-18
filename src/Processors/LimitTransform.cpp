@@ -254,7 +254,6 @@ Chunk LimitTransform::queuePop()
         return res;
     }
 
-    /// Then we may need to cut chunk, see all 4 cases in comments below
     Chunk res(std::move(queue.front()));
     queue.pop_front();
     rows_in_queue -= res.getNumRows();

@@ -26,7 +26,7 @@ public:
 
     size_t getLimitForSorting() const
     {
-        if (limit > std::numeric_limits<UInt64>::max() - offset)
+        if (limit > std::numeric_limits<UInt64>::max() - offset || is_negative)
             return 0;
 
         return limit + offset;
