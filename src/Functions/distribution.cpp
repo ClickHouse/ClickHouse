@@ -239,7 +239,7 @@ public:
             WhichDataType which(type);
             if (!which.isFloat() && !which.isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}, expected Float64 or interger", type->getName(), getName());
+                    "Illegal type {} of argument of function {}, expected Float64 or integer", type->getName(), getName());
         }
 
         return std::make_shared<typename Distribution::ReturnType>();
