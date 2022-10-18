@@ -6,8 +6,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageURL.h>
 #include <Storages/StorageExternalDistributed.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
@@ -40,16 +40,23 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
                             "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
                             configuration.http_method);
 
-        if (!storage_specific_args.empty())
+        for (const auto & [key, value] : storage_specific_args)
         {
-            String illegal_args;
-            for (const auto & arg : storage_specific_args)
+            if (key == "filename")
             {
-                if (!illegal_args.empty())
-                    illegal_args += ", ";
-                illegal_args += arg.first;
+                configuration.url = std::filesystem::path(configuration.url) / checkAndGetLiteralArgument<String>(value, "filename");
             }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for table function URL", illegal_args);
+            else
+            {
+                String illegal_args;
+                for (const auto & arg : storage_specific_args)
+                {
+                    if (!illegal_args.empty())
+                        illegal_args += ", ";
+                    illegal_args += arg.first;
+                }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for table function URL", illegal_args);
+            }
         }
 
         filename = configuration.url;
@@ -84,6 +91,9 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
+    if (!object_infos && StorageURL::shouldCollectObjectInfos(global_context))
+        object_infos.emplace();
+
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -94,6 +104,7 @@ StoragePtr TableFunctionURL::getStorage(
         String{},
         global_context,
         compression_method_,
+        object_infos,
         getHeaders(),
         configuration.http_method);
 }
@@ -115,10 +126,19 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context)
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageURL::getTableStructureFromData(format,
+
+        if (!object_infos && StorageURL::shouldCollectObjectInfos(context))
+            object_infos.emplace();
+
+        auto connection_params = std::make_shared<IStorageURLBase::CreateHTTPConnectionParams>(
+           toString(Poco::Net::HTTPRequest::HTTP_GET), ConnectionTimeouts::getHTTPTimeouts(context), getHeaders());
+
+        return StorageURL::getTableStructureFromData(
             filename,
+            connection_params,
+            object_infos ? &*object_infos : nullptr,
+            format,
             chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-            getHeaders(),
             std::nullopt,
             context);
     }

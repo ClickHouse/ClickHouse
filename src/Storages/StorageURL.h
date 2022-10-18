@@ -28,6 +28,14 @@ struct ConnectionTimeouts;
 class IStorageURLBase : public IStorage
 {
 public:
+    struct ObjectInfo
+    {
+        std::optional<size_t> size = 0;
+        std::optional<time_t> last_modification_time = 0;
+        bool supports_ranges = false;
+    };
+    using ObjectInfos = std::unordered_map<String, ObjectInfo>;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -41,15 +49,68 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static bool shouldCollectObjectInfos(ContextPtr context);
+
+    struct CreateHTTPConnectionParams
+    {
+        String http_method;
+        ConnectionTimeouts timeouts;
+        ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+        ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+
+        Poco::Net::HTTPBasicCredentials credentials{};
+
+        bool skip_url_not_found_error;
+        bool delay_initialization;
+
+        CreateHTTPConnectionParams(
+            const std::string & http_method_,
+            const ConnectionTimeouts & timeouts_,
+            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
+            ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback_ = {},
+            bool skip_url_not_found_error_ = false,
+            bool delay_initialization_ = false)
+        : http_method(http_method_)
+        , timeouts(timeouts_)
+        , headers(headers_)
+        , out_stream_callback(out_stream_callback_)
+        , skip_url_not_found_error(skip_url_not_found_error_)
+        , delay_initialization(delay_initialization_) {}
+    };
+    using CreateHTTPConnectionParamsPtr = std::shared_ptr<CreateHTTPConnectionParams>;
+
+    CreateHTTPConnectionParamsPtr getHTTPConnectionParams(
+        ContextPtr context, std::function<void(std::ostream &)> post_data_callback = {}) const;
+
     static ColumnsDescription getTableStructureFromData(
-        const String & format,
         const String & uri,
+        CreateHTTPConnectionParamsPtr connection_params,
+        ObjectInfos * object_infos,
+        const String & format,
         CompressionMethod compression_method,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
-    static SchemaCache & getSchemaCache(const ContextPtr & context);
+    static ObjectInfo getObjectInfo(
+        const Poco::URI & uri,
+        CreateHTTPConnectionParamsPtr connection_params,
+        ContextPtr context);
+
+    static ObjectInfo getAndCacheObjectInfo(
+        ObjectInfos & object_infos,
+        const Poco::URI & uri,
+        CreateHTTPConnectionParamsPtr connection_params,
+        ContextPtr context);
+
+    static std::unique_ptr<ReadBuffer> createHTTPReadBuffer(
+        Poco::URI uri,
+        CreateHTTPConnectionParamsPtr params,
+        ObjectInfos * object_infos,
+        size_t download_threads_num,
+        bool cache_result,
+        ContextPtr context);
 
 protected:
     IStorageURLBase(
@@ -62,6 +123,7 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         const String & compression_method_,
+        std::optional<ObjectInfos> object_infos_,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr);
@@ -77,6 +139,8 @@ protected:
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
+
+    std::optional<ObjectInfos> object_infos;
 
     virtual std::string getReadMethod() const;
 
@@ -103,8 +167,8 @@ private:
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & urls,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
+        CreateHTTPConnectionParamsPtr connection_params,
+        ObjectInfos * object_infos,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
@@ -114,12 +178,6 @@ private:
         const ColumnsDescription & columns,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
-    static std::optional<time_t> getLastModificationTime(
-        const String & url,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 };
 
@@ -163,6 +221,7 @@ public:
         const String & comment,
         ContextPtr context_,
         const String & compression_method_,
+        std::optional<ObjectInfos> object_infos_,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr);

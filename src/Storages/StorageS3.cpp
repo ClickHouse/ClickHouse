@@ -1189,11 +1189,12 @@ std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
     std::string object_path = fs::path(bucket) / key;
     size_t object_size;
     time_t object_modification_time;
+    bool cached = false;
 
     if (object_infos)
     {
         auto it = object_infos->find(object_path);
-        bool cached = it != object_infos->end();
+        cached = it != object_infos->end();
         if (!cached)
         {
             auto object_info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, false, false);
@@ -1203,10 +1204,6 @@ std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
         object_size = it->second.size;
         object_modification_time = it->second.last_modification_time;
 
-        LOG_TEST(
-            log,
-            "Having object info for `{}`, size: {}, modification timestamp: {} (taken from cache: {})",
-            key, object_size, object_modification_time, cached);
     }
     else
     {
@@ -1215,7 +1212,12 @@ std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
         object_modification_time = object_info.last_modification_time;
     }
 
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t start_offset, size_t end_offset_non_including)>;
+    LOG_TEST(
+        log,
+        "Having object info for `{}`, size: {}, modification timestamp: {} (taken from cache: {}, result is cached: {})",
+        key, object_size, object_modification_time, cached, object_infos != nullptr);
+
+    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t start_offset, size_t end_offset_non_including)>;
     ReadBufferCreator read_buffer_creator;
 
     if (settings.enable_cache_for_s3_table_engine)
@@ -1225,7 +1227,7 @@ std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
             return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, read_settings);
         };
 
-        read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
+        read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<SeekableReadBuffer>
         {
             auto result_buffer = wrapWithCachedReadBuffer(impl_buffer_creator, object_path, object_size, object_modification_time, read_settings);
 

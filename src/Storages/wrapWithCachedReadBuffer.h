@@ -4,14 +4,14 @@
 namespace DB
 {
 
-using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+using ImplementationBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
 
 using ModificationTimeGetter = std::function<std::optional<size_t>()>;
 
 struct ReadSettings;
 
-std::unique_ptr<ReadBufferFromFileBase> wrapWithCachedReadBuffer(
+std::unique_ptr<SeekableReadBuffer> wrapWithCachedReadBuffer(
     ImplementationBufferCreator impl_creator,
     const std::string & object_path,
     size_t object_size,

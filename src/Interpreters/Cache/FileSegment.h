@@ -45,7 +45,7 @@ friend class StorageSystemFilesystemCache;
 
 public:
     using Key = FileCacheKey;
-    using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
+    using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;

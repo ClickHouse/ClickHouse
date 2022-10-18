@@ -210,7 +210,8 @@ namespace detail
             Poco::Net::HTTPResponse response;
             getHeadResponse(response);
 
-            if (response.hasContentLength())
+            file_size = getFileSizeImpl(response);
+            if (file_size)
             {
                 if (!read_range.end)
                     read_range.end = getRangeBegin() + response.getContentLength();
@@ -236,14 +237,21 @@ namespace detail
 
         InitializeError initialization_error = InitializeError::NONE;
 
-    private:
+    public:
+        static std::optional<size_t> getFileSizeImpl(const Poco::Net::HTTPResponse & response)
+        {
+            if (response.hasContentLength())
+                return response.getContentLength();
+            return std::nullopt;
+        }
+
         void getHeadResponse(Poco::Net::HTTPResponse & response)
         {
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
-                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD, true);
                     break;
                 }
                 catch (const Poco::Exception & e)
@@ -256,6 +264,7 @@ namespace detail
             }
         }
 
+    private:
         void setupExternalBuffer()
         {
             /**
@@ -528,16 +537,17 @@ namespace detail
 
             auto on_retriable_error = [&]()
             {
-                    retry_with_range_header = true;
-                    impl.reset();
-                    auto http_session = session->getSession();
-                    http_session->reset();
-                    sleepForMilliseconds(milliseconds_to_wait);
+                retry_with_range_header = true;
+                impl.reset();
+                auto http_session = session->getSession();
+                http_session->reset();
+                sleepForMilliseconds(milliseconds_to_wait);
             };
 
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 exception = nullptr;
+                initialization_error = InitializeError::NONE;
 
                 try
                 {
@@ -671,6 +681,10 @@ namespace detail
 
         SeekableReadBuffer::Range getRemainingReadRange() const override { return {getOffset(), read_range.end}; }
 
+        size_t getFileOffsetOfBufferEnd() const override { return getOffset(); }
+
+        bool supportsRightBoundedReads() const override { return true; }
+
         std::string getResponseCookie(const std::string & name, const std::string & def) const
         {
             for (const auto & cookie : cookies)
@@ -696,6 +710,11 @@ namespace detail
         {
             Poco::Net::HTTPResponse response;
             getHeadResponse(response);
+            return getLastModificationTimeImpl(response);
+        }
+
+        static std::optional<time_t> getLastModificationTimeImpl(const Poco::Net::HTTPResponse & response)
+        {
             if (!response.has("Last-Modified"))
                 return std::nullopt;
 
@@ -764,41 +783,19 @@ public:
 
 class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
-    using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
-
 public:
+    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
+
     RangedReadWriteBufferFromHTTPFactory(
+        ReadBufferCreator && read_buffer_creator_,
+        const std::string & filename_,
         size_t total_object_size_,
-        size_t range_step_,
-        Poco::URI uri_,
-        std::string method_,
-        OutStreamCallback out_stream_callback_,
-        ConnectionTimeouts timeouts_,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
-        UInt64 max_redirects_ = 0,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ReadSettings settings_ = {},
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries_ = {},
-        const RemoteHostFilter * remote_host_filter_ = nullptr,
-        bool delay_initialization_ = true,
-        bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false)
-        : range_generator(total_object_size_, range_step_)
+        size_t range_step_)
+        : read_buffer_creator(read_buffer_creator_)
+        , filename(filename_)
+        , range_generator(total_object_size_, range_step_)
         , total_object_size(total_object_size_)
         , range_step(range_step_)
-        , uri(uri_)
-        , method(std::move(method_))
-        , out_stream_callback(out_stream_callback_)
-        , timeouts(std::move(timeouts_))
-        , credentials(credentials_)
-        , max_redirects(max_redirects_)
-        , buffer_size(buffer_size_)
-        , settings(std::move(settings_))
-        , http_header_entries(std::move(http_header_entries_))
-        , remote_host_filter(remote_host_filter_)
-        , delay_initialization(delay_initialization_)
-        , use_external_buffer(use_external_buffer_)
-        , skip_not_found_url(skip_not_found_url_)
     {
     }
 
@@ -806,26 +803,9 @@ public:
     {
         const auto next_range = range_generator.nextRange();
         if (!next_range)
-        {
             return nullptr;
-        }
 
-        return std::make_shared<ReadWriteBufferFromHTTP>(
-            uri,
-            method,
-            out_stream_callback,
-            timeouts,
-            credentials,
-            max_redirects,
-            buffer_size,
-            settings,
-            http_header_entries,
-            // HTTP Range has inclusive bounds, i.e. [from, to]
-            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
-            remote_host_filter,
-            delay_initialization,
-            use_external_buffer,
-            skip_not_found_url);
+        return read_buffer_creator(next_range->first, next_range->second);
     }
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override
@@ -836,25 +816,14 @@ public:
 
     size_t getFileSize() override { return total_object_size; }
 
-    String getFileName() const override { return uri.toString(); }
+    String getFileName() const override { return filename; }
 
 private:
+    ReadBufferCreator read_buffer_creator;
+    std::string filename;
     RangeGenerator range_generator;
     size_t total_object_size;
     size_t range_step;
-    Poco::URI uri;
-    std::string method;
-    OutStreamCallback out_stream_callback;
-    ConnectionTimeouts timeouts;
-    const Poco::Net::HTTPBasicCredentials & credentials;
-    UInt64 max_redirects;
-    size_t buffer_size;
-    ReadSettings settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries;
-    const RemoteHostFilter * remote_host_filter;
-    bool delay_initialization;
-    bool use_external_buffer;
-    bool skip_not_found_url;
 };
 
 class UpdatablePooledSession : public UpdatableSessionBase<PooledHTTPSessionPtr>

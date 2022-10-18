@@ -883,7 +883,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
 
         LOG_TEST(log, "Trying to get columns from cache for: {}", url);
 
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        auto get_last_modification_time = [&]() -> std::optional<time_t>
         {
             if (!object_infos)
                 return std::nullopt;
@@ -903,7 +903,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
         };
 
         auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
-        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        auto columns = schema_cache.tryGet(cache_key, std::move(get_last_modification_time));
         if (columns)
             return columns;
     }

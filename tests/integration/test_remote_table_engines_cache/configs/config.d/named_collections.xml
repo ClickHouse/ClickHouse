@@ -12,5 +12,10 @@
             <format>CSV</format>
             <structure>auto</structure>
         </hdfs>
+        <url>
+            <url>http://nginx:80/</url>
+            <format>CSV</format>
+            <structure>auto</structure>
+        </url>
     </named_collections>
 </clickhouse>

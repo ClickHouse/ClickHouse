@@ -609,6 +609,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, enable_filesystem_cache_on_lower_level, true, "If read buffer supports caching inside threadpool, allow it to do it, otherwise cache outside ot threadpool. Do not use this setting, it is needed for testing", 0) \
     M(Bool, enable_cache_for_s3_table_engine, false, "Enable filesystem cache s3 table engine and table function", 0) \
     M(Bool, enable_cache_for_hdfs_table_engine, false, "Enable filesystem cache hdfs table engine and table function", 0) \
+    M(Bool, enable_cache_for_url_table_engine, false, "Enable filesystem cache url table engine and table function", 0) \
     M(Bool, skip_download_if_exceeds_query_cache, true, "Skip download from remote filesystem if exceeds query cache size", 0) \
     M(UInt64, max_query_cache_size, (128UL * 1024 * 1024 * 1024), "Max remote filesystem cache size that can be used by a single query", 0) \
     \

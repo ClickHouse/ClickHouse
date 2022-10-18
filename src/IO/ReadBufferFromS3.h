@@ -93,7 +93,7 @@ private:
 class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t, size_t)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
 
     explicit ReadBufferS3Factory(
         ReadBufferCreator && read_buffer_creator_,

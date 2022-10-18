@@ -2,9 +2,12 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/defineRemoteStoragesCache.h>
+#include <Storages/wrapWithCachedReadBuffer.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -66,6 +69,7 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     const String & compression_method_,
+    std::optional<ObjectInfos> object_infos_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_)
@@ -77,13 +81,22 @@ IStorageURLBase::IStorageURLBase(
     , headers(headers_)
     , http_method(http_method_)
     , partition_by(partition_by_)
+    , object_infos(object_infos_)
 {
     FormatFactory::instance().checkFormatName(format_name);
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+        auto columns = getTableStructureFromData(
+            uri,
+            getHTTPConnectionParams(context_),
+            object_infos ? &*object_infos : nullptr,
+            format_name,
+            compression_method,
+            format_settings,
+            context_);
+
         storage_metadata.setColumns(columns);
     }
     else
@@ -94,6 +107,21 @@ IStorageURLBase::IStorageURLBase(
     setInMemoryMetadata(storage_metadata);
 }
 
+
+IStorageURLBase::CreateHTTPConnectionParamsPtr IStorageURLBase::getHTTPConnectionParams(
+    ContextPtr context, std::function<void(std::ostream &)> post_data_callback) const
+{
+    return std::make_shared<CreateHTTPConnectionParams>(
+        getReadMethod(), ConnectionTimeouts::getHTTPTimeouts(context), headers, post_data_callback);
+}
+
+bool IStorageURLBase::shouldCollectObjectInfos(ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    return settings.schema_inference_use_cache_for_url
+        || (settings.enable_cache_for_url_table_engine
+            && FileCacheFactory::instance().tryGetByName(REMOTE_TABLE_ENGINES_CACHE_NAME));
+}
 
 namespace
 {
@@ -153,8 +181,8 @@ namespace
 
         StorageURLSource(
             URIInfoPtr uri_info_,
-            const std::string & http_method,
-            std::function<void(std::ostream &)> callback,
+            StorageURL::CreateHTTPConnectionParamsPtr connection_params,
+            StorageURL::ObjectInfos * object_infos,
             const String & format,
             const std::optional<FormatSettings> & format_settings,
             String name_,
@@ -162,15 +190,15 @@ namespace
             ContextPtr context,
             const ColumnsDescription & columns,
             UInt64 max_block_size,
-            const ConnectionTimeouts & timeouts,
             CompressionMethod compression_method,
             size_t download_threads,
-            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
             const URIParams & params = {},
             bool glob_url = false)
-            : ISource(sample_block), name(std::move(name_)), uri_info(uri_info_)
+            : ISource(sample_block)
+            , name(std::move(name_))
+            , uri_info(uri_info_)
         {
-            auto headers = getHeaders(headers_);
+            connection_params->headers = getHeaders(connection_params->headers);
 
             /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
             initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
@@ -179,20 +207,17 @@ namespace
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
 
                 auto first_option = uri_options.begin();
+                connection_params->delay_initialization = uri_options.size() == 1;
                 read_buf = getFirstAvailableURLReadBuffer(
                     first_option,
                     uri_options.end(),
-                    context,
                     params,
-                    http_method,
-                    callback,
-                    timeouts,
+                    connection_params,
+                    object_infos,
                     compression_method,
-                    credentials,
-                    headers,
                     glob_url,
-                    uri_options.size() == 1,
-                    download_threads);
+                    download_threads,
+                    context);
 
                 auto input_format
                     = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
@@ -239,154 +264,39 @@ namespace
         static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
             std::vector<String>::const_iterator & option,
             const std::vector<String>::const_iterator & end,
-            ContextPtr context,
             const URIParams & params,
-            const String & http_method,
-            std::function<void(std::ostream &)> callback,
-            const ConnectionTimeouts & timeouts,
+            StorageURL::CreateHTTPConnectionParamsPtr connection_params,
+            StorageURL::ObjectInfos * object_infos,
             CompressionMethod compression_method,
-            Poco::Net::HTTPBasicCredentials & credentials,
-            const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
             bool glob_url,
-            bool delay_initialization,
-            size_t download_threads)
+            size_t download_threads,
+            ContextPtr context)
         {
-            String first_exception_message;
-            ReadSettings read_settings = context->getReadSettings();
+            const auto settings = context->getSettings();
+            const auto read_settings = context->getReadSettings();
 
-            size_t options = std::distance(option, end);
+            const size_t options = std::distance(option, end);
+            const bool cache_result = settings.enable_cache_for_url_table_engine;
+
+            String first_exception_message;
+
             for (; option != end; ++option)
             {
-                bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
                 auto request_uri = Poco::URI(*option);
-
                 for (const auto & [param, value] : params)
                     request_uri.addQueryParameter(param, value);
 
-                setCredentials(credentials, request_uri);
+                connection_params->skip_url_not_found_error = glob_url
+                    && read_settings.http_skip_not_found_url_for_globs
+                    && option == std::prev(end);
 
-                const auto settings = context->getSettings();
+                setCredentials(connection_params->credentials, request_uri);
+
                 try
                 {
-                    if (download_threads > 1)
-                    {
-                        try
-                        {
-                            ReadWriteBufferFromHTTP buffer(
-                                request_uri,
-                                Poco::Net::HTTPRequest::HTTP_HEAD,
-                                callback,
-                                timeouts,
-                                credentials,
-                                settings.max_http_get_redirects,
-                                DBMS_DEFAULT_BUFFER_SIZE,
-                                read_settings,
-                                headers,
-                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
-                                &context->getRemoteHostFilter(),
-                                true,
-                                /* use_external_buffer */ false,
-                                /* skip_url_not_found_error */ skip_url_not_found_error);
-
-                            Poco::Net::HTTPResponse res;
-
-                            for (size_t i = 0; i < settings.http_max_tries; ++i)
-                            {
-                                try
-                                {
-                                    buffer.callWithRedirects(res, Poco::Net::HTTPRequest::HTTP_HEAD, true);
-                                    break;
-                                }
-                                catch (const Poco::Exception & e)
-                                {
-                                    LOG_TRACE(
-                                        &Poco::Logger::get("StorageURLSource"),
-                                        "HTTP HEAD request to `{}` failed at try {}/{}. "
-                                        "Error: {}.",
-                                        request_uri.toString(),
-                                        i + 1,
-                                        settings.http_max_tries,
-                                        e.displayText());
-                                    if (!ReadWriteBufferFromHTTP::isRetriableError(res.getStatus()))
-                                    {
-                                        throw;
-                                    }
-                                }
-                            }
-
-                            // to check if Range header is supported, we need to send a request with it set
-                            const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
-                                || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
-                            LOG_TRACE(
-                                &Poco::Logger::get("StorageURLSource"),
-                                fmt::runtime(supports_ranges ? "HTTP Range is supported" : "HTTP Range is not supported"));
-
-
-                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
-                                && res.hasContentLength())
-                            {
-                                LOG_TRACE(
-                                    &Poco::Logger::get("StorageURLSource"),
-                                    "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
-                                    download_threads,
-                                    settings.max_download_buffer_size);
-
-                                auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-                                    res.getContentLength(),
-                                    settings.max_download_buffer_size,
-                                    request_uri,
-                                    http_method,
-                                    callback,
-                                    timeouts,
-                                    credentials,
-                                    settings.max_http_get_redirects,
-                                    DBMS_DEFAULT_BUFFER_SIZE,
-                                    read_settings,
-                                    headers,
-                                    &context->getRemoteHostFilter(),
-                                    delay_initialization,
-                                    /* use_external_buffer */ false,
-                                    /* skip_url_not_found_error */ skip_url_not_found_error);
-
-                                return wrapReadBufferWithCompressionMethod(
-                                    std::make_unique<ParallelReadBuffer>(
-                                        std::move(read_buffer_factory),
-                                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
-                                        download_threads),
-                                    compression_method,
-                                    settings.zstd_window_log_max);
-                            }
-                        }
-                        catch (const Poco::Exception & e)
-                        {
-                            LOG_TRACE(
-                                &Poco::Logger::get("StorageURLSource"),
-                                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\nFalling back to the single-threaded "
-                                "buffer",
-                                e.displayText());
-                        }
-                    }
-
-                    LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "Using single-threaded read buffer");
-
-                    return wrapReadBufferWithCompressionMethod(
-                        std::make_unique<ReadWriteBufferFromHTTP>(
-                            request_uri,
-                            http_method,
-                            callback,
-                            timeouts,
-                            credentials,
-                            settings.max_http_get_redirects,
-                            DBMS_DEFAULT_BUFFER_SIZE,
-                            read_settings,
-                            headers,
-                            ReadWriteBufferFromHTTP::Range{},
-                            &context->getRemoteHostFilter(),
-                            delay_initialization,
-                            /* use_external_buffer */ false,
-                            /* skip_url_not_found_error */ skip_url_not_found_error),
-                            compression_method,
-                        settings.zstd_window_log_max);
+                    auto impl = IStorageURLBase::createHTTPReadBuffer(
+                        request_uri, connection_params, object_infos, download_threads, cache_result, context);
+                    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, settings.zstd_window_log_max);
                 }
                 catch (...)
                 {
@@ -416,8 +326,6 @@ namespace
         /// onCancell and generate can be called concurrently and both of them
         /// have R/W access to reader pointer.
         std::mutex reader_mutex;
-
-        Poco::Net::HTTPBasicCredentials credentials;
     };
 }
 
@@ -563,16 +471,15 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 
 ColumnsDescription IStorageURLBase::getTableStructureFromData(
-    const String & format,
     const String & uri,
+    CreateHTTPConnectionParamsPtr connection_params,
+    ObjectInfos * object_infos,
+    const String & format,
     CompressionMethod compression_method,
-    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-
-    Poco::Net::HTTPBasicCredentials credentials;
 
     std::vector<String> urls_to_check;
     if (urlWithGlobs(uri))
@@ -592,7 +499,10 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().schema_inference_use_cache_for_url)
-        columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
+    {
+        columns_from_cache = tryGetColumnsFromCache(
+            urls_to_check, connection_params, object_infos, format, format_settings, context);
+    }
 
     ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
     {
@@ -600,19 +510,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             return nullptr;
 
         auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
-            it,
-            urls_to_check.cend(),
-            context,
-            {},
-            Poco::Net::HTTPRequest::HTTP_GET,
-            {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
-            compression_method,
-            credentials,
-            headers,
-            false,
-            false,
-            context->getSettingsRef().max_download_threads);\
+            it, urls_to_check.cend(), /* uri params */{}, connection_params, object_infos, compression_method,
+            /* globs_uri */false, context->getSettingsRef().max_download_threads, context);
+
         ++it;
         return buf;
     };
@@ -632,6 +532,169 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 bool IStorageURLBase::supportsSubsetOfColumns() const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+}
+
+IStorageURLBase::ObjectInfo IStorageURLBase::getObjectInfo(
+    const Poco::URI & uri, CreateHTTPConnectionParamsPtr connection_params, ContextPtr context)
+{
+    ReadWriteBufferFromHTTP buf(
+        uri,
+        Poco::Net::HTTPRequest::HTTP_HEAD,
+        connection_params->out_stream_callback,
+        connection_params->timeouts,
+        connection_params->credentials,
+        context->getSettings().max_http_get_redirects,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        context->getReadSettings(),
+        connection_params->headers,
+        ReadWriteBufferFromHTTP::Range{0, std::nullopt},
+        &context->getRemoteHostFilter(),
+        /* delay_initialization */true,
+        /* use_external_buffer */ false,
+        /* skip_url_not_found_error */false);
+
+    Poco::Net::HTTPResponse response;
+    buf.getHeadResponse(response);
+
+    const std::optional<size_t> file_size = ReadWriteBufferFromHTTP::getFileSizeImpl(response);
+    const std::optional<time_t> last_modification_time = ReadWriteBufferFromHTTP::getLastModificationTimeImpl(response);
+    const bool supports_ranges = (response.has("Accept-Ranges") && response.get("Accept-Ranges") == "bytes")
+        || (response.has("Content-Range") && response.get("Content-Range").starts_with("bytes"));
+    /// FIXME: res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
+
+    return {file_size, last_modification_time, supports_ranges};
+}
+
+IStorageURLBase::ObjectInfo IStorageURLBase::getAndCacheObjectInfo(
+    ObjectInfos & object_infos,
+    const Poco::URI & uri,
+    CreateHTTPConnectionParamsPtr connection_params,
+    ContextPtr context)
+{
+    std::string uri_str = uri.toString();
+
+    auto it = object_infos.find(uri_str);
+    bool cache_miss = it == object_infos.end();
+
+    LOG_TRACE(
+        &Poco::Logger::get("getFileInfo"),
+        fmt::runtime(cache_miss ? "No file ({}) info in cache, downloading..." : "Found file ({}) info in cache"),
+        uri.toString());
+
+    if (cache_miss)
+        it = object_infos.emplace(uri_str, getObjectInfo(uri, connection_params, context)).first;
+
+    return it->second;
+}
+
+std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
+    Poco::URI uri,
+    CreateHTTPConnectionParamsPtr connection_params,
+    ObjectInfos * object_infos,
+    size_t download_threads_num,
+    bool cache_result,
+    ContextPtr context)
+{
+    std::string uri_str = uri.toString();
+    auto * log = &Poco::Logger::get("createHTTPReadBuffer");
+    ObjectInfo file_info;
+
+    try
+    {
+        if (object_infos)
+            file_info = getAndCacheObjectInfo(*object_infos, uri, connection_params, context);
+        else
+            file_info = getObjectInfo(uri, connection_params, context);
+
+        LOG_TRACE(
+            log,
+            "Having object info for `{}`, size: {}, modification timestamp: {}, supports ranges: {} "
+            "(result is cached: {})",
+            uri.toString(), file_info.size ? toString(*file_info.size) : "Unknown",
+            file_info.last_modification_time ? toString(*file_info.last_modification_time) : "Unknown",
+            file_info.supports_ranges, object_infos != nullptr);
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_TRACE(
+            log,
+            "Failed to get metadata required to setup ParallelReadBuffer or CachedReadBuffer because of an exception:\n"
+            "{}.\nFalling back to the single-threaded, non-cached implementation",
+            e.displayText());
+    }
+
+    const auto & settings = context->getSettings();
+
+    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
+    ReadBufferCreator read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_included) -> std::unique_ptr<SeekableReadBuffer>
+    {
+        ReadWriteBufferFromHTTP::Range range;
+        if (end_offset_non_included)
+            range = {start_offset, end_offset_non_included - 1}; // HTTP Range has inclusive bounds, i.e. [from, to]
+
+        return std::make_unique<ReadWriteBufferFromHTTP>(
+            uri,
+            connection_params->http_method,
+            connection_params->out_stream_callback,
+            connection_params->timeouts,
+            connection_params->credentials,
+            settings.max_http_get_redirects,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getReadSettings(),
+            connection_params->headers,
+            range,
+            &context->getRemoteHostFilter(),
+            connection_params->delay_initialization,
+            /* use_external_buffer */false,
+            connection_params->skip_url_not_found_error);
+    };
+
+    const bool use_parallel_read_buffer = download_threads_num && file_info.supports_ranges && file_info.size;
+    const bool use_cached_read_buffer = cache_result && file_info.supports_ranges && file_info.size;
+
+    if (use_cached_read_buffer)
+    {
+        read_buffer_creator = [=, read_buffer_creator = std::move(read_buffer_creator)]
+            (size_t start_offset, size_t end_offset_non_including)
+        {
+            auto impl_buffer_creator = [&](){ return read_buffer_creator(0, 0); };
+            auto result_buffer = wrapWithCachedReadBuffer(
+                impl_buffer_creator, uri_str, *file_info.size, *file_info.last_modification_time, context->getReadSettings());
+
+            if (!result_buffer)
+                result_buffer = impl_buffer_creator();
+
+            result_buffer->setReadUntilPosition(end_offset_non_including);
+
+            if (start_offset)
+                result_buffer->seek(start_offset, SEEK_SET);
+
+            return result_buffer;
+        };
+    }
+    else
+    {
+    }
+
+    if (use_parallel_read_buffer)
+    {
+        LOG_TRACE(
+            log,
+            "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
+            download_threads_num,
+            settings.max_download_buffer_size);
+
+        auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+            std::move(read_buffer_creator), uri_str, *file_info.size, settings.max_download_buffer_size);
+
+        return std::make_unique<ParallelReadBuffer>(
+            std::move(read_buffer_factory),
+
+            threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
+            download_threads_num);
+    }
+
+    return read_buffer_creator(0, 0);
 }
 
 Pipe IStorageURLBase::read(
@@ -659,6 +722,9 @@ Pipe IStorageURLBase::read(
     }
 
     size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
+    auto * object_infos_ptr = object_infos ? &*object_infos : nullptr;
+    auto callback = getReadPOSTDataCallback(
+        column_names, columns_description, query_info, local_context, processed_stage, max_block_size);
 
     if (urlWithGlobs(uri))
     {
@@ -681,8 +747,8 @@ Pipe IStorageURLBase::read(
         {
             pipes.emplace_back(std::make_shared<StorageURLSource>(
                 uri_info,
-                getReadMethod(),
-                getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+                getHTTPConnectionParams(local_context, callback),
+                object_infos_ptr,
                 format_name,
                 format_settings,
                 getName(),
@@ -690,10 +756,8 @@ Pipe IStorageURLBase::read(
                 local_context,
                 columns_description,
                 max_block_size,
-                ConnectionTimeouts::getHTTPTimeouts(local_context),
                 compression_method,
                 download_threads,
-                headers,
                 params,
                 /* glob_url */ true));
         }
@@ -703,21 +767,21 @@ Pipe IStorageURLBase::read(
     {
         auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
         uri_info->uri_list_to_read.emplace_back(std::vector<String>{uri});
+
+
         return Pipe(std::make_shared<StorageURLSource>(
             uri_info,
-            getReadMethod(),
-            getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+            getHTTPConnectionParams(local_context, callback),
+            object_infos_ptr,
             format_name,
             format_settings,
-            getName(),
-            block_for_format,
+            /* name_for_log */getName(),
+            /* sample_block */block_for_format,
             local_context,
             columns_description,
             max_block_size,
-            ConnectionTimeouts::getHTTPTimeouts(local_context),
             compression_method,
             max_download_threads,
-            headers,
             params));
     }
 }
@@ -749,21 +813,23 @@ Pipe StorageURLWithFailover::read(
 
     auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
     uri_info->uri_list_to_read.emplace_back(uri_options);
-    auto pipe = Pipe(std::make_shared<StorageURLSource>(
+    auto callback = getReadPOSTDataCallback(
+        column_names, columns_description, query_info, local_context, processed_stage, max_block_size);
+    auto * object_infos_ptr = object_infos ? &*object_infos : nullptr;
+
+    Pipe pipe(std::make_shared<StorageURLSource>(
         uri_info,
-        getReadMethod(),
-        getReadPOSTDataCallback(column_names, columns_description, query_info, local_context, processed_stage, max_block_size),
+        getHTTPConnectionParams(local_context, callback),
+        object_infos_ptr,
         format_name,
         format_settings,
-        getName(),
-        block_for_format,
+        /* name_for_log */getName(),
+        /* sample_block */block_for_format,
         local_context,
         columns_description,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(local_context),
         compression_method,
         local_context->getSettingsRef().max_download_threads,
-        headers,
         params));
     std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);
     return pipe;
@@ -815,8 +881,8 @@ SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 
 std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     const Strings & urls,
-    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-    const Poco::Net::HTTPBasicCredentials & credentials,
+    CreateHTTPConnectionParamsPtr connection_params,
+    ObjectInfos * object_infos,
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
@@ -824,19 +890,26 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     auto & schema_cache = getSchemaCache(context);
     for (const auto & url : urls)
     {
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
+        auto get_last_modification_time = [&]() -> std::optional<time_t>
         {
-            auto last_mod_time = getLastModificationTime(url, headers, credentials, context);
+            ObjectInfo file_info;
+            if (object_infos)
+                file_info = getAndCacheObjectInfo(*object_infos, Poco::URI(url), connection_params, context);
+            else
+                file_info = getObjectInfo(Poco::URI(url), connection_params, context);
+
             /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
             /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
             /// special setting for this case is enabled.
-            if (!last_mod_time && !context->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
-                return 0;
-            return last_mod_time;
+            if (!file_info.last_modification_time
+                || !context->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
+                return std::nullopt;
+
+            return file_info.last_modification_time;
         };
 
         auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
-        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        auto columns = schema_cache.tryGet(cache_key, std::move(get_last_modification_time));
         if (columns)
             return columns;
     }
@@ -856,38 +929,6 @@ void IStorageURLBase::addColumnsToCache(
     schema_cache.addMany(cache_keys, columns);
 }
 
-std::optional<time_t> IStorageURLBase::getLastModificationTime(
-    const String & url,
-    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    const ContextPtr & context)
-{
-    try
-    {
-        ReadWriteBufferFromHTTP buf(
-            Poco::URI(url),
-            Poco::Net::HTTPRequest::HTTP_GET,
-            {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
-            credentials,
-            context->getSettingsRef().max_http_get_redirects,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getReadSettings(),
-            headers,
-            ReadWriteBufferFromHTTP::Range{},
-            &context->getRemoteHostFilter(),
-            true,
-            false,
-            false);
-
-        return buf.getLastModificationTime();
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
-}
-
 StorageURL::StorageURL(
     const String & uri_,
     const StorageID & table_id_,
@@ -898,6 +939,7 @@ StorageURL::StorageURL(
     const String & comment,
     ContextPtr context_,
     const String & compression_method_,
+    std::optional<ObjectInfos> object_infos_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_)
@@ -911,6 +953,7 @@ StorageURL::StorageURL(
         constraints_,
         comment,
         compression_method_,
+        object_infos_,
         headers_,
         http_method_,
         partition_by_)
@@ -928,7 +971,7 @@ StorageURLWithFailover::StorageURLWithFailover(
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
     const String & compression_method_)
-    : StorageURL("", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
+    : StorageURL("", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_, std::nullopt)
 {
     for (const auto & uri_option : uri_options_)
     {
@@ -1115,6 +1158,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.comment,
                 args.getContext(),
                 configuration.compression_method,
+                std::nullopt,
                 headers,
                 configuration.http_method,
                 partition_by);

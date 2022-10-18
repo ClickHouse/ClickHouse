@@ -21,7 +21,7 @@ namespace DB
 class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+    using ImplementationBufferPtr = std::shared_ptr<SeekableReadBuffer>;
     using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
 
     CachedOnDiskReadBufferFromFile(
@@ -62,6 +62,8 @@ public:
         REMOTE_FS_READ_AND_PUT_IN_CACHE,
     };
 
+    Range getRemainingReadRange() const override;
+
 private:
     void initialize(size_t offset, size_t size);
 
@@ -81,7 +83,7 @@ private:
 
     void assertCorrectness() const;
 
-    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegment & file_segment, ReadType read_type_);
+    ImplementationBufferPtr getRemoteFSReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
 

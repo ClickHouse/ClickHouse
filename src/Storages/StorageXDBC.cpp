@@ -41,7 +41,8 @@ StorageXDBC::StorageXDBC(
         columns_,
         constraints_,
         comment,
-        "" /* CompressionMethod */)
+        "" /* CompressionMethod */,
+        std::nullopt)
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)

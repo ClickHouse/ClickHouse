@@ -1179,6 +1179,11 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::getLastNonDownloadedOffset
     return std::nullopt;
 }
 
+SeekableReadBuffer::Range CachedOnDiskReadBufferFromFile::getRemainingReadRange() const
+{
+    return Range{.left = file_offset_of_buffer_end, .right = read_until_position - 1};
+}
+
 void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
     if (FileCache::isReadOnly()
