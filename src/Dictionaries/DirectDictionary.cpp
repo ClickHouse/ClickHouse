@@ -171,13 +171,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto requested_keys = requested_keys_extractor.extractAllKeys();
     size_t requested_keys_size = requested_keys.size();
 
-    HashMap<KeyType, size_t> requested_key_to_index;
+    HashMap<KeyType, PaddedPODArray<size_t>> requested_key_to_index;
     requested_key_to_index.reserve(requested_keys_size);
 
     for (size_t i = 0; i < requested_keys.size(); ++i)
     {
         auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key] = i;
+        requested_key_to_index[requested_key].push_back(i);
     }
 
     auto result = ColumnUInt8::create(requested_keys_size, false);
@@ -208,10 +208,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             const auto * it = requested_key_to_index.find(block_key);
             assert(it);
 
-            size_t result_data_found_index = it->getMapped();
-            /// block_keys_size cannot be used, due to duplicates.
-            keys_found += !result_data[result_data_found_index];
-            result_data[result_data_found_index] = true;
+            auto & result_data_found_indexes = it->getMapped();
+            for (size_t result_data_found_index : result_data_found_indexes)
+            {
+                /// block_keys_size cannot be used, due to duplicates.
+                keys_found += !result_data[result_data_found_index];
+                result_data[result_data_found_index] = true;
+            }
 
             block_keys_extractor.rollbackCurrentKey();
         }

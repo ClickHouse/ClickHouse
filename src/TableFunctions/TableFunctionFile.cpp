@@ -1,5 +1,5 @@
 #include <TableFunctions/TableFunctionFile.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"

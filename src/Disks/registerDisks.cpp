@@ -2,7 +2,7 @@
 
 #include "DiskFactory.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {
@@ -28,6 +28,7 @@ void registerDiskHDFS(DiskFactory & factory);
 
 void registerDiskWebServer(DiskFactory & factory);
 
+void registerDiskCache(DiskFactory & factory);
 
 void registerDisks()
 {
@@ -53,6 +54,8 @@ void registerDisks()
 #endif
 
     registerDiskWebServer(factory);
+
+    registerDiskCache(factory);
 }
 
 }

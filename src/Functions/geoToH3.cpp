@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -141,7 +141,7 @@ public:
 
 }
 
-void registerFunctionGeoToH3(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoToH3)
 {
     factory.registerFunction<FunctionGeoToH3>();
 }

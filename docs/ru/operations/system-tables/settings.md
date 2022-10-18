@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/settings
+---
 # system.settings {#system-tables-system-settings}
 
 Содержит информацию о сессионных настройках для текущего пользователя.

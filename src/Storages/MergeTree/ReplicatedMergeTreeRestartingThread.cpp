@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr auto retry_period_ms = 10 * 1000;
+    constexpr auto retry_period_ms = 1000;
 }
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -103,7 +103,6 @@ void ReplicatedMergeTreeRestartingThread::run()
 }
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
-
 {
     if (!storage.is_readonly && !storage.getZooKeeper()->expired())
         return true;
@@ -124,7 +123,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
     else
     {
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     try
@@ -151,7 +150,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     setNotReadonly();
 
     /// Start queue processing
-    storage.part_check_thread.start();
     storage.background_operations_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
@@ -160,6 +158,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     if (storage.auto_optimize_partition_task)
         storage.auto_optimize_partition_task->activateAndSchedule();
     storage.cleanup_thread.start();
+    storage.part_check_thread.start();
 
     return true;
 }
@@ -252,7 +251,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         if (part)
         {
             LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
-            storage.forgetPartAndMoveToDetached(part, "noquorum");
+            storage.forcefullyMovePartToDetachedAndRemoveFromMemory(part, "noquorum");
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
@@ -358,6 +357,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
     storage.mutations_finalizing_task->deactivate();
 
     storage.cleanup_thread.stop();
+    storage.part_check_thread.stop();
 
     /// Stop queue processing
     {
@@ -366,9 +366,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
         storage.background_operations_assignee.finish();
     }
-
-    /// Stop part_check_thread after queue processing, because some queue tasks may restart part_check_thread
-    storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");
 }

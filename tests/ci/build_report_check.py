@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+import atexit
 from typing import Dict, List, Tuple
 
 from github import Github
@@ -19,7 +20,10 @@ from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from commit_status_helper import get_commit
+from commit_status_helper import (
+    get_commit,
+    update_mergeable_check,
+)
 from ci_config import CI_CONFIG
 from rerun_helper import RerunHelper
 
@@ -33,8 +37,7 @@ class BuildResult:
         compiler,
         build_type,
         sanitizer,
-        bundled,
-        splitted,
+        libraries,
         status,
         elapsed_seconds,
         with_coverage,
@@ -42,8 +45,7 @@ class BuildResult:
         self.compiler = compiler
         self.build_type = build_type
         self.sanitizer = sanitizer
-        self.bundled = bundled
-        self.splitted = splitted
+        self.libraries = libraries
         self.status = status
         self.elapsed_seconds = elapsed_seconds
         self.with_coverage = with_coverage
@@ -87,8 +89,7 @@ def get_failed_report(
         compiler="unknown",
         build_type="unknown",
         sanitizer="unknown",
-        bundled="unknown",
-        splitted="unknown",
+        libraries="unknown",
         status=message,
         elapsed_seconds=0,
         with_coverage=False,
@@ -104,8 +105,7 @@ def process_report(
         compiler=build_config["compiler"],
         build_type=build_config["build_type"],
         sanitizer=build_config["sanitizer"],
-        bundled=build_config["bundled"],
-        splitted=build_config["splitted"],
+        libraries=build_config["libraries"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
         with_coverage=False,
@@ -151,10 +151,19 @@ def main():
             needs_data = json.load(file_handler)
             required_builds = len(needs_data)
 
+    if needs_data is not None and all(
+        i["result"] == "skipped" for i in needs_data.values()
+    ):
+        logging.info("All builds are skipped, exiting")
+        sys.exit(0)
+
     logging.info("The next builds are required: %s", ", ".join(needs_data))
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
+
+    atexit.register(update_mergeable_check, gh, pr_info, build_check_name)
+
     rerun_helper = RerunHelper(gh, pr_info, build_check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
@@ -231,7 +240,7 @@ def main():
         logging.error("No success builds, failing check")
         sys.exit(1)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"

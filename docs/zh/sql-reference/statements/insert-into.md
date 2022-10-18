@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/statements/insert-into
+---
 ## INSERT INTO 语句 {#insert}
 
 INSERT INTO 语句主要用于向系统中添加数据.
@@ -85,7 +88,7 @@ INSERT INTO t FORMAT TabSeparated
 
 ### 限制 {#constraints}
 
-如果表中有一些[限制](../../sql-reference/statements/create/table.md#constraints),，数据插入时会逐行进行数据校验，如果这里面包含了不符合限制条件的数据，服务将会抛出包含限制信息的异常，这个语句也会被停止执行。
+如果表中有一些[限制](../../sql-reference/statements/create/table.mdx#constraints),，数据插入时会逐行进行数据校验，如果这里面包含了不符合限制条件的数据，服务将会抛出包含限制信息的异常，这个语句也会被停止执行。
 
 ### 使用`SELECT`的结果写入 {#insert_query_insert-select}
 

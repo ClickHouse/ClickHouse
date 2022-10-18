@@ -13,7 +13,6 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <Interpreters/DictionaryReader.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -363,7 +362,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), forceFullSortingMergeJoin());
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -388,17 +387,17 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
             left_columns.emplace_back(col.name, col.type);
 }
 
-bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_) const
 {
     if (strictness_ == strictness() && kind_ == kind())
         return true;
 
     /// Compatibility: old ANY INNER == new SEMI LEFT
-    if (strictness_ == ASTTableJoin::Strictness::Semi && isLeft(kind_) &&
-        strictness() == ASTTableJoin::Strictness::RightAny && isInner(kind()))
+    if (strictness_ == JoinStrictness::Semi && isLeft(kind_) &&
+        strictness() == JoinStrictness::RightAny && isInner(kind()))
         return true;
-    if (strictness() == ASTTableJoin::Strictness::Semi && isLeft(kind()) &&
-        strictness_ == ASTTableJoin::Strictness::RightAny && isInner(kind_))
+    if (strictness() == JoinStrictness::Semi && isLeft(kind()) &&
+        strictness_ == JoinStrictness::RightAny && isInner(kind_))
         return true;
 
     return false;
@@ -409,95 +408,12 @@ bool TableJoin::oneDisjunct() const
     return clauses.size() == 1;
 }
 
-bool TableJoin::allowMergeJoin() const
-{
-    bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
-    bool is_all = (strictness() == ASTTableJoin::Strictness::All);
-    bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
-
-    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
-    bool special_left = isLeft(kind()) && (is_any || is_semi);
-
-    return (all_join || special_left) && oneDisjunct();
-}
-
 bool TableJoin::needStreamWithNonJoinedRows() const
 {
-    if (strictness() == ASTTableJoin::Strictness::Asof ||
-        strictness() == ASTTableJoin::Strictness::Semi)
+    if (strictness() == JoinStrictness::Asof ||
+        strictness() == JoinStrictness::Semi)
         return false;
     return isRightOrFull(kind());
-}
-
-static std::optional<String> getDictKeyName(const String & dict_name , ContextPtr context)
-{
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-    if (!dictionary)
-        return {};
-
-    if (const auto & structure = dictionary->getStructure(); structure.id)
-        return structure.id->name;
-    return {};
-}
-
-bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
-{
-    using Strictness = ASTTableJoin::Strictness;
-
-    bool allowed_inner = isInner(kind()) && strictness() == Strictness::All;
-    bool allowed_left = isLeft(kind()) && (strictness() == Strictness::Any ||
-                                           strictness() == Strictness::All ||
-                                           strictness() == Strictness::Semi ||
-                                           strictness() == Strictness::Anti);
-
-    /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
-    if (!allowed_inner && !allowed_left)
-        return false;
-
-    if (clauses.size() != 1 || clauses[0].key_names_right.size() != 1)
-        return false;
-
-    const auto & right_key = getOnlyClause().key_names_right[0];
-
-    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
-    auto it_key = original_names.find(right_key);
-    if (it_key == original_names.end())
-        return false;
-
-    if (!right_storage_dictionary)
-        return false;
-
-    auto dict_name = right_storage_dictionary->getDictionaryName();
-
-    auto dict_key = getDictKeyName(dict_name, context);
-    if (!dict_key.has_value() || *dict_key != it_key->second)
-        return false; /// JOIN key != Dictionary key
-
-    Names src_names;
-    NamesAndTypesList dst_columns;
-    for (const auto & col : sample_block)
-    {
-        if (col.name == right_key)
-            continue; /// do not extract key column
-
-        auto it = original_names.find(col.name);
-        if (it != original_names.end())
-        {
-            String original = it->second;
-            src_names.push_back(original);
-            dst_columns.push_back({col.name, col.type});
-        }
-        else
-        {
-            /// Can't extract column from dictionary table
-            /// TODO: Sometimes it should be possible to recunstruct required column,
-            /// e.g. if it's an expression depending on dictionary attributes
-            return false;
-        }
-    }
-    dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
-
-    return true;
 }
 
 static void renameIfNeeded(String & name, const NameToNameMap & renames)
@@ -511,7 +427,7 @@ TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), forceFullSortingMergeJoin());
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
     NameToNameMap left_key_column_rename;
     NameToNameMap right_key_column_rename;
@@ -581,7 +497,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     for (const auto & col : right)
         right_types[renamedRightColumnName(col.name)] = col.type;
 
-    if (strictness() == ASTTableJoin::Strictness::Asof)
+    if (strictness() == JoinStrictness::Asof)
     {
         if (clauses.size() != 1)
             throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -729,23 +645,24 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     return dag_stage1;
 }
 
-void TableJoin::setStorageJoin(std::shared_ptr<IKeyValueStorage> storage)
+void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
 {
     right_kv_storage = storage;
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
-    if (right_storage_dictionary)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
     right_storage_join = storage;
 }
 
-void TableJoin::setStorageJoin(std::shared_ptr<StorageDictionary> storage)
+void TableJoin::setRightStorageName(const std::string & storage_name)
 {
-    if (right_storage_join)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin and Dictionary join are mutually exclusive");
-    right_storage_dictionary = storage;
+    right_storage_name = storage_name;
+}
+
+const std::string & TableJoin::getRightStorageName() const
+{
+    return right_storage_name;
 }
 
 String TableJoin::renamedRightColumnName(const String & name) const
@@ -827,16 +744,16 @@ void TableJoin::assertHasOneOnExpr() const
 void TableJoin::resetToCross()
 {
     this->resetKeys();
-    this->table_join.kind = ASTTableJoin::Kind::Cross;
+    this->table_join.kind = JoinKind::Cross;
 }
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
+    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
-    if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
+    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;
-    if (table_join.strictness == ASTTableJoin::Strictness::Asof)
+    if (table_join.strictness == JoinStrictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;

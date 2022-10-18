@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -94,7 +94,7 @@ public:
 
 }
 
-void registerFunctionH3HexAreaM2(FunctionFactory & factory)
+REGISTER_FUNCTION(H3HexAreaM2)
 {
     factory.registerFunction<FunctionH3HexAreaM2>();
 }

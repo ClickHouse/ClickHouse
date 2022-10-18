@@ -26,6 +26,12 @@ SELECT * FROM (SELECT k as key FROM t2) as t2 INNER JOIN rdb ON rdb.key == t2.ke
 SELECT '-- using';
 SELECT * FROM (SELECT k as key FROM t2) as t2 INNER JOIN rdb USING key ORDER BY key;
 
+SELECT '-- left semi';
+SELECT k FROM t2 LEFT SEMI JOIN rdb ON rdb.key == t2.k ORDER BY k;
+
+SELECT '-- left anti';
+SELECT k FROM t2 LEFT ANTI JOIN rdb ON rdb.key == t2.k ORDER BY k;
+
 SELECT '-- join_use_nulls left';
 SELECT k, key, toTypeName(value2), value2 FROM t2 LEFT JOIN rdb ON rdb.key == t2.k ORDER BY k SETTINGS join_use_nulls = 1;
 
@@ -47,17 +53,20 @@ SELECT '--- totals';
 SELECT rdb.key % 2, sum(k), max(value2) FROM t2 INNER JOIN rdb ON rdb.key == t2.k GROUP BY (rdb.key % 2) WITH TOTALS;
 
 SELECT '---';
-SELECT * FROM t1 RIGHT JOIN rdb ON rdb.key == t1.k; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM t1 RIGHT JOIN rdb ON rdb.key == t1.k; -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM t1 RIGHT JOIN rdb ON rdb.key == t1.k FORMAT Null SETTINGS join_algorithm = 'direct,hash';
 
-SELECT * FROM t1 FULL JOIN rdb ON rdb.key == t1.k; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM t1 FULL JOIN rdb ON rdb.key == t1.k; -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM t1 FULL JOIN rdb ON rdb.key == t1.k FORMAT Null SETTINGS join_algorithm = 'direct,hash';
 
-SELECT * FROM t1 INNER JOIN rdb ON rdb.key + 1 == t1.k; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM t1 INNER JOIN rdb ON rdb.key + 1 == t1.k; -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM t1 INNER JOIN rdb ON rdb.key + 1 == t1.k FORMAT Null SETTINGS join_algorithm = 'direct,hash';
 
-SELECT * FROM t1 INNER JOIN (SELECT * FROM rdb) AS rdb ON rdb.key == t1.k; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM t1 INNER JOIN (SELECT * FROM rdb) AS rdb ON rdb.key == t1.k; -- { serverError NOT_IMPLEMENTED }
 SELECT * FROM t1 INNER JOIN (SELECT * FROM rdb) AS rdb ON rdb.key == t1.k FORMAT Null SETTINGS join_algorithm = 'direct,hash';
+
+SELECT * FROM t1 RIGHT SEMI JOIN (SELECT * FROM rdb) AS rdb ON rdb.key == t1.k; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 RIGHT ANTI JOIN (SELECT * FROM rdb) AS rdb ON rdb.key == t1.k; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t1;

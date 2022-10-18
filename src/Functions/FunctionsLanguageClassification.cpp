@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_NLP
 
@@ -221,7 +221,7 @@ struct NameDetectLanguage
 
 using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLanguageImpl, NameDetectLanguage>;
 
-void registerFunctionsDetectLanguage(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectLanguage)
 {
     factory.registerFunction<FunctionDetectLanguage>();
     factory.registerFunction<FunctionDetectLanguageMixed>();

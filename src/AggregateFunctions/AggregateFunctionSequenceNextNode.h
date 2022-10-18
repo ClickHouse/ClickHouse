@@ -194,20 +194,9 @@ public:
 
     DataTypePtr getReturnType() const override { return data_type; }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
-    }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties &) const override
-    {
-        /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
-        ///   aggregated events: [A -> B -> C]
-        ///   events to find: [C -> D]
-        ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -406,7 +395,7 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

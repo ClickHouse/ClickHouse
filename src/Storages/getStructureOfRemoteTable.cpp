@@ -123,6 +123,17 @@ ColumnsDescription getStructureOfRemoteTable(
 
     std::string fail_messages;
 
+    /// Use local shard as first priority, as it needs no network communication
+    for (const auto & shard_info : shards_info)
+    {
+        if (shard_info.isLocal())
+        {
+            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            chassert(!res.empty());
+            return res;
+        }
+    }
+
     for (const auto & shard_info : shards_info)
     {
         try
@@ -185,8 +196,8 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = get<const String &>(name_col[i]);
-                auto type_name = get<const String &>(type_col[i]);
+                auto name = name_col[i].get<const String &>();
+                auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
                 if (storage_column && isObject(storage_column->type))

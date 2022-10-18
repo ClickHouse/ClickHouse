@@ -96,7 +96,7 @@ private:
     FuturePartsSet future_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
-    bool currently_executing_drop_or_replace_range = false;
+    std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
@@ -279,7 +279,7 @@ private:
     /// Very large queue entries may appear occasionally.
     /// We cannot process MAX_MULTI_OPS at once because it will fail.
     /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
-    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
+    /// Let's start with one entry per transaction and increase it exponentially towards MAX_MULTI_OPS.
     /// It will allow to make some progress before failing and remain operational even in extreme cases.
     size_t current_multi_batch_size = 1;
 
@@ -519,7 +519,11 @@ public:
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
 
+    /// Returns true if there's a drop range covering new_drop_range_info
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
+
+    /// Returns virtual part covering part_name (if any) or empty string
+    String getCoveringVirtualPart(const String & part_name) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

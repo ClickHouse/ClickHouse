@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/integrations/hive
 sidebar_position: 4
 sidebar_label: Hive
 ---
@@ -24,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table');
 PARTITION BY expr
 ```
-查看[CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query)查询的详细描述。
+查看[CREATE TABLE](../../../sql-reference/statements/create/table.mdx#create-table-query)查询的详细描述。
 
 表的结构可以与原来的Hive表结构有所不同:
 - 列名应该与原来的Hive表相同，但你可以使用这些列中的一些，并以任何顺序，你也可以使用一些从其他列计算的别名列。

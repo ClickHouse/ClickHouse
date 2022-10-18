@@ -47,6 +47,7 @@ class SessionLog;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class AsynchronousInsertLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -79,6 +80,7 @@ struct SystemLogs
     std::shared_ptr<TransactionsInfoLog> transactions_info_log;
     /// Used to log processors profiling
     std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
+    std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
 
     std::vector<ISystemLog *> logs;
 };

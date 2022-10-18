@@ -1124,7 +1124,7 @@ template <class Traits>
 class TupleOrArrayFunction : public IFunction
 {
 public:
-    static inline String name = Traits::name;
+    static constexpr auto name = Traits::name;
 
     explicit TupleOrArrayFunction(ContextPtr context_)
         : IFunction()
@@ -1173,7 +1173,7 @@ extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
 struct L1NormTraits
 {
-    static inline String name = "L1Norm";
+    static constexpr auto name = "L1Norm";
 
     static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
@@ -1181,7 +1181,7 @@ struct L1NormTraits
 
 struct L2NormTraits
 {
-    static inline String name = "L2Norm";
+    static constexpr auto name = "L2Norm";
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
@@ -1189,7 +1189,7 @@ struct L2NormTraits
 
 struct L2SquaredNormTraits
 {
-    static inline String name = "L2SquaredNorm";
+    static constexpr auto name = "L2SquaredNorm";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredNorm;
@@ -1197,7 +1197,7 @@ struct L2SquaredNormTraits
 
 struct LpNormTraits
 {
-    static inline String name = "LpNorm";
+    static constexpr auto name = "LpNorm";
 
     static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
@@ -1205,7 +1205,7 @@ struct LpNormTraits
 
 struct LinfNormTraits
 {
-    static inline String name = "LinfNorm";
+    static constexpr auto name = "LinfNorm";
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
@@ -1213,7 +1213,7 @@ struct LinfNormTraits
 
 struct L1DistanceTraits
 {
-    static inline String name = "L1Distance";
+    static constexpr auto name = "L1Distance";
 
     static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
@@ -1221,7 +1221,7 @@ struct L1DistanceTraits
 
 struct L2DistanceTraits
 {
-    static inline String name = "L2Distance";
+    static constexpr auto name = "L2Distance";
 
     static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
@@ -1229,7 +1229,7 @@ struct L2DistanceTraits
 
 struct L2SquaredDistanceTraits
 {
-    static inline String name = "L2SquaredDistance";
+    static constexpr auto name = "L2SquaredDistance";
 
     static constexpr auto CreateTupleFunction = FunctionL2SquaredDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
@@ -1237,7 +1237,7 @@ struct L2SquaredDistanceTraits
 
 struct LpDistanceTraits
 {
-    static inline String name = "LpDistance";
+    static constexpr auto name = "LpDistance";
 
     static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
@@ -1245,7 +1245,7 @@ struct LpDistanceTraits
 
 struct LinfDistanceTraits
 {
-    static inline String name = "LinfDistance";
+    static constexpr auto name = "LinfDistance";
 
     static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
@@ -1253,7 +1253,7 @@ struct LinfDistanceTraits
 
 struct CosineDistanceTraits
 {
-    static inline String name = "cosineDistance";
+    static constexpr auto name = "cosineDistance";
 
     static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
@@ -1272,7 +1272,7 @@ using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
 
-void registerVectorFunctions(FunctionFactory & factory)
+REGISTER_FUNCTION(VectorFunctions)
 {
     factory.registerFunction<FunctionTuplePlus>();
     factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::CaseInsensitive);

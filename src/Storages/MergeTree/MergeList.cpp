@@ -60,6 +60,7 @@ MergeListElement::MergeListElement(
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
+    , description{"to apply mutate/merge in " + query_id}
 {
     for (const auto & source_part : future_part->parts)
     {
@@ -77,7 +78,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    memory_tracker.setDescription("Mutate/Merge");
+    memory_tracker.setDescription(description.c_str());
     /// MemoryTracker settings should be set here, because
     /// later (see MemoryTrackerThreadSwitcher)
     /// parent memory tracker will be changed, and if merge executed from the
@@ -88,7 +89,7 @@ MergeListElement::MergeListElement(
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
     memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
-    if (settings.memory_tracker_fault_probability)
+    if (settings.memory_tracker_fault_probability > 0.0)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
     /// Let's try to copy memory related settings from the query,

@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -28,6 +29,8 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
+#include <Common/EventNotifier.h>
+#include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
@@ -152,6 +155,8 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
+    bool hasLightweightDeletedMask() const override;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
@@ -275,13 +280,13 @@ public:
     /// Return false if data is still used by another node
     static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         std::string disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String & zookeeper_path_old);
+        const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
     DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -321,8 +326,9 @@ public:
     void checkBrokenDisks();
 
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context);
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
+    bool canUseZeroCopyReplication() const;
 private:
     std::atomic_bool are_restoring_replica {false};
     bool optimizeImpl(
@@ -346,6 +352,7 @@ private:
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
+    friend class ReplicatedMergeTreeAttachThread;
     friend class ReplicatedMergeTreeMergeStrategyPicker;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
@@ -367,6 +374,12 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
+    /// Get connection from global context and reconnect if needed.
+    /// NOTE: use it only when table is shut down, in all other cases
+    /// use getZooKeeper() because it is managed by restarting thread
+    /// which guarantees that we have only one connected object
+    /// for table.
+    zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
     void setZooKeeper();
 
@@ -453,8 +466,14 @@ private:
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
+    EventNotifier::HandlerPtr session_expired_callback_handler;
+
+    /// A thread that attaches the table using ZooKeeper
+    std::optional<ReplicatedMergeTreeAttachThread> attach_thread;
 
     PartMovesBetweenShardsOrchestrator part_moves_between_shards_orchestrator;
+
+    std::atomic<bool> initialization_done{false};
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
@@ -470,7 +489,8 @@ private:
     ThrottlerPtr replicated_sends_throttler;
 
     /// Global ID, synced via ZooKeeper between replicas
-    UUID table_shared_id;
+    mutable std::mutex table_shared_id_mutex;
+    mutable UUID table_shared_id;
 
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
@@ -496,7 +516,8 @@ private:
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
-    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
+    void setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
+                           ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.
@@ -758,7 +779,7 @@ private:
         std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
         std::vector<size_t> & log_entry_ops_idx);
     void dropAllPartsInPartitions(
-        zkutil::ZooKeeper & zookeeper, const Strings partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
+        zkutil::ZooKeeper & zookeeper, const Strings & partition_ids, std::vector<LogEntryPtr> & entries, ContextPtr query_context, bool detach);
 
     LogEntryPtr dropAllPartsInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, ContextPtr query_context, bool detach);
@@ -831,13 +852,13 @@ private:
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
-    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
+    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
     /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID();
+    void createTableSharedID() const;
 
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
@@ -847,6 +868,8 @@ private:
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
     /// If somebody already holding the lock -- return std::nullopt.
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
+
+    void startupImpl();
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

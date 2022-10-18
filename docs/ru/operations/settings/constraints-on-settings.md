@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/settings/constraints-on-settings
 sidebar_position: 62
 sidebar_label: "Ограничения на изменение настроек"
 ---

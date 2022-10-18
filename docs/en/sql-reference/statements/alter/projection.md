@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/alter/projection
 sidebar_position: 49
 sidebar_label: PROJECTION
+title: "Manipulating Projections"
 ---
-
-# Manipulating Projections
 
 The following operations with [projections](../../../engines/table-engines/mergetree-family/mergetree.md#projections) are available:
 

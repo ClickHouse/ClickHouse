@@ -9,7 +9,6 @@ CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SET
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 SELECT  * FROM test FORMAT Null;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache ORDER BY file_segment_range_end, size;
-0	0	1
 0	79	80
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache;

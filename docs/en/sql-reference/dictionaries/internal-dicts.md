@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/dictionaries/internal-dicts
 sidebar_position: 39
 sidebar_label: Internal Dictionaries
 ---

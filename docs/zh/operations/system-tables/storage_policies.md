@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/storage_policies
+---
 # system.storage_policies {#system_tables-storage_policies}
 
 包含有关 [服务器配置](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure) 中定义的存储策略和卷信息。

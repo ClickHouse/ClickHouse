@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -108,7 +108,7 @@ public:
 
 }
 
-void registerFunctionH3GetPentagonIndexes(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetPentagonIndexes)
 {
     factory.registerFunction<FunctionH3GetPentagonIndexes>();
 }

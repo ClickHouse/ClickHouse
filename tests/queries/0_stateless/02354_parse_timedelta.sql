@@ -5,6 +5,10 @@ SELECT parseTimeDelta('0.00123 seconds');
 SELECT parseTimeDelta('1yr2mo');
 SELECT parseTimeDelta('11s+22min');
 SELECT parseTimeDelta('1yr-2mo-4w + 12 days, 3 hours : 1 minute ; 33 seconds');
+SELECT parseTimeDelta('1s1ms1us1ns');
+SELECT parseTimeDelta('1s1ms1μs1ns');
+SELECT parseTimeDelta('1s - 1ms : 1μs ; 1ns');
+SELECT parseTimeDelta('1.11s1.11ms1.11us1.11ns');
 
 -- invalid expressions
 SELECT parseTimeDelta(); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}

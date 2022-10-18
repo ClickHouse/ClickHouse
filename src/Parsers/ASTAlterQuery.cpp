@@ -124,7 +124,7 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
         case MODIFY_COMMENT: return "MODIFY_COMMENT";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -378,7 +378,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE" << (settings.hilite ? hilite_none : "");
 
         if (!with_name.empty())
         {
@@ -399,7 +399,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::UNFREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE" << (settings.hilite ? hilite_none : "");
 
         if (!with_name.empty())
         {

@@ -113,6 +113,8 @@ protected:
         std::vector<Arguments> & external_tables_arguments,
         std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
+    void setInsertionTable(const ASTInsertQuery & insert_query);
+
 
 private:
     void receiveResult(ASTPtr parsed_query);
@@ -145,7 +147,6 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void outputQueryInfo(bool echo_query_);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
@@ -176,11 +177,9 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    ServerConnectionPtr connection;
-    ConnectionParameters connection_parameters;
-
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
+    bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
@@ -197,6 +196,12 @@ protected:
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    /// thread status should be destructed before shared context because it relies on process list.
+    std::optional<ThreadStatus> thread_status;
+
+    ServerConnectionPtr connection;
+    ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -246,6 +251,7 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+    int create_query_fuzzer_runs = 0;
 
     struct
     {

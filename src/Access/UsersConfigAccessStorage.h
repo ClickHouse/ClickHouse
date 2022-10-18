@@ -38,9 +38,9 @@ public:
               const String & preprocessed_dir = {},
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
 
-    void reload() override;
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
+    void reload(ReloadMode reload_mode) override;
 
     bool exists(const UUID & id) const override;
 

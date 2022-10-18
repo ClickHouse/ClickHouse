@@ -34,14 +34,26 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addJoinedBlock should not be called");
     }
 
-    void checkTypesOfKeys(const Block & left_block) const override
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join)
     {
-        if (table_join->getClauses().size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin supports only one join key");
+        if (!table_join->oneDisjunct())
+            return false;
+
+        bool support_storage = !table_join->isSpecialStorage();
+
+        const auto & on_expr = table_join->getOnlyClause();
+        bool support_conditions = !on_expr.on_filter_condition_left && !on_expr.on_filter_condition_right;
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
-        if (table_join->hasUsing() && table_join->joinUseNulls())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support USING with join_use_nulls");
+        bool support_using_and_nulls = !table_join->hasUsing() || !table_join->joinUseNulls();
+
+        return support_conditions && support_using_and_nulls && support_storage;
+    }
+
+    void checkTypesOfKeys(const Block & left_block) const override
+    {
+        if (!isSupported(table_join))
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "FullSortingMergeJoin doesn't support specified query");
 
         const auto & onexpr = table_join->getOnlyClause();
         for (size_t i = 0; i < onexpr.key_names_left.size(); ++i)
