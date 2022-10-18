@@ -71,7 +71,7 @@ StorageS3Cluster::StorageS3Cluster(
         auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
             /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
-        need_to_add_structure_to_query = true;
+        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -118,7 +118,7 @@ Pipe StorageS3Cluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     ASTPtr query_to_send = query_info.original_query->clone();
-    if (need_to_add_structure_to_query)
+    if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 
