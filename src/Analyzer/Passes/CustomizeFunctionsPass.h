@@ -14,7 +14,7 @@ namespace DB
 class CustomizeFunctionsPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "CustomizeFunctionsPass"; }
+    String getName() override { return "CustomizeFunctions"; }
 
     String getDescription() override { return "Customize implementation of aggregate functions, and in functions."; }
 
@@ -23,4 +23,3 @@ public:
 };
 
 }
-

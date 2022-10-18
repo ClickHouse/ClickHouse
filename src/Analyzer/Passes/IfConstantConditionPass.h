@@ -16,7 +16,7 @@ namespace DB
 class IfConstantConditionPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "IfConstantConditionPass"; }
+    String getName() override { return "IfConstantCondition"; }
 
     String getDescription() override { return "Optimize if, multiIf for constant condition."; }
 
@@ -25,4 +25,3 @@ public:
 };
 
 }
-

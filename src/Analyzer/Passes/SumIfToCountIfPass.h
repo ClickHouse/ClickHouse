@@ -19,7 +19,7 @@ namespace DB
 class SumIfToCountIfPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "SumIfToCountIfPass"; }
+    String getName() override { return "SumIfToCountIf"; }
 
     String getDescription() override { return "Rewrite sum(if) and sumIf into countIf"; }
 
@@ -28,4 +28,3 @@ public:
 };
 
 }
-

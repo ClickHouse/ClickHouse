@@ -13,7 +13,7 @@ namespace DB
 class CountDistinctPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "CountDistinctPass"; }
+    String getName() override { return "CountDistinct"; }
 
     String getDescription() override
     {
@@ -25,4 +25,3 @@ public:
 };
 
 }
-

@@ -16,7 +16,7 @@ namespace DB
 class NormalizeCountVariantsPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "NormalizeCountVariantsPass"; }
+    String getName() override { return "NormalizeCountVariants"; }
 
     String getDescription() override { return "Optimize count(literal), sum(1) into count()."; }
 
@@ -25,4 +25,3 @@ public:
 };
 
 }
-

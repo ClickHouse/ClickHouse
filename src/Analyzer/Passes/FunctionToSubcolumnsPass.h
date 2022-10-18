@@ -20,7 +20,7 @@ namespace DB
 class FunctionToSubcolumnsPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "FunctionToSubcolumnsPass"; }
+    String getName() override { return "FunctionToSubcolumns"; }
 
     String getDescription() override { return "Rewrite function to subcolumns, for example tupleElement(column, subcolumn) into column.subcolumn"; }
 
@@ -29,4 +29,3 @@ public:
 };
 
 }
-
