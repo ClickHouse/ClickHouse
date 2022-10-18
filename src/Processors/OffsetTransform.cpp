@@ -129,7 +129,7 @@ OffsetTransform::Status OffsetTransform::preparePairNegative(PortsData & data)
         return Status::PortFull;
     }
 
-    if(popWithoutCut())
+    if (popWithoutCut())
     {
         PortsData pop(queuePop());
         pop.output_port->push(std::move(pop.current_chunk));
