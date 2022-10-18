@@ -1484,6 +1484,7 @@ void IMergeTreeDataPart::remove() const
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
+    assert(!broken || detached);
     String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
@@ -1512,7 +1513,9 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
 {
-    renameTo(*getRelativePathForDetachedPart(prefix, /* broken */ false), true, builder);
+    auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
+    assert(path_to_detach);
+    renameTo(path_to_detach.value(), true, builder);
     part_is_probably_removed_from_disk = true;
 }
 

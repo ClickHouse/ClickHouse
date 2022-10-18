@@ -131,10 +131,6 @@ public:
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
-    virtual bool looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path,
-                                                              std::optional<String> & original_checksums_content,
-                                                              std::optional<Strings> & original_files_list) const = 0;
-
     /// Reset part directory, used for im-memory parts.
     /// TODO: remove it.
     virtual void setRelativePath(const std::string & path) = 0;

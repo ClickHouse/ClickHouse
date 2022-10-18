@@ -408,6 +408,7 @@ void DataPartStorageOnDisk::clearDirectory(
 
 std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
 {
+    assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
