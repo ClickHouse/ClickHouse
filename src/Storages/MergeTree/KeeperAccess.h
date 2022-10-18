@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class RandomFaultInjection
 {
 public:
@@ -33,7 +38,7 @@ private:
 ///
 /// ZooKeeperWithFailtInjection mimics ZooKeeper interface and inject failures according to failure policy if set
 ///
-class ZooKeeperWithFailtInjection
+class ZooKeeperWithFaultInjection
 {
     using zk = zkutil::ZooKeeper;
 
@@ -46,7 +51,7 @@ class ZooKeeperWithFailtInjection
     const UInt64 seed = 0;
     const std::function<void()> noop_cleanup = []() {};
 
-    ZooKeeperWithFailtInjection(
+    ZooKeeperWithFaultInjection(
         zk::Ptr const & keeper_,
         double fault_injection_probability,
         UInt64 fault_injection_seed,
@@ -62,9 +67,9 @@ class ZooKeeperWithFailtInjection
     }
 
 public:
-    using Ptr = std::shared_ptr<ZooKeeperWithFailtInjection>;
+    using Ptr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
-    static ZooKeeperWithFailtInjection::Ptr createInstance(
+    static ZooKeeperWithFaultInjection::Ptr createInstance(
         double fault_injection_probability, UInt64 fault_injection_seed, const zk::Ptr & zookeeper, std::string name, Poco::Logger * logger)
     {
         /// validate all parameters here, constructor just accept everything
@@ -78,16 +83,16 @@ public:
             fault_injection_seed = randomSeed();
 
         if (fault_injection_probability > 0.0)
-            return std::shared_ptr<ZooKeeperWithFailtInjection>(
-                new ZooKeeperWithFailtInjection(zookeeper, fault_injection_probability, fault_injection_seed, std::move(name), logger));
+            return std::shared_ptr<ZooKeeperWithFaultInjection>(
+                new ZooKeeperWithFaultInjection(zookeeper, fault_injection_probability, fault_injection_seed, std::move(name), logger));
 
         /// if no fault injection provided, create instance which will not log anything
-        return std::make_shared<ZooKeeperWithFailtInjection>(zookeeper);
+        return std::make_shared<ZooKeeperWithFaultInjection>(zookeeper);
     }
 
-    explicit ZooKeeperWithFailtInjection(zk::Ptr const & keeper_) : keeper(keeper_) { }
+    explicit ZooKeeperWithFaultInjection(zk::Ptr const & keeper_) : keeper(keeper_) { }
 
-    ~ZooKeeperWithFailtInjection()
+    ~ZooKeeperWithFaultInjection()
     {
         if (unlikely(logger))
             LOG_TRACE(
@@ -326,5 +331,5 @@ private:
     }
 };
 
-using ZooKeeperWithFaultInjectionPtr = ZooKeeperWithFailtInjection::Ptr;
+using ZooKeeperWithFaultInjectionPtr = ZooKeeperWithFaultInjection::Ptr;
 }

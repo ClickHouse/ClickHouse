@@ -171,7 +171,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
 
-    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFailtInjection::createInstance(
+    ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,
         storage.getZooKeeper(),
@@ -318,7 +318,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     /// NOTE: No delay in this case. That's Ok.
 
     assertSessionIsNotExpired(storage.getZooKeeper());
-    auto zookeeper = std::make_shared<ZooKeeperWithFailtInjection>(storage.getZooKeeper());
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(storage.getZooKeeper());
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
@@ -730,7 +730,7 @@ void ReplicatedMergeTreeSink::onFinish()
     auto zookeeper = storage.getZooKeeper();
     /// todo: check this place, afaiu, it can be called after Generate apart of Consume
     assertSessionIsNotExpired(zookeeper);
-    finishDelayedChunk(std::make_shared<ZooKeeperWithFailtInjection>(zookeeper));
+    finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

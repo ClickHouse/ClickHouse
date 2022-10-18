@@ -83,8 +83,8 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class ZooKeeperWithFailtInjection;
-using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFailtInjection>;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 class StorageReplicatedMergeTree final : public MergeTreeData
 {

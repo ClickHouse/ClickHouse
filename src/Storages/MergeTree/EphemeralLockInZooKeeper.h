@@ -12,8 +12,8 @@
 
 namespace DB
 {
-class ZooKeeperWithFailtInjection;
-using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFailtInjection>;
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 namespace ErrorCodes
 {
