@@ -215,6 +215,9 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         }
     }
 
+    if (input.isFinished())
+        return Status::Finished;
+
     input.setNeeded();
     return Status::NeedData;
 }

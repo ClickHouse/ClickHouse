@@ -163,6 +163,9 @@ OffsetTransform::Status OffsetTransform::preparePairNegative(PortsData & data)
         return Status::PortFull;
     }
 
+    if (input.isFinished())
+        return Status::Finished;
+
     input.setNeeded();
     return Status::NeedData;
 }
