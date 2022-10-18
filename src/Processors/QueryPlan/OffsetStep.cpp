@@ -23,16 +23,16 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
+OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_, bool is_negative_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
-    , offset(offset_)
+    , offset(offset_), is_negative(is_negative_)
 {
 }
 
 void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<OffsetTransform>(
-            pipeline.getHeader(), offset, pipeline.getNumStreams());
+            pipeline.getHeader(), offset, pipeline.getNumStreams(), is_negative);
 
     pipeline.addTransform(std::move(transform));
 }

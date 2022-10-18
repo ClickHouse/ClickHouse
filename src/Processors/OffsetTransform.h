@@ -32,14 +32,23 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
+    bool is_negative;
+    std::list<PortsData> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
+    UInt64 rows_in_queue = 0;
+
+    bool popWithoutCut();
+    PortsData queuePop();
+    void queuePush(PortsData & data);
+
 public:
-    OffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1);
+    OffsetTransform(const Block & header_, UInt64 offset_, size_t num_streams = 1, bool is_negative_ = false);
 
     String getName() const override { return "Offset"; }
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
+    Status preparePairNegative(PortsData & data);
     void splitChunk(PortsData & data) const;
 
     InputPort & getInputPort() { return inputs.front(); }

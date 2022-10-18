@@ -2905,9 +2905,9 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     {
         UInt64 limit_length = 0;
         UInt64 limit_offset = 0;
-        getLimitLengthAndOffset(query, context, limit_length, limit_offset);
+        bool is_negative = getLimitLengthAndOffset(query, context, limit_length, limit_offset);
 
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset, is_negative);
         query_plan.addStep(std::move(offsets_step));
     }
 }

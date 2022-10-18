@@ -159,18 +159,13 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
     auto & input = *data.input_port;
 
     /// Check can output.
-    bool output_finished = false;
     if (output.isFinished())
     {
-        output_finished = true;
-        if (!always_read_till_end)
-        {
-            input.close();
-            return Status::Finished;
-        }
+        input.close();
+        return Status::Finished;
     }
 
-    if (!output_finished && !output.canPush())
+    if (!output.canPush())
     {
         input.setNotNeeded();
         return Status::PortFull;
@@ -194,20 +189,6 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         return Status::NeedData;
 
     data.current_chunk = input.pull(true);
-
-    /// Skip block (for 'always_read_till_end' case).
-    if (output_finished)
-    {
-        data.current_chunk.clear();
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-        /// Now, we pulled from input, and it must be empty.
-        input.setNeeded();
-        return Status::NeedData;
-    }
 
     ///Push chunk into queue
     PortsData to_push;
