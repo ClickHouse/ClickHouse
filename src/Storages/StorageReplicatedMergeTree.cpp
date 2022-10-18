@@ -294,11 +294,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
-    /// Will be activated if we win leader election.
+    /// Will be activated if we will achieve leader state.
     merge_selecting_task->deactivate();
 
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+
+    /// This task can be scheduled by different parts of code even when storage is readonly.
+    /// This can lead to redundant exceptions during startup.
+    /// Will be activated by restarting thread.
+    mutations_finalizing_task->deactivate();
 
     bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
     if (has_zookeeper)
