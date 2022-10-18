@@ -154,7 +154,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
     /// (see git blame for details).
     auto column_name_and_type = columns_name_and_type.begin();
-    auto declare_column_ast = columns_definition->children.begin();
+    const auto * declare_column_ast = columns_definition->children.begin();
     for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();

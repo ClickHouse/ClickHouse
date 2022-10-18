@@ -979,7 +979,7 @@ ASTs::iterator StorageURL::collectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
@@ -1065,7 +1065,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
         if (args.empty() || args.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
 
-        auto header_it = collectHeaders(args, configuration, local_context);
+        auto * header_it = collectHeaders(args, configuration, local_context);
         if (header_it != args.end())
             args.erase(header_it);
 

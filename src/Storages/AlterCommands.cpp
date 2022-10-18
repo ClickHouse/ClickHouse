@@ -573,20 +573,17 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto insert_it = constraints.end();
+        auto * insert_it = constraints.end();
         constraints.emplace(insert_it, constraint_decl);
         metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
         auto constraints = metadata.constraints.getConstraints();
-        auto erase_it = std::find_if(
-                constraints.begin(),
-                constraints.end(),
-                [this](const ASTPtr & constraint_ast)
-                {
-                    return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
-                });
+        auto * erase_it = std::find_if(
+            constraints.begin(),
+            constraints.end(),
+            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
 
         if (erase_it == constraints.end())
         {
