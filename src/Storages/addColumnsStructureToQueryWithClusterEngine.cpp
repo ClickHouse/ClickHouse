@@ -26,7 +26,6 @@ static ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr &
 
 void addColumnsStructureToQueryWithClusterEngine(ASTPtr & query, const String & structure, size_t max_arguments, const String & function_name)
 {
-    /// Add argument with table structure to s3Cluster table function in select query.
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function {}, got '{}'", function_name, queryToString(query));
