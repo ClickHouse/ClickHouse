@@ -48,6 +48,8 @@ public:
 
     size_t size() const override
     {
+        if (columns.empty())
+            return 1;
         return columns.at(0)->size();
     }
 

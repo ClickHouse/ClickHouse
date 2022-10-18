@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
 #include <memory>
 
 
@@ -59,13 +60,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -77,7 +75,10 @@ public:
               */
             tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
         }
-        return ColumnTuple::create(tuple_columns);
+        auto result_column = ColumnTuple::create(tuple_columns);
+        if (tuple_size > 0)
+            return result_column;
+        return ColumnConst::create(result_column, input_rows_count);
     }
 };
 

@@ -331,7 +331,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+        return std::make_shared<DataTypeTuple>(DataTypes{});
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());
