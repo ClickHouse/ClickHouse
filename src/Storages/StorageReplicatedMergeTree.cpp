@@ -7673,14 +7673,14 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+std::pair<bool, NameSet> getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const std::string & part_info_str, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
 {
     NameSet files_not_to_remove;
 
     MergeTreePartInfo part_info = MergeTreePartInfo::fromPartName(part_info_str, format_version);
     /// No mutations -- no hardlinks -- no issues
     if (part_info.mutation == 0)
-        return files_not_to_remove;
+        return {false, files_not_to_remove};
 
     /// Getting all zero copy parts
     Strings parts_str;
@@ -7725,10 +7725,10 @@ NameSet getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr, const std::stri
                 LOG_TRACE(log, "Found files not to remove from parent part {}: [{}]", part_candidate_info_str, fmt::join(files_not_to_remove, ", "));
             }
 
-            break;
+            return {true, files_not_to_remove};
         }
     }
-    return files_not_to_remove;
+    return {false, files_not_to_remove};
 }
 
 }
@@ -7754,7 +7754,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         if (!files_not_to_remove_str.empty())
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
 
-        auto parent_not_to_remove = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version, logger);
+        auto [has_parent, parent_not_to_remove] = getParentLockedBlobs(zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_name, data_format_version, logger);
         files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
@@ -7764,9 +7764,23 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         LOG_TRACE(logger, "Remove zookeeper lock {} for part {}", zookeeper_part_replica_node, part_name);
 
-        if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK && ec != Coordination::Error::ZNONODE)
+        if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK)
         {
-            throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+            /// Very complex case. It means that lock already doesn't exist when we tried to remove it.
+            /// So we don't know are we owner of this part or not. Maybe we just mutated it, renamed on disk and failed to lock in ZK.
+            /// But during mutation we can have hardlinks to another part. So it's not Ok to remove blobs of this part if it was mutated.
+            if (ec == Coordination::Error::ZNONODE)
+            {
+                if (has_parent)
+                {
+                    LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
+                    return {false, {}};
+                }
+            }
+            else
+            {
+                throw zkutil::KeeperException(ec, zookeeper_part_replica_node);
+            }
         }
 
         /// Check, maybe we were the last replica and can remove part forever

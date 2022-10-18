@@ -3902,6 +3902,13 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 
+### format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
+
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md#jsonobjecteachrow) format.
+Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
+
+Default value: ''.
+
 ## TSV format settings {#tsv-format-settings}
 
 ### input_format_tsv_empty_as_default {#input_format_tsv_empty_as_default}
