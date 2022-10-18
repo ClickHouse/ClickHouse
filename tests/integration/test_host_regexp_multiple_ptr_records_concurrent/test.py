@@ -11,14 +11,12 @@ cluster = ClickHouseCluster(__file__)
 ch_server = cluster.add_instance(
     "clickhouse-server",
     with_coredns=True,
-    main_configs=["configs/listen_host.xml"],
+    main_configs=["configs/config.xml", "configs/listen_host.xml"],
     user_configs=["configs/host_regexp.xml"],
-    ipv6_address="2001:3984:3989::1:1111",
 )
 
 client = cluster.add_instance(
     "clickhouse-client",
-    ipv6_address="2001:3984:3989::1:1112",
 )
 
 
@@ -70,4 +68,4 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
         os.path.join(current_dir, "scripts", "stress_test.py"), "stress_test.py"
     )
 
-    assert "1\n" == client.exec_in_container(["python3", f"stress_test.py", server_ip])
+    client.exec_in_container(["python3", f"stress_test.py", client_ip, server_ip])

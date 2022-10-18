@@ -3,19 +3,20 @@ import threading
 from io import BytesIO
 import sys
 
-server_ip = sys.argv[1]
+client_ip = sys.argv[1]
+server_ip = sys.argv[2]
 
 mutex = threading.Lock()
 success_counter = 0
-number_of_threads = 1
-number_of_iterations = 400
+number_of_threads = 200
+number_of_iterations = 200
 
 
 def perform_request():
 
     buffer = BytesIO()
     crl = pycurl.Curl()
-    crl.setopt(pycurl.INTERFACE, "192.168.0.157")
+    crl.setopt(pycurl.INTERFACE, client_ip)
     crl.setopt(crl.WRITEDATA, buffer)
     crl.setopt(crl.URL, f"http://{server_ip}:8123/?query=select+1&user=test_dns")
 
@@ -38,7 +39,7 @@ def perform_request():
 
 
 def perform_multiple_requests(n):
-    for i in range(n):
+    for request_number in range(n):
         perform_request()
 
 
@@ -55,4 +56,8 @@ for i in range(number_of_threads):
 for thread in threads:
     thread.join()
 
-exit(success_counter == number_of_threads * number_of_iterations)
+
+if success_counter == number_of_threads * number_of_iterations:
+    exit(0)
+
+exit(1)
