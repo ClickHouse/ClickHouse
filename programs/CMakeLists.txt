@@ -189,7 +189,7 @@ else()
     message(STATUS "ClickHouse su: OFF")
 endif()
 
-configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
+configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
     if(NOT CLICKHOUSE_ONE_SHARED)
