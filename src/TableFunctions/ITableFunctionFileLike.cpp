@@ -40,7 +40,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     ASTs & args = args_func.at(0)->children;
 

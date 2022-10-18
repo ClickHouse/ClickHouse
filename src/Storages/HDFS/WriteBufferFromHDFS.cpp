@@ -22,7 +22,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
     std::string hdfs_uri;
     hdfsFile fout;
-    HDFSBuilderWrapper builder;
+    HDFSBuilderWrapperPtr builder_wrapper;
     HDFSFSPtr fs;
     WriteSettings write_settings;
 
@@ -33,19 +33,22 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
             const WriteSettings & write_settings_,
             int flags)
         : hdfs_uri(hdfs_uri_)
-        , builder(createHDFSBuilder(hdfs_uri, config_))
-        , fs(createHDFSFS(builder.get()))
+        , builder_wrapper(createHDFSBuilder(hdfs_uri, config_))
+        , fs(createHDFSFS(builder_wrapper->getBuilder()))
         , write_settings(write_settings_)
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const String path = hdfs_uri.substr(begin_of_path);
 
-        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);
 
         if (fout == nullptr)
         {
-            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
-                ErrorCodes::CANNOT_OPEN_FILE);
+            throw Exception(
+                ErrorCodes::CANNOT_OPEN_FILE,
+                "Unable to open HDFS file: {}, error: {}",
+                path, std::string(hdfsGetLastError()));
         }
     }
 

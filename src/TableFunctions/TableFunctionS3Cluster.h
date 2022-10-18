@@ -6,6 +6,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageS3.h>
 
 
 namespace DB
@@ -52,6 +53,8 @@ protected:
 
     StorageS3ClusterConfiguration configuration;
     ColumnsDescription structure_hint;
+
+    mutable std::optional<StorageS3::ObjectInfos> object_infos;
 };
 
 }

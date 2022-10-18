@@ -75,28 +75,32 @@ void FileCache::removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std:
         fs::remove(key_prefix_path);
 }
 
-void FileCache::removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock)
+void FileCache::removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock, const CacheKeyRemoveSettings & remove_settings)
 {
-    assert(files[key].file_segments_by_offset.empty());
-
     auto it = files.find(key);
     if (it == files.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not key `{}` in cache", key.toString());
 
-    const auto & [_, on_key_eviction_func] = it->second;
+    assert(files.at(key).file_segments_by_offset.empty());
 
-    if (on_key_eviction_func)
+    if (remove_settings.call_key_removal_callback)
     {
-        try
+        const auto & on_key_eviction_func = it->second.on_key_eviction_func;
+        if (on_key_eviction_func)
         {
-            on_key_eviction_func();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            assert(false);
+            try
+            {
+                on_key_eviction_func();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                assert(false);
+            }
         }
     }
+
+    LOG_DEBUG(log, "Removing empty key `{}` from cache", key.toString());
 
     files.erase(it);
     removeKeyDirectoryIfExists(key, cache_lock);
@@ -851,7 +855,7 @@ bool FileCache::tryReserveForMainList(
     return true;
 }
 
-void FileCache::removeIfExists(const Key & key)
+void FileCache::removeIfExists(const Key & key, const CacheKeyRemoveSettings & remove_settings)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -869,7 +873,6 @@ void FileCache::removeIfExists(const Key & key)
     for (auto & [offset, cell] : offsets)
         to_remove.push_back(&cell);
 
-    bool some_cells_were_skipped = false;
     for (auto & cell : to_remove)
     {
         /// In ordinary case we remove data from cache when it's not used by anyone.
@@ -877,23 +880,10 @@ void FileCache::removeIfExists(const Key & key)
         /// it became possible to start removing something from cache when it is used
         /// by other "zero-copy" tables. That is why it's not an error.
         if (!cell->releasable())
-        {
-            some_cells_were_skipped = true;
             continue;
-        }
 
-        auto file_segment = cell->file_segment;
-        if (file_segment)
-        {
-            std::unique_lock<std::mutex> segment_lock(file_segment->mutex);
-            file_segment->detach(cache_lock, segment_lock);
-            remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
-        }
-    }
-
-    if (!some_cells_were_skipped)
-    {
-        removeEmptyKey(key, cache_lock);
+        if (cell->file_segment)
+            remove(cell->file_segment, cache_lock, remove_settings);
     }
 }
 
@@ -947,34 +937,36 @@ void FileCache::removeIfReleasable()
 #endif
 }
 
-void FileCache::remove(FileSegmentPtr file_segment, std::lock_guard<std::mutex> & cache_lock)
+void FileCache::remove(FileSegmentPtr file_segment, std::lock_guard<std::mutex> & cache_lock, const CacheKeyRemoveSettings & remove_settings)
 {
     std::unique_lock segment_lock(file_segment->mutex);
-    remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
+    remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock, remove_settings);
 }
 
 void FileCache::remove(
-    Key key, size_t offset,
-    std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & /* segment_lock */)
+    Key key,
+    size_t offset,
+    std::lock_guard<std::mutex> & cache_lock,
+    std::unique_lock<std::mutex> & segment_lock,
+    const CacheKeyRemoveSettings & remove_settings)
 {
     LOG_DEBUG(log, "Remove from cache. Key: {}, offset: {}", key.toString(), offset);
 
-    String cache_file_path;
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
 
+    if (cell->queue_iterator)
     {
-        auto * cell = getCell(key, offset, cache_lock);
-        if (!cell)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No cache cell for key: {}, offset: {}", key.toString(), offset);
-
-        if (cell->queue_iterator)
-        {
-            cell->queue_iterator->removeAndGetNext(cache_lock);
-        }
-
-        cache_file_path = cell->file_segment->getPathInLocalCache();
+        cell->queue_iterator->removeAndGetNext(cache_lock);
     }
 
-    auto & offsets = files[key].file_segments_by_offset;
+    auto & file_segment = cell->file_segment;
+
+    file_segment->detach(cache_lock, segment_lock);
+    auto cache_file_path = file_segment->getPathInLocalCache();
+
+    auto & offsets = files.at(key).file_segments_by_offset;
     offsets.erase(offset);
 
     if (fs::exists(cache_file_path))
@@ -985,7 +977,7 @@ void FileCache::remove(
 
             if (is_initialized && offsets.empty())
             {
-                removeEmptyKey(key, cache_lock);
+                removeEmptyKey(key, cache_lock, remove_settings);
             }
         }
         catch (...)

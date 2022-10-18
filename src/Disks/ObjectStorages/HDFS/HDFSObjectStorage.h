@@ -45,8 +45,8 @@ public:
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_)
         : config(config_)
-        , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
-        , hdfs_fs(createHDFSFS(hdfs_builder.get()))
+        , hdfs_builder_wrapper(createHDFSBuilder(hdfs_root_path_, config))
+        , hdfs_fs(createHDFSFS(hdfs_builder_wrapper->getBuilder()))
         , settings(std::move(settings_))
     {
         data_source_description.type = DataSourceType::HDFS;
@@ -127,7 +127,7 @@ public:
 private:
     const Poco::Util::AbstractConfiguration & config;
 
-    HDFSBuilderWrapper hdfs_builder;
+    HDFSBuilderWrapperPtr hdfs_builder_wrapper;
     HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;

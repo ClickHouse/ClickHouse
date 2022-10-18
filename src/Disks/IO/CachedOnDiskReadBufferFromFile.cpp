@@ -117,6 +117,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         file_segments_holder.emplace(cache->get(cache_key, offset, size));
+        on_key_eviction_func = {};
     }
     else
     {
@@ -518,6 +519,11 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     {
         appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
     }
+
+    /// If getOrSet() method was not called, we will not call on_key_eviction_func,
+    /// which will result in memory leaks, so do it here.
+    if (on_key_eviction_func)
+        on_key_eviction_func();
 }
 
 void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)

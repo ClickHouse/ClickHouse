@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NETWORK_ERROR;
+    extern const int HDFS_ERROR;
     #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int KERBEROS_ERROR;
@@ -31,15 +32,37 @@ namespace ErrorCodes
 static constexpr std::string_view CONFIG_PREFIX = "hdfs";
 static constexpr std::string_view HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
+namespace detail
+{
+    void HDFSFsDeleter::operator()(hdfsFS fs_ptr)
+    {
+        hdfsDisconnect(fs_ptr);
+    }
+}
 
 HDFSFileInfo::~HDFSFileInfo()
 {
     hdfsFreeFileInfo(file_info, length);
 }
 
+HDFSBuilderWrapper::HDFSBuilderWrapper() : hdfs_builder(hdfsNewBuilder())
+{
+}
 
-void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & prefix, bool isUser)
+HDFSBuilderWrapper::~HDFSBuilderWrapper()
+{
+    hdfsFreeBuilder(hdfs_builder);
+}
+
+std::pair<String, String> & HDFSBuilderWrapper::keep(const String & key, const String & value)
+{
+    return config_storage.emplace_back(key, value);
+}
+
+void HDFSBuilderWrapper::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & prefix,
+    bool is_user)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -73,7 +96,7 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
         else if (key == "hadoop_security_kerberos_ticket_cache_path")
         {
             #if USE_KRB5
-            if (isUser)
+            if (is_user)
             {
                 throw Exception("hadoop.security.kerberos.ticket.cache.path cannot be set per user",
                     ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -109,24 +132,29 @@ void HDFSBuilderWrapper::runKinit()
 }
 #endif // USE_KRB5
 
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
+HDFSBuilderWrapperPtr createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
     const Poco::URI uri(uri_str);
     const auto & host = uri.getHost();
     auto port = uri.getPort();
-    const String path = "//";
+
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-    HDFSBuilderWrapper builder;
-    if (builder.get() == nullptr)
-        throw Exception("Unable to create builder to connect to HDFS: " +
-            uri.toString() + " " + String(hdfsGetLastError()),
-            ErrorCodes::NETWORK_ERROR);
+    auto builder_wrapper = std::make_unique<HDFSBuilderWrapper>();
 
-    hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
-    hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
+    auto * builder = builder_wrapper->getBuilder();
+    if (builder == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::NETWORK_ERROR,
+            "Unable to create builder to connect to HDFS: {}, error: {}",
+            uri.toString(), String(hdfsGetLastError()));
+    }
+
+    hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(builder, "input.write.timeout", "60000"); // 1 min
+    hdfsBuilderConfSetStr(builder, "input.connect.timeout", "60000"); // 1 min
 
     String user_info = uri.getUserInfo();
     String user;
@@ -138,18 +166,18 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         else
             user = user_info;
 
-        hdfsBuilderSetUserName(builder.get(), user.c_str());
+        hdfsBuilderSetUserName(builder, user.c_str());
     }
 
-    hdfsBuilderSetNameNode(builder.get(), host.c_str());
+    hdfsBuilderSetNameNode(builder, host.c_str());
     if (port != 0)
     {
-        hdfsBuilderSetNameNodePort(builder.get(), port);
+        hdfsBuilderSetNameNodePort(builder, port);
     }
 
     if (config.has(std::string(CONFIG_PREFIX)))
     {
-        builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+        builder_wrapper->loadFromConfig(config, std::string(CONFIG_PREFIX));
     }
 
     if (!user.empty())
@@ -157,18 +185,18 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         String user_config_prefix = std::string(CONFIG_PREFIX) + "_" + user;
         if (config.has(user_config_prefix))
         {
-            builder.loadFromConfig(config, user_config_prefix, true);
+            builder_wrapper->loadFromConfig(config, user_config_prefix, true);
         }
     }
 
-    #if USE_KRB5
-    if (builder.need_kinit)
+#if USE_KRB5
+    if (builder_wrapper->need_kinit)
     {
-        builder.runKinit();
+        builder_wrapper->runKinit();
     }
-    #endif // USE_KRB5
+#endif // USE_KRB5
 
-    return builder;
+    return builder_wrapper;
 }
 
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
@@ -199,7 +227,29 @@ String getNameNodeCluster(const String &hdfs_url)
 void checkHDFSURL(const String & url)
 {
     if (!re2::RE2::FullMatch(url, std::string(HDFS_URL_REGEXP)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'",
+            url);
+    }
+}
+
+HDFSFileInfoPtr getHDFSFileInfo(const HDFSFSPtr & fs, const std::string & path)
+{
+    auto file_info_holder = std::make_unique<HDFSFileInfo>();
+
+    file_info_holder->file_info = hdfsGetPathInfo(fs.get(), path.data());
+    if (!file_info_holder->file_info)
+    {
+        throw Exception(
+            ErrorCodes::HDFS_ERROR,
+            "Unable to get info of file `{}`, error: {}",
+            path, String(hdfsGetLastError()));
+    }
+
+    file_info_holder->length = 1; /// Single file
+    return file_info_holder;
 }
 
 }

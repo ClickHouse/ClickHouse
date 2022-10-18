@@ -7,11 +7,12 @@
 #include <type_traits>
 #include <vector>
 
-#include <hdfs/hdfs.h>
 #include <base/types.h>
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/noncopyable.hpp>
+#include <hdfs/hdfs.h>
 
 
 namespace DB
@@ -21,73 +22,64 @@ namespace detail
 {
     struct HDFSFsDeleter
     {
-        void operator()(hdfsFS fs_ptr)
-        {
-            hdfsDisconnect(fs_ptr);
-        }
+        void operator()(hdfsFS fs_ptr);
     };
 }
 
+using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
 
-struct HDFSFileInfo
+struct HDFSFileInfo : boost::noncopyable
 {
-    hdfsFileInfo * file_info;
-    int length;
+    hdfsFileInfo * file_info = nullptr;
+    int length = 0;
 
-    HDFSFileInfo() : file_info(nullptr) , length(0) {}
-
-    HDFSFileInfo(const HDFSFileInfo & other) = delete;
-    HDFSFileInfo(HDFSFileInfo && other) = default;
-    HDFSFileInfo & operator=(const HDFSFileInfo & other) = delete;
-    HDFSFileInfo & operator=(HDFSFileInfo && other) = default;
     ~HDFSFileInfo();
 };
 
+using HDFSFileInfoPtr = std::unique_ptr<HDFSFileInfo>;
 
-class HDFSBuilderWrapper
+class HDFSBuilderWrapper;
+using HDFSBuilderWrapperPtr = std::unique_ptr<HDFSBuilderWrapper>;
+
+class HDFSBuilderWrapper : boost::noncopyable
 {
-
-friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
-
-static const String CONFIG_PREFIX;
+    static const String CONFIG_PREFIX;
+    friend HDFSBuilderWrapperPtr createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 
 public:
-    HDFSBuilderWrapper() : hdfs_builder(hdfsNewBuilder()) {}
+    HDFSBuilderWrapper();
 
-    ~HDFSBuilderWrapper() { hdfsFreeBuilder(hdfs_builder); }
+    ~HDFSBuilderWrapper();
 
-    HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
-    HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
-
-    hdfsBuilder * get() { return hdfs_builder; }
+    hdfsBuilder * getBuilder() { return hdfs_builder; }
 
 private:
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
+    using KeyValue = std::pair<String, String>;
+    using KeyValueConfig = std::vector<KeyValue>;
 
-    // hdfs builder relies on an external config data storage
-    std::pair<String, String>& keep(const String & k, const String & v)
-    {
-        return config_stor.emplace_back(std::make_pair(k, v));
-    }
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_user = false);
+
+    /// hdfs_builder relies on an external config data storage
+    KeyValue & keep(const String & key, const String & value);
 
     hdfsBuilder * hdfs_builder;
-    std::vector<std::pair<String, String>> config_stor;
 
-    #if USE_KRB5
+    KeyValueConfig config_storage;
+
+#if USE_KRB5
     void runKinit();
+
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;
+
     bool need_kinit{false};
-    #endif // USE_KRB5
+#endif // USE_KRB5
 };
-
-using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
-
 
 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
 /// TODO Allow to tune from query Settings.
-HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
+HDFSBuilderWrapperPtr createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
 
 
@@ -97,6 +89,8 @@ String getNameNodeCluster(const String & hdfs_url);
 /// Check that url satisfy structure 'hdfs://<host_name>:<port>/<path>'
 /// and throw exception if it doesn't;
 void checkHDFSURL(const String & url);
+
+HDFSFileInfoPtr getHDFSFileInfo(const HDFSFSPtr & fs, const std::string & path);
 
 }
 #endif

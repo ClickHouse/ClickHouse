@@ -24,25 +24,30 @@ class TableFunctionHDFSCluster : public ITableFunctionFileLike
 {
 public:
     static constexpr auto name = "hdfsCluster";
-    std::string getName() const override
-    {
-        return name;
-    }
+
+    std::string getName() const override { return name; }
+
     bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr getStorage(
-        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_) const override;
+        const String & source,
+        const String & format_,
+        const ColumnsDescription & columns,
+        ContextPtr global_context,
+        const std::string & table_name,
+        const String & compression_method_) const override;
 
     const char * getStorageTypeName() const override { return "HDFSCluster"; }
 
     AccessType getSourceAccessType() const override { return AccessType::HDFS; }
 
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
+
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
     String cluster_name;
+    mutable std::optional<StorageHDFS::ObjectInfos> object_infos;
 };
 
 }

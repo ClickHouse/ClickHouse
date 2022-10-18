@@ -40,21 +40,26 @@ StorageHDFSCluster::StorageHDFSCluster(
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method_)
+    const String & compression_method_,
+    std::optional<StorageHDFS::ObjectInfos> object_infos_)
     : IStorage(table_id_)
     , cluster_name(cluster_name_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)
+    , object_infos(object_infos_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
 
     StorageInMemoryMetadata storage_metadata;
 
+    if (StorageHDFS::shouldCollectObjectInfos(context_))
+        object_infos.emplace();
+
     if (columns_.empty())
     {
-        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
+        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, object_infos ? &*object_infos : nullptr, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -76,7 +81,7 @@ Pipe StorageHDFSCluster::read(
 {
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
-    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri, object_infos ? &*object_infos : nullptr);
     auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
     {
         return iterator->next();

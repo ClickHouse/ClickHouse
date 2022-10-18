@@ -140,7 +140,11 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+
+        if (!object_infos && StorageS3::shouldCollectObjectInfos(context))
+            object_infos.emplace();
+
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context, object_infos ? &*object_infos : nullptr);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -157,6 +161,9 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     else if (!structure_hint.empty())
         columns = structure_hint;
 
+    if (!object_infos && StorageS3::shouldCollectObjectInfos(context))
+        object_infos.emplace();
+
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,
         StorageID(getDatabaseName(), table_name),
@@ -164,8 +171,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         ConstraintsDescription{},
         String{},
         context,
-        /// No format_settings for table function S3
-        std::nullopt);
+        std::nullopt, /// No format_settings for table function S3
+        object_infos);
 
     storage->startup();
 

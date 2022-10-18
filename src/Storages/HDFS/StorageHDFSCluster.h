@@ -27,7 +27,8 @@ public:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & compression_method_);
+        const String & compression_method_,
+        std::optional<StorageHDFS::ObjectInfos> object_infos_);
 
     std::string getName() const override { return "HDFSCluster"; }
 
@@ -44,6 +45,8 @@ private:
     String uri;
     String format_name;
     String compression_method;
+
+    std::optional<StorageHDFS::ObjectInfos> object_infos;
 };
 
 

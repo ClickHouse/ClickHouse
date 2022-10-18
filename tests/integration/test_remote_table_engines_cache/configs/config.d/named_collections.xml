@@ -7,5 +7,10 @@
             <format>CSV</format>
             <structure>auto</structure>
         </s3>
+        <hdfs>
+            <url>hdfs://hdfs1:9000/</url>
+            <format>CSV</format>
+            <structure>auto</structure>
+        </hdfs>
     </named_collections>
 </clickhouse>

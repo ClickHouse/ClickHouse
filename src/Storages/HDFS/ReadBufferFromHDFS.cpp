@@ -29,7 +29,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     String hdfs_file_path;
 
     hdfsFile fin;
-    HDFSBuilderWrapper builder;
+    HDFSBuilderWrapperPtr builder_wrapper;
     HDFSFSPtr fs;
     ReadSettings read_settings;
 
@@ -46,11 +46,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , builder(createHDFSBuilder(hdfs_uri_, config_))
+        , builder_wrapper(createHDFSBuilder(hdfs_uri_, config_))
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
     {
-        fs = createHDFSFS(builder.get());
+        fs = createHDFSFS(builder_wrapper->getBuilder());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
@@ -222,6 +222,14 @@ IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t siz
 String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;
+}
+
+SeekableReadBuffer::Range ReadBufferFromHDFS::getRemainingReadRange() const
+{
+    return Range{
+        .left = static_cast<size_t>(impl->getPosition()),
+        .right = impl->read_until_position ? std::optional{impl->read_until_position - 1} : std::nullopt
+    };
 }
 
 }

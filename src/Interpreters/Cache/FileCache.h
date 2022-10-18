@@ -24,6 +24,12 @@
 namespace DB
 {
 
+struct CacheKeyRemoveSettings
+{
+    bool call_key_removal_callback = true;
+};
+
+
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
@@ -41,7 +47,7 @@ public:
     using Key = DB::FileCacheKey;
     using OnKeyEvictionFunc = std::function<void()>;
 
-    FileCache(const FileCacheSettings & cache_settings_);
+    explicit FileCache(const FileCacheSettings & cache_settings_);
 
     ~FileCache() = default;
 
@@ -79,7 +85,7 @@ public:
     FileSegmentsHolder get(const Key & key, size_t offset, size_t size);
 
     /// Remove files by `key`. Removes files which might be used at the moment.
-    void removeIfExists(const Key & key);
+    void removeIfExists(const Key & key, const CacheKeyRemoveSettings & remove_settings = {});
 
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeIfReleasable();
@@ -164,11 +170,13 @@ private:
         Key key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::unique_lock<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock,
+        const CacheKeyRemoveSettings & remove_settings = {});
 
     void remove(
         FileSegmentPtr file_segment,
-        std::lock_guard<std::mutex> & cache_lock);
+        std::lock_guard<std::mutex> & cache_lock,
+        const CacheKeyRemoveSettings & remove_settings = {});
 
     bool isLastFileSegmentHolder(
         const Key & key,
@@ -278,7 +286,7 @@ private:
 
     void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
 
-    void removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock);
+    void removeEmptyKey(const Key & key, std::lock_guard<std::mutex> & cache_lock, const CacheKeyRemoveSettings & remove_settings = {});
 
     /// Used to track and control the cache access of each query.
     /// Through it, we can realize the processing of different queries by the cache layer.

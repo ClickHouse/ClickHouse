@@ -85,7 +85,10 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
     context->checkAccess(getSourceAccessType());
 
     if (configuration.structure == "auto")
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+    {
+        return StorageS3::getTableStructureFromData(
+            configuration, false, std::nullopt, context, object_infos ? &*object_infos : nullptr);
+    }
 
     return parseColumnsListFromString(configuration.structure, context);
 }
@@ -117,6 +120,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             /* comment */String{},
             context,
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
+            object_infos,
             /*distributed_processing=*/true);
     }
     else

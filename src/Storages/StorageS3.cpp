@@ -15,6 +15,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -29,6 +30,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Storages/wrapWithCachedReadBuffer.h>
+#include <Storages/defineRemoteStoragesCache.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
@@ -75,6 +77,7 @@ namespace ProfileEvents
 namespace DB
 {
 
+
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -100,7 +103,7 @@ public:
         ASTPtr & query_,
         const Block & virtual_header_,
         ContextPtr context_,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos_,
+        StorageS3::ObjectInfos * object_infos_,
         Strings * read_keys_)
         : WithContext(context_)
         , client(client_)
@@ -185,6 +188,7 @@ private:
         if (filter_ast)
         {
             auto block = virtual_header.cloneEmpty();
+
             MutableColumnPtr path_column;
             MutableColumnPtr file_column;
             MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
@@ -198,16 +202,28 @@ private:
             for (const auto & row : result_batch)
             {
                 const String & key = row.GetKey();
+
                 if (re2::RE2::FullMatch(key, *matcher))
                 {
                     String path = fs::path(globbed_uri.bucket) / key;
+
                     if (object_infos)
-                        (*object_infos)[path] = {.size = size_t(row.GetSize()), .last_modification_time = row.GetLastModified().Millis() / 1000};
-                    String file = path.substr(path.find_last_of('/') + 1);
+                    {
+                        (*object_infos)[path] = {
+                            .size = static_cast<size_t>(row.GetSize()),
+                            .last_modification_time = row.GetLastModified().Millis() / 1000
+                        };
+                    }
+
                     if (path_column)
                         path_column->insert(path);
+
                     if (file_column)
+                    {
+                        auto file = path.substr(path.find_last_of('/') + 1);
                         file_column->insert(file);
+                    }
+
                     key_column->insert(key);
                 }
             }
@@ -254,7 +270,7 @@ private:
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     std::unique_ptr<re2::RE2> matcher;
     bool is_finished{false};
-    std::unordered_map<String, S3::ObjectInfo> * object_infos;
+    StorageS3::ObjectInfos * object_infos;
     Strings * read_keys;
 };
 
@@ -264,7 +280,7 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos_,
+    StorageS3::ObjectInfos * object_infos_,
     Strings * read_keys_)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_header, context, object_infos_, read_keys_))
 {
@@ -416,7 +432,7 @@ StorageS3Source::StorageS3Source(
     String compression_hint_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     const size_t download_thread_num_,
-    const std::unordered_map<String, S3::ObjectInfo> & object_infos_)
+    StorageS3::ObjectInfos * object_infos_)
     : ISource(getHeader(sample_block_, requested_virtual_columns_))
     , WithContext(context_)
     , s3_configuration(s3_configuration_)
@@ -453,7 +469,8 @@ bool StorageS3Source::initialize()
     file_path = fs::path(s3_configuration.uri.bucket) / current_key;
 
     auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
+    auto s3_read_buffer = StorageS3::createS3ReadBuffer(s3_configuration, current_key, object_infos, download_thread_num, getContext());
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(s3_read_buffer), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -470,100 +487,6 @@ bool StorageS3Source::initialize()
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     return true;
-}
-
-std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key)
-{
-    const auto & bucket = s3_configuration.uri.bucket;
-    const auto & version_id = s3_configuration.uri.version_id;
-    const auto max_single_read_retries = s3_configuration.rw_settings.max_single_read_retries;
-    auto client = s3_configuration.client;
-
-    size_t object_size;
-    std::string object_path = fs::path(bucket) / key;
-
-    auto it = object_infos.find(object_path);
-    if (it != object_infos.end())
-        object_size = it->second.size;
-    else
-        object_size = DB::S3::getObjectSize(client, bucket, key, version_id, false, false);
-
-    const auto & context = getContext();
-    const auto & settings = context->getSettings();
-    const auto & read_settings = context->getReadSettings();
-
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t start_offset, size_t end_offset_non_including)>;
-    ReadBufferCreator read_buffer_creator;
-
-    if (settings.enable_cache_for_s3_table_engine)
-    {
-        auto impl_buffer_creator = [=]() -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, read_settings);
-        };
-
-        auto modification_time_getter = [=, this]() -> std::optional<time_t>
-        {
-            return StorageS3::getLastModificationTime(s3_configuration, key, &object_infos);
-        };
-
-        read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            auto result_buffer = wrapWithCachedReadBuffer(impl_buffer_creator, modification_time_getter, object_path, object_size, read_settings);
-
-            if (!result_buffer)
-                result_buffer = impl_buffer_creator();
-
-            result_buffer->setReadUntilPosition(end_offset_non_including);
-
-            if (start_offset)
-                result_buffer->seek(start_offset, SEEK_SET);
-
-            return result_buffer;
-        };
-    }
-
-    if (!read_buffer_creator)
-    {
-        read_buffer_creator = [=] (size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
-        {
-            return std::make_unique<ReadBufferFromS3>(
-                client, bucket, key, version_id, max_single_read_retries, read_settings,
-                /* use_external_buffer */false,
-                /* offset */start_offset,
-                /* read_until_position */end_offset_non_including,
-                /* restricted_seek */false);
-        };
-    }
-
-    auto download_buffer_size = context->getSettings().max_download_buffer_size;
-    const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
-    const bool object_too_small = object_size < download_thread_num * download_buffer_size;
-
-    if (!use_parallel_download || object_too_small)
-    {
-        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
-        return read_buffer_creator(0, object_size);
-    }
-
-    assert(object_size > 0);
-
-    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
-    {
-        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
-        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-    }
-
-    auto factory = std::make_unique<ReadBufferS3Factory>(
-        std::move(read_buffer_creator),
-        /* filename */object_path,
-        /* range_step */download_buffer_size,
-        object_size);
-
-    LOG_TRACE(
-        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}", download_thread_num, object_size, download_buffer_size);
-
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
 }
 
 String StorageS3Source::getName() const
@@ -830,6 +753,7 @@ StorageS3::StorageS3(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
+    std::optional<ObjectInfos> object_infos_,
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
@@ -842,6 +766,7 @@ StorageS3::StorageS3(
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , is_key_with_globs(s3_configuration.uri.key.find_first_of("*?{") != std::string::npos)
+    , object_infos(object_infos_)
 {
     FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.uri.uri);
@@ -863,6 +788,9 @@ StorageS3::StorageS3(
     }
     else
         storage_metadata.setColumns(columns_);
+
+    if (!object_infos && shouldCollectObjectInfos(context_))
+        object_infos.emplace();
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -887,7 +815,7 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     ASTPtr query,
     const Block & virtual_block,
     const std::vector<String> & read_tasks,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos,
+    StorageS3::ObjectInfos * object_infos,
     Strings * read_keys)
 {
     if (distributed_processing)
@@ -932,6 +860,8 @@ Pipe StorageS3::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    /// TODO: cleat object infos on scope exit?
+
     bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos
         || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
     if (partition_by && has_wildcards)
@@ -959,7 +889,7 @@ Pipe StorageS3::read(
         query_info.query,
         virtual_block,
         read_tasks_used_in_schema_inference,
-        &object_infos);
+        object_infos ? &*object_infos : nullptr);
 
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -1000,7 +930,7 @@ Pipe StorageS3::read(
             compression_method,
             iterator_wrapper,
             max_download_threads,
-            object_infos));
+            object_infos ? &*object_infos : nullptr));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
@@ -1240,12 +1170,133 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
     return configuration;
 }
 
+std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
+    const StorageS3::S3Configuration & s3_configuration,
+    const String & key,
+    ObjectInfos * object_infos,
+    size_t download_thread_num,
+    ContextPtr local_context)
+{
+    const auto & settings = local_context->getSettings();
+    const auto & read_settings = local_context->getReadSettings();
+    auto * log = &Poco::Logger::get("StorageS3");
+
+    const auto & bucket = s3_configuration.uri.bucket;
+    const auto & version_id = s3_configuration.uri.version_id;
+    const auto max_single_read_retries = s3_configuration.rw_settings.max_single_read_retries;
+    auto client = s3_configuration.client;
+
+    std::string object_path = fs::path(bucket) / key;
+    size_t object_size;
+    time_t object_modification_time;
+
+    if (object_infos)
+    {
+        auto it = object_infos->find(object_path);
+        bool cached = it != object_infos->end();
+        if (!cached)
+        {
+            auto object_info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, false, false);
+            it = object_infos->emplace(object_path, std::move(object_info)).first;
+        }
+
+        object_size = it->second.size;
+        object_modification_time = it->second.last_modification_time;
+
+        LOG_TEST(
+            log,
+            "Having object info for `{}`, size: {}, modification timestamp: {} (taken from cache: {})",
+            key, object_size, object_modification_time, cached);
+    }
+    else
+    {
+        auto object_info = S3::getObjectInfo(s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, false, false);
+        object_size = object_info.size;
+        object_modification_time = object_info.last_modification_time;
+    }
+
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(size_t start_offset, size_t end_offset_non_including)>;
+    ReadBufferCreator read_buffer_creator;
+
+    if (settings.enable_cache_for_s3_table_engine)
+    {
+        auto impl_buffer_creator = [=]() -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return std::make_unique<ReadBufferFromS3>(client, bucket, key, version_id, max_single_read_retries, read_settings);
+        };
+
+        read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            auto result_buffer = wrapWithCachedReadBuffer(impl_buffer_creator, object_path, object_size, object_modification_time, read_settings);
+
+            if (!result_buffer)
+                result_buffer = impl_buffer_creator();
+
+            result_buffer->setReadUntilPosition(end_offset_non_including);
+
+            if (start_offset)
+                result_buffer->seek(start_offset, SEEK_SET);
+
+            return result_buffer;
+        };
+    }
+
+    if (!read_buffer_creator)
+    {
+        read_buffer_creator = [=] (size_t start_offset, size_t end_offset_non_including) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return std::make_unique<ReadBufferFromS3>(
+                client, bucket, key, version_id, max_single_read_retries, read_settings,
+                /* use_external_buffer */false,
+                /* offset */start_offset,
+                /* read_until_position */end_offset_non_including,
+                /* restricted_seek */false);
+        };
+    }
+
+    auto download_buffer_size = settings.max_download_buffer_size;
+    const bool use_parallel_download = download_buffer_size > 0 && download_thread_num > 1;
+    const bool object_too_small = object_size < download_thread_num * download_buffer_size;
+
+    if (!use_parallel_download || object_too_small)
+    {
+        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
+        return read_buffer_creator(0, object_size);
+    }
+
+    assert(object_size > 0);
+
+    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    }
+
+    auto factory = std::make_unique<ReadBufferS3Factory>(
+        std::move(read_buffer_creator),
+        /* filename */object_path,
+        /* range_step */download_buffer_size,
+        object_size);
+
+    LOG_TRACE(
+        log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}", download_thread_num, object_size, download_buffer_size);
+
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
+}
+
+bool StorageS3::shouldCollectObjectInfos(ContextPtr local_context)
+{
+    const auto & settings = local_context->getSettingsRef();
+    return settings.schema_inference_use_cache_for_s3
+        || (settings.enable_cache_for_s3_table_engine && FileCacheFactory::instance().tryGetByName(REMOTE_TABLE_ENGINES_CACHE_NAME));
+}
+
 ColumnsDescription StorageS3::getTableStructureFromData(
     const StorageS3Configuration & configuration,
     bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
-    std::unordered_map<String, S3::ObjectInfo> * object_infos)
+    ObjectInfos * object_infos)
 {
     S3Configuration s3_configuration{
         configuration.url,
@@ -1310,12 +1361,12 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         }
 
         first = false;
-        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+
+        auto s3_read_buffer = StorageS3::createS3ReadBuffer(s3_configuration, key, object_infos, /* download_thread_num */1, ctx);
         return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromS3>(
-                s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),
+            std::move(s3_read_buffer),
             chooseCompressionMethod(key, compression_method),
-            zstd_window_log_max);
+            ctx->getSettingsRef().zstd_window_log_max);
     };
 
     ColumnsDescription columns;
@@ -1381,6 +1432,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.comment,
             args.getContext(),
             format_settings,
+            /* object_infos */std::nullopt,
             /* distributed_processing_ */false,
             partition_by);
     },
@@ -1419,10 +1471,11 @@ SchemaCache & StorageS3::getSchemaCache(const ContextPtr & ctx)
 }
 
 std::optional<time_t> StorageS3::getLastModificationTime(
-    const S3Configuration & s3_configuration, const String & key, std::unordered_map<String, S3::ObjectInfo> * object_infos)
+    const S3Configuration & s3_configuration, const String & key, ObjectInfos * object_infos)
 {
     String path = fs::path(s3_configuration.uri.bucket) / key;
     S3::ObjectInfo info;
+
     /// Check if we already have information about this object.
     /// If no, request it and remember for possible future usage.
     if (object_infos && object_infos->contains(path))

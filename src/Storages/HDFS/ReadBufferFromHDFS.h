@@ -12,6 +12,7 @@
 #include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 
 namespace DB
@@ -47,6 +48,10 @@ public:
     IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
 
     String getFileName() const override;
+
+    Range getRemainingReadRange() const override;
+
+    bool supportsRightBoundedReads() const override { return true; }
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
@@ -77,7 +78,12 @@ ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr 
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+
+        if (!object_infos && StorageHDFS::shouldCollectObjectInfos(context))
+            object_infos.emplace();
+
+        return StorageHDFS::getTableStructureFromData(
+            format, filename, compression_method, object_infos ? &*object_infos : nullptr, context);
     }
 
     return parseColumnsListFromString(structure, context);
@@ -89,6 +95,10 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
     const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
+
+    if (!object_infos && StorageHDFS::shouldCollectObjectInfos(context))
+        object_infos.emplace();
+
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this uri won't contains globs
@@ -100,6 +110,7 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
             ConstraintsDescription{},
             String{},
             context,
+            object_infos,
             compression_method,
             /*distributed_processing=*/true,
             nullptr);
@@ -107,10 +118,9 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
     else
     {
         storage = std::make_shared<StorageHDFSCluster>(
-            context,
-            cluster_name, filename, StorageID(getDatabaseName(), table_name),
+            context, cluster_name, filename, StorageID(getDatabaseName(), table_name),
             format, getActualTableStructure(context), ConstraintsDescription{},
-            compression_method);
+            compression_method, object_infos);
     }
     return storage;
 }

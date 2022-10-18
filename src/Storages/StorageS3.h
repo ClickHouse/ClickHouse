@@ -30,6 +30,7 @@ namespace DB
 
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
+class ReadBufferFromS3;
 
 /**
  * This class represents table engine for external S3 urls.
@@ -39,6 +40,8 @@ class StorageS3SequentialSource;
 class StorageS3 : public IStorage, WithContext
 {
 public:
+    using ObjectInfos = std::unordered_map<String, S3::ObjectInfo>;
+
     StorageS3(
         const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
@@ -47,6 +50,7 @@ public:
         const String & comment,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
+        std::optional<ObjectInfos> object_infos_,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -76,7 +80,7 @@ public:
         bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
+        ObjectInfos * object_infos);
 
     static void processNamedCollectionResult(StorageS3Configuration & configuration, const std::vector<std::pair<String, ASTPtr>> & key_value_args);
 
@@ -110,7 +114,18 @@ public:
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
     static std::optional<time_t> getLastModificationTime(
-        const S3Configuration & s3_configuration, const String & key, std::unordered_map<String, S3::ObjectInfo> * object_infos);
+        const S3Configuration & s3_configuration,
+        const String & key,
+        ObjectInfos * object_infos);
+
+    static std::unique_ptr<ReadBuffer> createS3ReadBuffer(
+        const StorageS3::S3Configuration & s3_configuration,
+        const String & key,
+        ObjectInfos * object_infos,
+        size_t download_thread_num,
+        ContextPtr local_context);
+
+    static bool shouldCollectObjectInfos(ContextPtr local_context);
 
 private:
     friend class StorageS3Cluster;
@@ -131,7 +146,7 @@ private:
 
     std::vector<String> read_tasks_used_in_schema_inference;
 
-    std::unordered_map<String, S3::ObjectInfo> object_infos;
+    std::optional<ObjectInfos> object_infos;
 
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 
@@ -145,7 +160,7 @@ private:
         ASTPtr query,
         const Block & virtual_block,
         const std::vector<String> & read_tasks = {},
-        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
+        ObjectInfos * object_infos = nullptr,
         Strings * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
@@ -157,7 +172,7 @@ private:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         std::vector<String> * read_keys_in_distributed_processing = nullptr,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
+        ObjectInfos * object_infos = nullptr);
 
     bool supportsSubsetOfColumns() const override;
 
@@ -165,7 +180,7 @@ private:
         const Strings::const_iterator & begin,
         const Strings::const_iterator & end,
         const S3Configuration & s3_configuration,
-        std::unordered_map<String, S3::ObjectInfo> * object_infos,
+        ObjectInfos * object_infos,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
@@ -191,7 +206,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
-            std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
+            StorageS3::ObjectInfos * object_infos = nullptr,
             Strings * read_keys_ = nullptr);
 
         String next();
@@ -244,7 +259,7 @@ public:
         String compression_hint_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         size_t download_thread_num,
-        const std::unordered_map<String, S3::ObjectInfo> & object_infos_);
+        StorageS3::ObjectInfos * object_infos_);
 
     String getName() const override;
 
@@ -274,12 +289,10 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
-    std::unordered_map<String, S3::ObjectInfo> object_infos;
+    StorageS3::ObjectInfos * object_infos;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     bool initialize();
-
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
 };
 }
 

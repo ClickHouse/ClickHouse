@@ -13,9 +13,9 @@ struct ReadSettings;
 
 std::unique_ptr<ReadBufferFromFileBase> wrapWithCachedReadBuffer(
     ImplementationBufferCreator impl_creator,
-    ModificationTimeGetter modification_time_getter,
     const std::string & object_path,
     size_t object_size,
+    time_t object_modification_time,
     const ReadSettings & read_settings);
 
 }

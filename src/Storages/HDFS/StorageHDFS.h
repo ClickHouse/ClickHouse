@@ -12,6 +12,9 @@
 
 namespace DB
 {
+struct HDFSFileInfo;
+using HDFSFileInfoPtr = std::unique_ptr<HDFSFileInfo>;
+
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
@@ -19,6 +22,13 @@ namespace DB
 class StorageHDFS final : public IStorage, WithContext
 {
 public:
+    struct ObjectInfo
+    {
+        size_t size = 0;
+        time_t last_modification_time = 0;
+    };
+    using ObjectInfos = std::unordered_map<String, ObjectInfo>;
+
     StorageHDFS(
         const String & uri_,
         const StorageID & table_id_,
@@ -27,6 +37,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        std::optional<ObjectInfos> object_infos_,
         const String & compression_method_ = "",
         bool distributed_processing_ = false,
         ASTPtr partition_by = nullptr);
@@ -64,9 +75,20 @@ public:
         const String & format,
         const String & uri,
         const String & compression_method,
+        ObjectInfos * object_infos,
         ContextPtr ctx);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
+    static bool shouldCollectObjectInfos(ContextPtr local_context);
+
+    static std::unique_ptr<ReadBuffer> createHDFSReadBuffer(
+        const String & uri,
+        const String & object_path,
+        ObjectInfos * object_infos,
+        ContextPtr local_context);
+
+    static ObjectInfo getFileInfo(const String & uri, const String & path, ContextPtr ctx);
 
 protected:
     friend class HDFSSource;
@@ -75,7 +97,7 @@ private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & paths,
         const String & uri_without_path,
-        std::unordered_map<String, time_t> & last_mod_time,
+        ObjectInfos * object_infos,
         const String & format_name,
         const ContextPtr & ctx);
 
@@ -86,6 +108,8 @@ private:
         const String & format_name,
         const ContextPtr & ctx);
 
+    ObjectInfos * getObjectInfos() const;
+
     std::vector<String> uris;
     String format_name;
     String compression_method;
@@ -95,6 +119,8 @@ private:
     NamesAndTypesList virtual_columns;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
+
+    mutable std::optional<ObjectInfos> object_infos;
 };
 
 class PullingPipelineExecutor;
@@ -104,13 +130,15 @@ class HDFSSource : public ISource, WithContext
 public:
     class DisclosedGlobIterator
     {
-        public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
+    public:
+        DisclosedGlobIterator(ContextPtr context_, const String & uri_, StorageHDFS::ObjectInfos * object_infos);
+
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
     };
 
     class URISIterator
@@ -135,6 +163,7 @@ public:
         const std::vector<NameAndTypePair> & requested_virtual_columns_,
         ContextPtr context_,
         UInt64 max_block_size_,
+        StorageHDFS::ObjectInfos * object_infos_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         ColumnsDescription columns_description_);
 
@@ -158,6 +187,7 @@ private:
     /// onCancel and generate can be called concurrently.
     std::mutex reader_mutex;
     String current_path;
+    StorageHDFS::ObjectInfos * object_infos;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

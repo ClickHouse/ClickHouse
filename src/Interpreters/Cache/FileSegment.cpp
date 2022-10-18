@@ -85,6 +85,7 @@ FileSegment::State FileSegment::state() const
 void FileSegment::setDownloadState(State state)
 {
     LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
+    assert(download_state != State::DOWNLOADED);
     download_state = state;
 }
 
@@ -748,7 +749,7 @@ void FileSegment::detach(std::lock_guard<std::mutex> & /* cache_lock */, std::un
 
     if (download_state == State::DOWNLOADING)
         resetDownloadingStateUnlocked(segment_lock);
-    else
+    else if (download_state != State::DOWNLOADED)
         setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
     resetDownloaderUnlocked(segment_lock);
