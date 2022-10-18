@@ -264,6 +264,7 @@ private:
         try
         {
             ++calls_total;
+
             if (!keeper)
                 throw zkutil::KeeperException(
                     "Session is considered to be expired due to fault injection", Coordination::Error::ZSESSIONEXPIRED);
@@ -275,6 +276,8 @@ private:
             }
 
             Result res = operation();
+
+            /// if connectivity error occurred w/o fault injection -> just return it
             if constexpr (std::is_same_v<Coordination::Error, Result>)
             {
                 if (Coordination::isHardwareError(res))
@@ -304,6 +307,7 @@ private:
             }
 
             ++calls_without_fault_injection;
+
             if (unlikely(logger))
                 LOG_TRACE(logger, "KeeperAccess call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
 

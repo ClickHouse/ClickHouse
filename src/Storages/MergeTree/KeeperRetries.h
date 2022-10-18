@@ -68,7 +68,7 @@ public:
 
         if (stop_retries)
         {
-            logLastError("stop retires on request");
+            logLastError("stop retries on request");
             action_after_last_failed_retry();
             throwIfError();
             return false;

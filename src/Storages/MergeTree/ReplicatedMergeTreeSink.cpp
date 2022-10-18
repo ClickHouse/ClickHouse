@@ -378,19 +378,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 /// check that info about the part was actually written in zk
                 if (zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name))
                 {
-                    /// check that we've created this part
-                    if (storage.getActiveContainingPart(part->name))
-                    {
-                        LOG_DEBUG(
-                            log, "Part was successfully committed on previous iteration: part_id={}", part->name);
-                    }
-                    else
-                    {
-                        retries_ctl.setUserError(
-                            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
-                            "The same part id was inserted concurrently while retry reconnect to zookeeper. Please retry. Reason: {}",
-                            Coordination::errorMessage(write_part_info_keeper_error));
-                    }
+                    LOG_DEBUG(log, "Part was successfully committed on previous iteration: part_id={}", part->name);
                 }
                 else
                 {
