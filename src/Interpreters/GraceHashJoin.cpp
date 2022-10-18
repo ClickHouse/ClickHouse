@@ -438,7 +438,7 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty && file_buckets_are_empty;
 }
 
-std::unique_ptr<IBlocksStream> GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
+IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
 {
     /// We do no support returning non joined blocks here.
     /// TODO: They _should_ be reported by getDelayedBlocks instead
@@ -511,7 +511,7 @@ public:
     Names right_key_names;
 };
 
-std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks()
+IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 {
     std::lock_guard current_bucket_lock(current_bucket_mutex);
 
@@ -520,42 +520,35 @@ std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
-    while (current_bucket->finished() || current_bucket->empty())
+    if (hash_join)
     {
-        if (!current_bucket->empty())
+        auto right_blocks = hash_join->releaseJoinedBlocks();
+        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_blocks, buckets.size());
+
+        for (size_t i = 0; i < blocks.size(); ++i)
         {
-            /// can't destroy hash_join because it still can be used by some `DelayedBlocks` instances
-            auto right_blocks = hash_join->releaseJoinedBlocks();
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_blocks, buckets.size());
+            if (blocks[i].rows() == 0 || i == bucket_idx)
+                continue;
 
-            for (size_t i = 0; i < blocks.size(); ++i)
-            {
-                if (blocks[i].rows() == 0 || i == bucket_idx)
-                    continue;
-
-                buckets[i]->addRightBlock(blocks[i]);
-            }
+            if (i < bucket_idx)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected bucket index {} when current bucket is {}", i, bucket_idx);
+            buckets[i]->addRightBlock(blocks[i]);
         }
+    }
 
-        bucket_idx++;
+    hash_join = makeInMemoryJoin();
 
-        current_bucket = nullptr;
-        hash_join = nullptr;
-
-        if (buckets.size() <= bucket_idx)
-        {
-            LOG_TRACE(log, "Finished joining all buckets");
-            return nullptr;
-        }
-
+    for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
+    {
         current_bucket = buckets[bucket_idx].get();
-        if (current_bucket->empty())
+        if (current_bucket->finished() || current_bucket->empty())
         {
-            LOG_TRACE(log, "Skipping empty bucket {}", bucket_idx);
+            LOG_TRACE(log, "Skipping {} {} bucket {}",
+                current_bucket->finished() ? "finished" : "",
+                current_bucket->empty() ? "empty" : "",
+                bucket_idx);
             continue;
         }
-
-        hash_join = makeInMemoryJoin();
 
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
@@ -567,9 +560,14 @@ std::unique_ptr<IBlocksStream> GraceHashJoin::getDelayedBlocks()
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
+
+        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
     }
 
-    return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+    LOG_TRACE(log, "Finished loading all buckets");
+
+    current_bucket = nullptr;
+    return nullptr;
 }
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin()
@@ -600,7 +598,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
                 blocks.push_back(right_block);
         }
 
-        if (overflow)
+        while (overflow)
         {
             buckets_snapshot = rehashBuckets(buckets_snapshot.size() * 2);
 

@@ -18,6 +18,7 @@ using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 class TableJoin;
 class NotJoinedBlocks;
 class IBlocksStream;
+using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
@@ -82,10 +83,10 @@ public:
     virtual bool supportParallelJoin() const { return false; }
 
     /// Peek next stream of delayed joined blocks.
-    virtual std::unique_ptr<IBlocksStream> getDelayedBlocks() { return nullptr; }
+    virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
-    virtual std::unique_ptr<IBlocksStream>
+    virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
 private:

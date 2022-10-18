@@ -10,6 +10,7 @@ using JoinPtr = std::shared_ptr<IJoin>;
 
 class NotJoinedBlocks;
 class IBlocksStream;
+using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -81,7 +82,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    std::unique_ptr<IBlocksStream> non_joined_blocks;
+    IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
@@ -109,14 +110,27 @@ private:
     bool set_totals = false;
 };
 
-/// Reads delayed joined blocks from Join.
-/// Has no inputs and single output port.
-/// The joined blocks are written to the output port.
+
+class DelayedBlocksTask : public ChunkInfo
+{
+public:
+
+    explicit DelayedBlocksTask() : finished(true) {}
+    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_) : delayed_blocks(std::move(delayed_blocks_)) {}
+
+    IBlocksStreamPtr delayed_blocks = nullptr;
+
+    bool finished = false;
+};
+
+using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
+
+
+/// Reads delayed joined blocks from Join
 class DelayedJoinedBlocksTransform : public IProcessor
 {
 public:
-    DelayedJoinedBlocksTransform(Block input_header, JoinPtr join_);
-    ~DelayedJoinedBlocksTransform() override;
+    explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
 
     String getName() const override { return "DelayedJoinedBlocksTransform"; }
 
@@ -125,8 +139,25 @@ public:
 
 private:
     JoinPtr join;
-    std::unique_ptr<IBlocksStream> delayed_blocks;
+
+    IBlocksStreamPtr delayed_blocks = nullptr;
+    bool finished = false;
+};
+
+class DelayedJoinedBlocksWorkerTransform : public IProcessor
+{
+public:
+    DelayedJoinedBlocksWorkerTransform(Block output_header);
+
+    String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    DelayedBlocksTaskPtr task;
     Chunk output_chunk;
+
     bool finished = false;
 };
 

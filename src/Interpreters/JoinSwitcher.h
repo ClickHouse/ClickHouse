@@ -63,13 +63,13 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    std::unique_ptr<IBlocksStream>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    std::unique_ptr<IBlocksStream> getDelayedBlocks() override
+    IBlocksStreamPtr getDelayedBlocks() override
     {
         return join->getDelayedBlocks();
     }

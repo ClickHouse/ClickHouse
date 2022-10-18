@@ -1114,7 +1114,7 @@ private:
 };
 
 
-std::unique_ptr<IBlocksStream> MergeJoin::getNonJoinedBlocks(
+IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))

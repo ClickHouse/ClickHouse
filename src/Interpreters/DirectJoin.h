@@ -42,7 +42,7 @@ public:
 
     virtual bool isFilled() const override { return true; }
 
-    virtual std::unique_ptr<IBlocksStream>
+    virtual IBlocksStreamPtr
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
         return nullptr;

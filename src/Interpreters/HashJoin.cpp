@@ -1938,7 +1938,7 @@ private:
     }
 };
 
-std::unique_ptr<IBlocksStream> HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
+IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
                                                               const Block & result_sample_block,
                                                               UInt64 max_block_size) const
 {
