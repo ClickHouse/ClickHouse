@@ -14,7 +14,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -27,6 +26,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -42,28 +42,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-static ASTPtr addColumnsStructureToQuery(const ASTPtr & query, const String & structure)
-{
-    /// Add argument with table structure to s3Cluster table function in select query.
-    auto result_query = query->clone();
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(result_query);
-    if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function from s3Cluster, got '{}'", queryToString(query));
-    auto structure_literal = std::make_shared<ASTLiteral>(structure);
-
-    if (expression_list->children.size() < 2 || expression_list->children.size() > 5)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 to 5 arguments in s3Cluster table functions, got {}", expression_list->children.size());
-
-    if (expression_list->children.size() == 2 || expression_list->children.size() == 4)
-    {
-        auto format_literal = std::make_shared<ASTLiteral>("auto");
-        expression_list->children.push_back(format_literal);
-    }
-
-    expression_list->children.push_back(structure_literal);
-    return result_query;
 }
 
 StorageS3Cluster::StorageS3Cluster(
@@ -139,10 +117,10 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    ASTPtr query_to_send = query_info.original_query;
+    ASTPtr query_to_send = query_info.original_query->clone();
     if (need_to_add_structure_to_query)
-        query_to_send = addColumnsStructureToQuery(
-            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
+        addColumnsStructureToQueryWithClusterEngine(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 
     for (const auto & replicas : cluster->getShardsAddresses())
     {
