@@ -198,72 +198,72 @@ FileSegments FileCache::getImpl(
             file_segment->detachAssumeStateFinalized(segment_lock);
         }
         result.emplace_back(file_segment);
+        return result;
     }
-    else
+
+    auto it = files.find(key);
+    if (it == files.end())
+        return {};
+
+    const auto & file_segments = it->second;
+    if (file_segments.empty())
     {
-        auto it = files.find(key);
-        if (it == files.end())
+        files.erase(key);
+        removeKeyDirectoryIfExists(key, cache_lock);
+        return {};
+    }
+
+    auto segment_it = file_segments.lower_bound(range.left);
+    if (segment_it == file_segments.end())
+    {
+        /// N - last cached segment for given file key, segment{N}.offset < range.left:
+        ///   segment{N}                       segment{N}
+        /// [________                         [_______]
+        ///     [__________]         OR                  [________]
+        ///     ^                                        ^
+        ///     range.left                               range.left
+
+        const auto & cell = file_segments.rbegin()->second;
+        if (cell.file_segment->range().right < range.left)
             return {};
 
-        const auto & file_segments = it->second;
-        if (file_segments.empty())
+        useCell(cell, result, cache_lock);
+    }
+    else /// segment_it <-- segmment{k}
+    {
+        if (segment_it != file_segments.begin())
         {
-            files.erase(key);
-            removeKeyDirectoryIfExists(key, cache_lock);
-            return {};
+            const auto & prev_cell = std::prev(segment_it)->second;
+            const auto & prev_cell_range = prev_cell.file_segment->range();
+
+            if (range.left <= prev_cell_range.right)
+            {
+                ///   segment{k-1}  segment{k}
+                ///   [________]   [_____
+                ///       [___________
+                ///       ^
+                ///       range.left
+                useCell(prev_cell, result, cache_lock);
+            }
         }
 
-        auto segment_it = file_segments.lower_bound(range.left);
-        if (segment_it == file_segments.end())
-        {
-            /// N - last cached segment for given file key, segment{N}.offset < range.left:
-            ///   segment{N}                       segment{N}
-            /// [________                         [_______]
-            ///     [__________]         OR                  [________]
-            ///     ^                                        ^
-            ///     range.left                               range.left
+        ///  segment{k} ...       segment{k-1}  segment{k}                      segment{k}
+        ///  [______              [______]     [____                        [________
+        ///  [_________     OR              [________      OR    [______]   ^
+        ///  ^                              ^                           ^   segment{k}.offset
+        ///  range.left                     range.left                  range.right
 
-            const auto & cell = file_segments.rbegin()->second;
-            if (cell.file_segment->range().right < range.left)
-                return {};
+        while (segment_it != file_segments.end())
+        {
+            const auto & cell = segment_it->second;
+            if (range.right < cell.file_segment->range().left)
+                break;
 
             useCell(cell, result, cache_lock);
-        }
-        else /// segment_it <-- segmment{k}
-        {
-            if (segment_it != file_segments.begin())
-            {
-                const auto & prev_cell = std::prev(segment_it)->second;
-                const auto & prev_cell_range = prev_cell.file_segment->range();
-
-                if (range.left <= prev_cell_range.right)
-                {
-                    ///   segment{k-1}  segment{k}
-                    ///   [________]   [_____
-                    ///       [___________
-                    ///       ^
-                    ///       range.left
-                    useCell(prev_cell, result, cache_lock);
-                }
-            }
-
-            ///  segment{k} ...       segment{k-1}  segment{k}                      segment{k}
-            ///  [______              [______]     [____                        [________
-            ///  [_________     OR              [________      OR    [______]   ^
-            ///  ^                              ^                           ^   segment{k}.offset
-            ///  range.left                     range.left                  range.right
-
-            while (segment_it != file_segments.end())
-            {
-                const auto & cell = segment_it->second;
-                if (range.right < cell.file_segment->range().left)
-                    break;
-
-                useCell(cell, result, cache_lock);
-                ++segment_it;
-            }
+            ++segment_it;
         }
     }
+
     return result;
 }
 
