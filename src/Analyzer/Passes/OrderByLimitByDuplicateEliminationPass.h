@@ -15,7 +15,7 @@ namespace DB
 class OrderByLimitByDuplicateEliminationPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "OrderByLimitByDuplicateEliminationPass"; }
+    String getName() override { return "OrderByLimitByDuplicateElimination"; }
 
     String getDescription() override { return "Remove duplicate columns from ORDER BY, LIMIT BY."; }
 
@@ -24,4 +24,3 @@ public:
 };
 
 }
-

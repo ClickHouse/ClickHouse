@@ -10,6 +10,7 @@
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/CustomizeFunctionsPass.h>
+#include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 
@@ -31,7 +32,6 @@ namespace ErrorCodes
   * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
   * TODO: Support fuse sum count optimize_fuse_sum_count_avg, optimize_syntax_fuse_functions.
-  * TODO: Support setting optimize_arithmetic_operations_in_aggregate_functions.
   * TODO: Support setting convert_query_to_cnf.
   * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
@@ -129,6 +129,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
         manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_shared<CustomizeFunctionsPass>());
+
+    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
+        manager.addPass(std::make_shared<AggregateFunctionsArithmericOperationsPass>());
 
     if (settings.optimize_injective_functions_inside_uniq)
         manager.addPass(std::make_shared<UniqInjectiveFunctionsEliminationPass>());

@@ -3,11 +3,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/FunctionNode.h>
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/FunctionNode.h>
 
 namespace DB
 {

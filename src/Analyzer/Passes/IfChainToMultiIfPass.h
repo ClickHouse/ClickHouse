@@ -14,7 +14,7 @@ namespace DB
 class IfChainToMultiIfPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "IfChainToMultiIfPass"; }
+    String getName() override { return "IfChainToMultiIf"; }
 
     String getDescription() override { return "Optimize if chain to multiIf"; }
 
@@ -23,4 +23,3 @@ public:
 };
 
 }
-
