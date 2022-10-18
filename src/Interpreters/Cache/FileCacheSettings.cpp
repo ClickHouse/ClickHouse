@@ -34,6 +34,8 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
     enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
     enable_cache_hits_threshold = config.getUInt64(config_prefix + ".enable_cache_hits_threshold", REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD);
+    enable_limit_download_cache_size = config.getUInt64(config_prefix + ".enable_limit_download_cache_size", false);
+    max_enable_download_cache_size = config.getUInt64(config_prefix + ".max_enable_download_cache_size", REMOTE_FS_OBJECTS_CACHE_MAX_ENABLE_DOWNLOAD_SIZE);
 
     do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", false);
 }
