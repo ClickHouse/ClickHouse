@@ -140,6 +140,9 @@ private:
     const size_t enable_cache_hits_threshold;
     const bool enable_filesystem_query_cache_limit;
 
+    const bool enable_limit_download_cache_size;
+    const size_t max_enable_download_cache_size;
+
     mutable std::mutex mutex;
     Poco::Logger * log;
 

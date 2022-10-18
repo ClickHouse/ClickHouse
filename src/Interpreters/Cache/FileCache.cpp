@@ -32,6 +32,8 @@ FileCache::FileCache(
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , enable_limit_download_cache_size(cache_settings_.enable_limit_download_cache_size)
+    , max_enable_download_cache_size(cache_settings_.max_enable_download_cache_size)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
@@ -185,70 +187,83 @@ FileSegments FileCache::getImpl(
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
-    auto it = files.find(key);
-    if (it == files.end())
-        return {};
-
-    const auto & file_segments = it->second;
-    if (file_segments.empty())
-    {
-        files.erase(key);
-        removeKeyDirectoryIfExists(key, cache_lock);
-        return {};
-    }
-
     FileSegments result;
-    auto segment_it = file_segments.lower_bound(range.left);
-    if (segment_it == file_segments.end())
-    {
-        /// N - last cached segment for given file key, segment{N}.offset < range.left:
-        ///   segment{N}                       segment{N}
-        /// [________                         [_______]
-        ///     [__________]         OR                  [________]
-        ///     ^                                        ^
-        ///     range.left                               range.left
 
-        const auto & cell = file_segments.rbegin()->second;
-        if (cell.file_segment->range().right < range.left)
+    if (enable_limit_download_cache_size && (range.size() > max_enable_download_cache_size))
+    {
+        auto file_segment = std::make_shared<FileSegment>(
+            range.left, range.size(), key, this, FileSegment::State::SKIP_CACHE, CreateFileSegmentSettings{});
+        {
+            std::unique_lock segment_lock(file_segment->mutex);
+            file_segment->detachAssumeStateFinalized(segment_lock);
+        }
+        result.emplace_back(file_segment);
+    }
+    else
+    {
+        auto it = files.find(key);
+        if (it == files.end())
             return {};
 
-        useCell(cell, result, cache_lock);
-    }
-    else /// segment_it <-- segmment{k}
-    {
-        if (segment_it != file_segments.begin())
+        const auto & file_segments = it->second;
+        if (file_segments.empty())
         {
-            const auto & prev_cell = std::prev(segment_it)->second;
-            const auto & prev_cell_range = prev_cell.file_segment->range();
-
-            if (range.left <= prev_cell_range.right)
-            {
-                ///   segment{k-1}  segment{k}
-                ///   [________]   [_____
-                ///       [___________
-                ///       ^
-                ///       range.left
-                useCell(prev_cell, result, cache_lock);
-            }
+            files.erase(key);
+            removeKeyDirectoryIfExists(key, cache_lock);
+            return {};
         }
 
-        ///  segment{k} ...       segment{k-1}  segment{k}                      segment{k}
-        ///  [______              [______]     [____                        [________
-        ///  [_________     OR              [________      OR    [______]   ^
-        ///  ^                              ^                           ^   segment{k}.offset
-        ///  range.left                     range.left                  range.right
-
-        while (segment_it != file_segments.end())
+        auto segment_it = file_segments.lower_bound(range.left);
+        if (segment_it == file_segments.end())
         {
-            const auto & cell = segment_it->second;
-            if (range.right < cell.file_segment->range().left)
-                break;
+            /// N - last cached segment for given file key, segment{N}.offset < range.left:
+            ///   segment{N}                       segment{N}
+            /// [________                         [_______]
+            ///     [__________]         OR                  [________]
+            ///     ^                                        ^
+            ///     range.left                               range.left
+
+            const auto & cell = file_segments.rbegin()->second;
+            if (cell.file_segment->range().right < range.left)
+                return {};
 
             useCell(cell, result, cache_lock);
-            ++segment_it;
+        }
+        else /// segment_it <-- segmment{k}
+        {
+            if (segment_it != file_segments.begin())
+            {
+                const auto & prev_cell = std::prev(segment_it)->second;
+                const auto & prev_cell_range = prev_cell.file_segment->range();
+
+                if (range.left <= prev_cell_range.right)
+                {
+                    ///   segment{k-1}  segment{k}
+                    ///   [________]   [_____
+                    ///       [___________
+                    ///       ^
+                    ///       range.left
+                    useCell(prev_cell, result, cache_lock);
+                }
+            }
+
+            ///  segment{k} ...       segment{k-1}  segment{k}                      segment{k}
+            ///  [______              [______]     [____                        [________
+            ///  [_________     OR              [________      OR    [______]   ^
+            ///  ^                              ^                           ^   segment{k}.offset
+            ///  range.left                     range.left                  range.right
+
+            while (segment_it != file_segments.end())
+            {
+                const auto & cell = segment_it->second;
+                if (range.right < cell.file_segment->range().left)
+                    break;
+
+                useCell(cell, result, cache_lock);
+                ++segment_it;
+            }
         }
     }
-
     return result;
 }
 
@@ -392,7 +407,6 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
 #endif
 
     FileSegment::Range range(offset, offset + size - 1);
-
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
 
@@ -404,7 +418,6 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     {
         fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
     }
-
     assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }
