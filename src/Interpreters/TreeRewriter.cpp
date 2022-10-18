@@ -541,7 +541,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         auto & children = select_query->interpolate()->children;
         if (!children.empty())
         {
-            for (auto it = children.begin(); it != children.end();)
+            for (auto * it = children.begin(); it != children.end();)
             {
                 if (remove_columns.contains((*it)->as<ASTInterpolateElement>()->column))
                     it = select_query->interpolate()->children.erase(it);

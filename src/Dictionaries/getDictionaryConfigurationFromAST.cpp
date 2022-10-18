@@ -344,11 +344,14 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
-        {
-            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
-            return dict_attr->name == identifier_name;
-        });
+        const auto * it = std::find_if(
+            children.begin(),
+            children.end(),
+            [&](const ASTPtr & node)
+            {
+                const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+                return dict_attr->name == identifier_name;
+            });
 
         if (it == children.end())
         {

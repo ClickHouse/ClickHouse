@@ -1152,7 +1152,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
                 "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto header_it = StorageURL::collectHeaders(engine_args, configuration, local_context);
+        auto * header_it = StorageURL::collectHeaders(engine_args, configuration, local_context);
         if (header_it != engine_args.end())
             engine_args.erase(header_it);
 

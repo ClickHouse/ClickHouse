@@ -82,7 +82,7 @@ void ASTColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
 void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 {
     writeCString("COLUMNS(", ostr);
-    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
