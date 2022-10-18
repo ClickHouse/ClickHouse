@@ -11,7 +11,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/getTableExpressions.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -26,6 +25,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 
 #include <memory>
 
@@ -36,29 +36,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-static ASTPtr addColumnsStructureToQuery(const ASTPtr & query, const String & structure)
-{
-    /// Add argument with table structure to hdfsCluster table function in select query.
-    auto result_query = query->clone();
-    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(result_query);
-    if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function hdfsCluster, got '{}'", queryToString(query));
-
-    auto structure_literal = std::make_shared<ASTLiteral>(structure);
-
-    if (expression_list->children.size() != 2 && expression_list->children.size() != 3)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 or 3 arguments in hdfsCluster table functions, got {}", expression_list->children.size());
-
-    if (expression_list->children.size() == 2)
-    {
-        auto format_literal = std::make_shared<ASTLiteral>("auto");
-        expression_list->children.push_back(format_literal);
-    }
-
-    expression_list->children.push_back(structure_literal);
-    return result_query;
 }
 
 StorageHDFSCluster::StorageHDFSCluster(
@@ -85,7 +62,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     {
         auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
-        need_to_add_structure_to_query = true;
+        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -122,10 +99,10 @@ Pipe StorageHDFSCluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    auto query_to_send = query_info.original_query;
-    if (need_to_add_structure_to_query)
-        query_to_send = addColumnsStructureToQuery(
-            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
+    auto query_to_send = query_info.original_query->clone();
+    if (add_columns_structure_to_query)
+        addColumnsStructureToQueryWithClusterEngine(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 
     for (const auto & replicas : cluster->getShardsAddresses())
     {
