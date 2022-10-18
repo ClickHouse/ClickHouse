@@ -96,7 +96,7 @@ public:
         ProtocolVersion protocol_version = ProtocolVersion::V3;
 
         String host;
-        std::uint16_t port = 636;
+        UInt16 port = 636;
 
         TLSEnable enable_tls = TLSEnable::YES;
         TLSProtocolVersion tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
@@ -120,7 +120,7 @@ public:
         std::chrono::seconds operation_timeout{40};
         std::chrono::seconds network_timeout{30};
         std::chrono::seconds search_timeout{20};
-        std::uint32_t search_limit = 256;
+        UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
         void updateHash(SipHash & hash) const;
     };
