@@ -1984,7 +1984,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks()
 {
-    BlocksList right_blocks = data->blocks;
+    BlocksList right_blocks = std::move(data->blocks);
     BlocksList restored_blocks;
 
     /// names to positions optimization
