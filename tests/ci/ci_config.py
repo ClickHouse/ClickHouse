@@ -355,7 +355,7 @@ CI_CONFIG = {
             "required_build": "package_aarch64",
             "test_grep_exclude_filter": "",
         },
-        "SQLancer (debug)": {
+        "SQLancer (release)": {
             "required_build": "package_release",
         },
     },
