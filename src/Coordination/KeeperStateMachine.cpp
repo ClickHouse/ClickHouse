@@ -44,8 +44,7 @@ KeeperStateMachine::KeeperStateMachine(
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
-    const bool upload_snapshot_on_exit_,
-    KeeperSnapshotManagerS3 & snapshot_manager_s3_,
+    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
@@ -61,7 +60,6 @@ KeeperStateMachine::KeeperStateMachine(
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
-    , upload_snapshot_on_exit(upload_snapshot_on_exit_)
     , snapshot_manager_s3(snapshot_manager_s3_)
 {
 }
@@ -414,10 +412,10 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         auto snapshot_path = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
 
-        if (!snapshot_path.empty() && upload_snapshot_on_exit)
+        if (!snapshot_path.empty() && snapshot_manager_s3)
         {
             LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_path);
-            snapshot_manager_s3.uploadSnapshot(snapshot_path, /* asnyc_upload */ false);
+            snapshot_manager_s3->uploadSnapshot(snapshot_path, /* asnyc_upload */ false);
         }
 
         return;
