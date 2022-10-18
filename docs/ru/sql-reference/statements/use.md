@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/use
 sidebar_position: 52
 sidebar_label: USE
 ---

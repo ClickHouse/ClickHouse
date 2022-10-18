@@ -54,9 +54,8 @@ set(SRCS
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
-target_include_directories(cxx SYSTEM BEFORE PUBLIC
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}>/src)
+target_include_directories(cxx SYSTEM BEFORE PRIVATE $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/src>)
+target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
 # Enable capturing stack traces for all exceptions.

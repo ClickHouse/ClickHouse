@@ -139,7 +139,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return { .is_monotonic = true, .is_always_monotonic = true };
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
     private:
@@ -232,7 +232,7 @@ namespace DB
         static constexpr auto name = "fromModifiedJulianDayOrNull";
     };
 
-    void registerFunctionFromModifiedJulianDay(FunctionFactory & factory)
+    REGISTER_FUNCTION(FromModifiedJulianDay)
     {
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>();
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>();

@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <string>
@@ -398,7 +398,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

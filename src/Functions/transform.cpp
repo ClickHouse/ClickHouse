@@ -1,6 +1,7 @@
 #include <mutex>
 #include <base/bit_cast.h>
 
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
@@ -394,7 +395,7 @@ private:
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
         return true;
     }
 
@@ -417,7 +418,7 @@ private:
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
         return true;
     }
 
@@ -696,7 +697,8 @@ private:
         if (!out)
             return false;
 
-        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), cache.const_default_value.get<U>());
+        executeImplStringToNumWithConstDefault<U>(
+            in->getChars(), in->getOffsets(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
         return true;
     }
 
@@ -868,8 +870,10 @@ private:
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
+            else if constexpr (is_decimal<U>)
+                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
-                dst[i] = dst_default[i]; // NOLINT
+                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
         }
     }
 
@@ -920,8 +924,7 @@ private:
         ColumnString::Offset current_dst_default_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            Field key = src[i];
-            const auto * it = table.find(key.reinterpret<UInt64>());
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref;
 
             if (it)
@@ -977,8 +980,10 @@ private:
             const auto * it = table.find(ref);
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            else if constexpr (is_decimal<U>)
+                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
-                dst[i] = dst_default[i]; // NOLINT
+                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
         }
     }
 
@@ -1081,6 +1086,22 @@ private:
 
     mutable Cache cache;
 
+
+    static UInt64 bitCastToUInt64(const Field & x)
+    {
+        switch (x.getType())
+        {
+            case Field::Types::UInt64:      return x.get<UInt64>();
+            case Field::Types::Int64:       return x.get<Int64>();
+            case Field::Types::Float64:     return std::bit_cast<UInt64>(x.get<Float64>());
+            case Field::Types::Bool:        return x.get<bool>();
+            case Field::Types::Decimal32:   return x.get<DecimalField<Decimal32>>().getValue();
+            case Field::Types::Decimal64:   return x.get<DecimalField<Decimal64>>().getValue();
+            default:
+                throw Exception("Unexpected type in function 'transform'", ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
     /// Can be called from different threads. It works only on the first call.
     void initialize(const Array & from, const Array & to, const ColumnsWithTypeAndName & arguments) const
     {
@@ -1151,20 +1172,8 @@ private:
                     if (key.isNull())
                         continue;
 
-                    // Field may be of Float type, but for the purpose of bitwise
-                    // equality we can treat them as UInt64, hence the reinterpret().
-                    if (to[0].getType() ==Field::Types::Decimal32)
-                    {
-                        table[key.reinterpret<Decimal32>()] = (*used_to)[i].reinterpret<Decimal32>();
-                    }
-                    else if (to[0].getType() ==Field::Types::Decimal64)
-                    {
-                        table[key.reinterpret<Decimal32>()] = (*used_to)[i].reinterpret<Decimal64>();
-                    }
-                    else
-                    {
-                        table[key.reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
-                    }
+                    /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
+                    table[bitCastToUInt64(key)] = bitCastToUInt64((*used_to)[i]);
                 }
             }
             else
@@ -1179,7 +1188,7 @@ private:
 
                     const String & str_to = to[i].get<const String &>();
                     StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                    table[key.reinterpret<UInt64>()] = ref;
+                    table[bitCastToUInt64(key)] = ref;
                 }
             }
         }
@@ -1193,7 +1202,7 @@ private:
                 {
                     const String & str_from = from[i].get<const String &>();
                     StringRef ref{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                    table[ref] = (*used_to)[i].reinterpret<UInt64>();
+                    table[ref] = bitCastToUInt64((*used_to)[i]);
                 }
             }
             else
@@ -1217,7 +1226,7 @@ private:
 
 }
 
-void registerFunctionTransform(FunctionFactory & factory)
+REGISTER_FUNCTION(Transform)
 {
     factory.registerFunction<FunctionTransform>();
 }

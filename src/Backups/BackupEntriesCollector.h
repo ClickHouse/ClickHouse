@@ -86,12 +86,13 @@ private:
 
     void runPostTasks();
 
-    Strings setStatus(const String & new_status, const String & message = "");
+    Strings setStage(const String & new_stage, const String & message = "");
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     ContextPtr context;
+    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds consistent_metadata_snapshot_timeout;
     Poco::Logger * log;
 
@@ -129,8 +130,8 @@ private:
         std::optional<ASTs> partitions;
     };
 
-    String current_status;
-    std::chrono::steady_clock::time_point consistent_metadata_snapshot_start_time;
+    String current_stage;
+    std::chrono::steady_clock::time_point consistent_metadata_snapshot_end_time;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;
     std::vector<std::pair<String, String>> previous_databases_metadata;

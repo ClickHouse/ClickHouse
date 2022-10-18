@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 
 #if USE_AWS_S3
@@ -87,7 +87,8 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         region,
         remote_host_filter,
         s3_max_redirects,
-        enable_s3_requests_logging
+        enable_s3_requests_logging,
+        /* for_disk_s3 = */ false
     );
 
     client_configuration.endpointOverride = uri.endpoint;

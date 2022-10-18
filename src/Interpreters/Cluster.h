@@ -93,6 +93,7 @@ public:
         UInt16 port{0};
         String user;
         String password;
+        String quota_key;
 
         /// For inter-server authorization
         String cluster;

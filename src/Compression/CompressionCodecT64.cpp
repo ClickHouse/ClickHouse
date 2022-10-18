@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
+#include <bit>
 
 
 namespace DB
@@ -306,7 +307,19 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 template <typename T>
 void load(const char * src, T * buf, UInt32 tail = 64)
 {
-    memcpy(buf, src, tail * sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        memcpy(buf, src, tail * sizeof(T));
+    }
+    else
+    {
+        /// Since the algorithm uses little-endian integers, data is loaded
+        /// as little-endian types on big-endian machine (s390x, etc).
+        for (UInt32 i = 0; i < tail; ++i)
+        {
+            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
+        }
+    }
 }
 
 template <typename T>
@@ -413,7 +426,7 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 {
     UInt64 diff_bits = min ^ max;
     if (diff_bits)
-        return 64 - __builtin_clzll(diff_bits);
+        return 64 - std::countl_zero(diff_bits);
     return 0;
 }
 

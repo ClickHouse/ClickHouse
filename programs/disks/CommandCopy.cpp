@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ICommand.h"
+#include <Interpreters/Context.h>
 
 namespace DB
 {

@@ -14,10 +14,10 @@ using namespace std::chrono_literals;
 
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 
-OvercommitTracker::OvercommitTracker(std::mutex & global_mutex_)
+OvercommitTracker::OvercommitTracker(DB::ProcessList * process_list_)
     : picked_tracker(nullptr)
+    , process_list(process_list_)
     , cancellation_state(QueryCancellationState::NONE)
-    , global_mutex(global_mutex_)
     , freed_memory(0)
     , required_memory(0)
     , next_id(0)
@@ -33,11 +33,11 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::NONE;
     // NOTE: Do not change the order of locks
     //
-    // global_mutex must be acquired before overcommit_m, because
+    // global mutex must be acquired before overcommit_m, because
     // method OvercommitTracker::onQueryStop(MemoryTracker *) is
-    // always called with already acquired global_mutex in
+    // always called with already acquired global mutex in
     // ProcessListEntry::~ProcessListEntry().
-    std::unique_lock<std::mutex> global_lock(global_mutex);
+    auto global_lock = process_list->unsafeLock();
     std::unique_lock<std::mutex> lk(overcommit_m);
 
     size_t id = next_id++;
@@ -137,8 +137,8 @@ void OvercommitTracker::releaseThreads()
     cv.notify_all();
 }
 
-UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_)
-    : OvercommitTracker(process_list->mutex)
+UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_)
+    : OvercommitTracker(process_list_)
     , user_process_list(user_process_list_)
 {}
 
@@ -169,8 +169,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
 }
 
 GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
-    : OvercommitTracker(process_list_->mutex)
-    , process_list(process_list_)
+    : OvercommitTracker(process_list_)
 {}
 
 void GlobalOvercommitTracker::pickQueryToExcludeImpl()

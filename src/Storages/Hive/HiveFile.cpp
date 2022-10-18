@@ -79,13 +79,23 @@ Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatist
 
 std::optional<size_t> IHiveFile::getRows()
 {
-    if (!rows)
-        rows = getRowsImpl();
+    if (!has_init_rows)
+    {
+        std::lock_guard lock(mutex);
+        if (!has_init_rows)
+        {
+            rows = getRowsImpl();
+            has_init_rows = true;
+        }
+    }
     return rows;
 }
 
 void IHiveFile::loadFileMinMaxIndex()
 {
+    if (file_minmax_idx_loaded)
+        return;
+    std::lock_guard lock(mutex);
     if (file_minmax_idx_loaded)
         return;
     loadFileMinMaxIndexImpl();
@@ -94,6 +104,9 @@ void IHiveFile::loadFileMinMaxIndex()
 
 void IHiveFile::loadSplitMinMaxIndexes()
 {
+    if (split_minmax_idxes_loaded)
+        return;
+    std::lock_guard lock(mutex);
     if (split_minmax_idxes_loaded)
         return;
     loadSplitMinMaxIndexesImpl();

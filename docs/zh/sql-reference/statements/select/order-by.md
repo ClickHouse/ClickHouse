@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/select/order-by
 sidebar_label: ORDER BY
 ---
 

@@ -141,6 +141,8 @@ public:
 
     void getLambdaArgumentTypesImpl(DataTypes & arguments) const override { function->getLambdaArgumentTypes(arguments); }
 
+    const IFunction * getFunction() const { return function.get(); }
+
 private:
     std::shared_ptr<IFunction> function;
 };

@@ -9,7 +9,7 @@
 
 #include <Poco/Version.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -255,10 +255,13 @@ namespace
                         {
                             session->reset();
                             session->setHost(ip);
-                            session->attachSessionData({});
                         }
                     }
                 }
+                /// Reset the message, once it has been printed,
+                /// otherwise you will get report for failed parts on and on,
+                /// even for different tables (since they uses the same session).
+                session->attachSessionData({});
             }
 
             setTimeouts(*session, timeouts);

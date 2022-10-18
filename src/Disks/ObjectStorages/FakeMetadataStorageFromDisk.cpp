@@ -95,17 +95,15 @@ StoredObjects FakeMetadataStorageFromDisk::getStorageObjects(const std::string &
     std::string blob_name = object_storage->generateBlobNameForPath(path);
 
     std::string object_path = fs::path(object_storage_root_path) / blob_name;
-    size_t object_size = getFileSize(object_path);
+    size_t object_size = getFileSize(path);
 
-    auto object = StoredObject::create(*object_storage, object_path, object_size);
+    auto object = StoredObject::create(*object_storage, object_path, object_size, /* exists */true);
     return {std::move(object)};
 }
 
 uint32_t FakeMetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
-    size_t ref_count = disk->getRefCount(path);
-    assert(ref_count > 0);
-    return ref_count - 1;
+    return disk->getRefCount(path);
 }
 
 const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const

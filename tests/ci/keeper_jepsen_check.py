@@ -9,7 +9,7 @@ import boto3
 from github import Github
 import requests
 
-from env_helper import REPO_COPY, TEMP_PATH
+from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
@@ -27,7 +27,7 @@ from rerun_helper import RerunHelper
 JEPSEN_GROUP_NAME = "jepsen_group"
 DESIRED_INSTANCE_COUNT = 3
 IMAGE_NAME = "clickhouse/keeper-jepsen-test"
-CHECK_NAME = "ClickHouse Keeper Jepsen (actions)"
+CHECK_NAME = "ClickHouse Keeper Jepsen"
 
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"
@@ -159,7 +159,7 @@ if __name__ == "__main__":
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
     # dependency on a build job and using busy loop on it's results. For the
     # same reason we are using latest docker image.
-    build_url = f"https://s3.amazonaws.com/clickhouse-builds/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
+    build_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
     head = requests.head(build_url)
     counter = 0
     while head.status_code != 200:
@@ -248,7 +248,7 @@ if __name__ == "__main__":
         description = "No Jepsen output log"
         test_result = [("No Jepsen output log", "FAIL")]
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     report_url = upload_results(
         s3_helper,
         pr_info.number,
