@@ -157,10 +157,11 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         return Status::PortFull;
     }
 
-    /// When limit is unreachable, need to return all rows before negative offset, so check here
+    // When limit is unreachable, need to return all rows before offset
     if (limit_is_unreachable && PopWithoutCut())
     {
-        output.push(queuePop());
+        Chunk pop(queuePop());
+        output.push(std::move(pop));
         return Status::PortFull;
     }
 
@@ -205,16 +206,22 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
         queuePush(std::move(data.current_chunk));
 
         /// Extract queue length
-        if (PopWithoutCut())
+        if (limit_is_unreachable)
         {
-            Chunk pop(queuePop());
-            if (limit_is_unreachable)
+            if (PopWithoutCut())
             {
+                Chunk pop(queuePop());
                 output.push(std::move(pop));
                 return Status::PortFull;
             }
-            else
+        }
+        else
+        {
+            while (PopWithoutCut())
+            {
+                Chunk pop(queuePop());
                 pop.clear();
+            }
         }
 
         input.setNeeded();
@@ -228,7 +235,7 @@ LimitTransform::Status LimitTransform::preparePairNegative(PortsData & data)
 
 bool LimitTransform::PopWithoutCut()
 {
-    return rows_to_keep <= rows_in_queue - queue.front().getNumRows();
+    return !queue.empty() && rows_to_keep <= rows_in_queue - queue.front().getNumRows();
 }
 
 void LimitTransform::queuePush(Chunk data)
