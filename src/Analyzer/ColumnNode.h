@@ -13,9 +13,8 @@ namespace ErrorCodes
 }
 
 /** Column node represents column in query tree.
-  * Column must have some column source.
-  * Column can be table expression, lambda, subquery.
-  * Column source must be valid during column node lifetime.
+  * Column node can have weak pointer to its column source.
+  * Column source can be table expression, lambda, subquery.
   *
   * For table ALIAS columns. Column node must contain expression.
   * For ARRAY JOIN join expression column. Column node must contain expression.
@@ -28,8 +27,6 @@ namespace ErrorCodes
   *
   * Column node is initialized with column name, type and column source weak pointer.
   * In case of ALIAS column node is initialized with column name, type, alias expression and column source weak pointer.
-  *
-  * Additional care must be taken during clone to repoint column source to another node if its necessary see IQueryTreeNode.h `clone` method.
   */
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
@@ -37,10 +34,10 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class ColumnNode final : public IQueryTreeNode
 {
 public:
-    /// Construct expression column node with column name, type, column expression and column source weak pointer.
+    /// Construct column node with column name, type, column expression and column source weak pointer
     ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
 
-    /// Construct column node with column name, type and column source weak pointer.
+    /// Construct column node with column name, type and column source weak pointer
     ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
 
     /// Get column
@@ -67,21 +64,25 @@ public:
         column.type = std::move(column_type);
     }
 
+    /// Returns true if column node has expression, false otherwise
     bool hasExpression() const
     {
         return children[expression_child_index] != nullptr;
     }
 
+    /// Get column node expression node
     const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
     }
 
+    /// Get column node expression node
     QueryTreeNodePtr & getExpression()
     {
         return children[expression_child_index];
     }
 
+    /// Get column node expression node, if there are no expression node exception is thrown
     QueryTreeNodePtr & getExpressionOrThrow()
     {
         if (!children[expression_child_index])
@@ -90,6 +91,7 @@ public:
         return children[expression_child_index];
     }
 
+    /// Set column node expression node
     void setExpression(QueryTreeNodePtr expression_value)
     {
         children[expression_child_index] = std::move(expression_value);
@@ -123,7 +125,6 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
 
 protected:
-
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 
     void updateTreeHashImpl(HashState & hash_state) const override;

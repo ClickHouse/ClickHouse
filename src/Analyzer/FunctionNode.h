@@ -25,7 +25,7 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
   * 2. Non aggregate function. Example: plus(x, x).
   * 3. Window function. Example: sum(x) OVER (PARTITION BY expr ORDER BY expr).
   *
-  * Initially function node is initialize with function name.
+  * Initially function node is initialized with function name.
   * For window function client must initialize function window node.
   *
   * During query analysis pass function must be resolved using `resolveAsFunction`, `resolveAsAggregateFunction`, `resolveAsWindowFunction` methods.
@@ -42,7 +42,7 @@ public:
       */
     explicit FunctionNode(String function_name_);
 
-    /// Get name
+    /// Get function name
     const String & getFunctionName() const
     {
         return function_name;
@@ -96,7 +96,7 @@ public:
         return children[arguments_child_index];
     }
 
-    /// Has window
+    /// Returns true if function node has window, false otherwise
     bool hasWindow() const
     {
         return children[window_child_index] != nullptr;
@@ -104,8 +104,9 @@ public:
 
     /** Get window node.
       * Valid only for window function node.
-      * Can be identifier if window function is defined as expr OVER window_name.
-      * Or can be window node if window function is defined as expr OVER (window_name ...).
+      * Result window node can be identifier node or window node.
+      * 1. It can be identifier node if window function is defined as expr OVER window_name.
+      * 2. It can be window node if window function is defined as expr OVER (window_name ...).
       */
     const QueryTreeNodePtr & getWindowNode() const
     {
@@ -164,7 +165,7 @@ public:
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
-      * Assume we have `multiIf` function with single argument, it can be converted to `if` function.
+      * Assume we have `multiIf` function with single condition, it can be converted to `if` function.
       * Function name must be updated accordingly.
       */
     void resolveAsFunction(FunctionOverloadResolverPtr function_value, DataTypePtr result_type_value);

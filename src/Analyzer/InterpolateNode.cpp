@@ -28,7 +28,7 @@ String InterpolateNode::getName() const
 
 void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "INTERPOLATE_COLUMN id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "INTERPOLATE id: " << format_state.getNodeId(this);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -39,13 +39,13 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
 
 bool InterpolateNode::isEqualImpl(const IQueryTreeNode &) const
 {
-    /// No state in interpolate column node
+    /// No state in interpolate node
     return true;
 }
 
 void InterpolateNode::updateTreeHashImpl(HashState &) const
 {
-    /// No state in interpolate column node
+    /// No state in interpolate node
 }
 
 QueryTreeNodePtr InterpolateNode::cloneImpl() const

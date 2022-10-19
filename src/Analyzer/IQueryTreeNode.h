@@ -53,7 +53,7 @@ const char * toString(QueryTreeNodeType type);
 
 /** Query tree is semantical representation of query.
   * Query tree node represent node in query tree.
-  * Query tree node is base class for all query tree nodes.
+  * IQueryTreeNode is base class for all query tree nodes.
   *
   * Important property of query tree is that each query tree node can contain weak pointers to other
   * query tree nodes. Keeping weak pointer to other query tree nodes can be useful for example for column
@@ -167,7 +167,7 @@ public:
         alias = {};
     }
 
-    /// Check if query tree node has original AST
+    /// Returns true if query tree node has original AST, false otherwise
     bool hasOriginalAST() const
     {
         return original_ast != nullptr;
@@ -188,7 +188,7 @@ public:
     }
 
     /** If query tree has original AST format it for error message.
-      * Otherwise throw an exception.
+      * Otherwise exception is thrown.
       */
     String formatOriginalASTForErrorMessage() const;
 

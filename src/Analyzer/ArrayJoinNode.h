@@ -73,11 +73,13 @@ public:
         return children[join_expressions_child_index];
     }
 
+    /// Get join expressions node
     QueryTreeNodePtr & getJoinExpressionsNode()
     {
         return children[join_expressions_child_index];
     }
 
+    /// Returns true if array join is left, false otherwise
     bool isLeft() const
     {
         return is_left;

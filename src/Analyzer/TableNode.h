@@ -60,7 +60,7 @@ public:
     }
 
     /// Get table expression modifiers
-    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }

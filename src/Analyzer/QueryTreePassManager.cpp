@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/** ClickHouse query tree pass manager
+/** ClickHouse query tree pass manager.
   *
   * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
@@ -58,20 +58,20 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
 {
     auto current_context = getContext();
-    size_t optimizations_size = passes.size();
+    size_t passes_size = passes.size();
 
-    for (size_t i = 0; i < optimizations_size; ++i)
+    for (size_t i = 0; i < passes_size; ++i)
         passes[i]->run(query_tree_node, current_context);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
 {
-    size_t optimizations_size = passes.size();
-    if (up_to_pass_index > optimizations_size)
+    size_t passes_size = passes.size();
+    if (up_to_pass_index > passes_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Requested to run optimizations up to {} pass. There are only {} pass",
+            "Requested to run passes up to {} pass. There are only {} passes",
             up_to_pass_index,
-            optimizations_size);
+            passes_size);
 
     auto current_context = getContext();
     for (size_t i = 0; i < up_to_pass_index; ++i)
@@ -86,25 +86,25 @@ void QueryTreePassManager::dump(WriteBuffer & buffer)
     {
         auto & pass = passes[i];
         buffer << "Pass " << (i + 1) << ' ' << pass->getName() << " - " << pass->getDescription();
-        if (i < passes_size)
+        if (i + 1 != passes_size)
             buffer << '\n';
     }
 }
 
 void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 {
-    size_t optimizations_size = passes.size();
-    if (up_to_pass_index > optimizations_size)
+    size_t passes_size = passes.size();
+    if (up_to_pass_index > passes_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Requested to dump optimizations up to {} pass. There are only {} pass",
+            "Requested to dump passes up to {} pass. There are only {} passes",
             up_to_pass_index,
-            optimizations_size);
+            passes_size);
 
     for (size_t i = 0; i < up_to_pass_index; ++i)
     {
         auto & pass = passes[i];
         buffer << "Pass " << (i + 1) << " " << pass->getName() << " - " << pass->getDescription();
-        if (i < up_to_pass_index)
+        if (i + 1 != up_to_pass_index)
             buffer << '\n';
     }
 }

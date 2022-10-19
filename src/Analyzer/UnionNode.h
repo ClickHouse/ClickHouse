@@ -27,6 +27,12 @@ namespace ErrorCodes
   * Example: (SELECT id FROM test_table) INTERSECT ALL (SELECT id FROM test_table_2);
   * Example: (SELECT id FROM test_table) INTERSECT DISTINCT (SELECT id FROM test_table_2);
   *
+  * Union node can be used as CTE.
+  * Example: WITH cte_subquery AS ((SELECT id FROM test_table) UNION ALL (SELECT id FROM test_table_2)) SELECT * FROM cte_subquery;
+  *
+  * Union node can be used as scalar subquery.
+  * Example: SELECT (SELECT 1 UNION DISTINCT SELECT 1);
+  *
   * During query analysis pass union node queries must be resolved.
   */
 class UnionNode;
@@ -129,7 +135,7 @@ public:
     }
 
     /// Get table expression modifiers
-    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }

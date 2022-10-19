@@ -24,7 +24,7 @@ namespace DB
   * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
   *
   * For JOIN with ON, JOIN expression contains single expression.
-  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t1.id;
+  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t2.id;
   */
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
@@ -37,24 +37,11 @@ public:
       *
       * test_table_1 - left table expression.
       * test_table_2 - right table expression.
-      * join_expression - join_expression;
+      * expression - join expression.
       */
     JoinNode(QueryTreeNodePtr left_table_expression_,
         QueryTreeNodePtr right_table_expression_,
         QueryTreeNodePtr join_expression_,
-        JoinLocality locality_,
-        JoinStrictness strictness_,
-        JoinKind kind_);
-
-    /** Construct join node with left table expression, right table expression and using identifiers.
-      * Example: SELECT id FROM test_table_1 INNER JOIN test_table_2 USING (using_identifier, ...).
-      * test_table_1 - left table expression.
-      * test_table_2 - right table expression.
-      * (using_identifier, ...) - using identifiers.
-      */
-    JoinNode(QueryTreeNodePtr left_table_expression_,
-        QueryTreeNodePtr right_table_expression_,
-        QueryTreeNodes using_identifiers,
         JoinLocality locality_,
         JoinStrictness strictness_,
         JoinKind kind_);
@@ -83,6 +70,12 @@ public:
         return children[right_table_expression_child_index];
     }
 
+    /// Returns true if join has join expression, false otherwise
+    bool hasJoinExpression() const
+    {
+        return children[join_expression_child_index] != nullptr;
+    }
+
     /// Get join expression
     const QueryTreeNodePtr & getJoinExpression() const
     {
@@ -95,31 +88,37 @@ public:
         return children[join_expression_child_index];
     }
 
+    /// Returns true if join has USING join expression, false otherwise
     bool isUsingJoinExpression() const
     {
-        return getJoinExpression() && getJoinExpression()->getNodeType() == QueryTreeNodeType::LIST;
+        return hasJoinExpression() && getJoinExpression()->getNodeType() == QueryTreeNodeType::LIST;
     }
 
+    /// Returns true if join has ON join expression, false otherwise
     bool isOnJoinExpression() const
     {
-        return getJoinExpression() && getJoinExpression()->getNodeType() != QueryTreeNodeType::LIST;
+        return hasJoinExpression() && getJoinExpression()->getNodeType() != QueryTreeNodeType::LIST;
     }
 
+    /// Get join locality
     JoinLocality getLocality() const
     {
         return locality;
     }
 
+    /// Get join strictness
     JoinStrictness getStrictness() const
     {
         return strictness;
     }
 
+    /// Get join kind
     JoinKind getKind() const
     {
         return kind;
     }
 
+    /// Convert join node to ASTTableJoin
     ASTPtr toASTTableJoin() const;
 
     QueryTreeNodeType getNodeType() const override

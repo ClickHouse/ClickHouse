@@ -22,37 +22,44 @@ public:
         , sample_offset_ratio(sample_offset_ratio_)
     {}
 
+    /// Returns true if final is specified, false otherwise
     bool hasFinal() const
     {
         return has_final;
     }
 
+    /// Returns true if sample size ratio is specified, false otherwise
     bool hasSampleSizeRatio() const
     {
         return sample_size_ratio.has_value();
     }
 
+    /// Get sample size ratio
     std::optional<Rational> getSampleSizeRatio() const
     {
         return sample_size_ratio;
     }
 
+    /// Returns true if sample offset ratio is specified, false otherwise
     bool hasSampleOffsetRatio() const
     {
         return sample_offset_ratio.has_value();
     }
 
+    /// Get sample offset ratio
     std::optional<Rational> getSampleOffsetRatio() const
     {
         return sample_offset_ratio;
     }
 
+    /// Dump into buffer
     void dump(WriteBuffer & buffer) const;
 
+    /// Update tree hash
     void updateTreeHash(SipHash & hash_state) const;
 
 private:
-    bool has_final;
+    bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
 };

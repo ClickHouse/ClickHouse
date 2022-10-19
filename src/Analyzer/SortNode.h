@@ -45,13 +45,13 @@ public:
         return children[sort_expression_child_index];
     }
 
-    /// Has with fill
+    /// Returns true if sort node has with fill, false otherwise
     bool withFill() const
     {
         return with_fill;
     }
 
-    /// Has fill from
+    /// Returns true if sort node has fill from, false otherwise
     bool hasFillFrom() const
     {
         return children[fill_from_child_index] != nullptr;
@@ -69,7 +69,7 @@ public:
         return children[fill_from_child_index];
     }
 
-    /// Has fill to
+    /// Returns true if sort node has fill to, false otherwise
     bool hasFillTo() const
     {
         return children[fill_to_child_index] != nullptr;
@@ -87,6 +87,7 @@ public:
         return children[fill_to_child_index];
     }
 
+    /// Returns true if sort node has fill step, false otherwise
     bool hasFillStep() const
     {
         return children[fill_step_child_index] != nullptr;
@@ -98,7 +99,7 @@ public:
         return children[fill_step_child_index];
     }
 
-    /// Get fill to
+    /// Get fill step
     QueryTreeNodePtr & getFillStep()
     {
         return children[fill_step_child_index];
@@ -110,11 +111,13 @@ public:
         return collator;
     }
 
+    /// Get sort direction
     SortDirection getSortDirection() const
     {
         return sort_direction;
     }
 
+    /// Get nulls sort direction
     std::optional<SortDirection> getNullsSortDirection() const
     {
         return nulls_sort_direction;

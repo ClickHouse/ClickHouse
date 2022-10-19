@@ -33,14 +33,14 @@ size_t getCompoundTypeDepth(const IDataType & type)
 
         if (which_type.isArray())
         {
-            current_type = &(*assert_cast<const DataTypeArray &>(*current_type).getNestedType());
+            current_type = assert_cast<const DataTypeArray &>(*current_type).getNestedType().get();
             ++result;
         }
         else if (which_type.isTuple())
         {
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
             if (!tuple_elements.empty())
-                current_type = &(*assert_cast<const DataTypeTuple &>(*current_type).getElements().at(0));
+                current_type = tuple_elements.at(0).get();
 
             ++result;
         }
@@ -89,8 +89,8 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
         if (tuple_size != columns_size)
             throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
                 "Incorrect size of tuple in set: {} instead of {}",
-                toString(tuple_size),
-                toString(columns_size));
+                tuple_size,
+                columns_size);
 
         if (tuple_values.empty())
             tuple_values.resize(tuple_size);

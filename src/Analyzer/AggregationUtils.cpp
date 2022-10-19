@@ -34,7 +34,7 @@ public:
         if (!assert_no_aggregates_place_message.empty())
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "Aggregate function {} is found {} in query",
-                function_node->getName(),
+                function_node->formatASTForErrorMessage(),
                 assert_no_aggregates_place_message);
 
         if (aggregate_function_nodes)

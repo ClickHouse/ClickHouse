@@ -9,7 +9,7 @@ namespace DB
 {
 
 /** Visitor that traverse query tree in depth.
-  * Derived class must implement `visitImpl` methods.
+  * Derived class must implement `visitImpl` method.
   * Additionally subclass can control if child need to be visited using `needChildVisit` method, by
   * default all node children are visited.
   * By default visitor traverse tree from top to bottom, if bottom to top traverse is required subclass

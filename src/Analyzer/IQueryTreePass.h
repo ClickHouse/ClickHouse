@@ -8,11 +8,11 @@
 namespace DB
 {
 
-/** After query tree is build it can be later processed by QueryTreePassManager.
+/** After query tree is build it can be later processed by query tree passes.
   * This is abstract base class for all query tree passes.
   *
   * Query tree pass can make query tree modifications, after each pass query tree must be valid.
-  * Query tree pass must perform be isolated and perform only necessary query tree modifications for doing its job.
+  * Query tree pass must be isolated and perform only necessary query tree modifications for doing its job.
   * Dependencies between passes must be avoided.
   */
 class IQueryTreePass;

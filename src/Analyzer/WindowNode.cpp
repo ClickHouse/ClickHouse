@@ -164,6 +164,8 @@ void WindowNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(window_frame.begin_preceding);
     hash_state.update(window_frame.end_type);
     hash_state.update(window_frame.end_preceding);
+
+    hash_state.update(parent_window_name);
 }
 
 QueryTreeNodePtr WindowNode::cloneImpl() const
@@ -177,6 +179,8 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
 ASTPtr WindowNode::toASTImpl() const
 {
     auto window_definition = std::make_shared<ASTWindowDefinition>();
+
+    window_definition->parent_window_name = parent_window_name;
 
     window_definition->children.push_back(getPartitionByNode()->toAST());
     window_definition->partition_by = window_definition->children.back();
