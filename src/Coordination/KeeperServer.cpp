@@ -273,19 +273,6 @@ void KeeperServer::forceRecovery()
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
-    switch (coordination_settings->read_mode)
-    {
-        case ReadMode::NONLINEAR:
-            LOG_INFO(log, "GOT NONLINEAR");
-            break;
-        case ReadMode::FASTLINEAR:
-            LOG_INFO(log, "GOT FASTLINEAR");
-            break;
-        case ReadMode::QUORUM:
-            LOG_INFO(log, "GOT QUORUM");
-            break;
-    }
-
     nuraft::raft_params params;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
