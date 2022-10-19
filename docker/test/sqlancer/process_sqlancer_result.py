@@ -37,11 +37,6 @@ def process_result(result_folder):
                 else:
                     summary.append((test, "OK"))
 
-    logs_path = "{}/logs.tar.gz".format(result_folder)
-    if not os.path.exists(logs_path):
-        logging.info("No logs tar on path %s", logs_path)
-    else:
-        paths.append(logs_path)
     stdout_path = "{}/stdout.log".format(result_folder)
     if not os.path.exists(stdout_path):
         logging.info("No stdout log on path %s", stdout_path)
