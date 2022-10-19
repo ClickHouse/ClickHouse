@@ -982,12 +982,11 @@ class TestCase:
 
         need_drop_database = not args.database
         if need_drop_database and args.no_drop_if_fail:
-            maybe_passed = (
+            need_drop_database = (
                 (proc.returncode == 0)
                 and (proc.stderr is None)
                 and (proc.stdout is None or "Exception" not in proc.stdout)
             )
-            need_drop_database = not maybe_passed
 
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
