@@ -7,8 +7,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTLiteral.h>
-#include <Common/FieldVisitorToString.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <queue>
@@ -488,36 +486,6 @@ void ASTSelectQuery::setHasQueryParameters()
 
     if (!analyzeReceiveQueryParams(this->where()).empty())
         has_query_parameters = true;
-}
-
-NameToNameMap ASTSelectQuery::getQueryParameterValues() const
-{
-    NameToNameMap parameter_values;
-    std::queue<ASTPtr> queue;
-    queue.push(this->clone());
-
-    while (!queue.empty())
-    {
-        auto ast = queue.front();
-        queue.pop();
-        if (const auto * expression_list = ast->as<ASTExpressionList>())
-        {
-            if (expression_list->children.size() == 2)
-            {
-                if (const auto * identifier = expression_list->children[0]->as<ASTIdentifier>())
-                {
-                    if (const auto * literal = expression_list->children[1]->as<ASTLiteral>())
-                    {
-                        parameter_values[identifier->name()] = convertFieldToString(literal->value);
-                    }
-                }
-            }
-        }
-        for (const auto & child : ast->children)
-            queue.push(child);
-    }
-
-    return parameter_values;
 }
 
 }

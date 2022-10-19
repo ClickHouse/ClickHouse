@@ -124,6 +124,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
 void QueryNormalizer::visit(ASTQueryParameter & node, Data & data)
 {
+    /// This is used only for create parameterized view to check if same parameter name is used twice
+    /// Eg: CREATE VIEW v1 AS SELECT * FROM t1 WHERE Column1={c1:UInt64} AND Column2={c1:UInt64}; - c1 is used twice
     auto it_alias = data.query_parameters.find(node.name);
     if (it_alias != data.query_parameters.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Same alias used multiple times {} ", backQuote(node.name));
@@ -268,7 +270,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
     {
-        if (data.is_parameterized_view)
+        if (data.is_create_parameterized_view)
             visit(*node_param, data);
         else
             throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);

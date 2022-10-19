@@ -726,7 +726,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        getContext()->setIsParameterizedView(create.isParameterizedView());
         Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }

@@ -88,7 +88,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/scope_guard_safe.h>
-
+#include <Parsers/FunctionParameterValuesVisitor.h>
 
 namespace DB
 {
@@ -501,8 +501,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ASTPtr view_table;
         if (view)
         {
-            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot);
-            view->replaceQueryParametersIfParametrizedView(query_ptr, getSelectQuery().getQueryParameterValues());
+            NameToNameMap parameter_values = analyzeReceiveFunctionParamValues(query_ptr);
+            query_info.is_parameterized_view = view->isParameterizedView();
+            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
+            view->replaceQueryParametersIfParametrizedView(query_ptr, parameter_values);
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
