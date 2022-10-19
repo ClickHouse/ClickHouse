@@ -20,8 +20,8 @@ struct FileCacheSettings
 
     bool do_not_evict_index_and_mark_files = true;
 
-    bool enable_limit_download_cache_size = false;
-    size_t max_enable_download_cache_size = REMOTE_FS_OBJECTS_CACHE_MAX_ENABLE_DOWNLOAD_SIZE;
+    bool enable_bypass_cache_with_threashold = false;
+    size_t bypass_cache_threashold = REMOTE_FS_OBJECTS_CACHE_BYPASS_THRESHOLD;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

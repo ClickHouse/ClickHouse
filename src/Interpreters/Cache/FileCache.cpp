@@ -32,8 +32,8 @@ FileCache::FileCache(
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , enable_limit_download_cache_size(cache_settings_.enable_limit_download_cache_size)
-    , max_enable_download_cache_size(cache_settings_.max_enable_download_cache_size)
+    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
@@ -189,7 +189,7 @@ FileSegments FileCache::getImpl(
 
     FileSegments result;
 
-    if (enable_limit_download_cache_size && (range.size() > max_enable_download_cache_size))
+    if (enable_bypass_cache_with_threashold && (range.size() > bypass_cache_threashold))
     {
         auto file_segment = std::make_shared<FileSegment>(
             range.left, range.size(), key, this, FileSegment::State::SKIP_CACHE, CreateFileSegmentSettings{});
