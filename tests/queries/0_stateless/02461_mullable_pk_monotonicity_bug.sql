@@ -7,9 +7,11 @@ set max_rows_to_read = 2;
 SELECT x + 1 FROM tab where plus(x, 1) <= 2 order by x;
 SELECT x + 1 FROM tab where plus(x, 1::Nullable(UInt8)) <= 2 order by x;
 SELECT x + 1 FROM tab where plus(x, 1::LowCardinality(UInt8)) <= 2 order by x;
+SELECT x + 1 FROM tab where plus(x, 1::LowCardinality(Nullable(UInt8))) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1, x) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1::Nullable(UInt8), x) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1::LowCardinality(UInt8), x) <= 2 order by x;
+SELECT 1 + x FROM tab where plus(1::LowCardinality(Nullable(UInt8)), x) <= 2 order by x;
 
 drop table tab;
 
@@ -22,6 +24,8 @@ set max_rows_to_read = 2;
 SELECT x + 1 FROM tab where plus(x, 1) <= 2 order by x;
 SELECT x + 1 FROM tab where plus(x, 1::Nullable(UInt8)) <= 2 order by x;
 SELECT x + 1 FROM tab where plus(x, 1::LowCardinality(UInt8)) <= 2 order by x;
+SELECT x + 1 FROM tab where plus(x, 1::LowCardinality(Nullable(UInt8))) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1, x) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1::Nullable(UInt8), x) <= 2 order by x;
 SELECT 1 + x FROM tab where plus(1::LowCardinality(UInt8), x) <= 2 order by x;
+SELECT 1 + x FROM tab where plus(1::LowCardinality(Nullable(UInt8)), x) <= 2 order by x;

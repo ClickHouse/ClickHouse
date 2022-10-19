@@ -1779,8 +1779,8 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
-                auto left_type = removeLowCardinality(removeNullable(left.type));
-                auto right_type = removeLowCardinality(removeNullable(right.type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -1820,8 +1820,8 @@ public:
             // variable +|- constant
             else if (right.column && isColumnConst(*right.column))
             {
-                auto left_type = removeLowCardinality(removeNullable(left.type));
-                auto right_type = removeLowCardinality(removeNullable(right.type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
 
                 auto transform = [&](const Field & point)
                 {
