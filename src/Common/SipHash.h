@@ -192,7 +192,6 @@ public:
 
     UInt128 get128()
     {
-        finalize();
         UInt128 res;
         get128(res);
         return res;

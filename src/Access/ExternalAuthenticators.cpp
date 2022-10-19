@@ -189,15 +189,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     if (has_search_limit)
-    {
-        UInt64 search_limit = config.getUInt64(ldap_server_config + ".search_limit");
-        // Arbitrary large number.
-        // Previously default value was 100, but in practice one client reported to have 120 roles for a user.
-        if (search_limit >= 2048)
-            throw Exception("Bad value for 'search_limit' entry", ErrorCodes::BAD_ARGUMENTS);
-
-        params.search_limit = search_limit;
-    }
+        params.search_limit = config.getUInt64(ldap_server_config + ".search_limit");
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)

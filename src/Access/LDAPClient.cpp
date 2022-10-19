@@ -15,6 +15,22 @@
 
 #include <sys/time.h>
 
+namespace
+{
+
+template <typename T, typename = std::enable_if_t<std::is_fundamental_v<std::decay_t<T>>>>
+void updateHash(SipHash & hash, const T & value)
+{
+    hash.update(value);
+}
+
+void updateHash(SipHash & hash, const std::string & value)
+{
+    hash.update(value.size());
+    hash.update(value);
+}
+
+}
 
 namespace DB
 {
@@ -28,25 +44,25 @@ namespace ErrorCodes
 
 void LDAPClient::SearchParams::updateHash(SipHash & hash) const
 {
-    hash.update(base_dn);
-    hash.update(static_cast<int>(scope));
-    hash.update(search_filter);
-    hash.update(attribute);
+    ::updateHash(hash, base_dn);
+    ::updateHash(hash, static_cast<int>(scope));
+    ::updateHash(hash, search_filter);
+    ::updateHash(hash, attribute);
 }
 
 void LDAPClient::RoleSearchParams::updateHash(SipHash & hash) const
 {
     SearchParams::updateHash(hash);
-    hash.update(prefix);
+    ::updateHash(hash, prefix);
 }
 
 void LDAPClient::Params::updateHash(SipHash & hash) const
 {
-    hash.update(host);
-    hash.update(port);
-    hash.update(bind_dn);
-    hash.update(user);
-    hash.update(password);
+    ::updateHash(hash, host);
+    ::updateHash(hash, port);
+    ::updateHash(hash, bind_dn);
+    ::updateHash(hash, user);
+    ::updateHash(hash, password);
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
