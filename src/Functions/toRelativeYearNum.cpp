@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl>;
+using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl<false>>;
 
 void registerFunctionToRelativeYearNum(FunctionFactory & factory)
 {
