@@ -16,7 +16,7 @@ function thread_query()
 function thread_cancel()
 {
     while true; do
-        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE 1 SYNC FORMAT Null";
+        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE current_database = '$CLICKHOUSE_DATABASE' SYNC FORMAT Null";
     done
 }
 
