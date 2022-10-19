@@ -586,7 +586,7 @@ void LocalServer::processConfig()
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
-    
+
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
