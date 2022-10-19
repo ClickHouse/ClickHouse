@@ -178,6 +178,16 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// 'kql(' is used for subuquery in Kusto, should not be treated as an identifier if kql followd by (
+    ParserKeyword s_kql("KQL");
+    if (s_kql.ignore(pos, expected))
+    {
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {   --pos;
+            return false;
+        }
+        --pos;
+    }
     /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
