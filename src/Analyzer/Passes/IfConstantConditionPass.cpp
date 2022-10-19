@@ -13,7 +13,7 @@ namespace
 class IfConstantConditionVisitor : public InDepthQueryTreeVisitor<IfConstantConditionVisitor>
 {
 public:
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))

@@ -92,9 +92,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (select_p.parse(pos, query, expected))
             explain_query->setExplainedQuery(std::move(query));
         else
-        {
             return false;
-        }
     }
     else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
     {

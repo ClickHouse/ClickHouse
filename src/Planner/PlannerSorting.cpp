@@ -24,7 +24,7 @@ namespace
 
 std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node)
 {
-    auto constant_value = node->getConstantValue();
+    const auto & constant_value = node->getConstantValue();
 
     std::pair<Field, DataTypePtr> result;
     result.first = constant_value.getValue();
@@ -38,7 +38,7 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
 
 std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
 {
-    auto constant_value = node->getConstantValue();
+    const auto & constant_value = node->getConstantValue();
 
     const auto & constant_node_result_type = constant_value.getType();
     if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(constant_node_result_type.get()))
@@ -76,7 +76,8 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
     }
     else
     {
-        fill_column_description.fill_step = Field(sort_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
+        auto direction_value = sort_node.getSortDirection() == SortDirection::ASCENDING ? static_cast<Int64>(1) : static_cast<Int64>(-1);
+        fill_column_description.fill_step = Field(direction_value);
     }
 
     if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))

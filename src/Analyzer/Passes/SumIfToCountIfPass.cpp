@@ -1,5 +1,8 @@
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -73,7 +76,7 @@ public:
         if (!nested_function || nested_function->getFunctionName() != "if")
             return;
 
-        auto nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
+        auto & nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
@@ -106,8 +109,13 @@ public:
         /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))`.
         if (if_true_condition_value == 0 && if_false_condition_value == 1)
         {
+            auto condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
+            DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
+            if (condition_result_type->isNullable())
+                not_function_result_type = makeNullable(not_function_result_type);
+
             auto not_function = std::make_shared<FunctionNode>("not");
-            resolveOrdinaryFunctionNode(*not_function, "not");
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context), std::move(not_function_result_type));
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
             not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
@@ -121,13 +129,6 @@ public:
     }
 
 private:
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        auto function_result_type = function_node.getResultType();
-        auto function = FunctionFactory::instance().get(function_name, context);
-        function_node.resolveAsFunction(function, std::move(function_result_type));
-    }
-
     static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
     {
         auto function_result_type = function_node.getResultType();

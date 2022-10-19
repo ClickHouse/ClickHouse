@@ -85,8 +85,10 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
         }
 
         const auto & arguments_nodes = window_function_node_typed.getArguments().getNodes();
-        window_function.argument_names.reserve(arguments_nodes.size());
-        window_function.argument_types.reserve(arguments_nodes.size());
+        size_t arguments_nodes_size = arguments_nodes.size();
+
+        window_function.argument_names.reserve(arguments_nodes_size);
+        window_function.argument_types.reserve(arguments_nodes_size);
 
         for (const auto & argument_node : arguments_nodes)
         {

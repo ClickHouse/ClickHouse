@@ -6,6 +6,7 @@ namespace DB
 {
 
 /** Eliminate tuples from ORDER BY.
+  *
   * Example: SELECT * FROM test_table ORDER BY (a, b);
   * Result: SELECT * FROM test_table ORDER BY a, b;
   */

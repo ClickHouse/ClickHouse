@@ -47,7 +47,7 @@ public:
                 function_name_lowercase = Poco::toLower(function_name);
             }
 
-            /// Replace countDistinct with countIfDistinct with countDistinctIf implementation
+            /// Replace countIfDistinct with countDistinctIf implementation
             if (function_name_lowercase == "countifdistinct")
             {
                 resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name + "If");
@@ -55,7 +55,7 @@ public:
                 function_name_lowercase = Poco::toLower(function_name);
             }
 
-            /// Swap aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
+            /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
             if (function_name_lowercase.ends_with("ifdistinct"))
             {
                 size_t prefix_length = function_name_lowercase.size() - strlen("ifdistinct");
@@ -93,10 +93,13 @@ public:
                     static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
                     for (const auto & suffix : suffixes_to_replace)
                     {
-                        if (!function_name_lowercase.ends_with(suffix))
+                        auto suffix_string_value = String(suffix);
+                        auto suffix_to_check = suffix_string_value + "OrNull";
+
+                        if (!function_name.ends_with(suffix_to_check))
                             continue;
 
-                        auto updated_function_name = function_name_lowercase.substr(0, function_name_size - suffix.size()) + "OrNull" + String(suffix);
+                        auto updated_function_name = function_name.substr(0, function_name_size - suffix_to_check.size()) + "OrNull" + suffix_string_value;
                         resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                         function_name = function_node->getFunctionName();
                         function_name_lowercase = Poco::toLower(function_name);

@@ -31,7 +31,7 @@ namespace DB
   * Example: SELECT * FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON toString(t1.id) = toString(t2.id).
   * toString(t1.id) = toString(t2.id) is JOIN keys section. Where toString(t1.id) is left key, and toString(t2.id) is right key.
   *
-  * During query planning JOIN ON section must be represented using join clause structure. It is important to split
+  * During query planning JOIN ON section represented using join clause structure. It is important to split
   * keys and conditions. And for each action detect from which stream it can be performed.
   *
   * We have 2 streams, left stream and right stream.
@@ -79,26 +79,16 @@ public:
         return left_key_nodes;
     }
 
-    /// Get right key nodes
-    const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
-    {
-        return right_key_nodes;
-    }
-
     /// Get left key nodes
     ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes()
     {
         return left_key_nodes;
     }
 
-    bool hasASOF() const
+    /// Get right key nodes
+    const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
     {
-        return !asof_conditions.empty();
-    }
-
-    const std::vector<ASOFCondition> & getASOFConditions() const
-    {
-        return asof_conditions;
+        return right_key_nodes;
     }
 
     /// Get right key nodes
@@ -107,8 +97,26 @@ public:
         return right_key_nodes;
     }
 
+    /// Returns true if JOIN clause has ASOF conditions, false otherwise
+    bool hasASOF() const
+    {
+        return !asof_conditions.empty();
+    }
+
+    /// Get ASOF conditions
+    const std::vector<ASOFCondition> & getASOFConditions() const
+    {
+        return asof_conditions;
+    }
+
     /// Get left filter condition nodes
     const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
+    {
+        return left_filter_condition_nodes;
+    }
+
+    /// Get left filter condition nodes
+    ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes()
     {
         return left_filter_condition_nodes;
     }
@@ -117,11 +125,6 @@ public:
     const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
     {
         return right_filter_condition_nodes;
-    }
-
-    ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes()
-    {
-        return left_filter_condition_nodes;
     }
 
     /// Get right filter condition nodes
@@ -183,7 +186,7 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
 
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
-  * For example JOIN with Dictionary enigne, or JOIN with JOIN engine.
+  * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
   */
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,

@@ -24,7 +24,7 @@ bool isUniqFunction(const String & function_name)
 class UniqInjectiveFunctionsEliminationVisitor : public InDepthQueryTreeVisitor<UniqInjectiveFunctionsEliminationVisitor>
 {
 public:
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || !isUniqFunction(function_node->getFunctionName()))
@@ -48,7 +48,7 @@ public:
                 continue;
 
             /// Replace injective function with its single argument
-            uniq_function_argument_node = std::move(uniq_function_argument_node_argument_nodes[0]);
+            uniq_function_argument_node = uniq_function_argument_node_argument_nodes[0];
         }
     }
 };

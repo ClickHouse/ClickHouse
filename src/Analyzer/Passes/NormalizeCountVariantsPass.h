@@ -7,7 +7,7 @@ namespace DB
 
 /** Remove single literal argument from `count`. Convert `sum` with single `1` literal argument into `count`.
   *
-  * Example: SELECT count(1)
+  * Example: SELECT count(1);
   * Result: SELECT count();
   *
   * Example: SELECT sum(1);

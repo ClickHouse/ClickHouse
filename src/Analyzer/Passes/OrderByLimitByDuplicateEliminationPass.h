@@ -6,6 +6,7 @@ namespace DB
 {
 
 /** Eliminate duplicate columns from ORDER BY and LIMIT BY.
+  *
   * Example: SELECT * FROM test_table ORDER BY id, id;
   * Result: SELECT * FROM test_table ORDER BY id;
   *

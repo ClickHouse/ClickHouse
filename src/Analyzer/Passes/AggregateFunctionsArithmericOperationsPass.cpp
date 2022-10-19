@@ -47,12 +47,12 @@ class AggregateFunctionsArithmericOperationsVisitor : public InDepthQueryTreeVis
 {
 public:
     /// Traverse tree bottom to top
-    bool shouldTraverseTopToBottom() const
+    static bool shouldTraverseTopToBottom()
     {
         return false;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * aggregate_function_node = node->as<FunctionNode>();
         if (!aggregate_function_node || !aggregate_function_node->isAggregateFunction())

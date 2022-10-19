@@ -285,7 +285,7 @@ void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatStat
 {
     buffer << std::string(indent, ' ') << "REPLACE COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
 
-    auto & replacements_nodes = getReplacements().getNodes();
+    const auto & replacements_nodes = getReplacements().getNodes();
     size_t replacements_size = replacements_nodes.size();
     buffer << '\n' << std::string(indent + 2, ' ') << "REPLACEMENTS " << replacements_size << '\n';
 
@@ -312,7 +312,7 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
 
-    auto & replacement_expressions_nodes = getReplacements().getNodes();
+    const auto & replacement_expressions_nodes = getReplacements().getNodes();
     size_t replacements_size = replacement_expressions_nodes.size();
     hash_state.update(replacements_size);
 
@@ -338,7 +338,7 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
 {
     auto ast_replace_transformer = std::make_shared<ASTColumnsReplaceTransformer>();
 
-    auto & replacement_expressions_nodes = getReplacements().getNodes();
+    const auto & replacement_expressions_nodes = getReplacements().getNodes();
     size_t replacements_size = replacement_expressions_nodes.size();
 
     ast_replace_transformer->children.reserve(replacements_size);

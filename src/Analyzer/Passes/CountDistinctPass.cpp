@@ -33,7 +33,7 @@ public:
             return;
 
         /// Check that query has only single node in projection
-        auto projection_nodes = query_node->getProjection().getNodes();
+        auto & projection_nodes = query_node->getProjection().getNodes();
         if (projection_nodes.size() != 1)
             return;
 
@@ -43,7 +43,8 @@ public:
         if (!function_node)
             return;
 
-        if (Poco::toLower(function_node->getFunctionName()) != "countdistinct" && Poco::toLower(function_node->getFunctionName()) != "uniqexact")
+        auto lower_function_name = Poco::toLower(function_node->getFunctionName());
+        if (lower_function_name != "countdistinct" && lower_function_name != "uniqexact")
             return;
 
         /// Check that `countDistinct` function has single COLUMN argument
