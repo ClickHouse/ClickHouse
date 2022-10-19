@@ -576,7 +576,15 @@ void ReplicatedMergeTreeSink::commitPart(
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
                 storage.unlockSharedData(*part);
-                transaction.rollback();
+
+                /// Part was not committed to keeper.
+                /// So make it temporary and remove immediately to avoid its resurrection after restart.
+                transaction.rollbackPartsToTemporaryState();
+
+                part->is_temp = true;
+                part->renameTo(temporary_part_relative_path, false, builder);
+                builder->commit();
+
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else
