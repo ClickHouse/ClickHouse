@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <memory>
+
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
-
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -49,8 +49,10 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
+#include <Common/checkStackSize.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
 
 namespace DB
 {
@@ -784,31 +786,38 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
 }
 
-void ExpandFromFunctionRecursively(std::shared_ptr<ASTExpressionList> group_expression_list, ASTFunction * function)
+
+static void recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(const IAST & from, ASTExpressionList & into)
 {
-    if (function && !AggregateUtils::isAggregateFunction(*function))
+    checkStackSize();
+    
+    const auto * function = from.as<ASTFunction>();
+    if (!function)
+        return;
+        
+    if (AggregateUtils::isAggregateFunction(*function))
+        return;
+    
+    for (const auto & child : function->arguments->children)
     {
-        for (auto & col : function->arguments->children)
-        {
-            if (col->as<ASTIdentifier>())
-                group_expression_list->children.push_back(col);
-            else
-                ExpandFromFunctionRecursively(group_expression_list, col->as<ASTFunction>());
-        }
+        if (child->as<ASTIdentifier>())
+            into.children.push_back(child);
+        else
+            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(*child, into);
     }
 }
 
-// Expand GROUP BY ALL by listing all the SELECT-ed columns that are not expressions of the aggregate functions
-void ExpandGroupByAll(ASTSelectQuery * select_query)
+/// Expand GROUP BY ALL by listing all the SELECT-ed columns that are not expressions of the aggregate functions
+static void expandGroupByAll(ASTSelectQuery * select_query)
 {
     auto group_expression_list = std::make_shared<ASTExpressionList>();
 
-    for (auto & expr : select_query->select()->children)
+    for (const auto & expr : select_query->select()->children)
     {
         if (expr->as<ASTIdentifier>())
             group_expression_list->children.push_back(expr);
         else
-            ExpandFromFunctionRecursively(group_expression_list, expr->as<ASTFunction>());
+            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(expr, group_expression_list);
     }
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
@@ -1243,7 +1252,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     // expand GROUP BY ALL
     if (select_query->group_by_all)
-        ExpandGroupByAll(select_query);
+        expandGroupByAll(select_query);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
