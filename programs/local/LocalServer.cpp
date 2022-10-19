@@ -8,10 +8,10 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
@@ -593,7 +593,8 @@ void LocalServer::processConfig()
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
 
     constexpr size_t compiled_expression_cache_elements_size_default = 10000;
-    size_t compiled_expression_cache_elements_size = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+    size_t compiled_expression_cache_elements_size
+        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
 
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
