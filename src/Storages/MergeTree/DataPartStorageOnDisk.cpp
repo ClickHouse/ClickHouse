@@ -121,11 +121,6 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
     return res;
 }
 
-UInt64 DataPartStorageOnDisk::calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
-{
-    return calculateTotalSizeOnDiskImpl(disk, from);
-}
-
 UInt64 DataPartStorageOnDisk::calculateTotalSizeOnDisk() const
 {
     return calculateTotalSizeOnDiskImpl(volume->getDisk(), fs::path(root_path) / part_dir);
