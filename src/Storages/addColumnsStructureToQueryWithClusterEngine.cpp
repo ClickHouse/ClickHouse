@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
 {
     auto * select_query = query->as<ASTSelectQuery>();
