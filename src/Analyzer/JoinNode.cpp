@@ -31,21 +31,24 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     children[join_expression_child_index] = std::move(join_expression_);
 }
 
-JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
-    QueryTreeNodePtr right_table_expression_,
-    QueryTreeNodes using_identifiers,
-    JoinLocality locality_,
-    JoinStrictness strictness_,
-    JoinKind kind_)
-    : IQueryTreeNode(children_size)
-    , locality(locality_)
-    , strictness(strictness_)
-    , kind(kind_)
+ASTPtr JoinNode::toASTTableJoin() const
 {
-    children.resize(children_size);
-    children[left_table_expression_child_index] = std::move(left_table_expression_);
-    children[right_table_expression_child_index] = std::move(right_table_expression_);
-    children[join_expression_child_index] = std::make_shared<ListNode>(std::move(using_identifiers));
+    auto join_ast = std::make_shared<ASTTableJoin>();
+    join_ast->locality = locality;
+    join_ast->strictness = strictness;
+    join_ast->kind = kind;
+
+    if (children[join_expression_child_index])
+    {
+        auto join_expression_ast = children[join_expression_child_index]->toAST();
+
+        if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
+            join_ast->using_expression_list = std::move(join_expression_ast);
+        else
+            join_ast->on_expression = std::move(join_expression_ast);
+    }
+
+    return join_ast;
 }
 
 void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -86,26 +89,6 @@ void JoinNode::updateTreeHashImpl(HashState & state) const
     state.update(kind);
 }
 
-ASTPtr JoinNode::toASTTableJoin() const
-{
-    auto join_ast = std::make_shared<ASTTableJoin>();
-    join_ast->locality = locality;
-    join_ast->strictness = strictness;
-    join_ast->kind = kind;
-
-    if (children[join_expression_child_index])
-    {
-        auto join_expression_ast = children[join_expression_child_index]->toAST();
-
-        if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
-            join_ast->using_expression_list = std::move(join_expression_ast);
-        else
-            join_ast->on_expression = std::move(join_expression_ast);
-    }
-
-    return join_ast;
-}
-
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
     return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
@@ -119,21 +102,7 @@ ASTPtr JoinNode::toASTImpl() const
 
     size_t join_table_index = tables_in_select_query_ast->children.size();
 
-    auto join_ast = std::make_shared<ASTTableJoin>();
-    join_ast->locality = locality;
-    join_ast->strictness = strictness;
-    join_ast->kind = kind;
-
-    if (children[join_expression_child_index])
-    {
-        auto join_expression_ast = children[join_expression_child_index]->toAST();
-        join_ast->children.push_back(std::move(join_expression_ast));
-
-        if (children[join_expression_child_index]->getNodeType() == QueryTreeNodeType::LIST)
-            join_ast->using_expression_list = join_ast->children.back();
-        else
-            join_ast->on_expression = join_ast->children.back();
-    }
+    auto join_ast = toASTTableJoin();
 
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[right_table_expression_child_index]);
 

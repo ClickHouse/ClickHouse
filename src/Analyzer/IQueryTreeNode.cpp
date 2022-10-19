@@ -168,6 +168,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
             nodes_to_process.push_back(node_to_process_child.get());
         }
 
+        hash_state.update(node_to_process->weak_pointers.size());
+
         for (const auto & weak_pointer : node_to_process->weak_pointers)
         {
             auto strong_pointer = weak_pointer.lock();
@@ -282,9 +284,10 @@ String IQueryTreeNode::formatConvertedASTForErrorMessage() const
 
 String IQueryTreeNode::dumpTree() const
 {
-    WriteBufferFromOwnString buff;
-    dumpTree(buff);
-    return buff.str();
+    WriteBufferFromOwnString buffer;
+    dumpTree(buffer);
+
+    return buffer.str();
 }
 
 size_t IQueryTreeNode::FormatState::getNodeId(const IQueryTreeNode * node)

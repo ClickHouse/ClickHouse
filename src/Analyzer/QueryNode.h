@@ -183,7 +183,7 @@ public:
     }
 
     /// Get table expression modifiers
-    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -194,7 +194,7 @@ public:
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
-    /// Returns true if query node WITH section is not empty
+    /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
         return !getWith().getNodes().empty();
@@ -260,7 +260,7 @@ public:
         return children[join_tree_child_index];
     }
 
-    /// Returns true if query node PREWHERE section is not empty
+    /// Returns true if query node PREWHERE section is not empty, false otherwise
     bool hasPrewhere() const
     {
         return children[prewhere_child_index] != nullptr;
@@ -278,7 +278,7 @@ public:
         return children[prewhere_child_index];
     }
 
-    /// Returns true if query node WHERE section is not empty
+    /// Returns true if query node WHERE section is not empty, false otherwise
     bool hasWhere() const
     {
         return children[where_child_index] != nullptr;
@@ -296,7 +296,7 @@ public:
         return children[where_child_index];
     }
 
-    /// Returns true if query node GROUP BY section is not empty
+    /// Returns true if query node GROUP BY section is not empty, false otherwise
     bool hasGroupBy() const
     {
         return !getGroupBy().getNodes().empty();
@@ -305,7 +305,7 @@ public:
     /// Get GROUP BY section
     const ListNode & getGroupBy() const
     {
-        return children[group_by_child_index]->as<ListNode &>();
+        return children[group_by_child_index]->as<const ListNode &>();
     }
 
     /// Get GROUP BY section
@@ -326,7 +326,7 @@ public:
         return children[group_by_child_index];
     }
 
-    /// Returns true if query node HAVING section is not empty
+    /// Returns true if query node HAVING section is not empty, false otherwise
     bool hasHaving() const
     {
         return getHaving() != nullptr;
@@ -344,7 +344,7 @@ public:
         return children[having_child_index];
     }
 
-    /// Returns true if query node WINDOW section is not empty
+    /// Returns true if query node WINDOW section is not empty, false otherwise
     bool hasWindow() const
     {
         return !getWindow().getNodes().empty();
@@ -374,7 +374,7 @@ public:
         return children[window_child_index];
     }
 
-    /// Returns true if query node ORDER BY section is not empty
+    /// Returns true if query node ORDER BY section is not empty, false otherwise
     bool hasOrderBy() const
     {
         return !getOrderBy().getNodes().empty();
@@ -404,7 +404,7 @@ public:
         return children[order_by_child_index];
     }
 
-    /// Returns true if query node INTERPOLATE section is not empty
+    /// Returns true if query node INTERPOLATE section is not empty, false otherwise
     bool hasInterpolate() const
     {
         return getInterpolate() != nullptr;
@@ -422,7 +422,7 @@ public:
         return children[interpolate_child_index];
     }
 
-    /// Returns true if query node LIMIT BY LIMIT section is not empty
+    /// Returns true if query node LIMIT BY LIMIT section is not empty, false otherwise
     bool hasLimitByLimit() const
     {
         return children[limit_by_limit_child_index] != nullptr;
@@ -440,7 +440,7 @@ public:
         return children[limit_by_limit_child_index];
     }
 
-    /// Returns true if query node LIMIT BY OFFSET section is not empty
+    /// Returns true if query node LIMIT BY OFFSET section is not empty, false otherwise
     bool hasLimitByOffset() const
     {
         return children[limit_by_offset_child_index] != nullptr;
@@ -458,7 +458,7 @@ public:
         return children[limit_by_offset_child_index];
     }
 
-    /// Returns true if query node LIMIT BY section is not empty
+    /// Returns true if query node LIMIT BY section is not empty, false otherwise
     bool hasLimitBy() const
     {
         return !getLimitBy().getNodes().empty();
@@ -488,7 +488,7 @@ public:
         return children[limit_by_child_index];
     }
 
-    /// Returns true if query node LIMIT section is not empty
+    /// Returns true if query node LIMIT section is not empty, false otherwise
     bool hasLimit() const
     {
         return children[limit_child_index] != nullptr;
@@ -506,7 +506,7 @@ public:
         return children[limit_child_index];
     }
 
-    /// Returns true if query node OFFSET section is not empty
+    /// Returns true if query node OFFSET section is not empty, false otherwise
     bool hasOffset() const
     {
         return children[offset_child_index] != nullptr;

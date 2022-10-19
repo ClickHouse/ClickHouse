@@ -48,7 +48,6 @@ bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs) const
     else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
         return false;
 
-
     return identifier == rhs_typed.identifier;
 }
 

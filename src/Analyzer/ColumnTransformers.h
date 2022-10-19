@@ -12,11 +12,11 @@ namespace DB
 /** Transformers are query tree nodes that handle additional logic that you can apply after MatcherQueryTreeNode is resolved.
   * Check MatcherQueryTreeNode.h before reading this documentation.
   *
-  * They main purpose it to apply some logic for expressions after matcher is resolved.
+  * They main purpose is to apply some logic for expressions after matcher is resolved.
   * There are 3 types of transformers:
   *
   * 1. APPLY transformer:
-  * APPLY transformer transform expression using lambda or function into another expression.
+  * APPLY transformer transform matched expression using lambda or function into another expression.
   * It has 2 syntax variants:
   *     1. lambda variant: SELECT matcher APPLY (x -> expr(x)).
   *     2. function variant: SELECT matcher APPLY function_name(optional_parameters).
@@ -111,7 +111,7 @@ class ApplyColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
     /** Initialize apply column transformer with expression node.
-      * Expression node must be lambda or function otherwise exception is throwned.
+      * Expression node must be lambda or function otherwise exception is thrown.
       */
     explicit ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_);
 
@@ -162,13 +162,13 @@ const char * toString(ExceptColumnTransformerType type);
 class ExceptColumnTransformerNode;
 using ExceptColumnTransformerNodePtr = std::shared_ptr<ExceptColumnTransformerNode>;
 
-/** Except column transformer
-  * Strict column transformer must use all column names during matched nodes transformation.
+/** Except column transformer.
+  * Strict EXCEPT column transformer must use all column names during matched nodes transformation.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
   * SELECT * EXCEPT STRICT (id, value1) FROM test_table;
-  * Such query will throw exception because column name with value1 was not matched by strict EXCEPT transformer.
+  * Such query will throw exception because column with name `value1` was not matched by strict EXCEPT transformer.
   *
   * Strict is valid only for EXCEPT COLUMN_LIST transformer.
   */
@@ -187,7 +187,7 @@ public:
         return except_transformer_type;
     }
 
-    /** Get is except transformer strict.
+    /** Returns true if except column transformer is strict, false otherwise.
       * Valid only for EXCEPT COLUMN_LIST transformer.
       */
     bool isStrict() const
@@ -234,13 +234,13 @@ private:
 class ReplaceColumnTransformerNode;
 using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformerNode>;
 
-/** Replace column transformer
+/** Replace column transformer.
   * Strict replace column transformer must use all replacements during matched nodes transformation.
   *
   * Example:
   * CREATE TABLE test_table (id UInt64, value String) ENGINE=TinyLog;
   * SELECT * REPLACE STRICT (1 AS id, 2 AS value_1) FROM test_table;
-  * Such query will throw exception because column name with value1 was not matched by strict REPLACE transformer.
+  * Such query will throw exception because column with name `value1` was not matched by strict REPLACE transformer.
   */
 class ReplaceColumnTransformerNode final : public IColumnTransformerNode
 {
@@ -261,7 +261,7 @@ public:
     }
 
     /// Get replacements
-    ListNode & getReplacements() const
+    const ListNode & getReplacements() const
     {
         return children[replacements_child_index]->as<ListNode &>();
     }
@@ -278,13 +278,13 @@ public:
         return replacements_names;
     }
 
-    /// Is replace column transformer strict
+    /// Returns true if replace column transformer is strict, false otherwise
     bool isStrict() const
     {
         return is_strict;
     }
 
-    /** Returns replacement expression if for expression name replacements exists, nullptr otherwise.
+    /** Returns replacement expression if replacement is registered for expression name, null otherwise.
       * Returned replacement expression must be cloned by caller.
       */
     QueryTreeNodePtr findReplacementExpression(const std::string & expression_name);
@@ -301,6 +301,11 @@ protected:
     ASTPtr toASTImpl() const override;
 
 private:
+    ListNode & getReplacements()
+    {
+        return children[replacements_child_index]->as<ListNode &>();
+    }
+
     Names replacements_names;
     bool is_strict = false;
 

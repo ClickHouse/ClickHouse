@@ -149,14 +149,18 @@ ASTPtr SortNode::toASTImpl() const
         result->nulls_direction = *nulls_sort_direction == SortDirection::ASCENDING ? 1 : -1;
 
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
-    if (collator)
-        result->collation = std::make_shared<ASTLiteral>(Field(collator->getLocale()));
 
     result->with_fill = with_fill;
     result->fill_from = hasFillFrom() ? getFillFrom()->toAST() : nullptr;
     result->fill_to = hasFillTo() ? getFillTo()->toAST() : nullptr;
     result->fill_step = hasFillStep() ? getFillStep()->toAST() : nullptr;
     result->children.push_back(getExpression()->toAST());
+
+    if (collator)
+    {
+        result->children.push_back(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+        result->collation = result->children.back();
+    }
 
     return result;
 }

@@ -25,20 +25,13 @@ namespace DB
   * 2. identifier.COLUMNS('regexp')
   * 3. identifier.COLUMNS(column_name_1, ...)
   *
-  * The main difference between matcher and identifier is that matcher cannot have alias.
-  * This simplifies analysis for matchers.
+  * Matcher must be resolved during query analysis pass.
   *
-  * How to resolve matcher during query analysis pass:
-  * 1. If matcher is unqualified, we use tables of current scope and try to resolve matcher from it.
-  * 2. If matcher is qualified:
-  * First try to resolve identifier part as query expression.
-  * Try expressions from aliases, then from tables (can be changed using prefer_column_name_to_alias setting).
-  * If identifier is resolved as expression. If expression is compound apply matcher to it, otherwise throw exception.
+  * Matchers can be applied to compound expressions.
   * Example: SELECT compound_column AS a, a.* FROM test_table.
   * Example: SELECT compound_column.* FROM test_table.
   *
-  * If identifier is not resolved as expression try to resolve it as table.
-  * If identifier is resolved as table then apply matcher to it.
+  * Example: SELECT * FROM test_table;
   * Example: SELECT test_table.* FROM test_table.
   * Example: SELECT a.* FROM test_table AS a.
   *
@@ -84,25 +77,25 @@ public:
         return matcher_type;
     }
 
-    /// Is this matcher represented by asterisk
+    /// Returns true if matcher is asterisk matcher, false otherwise
     bool isAsteriskMatcher() const
     {
         return matcher_type == MatcherNodeType::ASTERISK;
     }
 
-    /// Is this matcher represented by COLUMNS
+    /// Returns true if matcher is columns regexp or columns list matcher, false otherwise
     bool isColumnsMatcher() const
     {
         return matcher_type == MatcherNodeType::COLUMNS_REGEXP || matcher_type == MatcherNodeType::COLUMNS_LIST;
     }
 
-    /// Returns true if matcher qualified with identifier, false otherwise
+    /// Returns true if matcher is qualified, false otherwise
     bool isQualified() const
     {
         return !qualified_identifier.empty();
     }
 
-    /// Returns true if matcher is not qualified with identifier, false otherwise
+    /// Returns true if matcher is not qualified, false otherwise
     bool isUnqualified() const
     {
         return qualified_identifier.empty();
@@ -120,20 +113,19 @@ public:
         return columns_matcher;
     }
 
-    /// Get columns matcher. Valid only if this matcher has type COLUMNS_LIST.
+    /// Get columns identifiers. Valid only if this matcher has type COLUMNS_LIST.
     const Identifiers & getColumnsIdentifiers() const
     {
         return columns_identifiers;
     }
 
-    /** Get column transformers
-      * Client can expect that node in this list is subclass of IColumnTransformerNode.
-      */
+    /// Get column transformers
     const ListNode & getColumnTransformers() const
     {
         return children[column_transformers_child_index]->as<const ListNode &>();
     }
 
+    /// Get column transformers
     const QueryTreeNodePtr & getColumnTransformersNode() const
     {
         return children[column_transformers_child_index];

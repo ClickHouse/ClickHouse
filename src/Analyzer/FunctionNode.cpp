@@ -189,15 +189,6 @@ ASTPtr FunctionNode::toASTImpl() const
     function_ast->name = function_name;
     function_ast->is_window_function = isWindowFunction();
 
-    auto window_node = getWindowNode();
-    if (window_node)
-    {
-        if (auto * identifier_node = window_node->as<IdentifierNode>())
-            function_ast->window_name = identifier_node->getIdentifier().getFullName();
-        else
-            function_ast->window_definition = window_node->toAST();
-    }
-
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
@@ -208,6 +199,15 @@ ASTPtr FunctionNode::toASTImpl() const
     const auto & arguments = getArguments();
     function_ast->children.push_back(arguments.toAST());
     function_ast->arguments = function_ast->children.back();
+
+    auto window_node = getWindowNode();
+    if (window_node)
+    {
+        if (auto * identifier_node = window_node->as<IdentifierNode>())
+            function_ast->window_name = identifier_node->getIdentifier().getFullName();
+        else
+            function_ast->window_definition = window_node->toAST();
+    }
 
     return function_ast;
 }

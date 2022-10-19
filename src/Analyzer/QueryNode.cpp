@@ -299,6 +299,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
+        projection_columns == rhs_typed.projection_columns &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
@@ -314,6 +315,17 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+
+    state.update(projection_columns.size());
+    for (const auto & projection_column : projection_columns)
+    {
+        state.update(projection_column.name.size());
+        state.update(projection_column.name);
+
+        auto projection_column_type_name = projection_column.type->getName();
+        state.update(projection_column_type_name.size());
+        state.update(projection_column_type_name);
+    }
 
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -370,7 +382,7 @@ ASTPtr QueryNode::toASTImpl() const
     if (hasWith())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
 
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, children[projection_child_index]->toAST());
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, getProjection().toAST());
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());

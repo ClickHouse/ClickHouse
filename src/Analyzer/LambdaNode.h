@@ -12,13 +12,11 @@ namespace DB
 /** Lambda node represents lambda expression in query tree.
   *
   * Lambda consist of argument names and lambda expression body.
-  * Lambda expression body does not necessary use lambda arguments. Example:  SELECT arrayMap(x -> 1, [1, 2, 3])
+  * Lambda expression body does not necessary use lambda arguments. Example: SELECT arrayMap(x -> 1, [1, 2, 3])
   *
-  * Initially lambda is initialized with argument names and expression query tree node.
-  * During query analysis if expression is not resolved lambda must be resolved.
-  * Lambda is in resolved state if lambda body expression is in resolved state.
+  * Initially lambda is initialized with argument names and lambda body expression.
   *
-  * It is important that lambda expression result type can depend on arguments types.
+  * Lambda expression result type can depend on arguments types.
   * Example: WITH (x -> x) as lambda SELECT lambda(1), lambda('string_value').
   *
   * During query analysis pass lambdas must be resolved.
@@ -27,8 +25,8 @@ namespace DB
   * If client modified lambda arguments array its size must be equal to initial lambda argument names array.
   *
   * Examples:
-  * WITH (x -> x + 1) as lambda SELECT lambda(1).
-  * SELECT arrayMap(x -> x + 1, [1,2,3]).
+  * WITH (x -> x + 1) as lambda SELECT lambda(1);
+  * SELECT arrayMap(x -> x + 1, [1,2,3]);
   */
 class LambdaNode;
 using LambdaNodePtr = std::shared_ptr<LambdaNode>;
@@ -36,7 +34,7 @@ using LambdaNodePtr = std::shared_ptr<LambdaNode>;
 class LambdaNode final : public IQueryTreeNode
 {
 public:
-    /// Initialize lambda with argument names and expression query tree node
+    /// Initialize lambda with argument names and lambda body expression
     explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_);
 
     /// Get argument names
@@ -63,9 +61,7 @@ public:
         return children[arguments_child_index];
     }
 
-    /** Get arguments node.
-      * If arguments array is modified its result size must be equal to lambd argument names size.
-      */
+    /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode()
     {
         return children[arguments_child_index];

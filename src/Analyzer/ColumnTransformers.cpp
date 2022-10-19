@@ -203,6 +203,8 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getExceptTransformerType()));
 
+    hash_state.update(except_column_names.size());
+
     for (const auto & column_name : except_column_names)
     {
         hash_state.update(column_name.size());

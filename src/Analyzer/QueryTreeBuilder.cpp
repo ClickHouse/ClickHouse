@@ -87,7 +87,7 @@ private:
 
     QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list) const;
 
-    QueryTreeNodePtr buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const;
+    QueryTreeNodePtr buildInterpolateList(const ASTPtr & interpolate_expression_list) const;
 
     QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list) const;
 
@@ -147,6 +147,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(const ASTPtr &
 
     auto union_node = std::make_shared<UnionNode>();
     union_node->setIsSubquery(is_subquery);
+    union_node->setIsCTE(!cte_name.empty());
     union_node->setCTEName(cte_name);
     union_node->setUnionMode(select_with_union_query_typed.union_mode);
     union_node->setUnionModes(select_with_union_query_typed.list_of_modes);
@@ -174,6 +175,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
 
     auto union_node = std::make_shared<UnionNode>();
     union_node->setIsSubquery(is_subquery);
+    union_node->setIsCTE(!cte_name.empty());
     union_node->setCTEName(cte_name);
 
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
@@ -278,7 +280,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
 
     auto interpolate_list = select_query_typed.interpolate();
     if (interpolate_list)
-        current_query_tree->getInterpolate() = buildInterpolateColumnList(interpolate_list);
+        current_query_tree->getInterpolate() = buildInterpolateList(interpolate_list);
 
     auto select_limit_by_limit = select_query_typed.limitByLength();
     if (select_limit_by_limit)
@@ -321,7 +323,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
 
         std::shared_ptr<Collator> collator;
         if (order_by_element.collation)
-            collator = std::make_shared<Collator>(order_by_element.collation->as<ASTLiteral &>().value.get<String>());
+            collator = std::make_shared<Collator>(order_by_element.collation->as<ASTLiteral &>().value.get<String &>());
 
         const auto & sort_expression_ast = order_by_element.children.at(0);
         auto sort_expression = buildExpression(sort_expression_ast);
@@ -344,7 +346,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
     return list_node;
 }
 
-QueryTreeNodePtr QueryTreeBuilder::buildInterpolateColumnList(const ASTPtr & interpolate_expression_list) const
+QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpolate_expression_list) const
 {
     auto list_node = std::make_shared<ListNode>();
 
@@ -406,24 +408,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
-        /// TODO: Identifier as query parameter
         auto identifier = Identifier(ast_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
         auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/);
-        result = std::make_shared<MatcherNode>(column_transformers);
+        result = std::make_shared<MatcherNode>(std::move(column_transformers));
     }
     else if (const auto * qualified_asterisk = expression->as<ASTQualifiedAsterisk>())
     {
-        /// TODO: Identifier with UUID
-        /// TODO: Currently during query analysis stage we support qualified matchers with any identifier length
-        /// but ASTTableIdentifier can contain only 2 parts.
-
         auto & qualified_identifier = qualified_asterisk->children.at(0)->as<ASTTableIdentifier &>();
         auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), column_transformers);
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
@@ -442,7 +439,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
 
             if (lambda_arguments_tuple.arguments)
             {
-                const auto & lambda_arguments_list = lambda_arguments_tuple.arguments->as<ASTExpressionList>()->children;
+                const auto & lambda_arguments_list = lambda_arguments_tuple.arguments->as<ASTExpressionList &>().children;
                 for (const auto & lambda_argument : lambda_arguments_list)
                 {
                     const auto * lambda_argument_identifier = lambda_argument->as<ASTIdentifier>();
@@ -454,7 +451,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
 
                     if (lambda_argument_identifier->name_parts.size() > 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Lambda {} argument identifier must contain only argument name. Actual {}",
+                            "Lambda {} argument identifier must contain single part. Actual {}",
                             function->formatForErrorMessage(),
                             lambda_argument_identifier->full_name);
 
@@ -501,7 +498,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
                     function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
             }
 
-            result = function_node;
+            result = std::move(function_node);
         }
     }
     else if (const auto * subquery = expression->as<ASTSubquery>())
@@ -509,14 +506,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
         auto subquery_query = subquery->children[0];
         auto query_node = buildSelectWithUnionExpression(subquery_query, true /*is_subquery*/, {} /*cte_name*/);
 
-        result = query_node;
+        result = std::move(query_node);
     }
     else if (const auto * with_element = expression->as<ASTWithElement>())
     {
         auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, with_element->name /*cte_name*/);
 
-        result = query_node;
+        result = std::move(query_node);
     }
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
@@ -557,7 +554,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression) co
         }
 
         auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), column_list_identifiers, std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
     }
     else
     {
@@ -699,7 +696,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
                 if (table_function_expression.arguments)
                 {
-                    const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList>()->children;
+                    const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList &>().children;
                     for (const auto & argument : function_arguments_list)
                     {
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())

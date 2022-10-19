@@ -10,6 +10,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -116,7 +117,7 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name)
     if (columns_matcher)
         return RE2::PartialMatch(column_name, *columns_matcher);
 
-    return columns_identifiers_set.find(column_name) != columns_identifiers_set.end();
+    return columns_identifiers_set.contains(column_name);
 }
 
 void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -227,7 +228,7 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state) const
     {
         const auto & identifier_full_name = identifier.getFullName();
         hash_state.update(identifier_full_name.size());
-        hash_state.update(identifier_full_name.data(), identifier_full_name.size());
+        hash_state.update(identifier_full_name);
     }
 
     if (columns_matcher)
@@ -257,7 +258,6 @@ ASTPtr MatcherNode::toASTImpl() const
 
     if (matcher_type == MatcherNodeType::ASTERISK)
     {
-        /// For COLUMNS qualified identifier is not supported
         if (qualified_identifier.empty())
         {
             result = std::make_shared<ASTAsterisk>();
@@ -265,6 +265,7 @@ ASTPtr MatcherNode::toASTImpl() const
         else
         {
             auto qualified_asterisk = std::make_shared<ASTQualifiedAsterisk>();
+
             auto identifier_parts = qualified_identifier.getParts();
             qualified_asterisk->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
 
@@ -273,22 +274,50 @@ ASTPtr MatcherNode::toASTImpl() const
     }
     else if (columns_matcher)
     {
-        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(columns_matcher->pattern());
-        result = regexp_matcher;
+        if (qualified_identifier.empty())
+        {
+            auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+            regexp_matcher->setPattern(columns_matcher->pattern());
+            result = regexp_matcher;
+        }
+        else
+        {
+            auto regexp_matcher = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
+            regexp_matcher->setPattern(columns_matcher->pattern());
+
+            auto identifier_parts = qualified_identifier.getParts();
+            regexp_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+
+            result = regexp_matcher;
+        }
     }
     else
     {
-        auto columns_list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        columns_list_matcher->children.reserve(columns_identifiers.size());
+        auto column_list = std::make_shared<ASTExpressionList>();
+        column_list->children.reserve(columns_identifiers.size());
 
         for (const auto & identifier : columns_identifiers)
         {
             auto identifier_parts = identifier.getParts();
-            columns_list_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            column_list->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
         }
 
-        result = columns_list_matcher;
+        if (qualified_identifier.empty())
+        {
+            auto columns_list_matcher = std::make_shared<ASTColumnsListMatcher>();
+            columns_list_matcher->column_list = std::move(column_list);
+            result = columns_list_matcher;
+        }
+        else
+        {
+            auto columns_list_matcher = std::make_shared<ASTQualifiedColumnsListMatcher>();
+            columns_list_matcher->column_list = std::move(column_list);
+
+            auto identifier_parts = qualified_identifier.getParts();
+            columns_list_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+
+            result = columns_list_matcher;
+        }
     }
 
     for (const auto & child : children)

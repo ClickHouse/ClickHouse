@@ -35,7 +35,7 @@ public:
         if (!assert_no_window_functions_place_message.empty())
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "Window function {} is found {} in query",
-                function_node->getName(),
+                function_node->formatASTForErrorMessage(),
                 assert_no_window_functions_place_message);
 
         if (window_function_nodes)

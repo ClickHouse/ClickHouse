@@ -10,7 +10,7 @@ namespace DB
 {
 
 /** Build query tree from AST.
-  * AST that represent query ASTSelectWithUnionQuery, ASTSelectQuery.
+  * AST that represent query ASTSelectWithUnionQuery, ASTSelectIntersectExceptQuery, ASTSelectQuery.
   * AST that represent a list of expressions ASTExpressionList.
   * AST that represent expression ASTIdentifier, ASTAsterisk, ASTLiteral, ASTFunction.
   */

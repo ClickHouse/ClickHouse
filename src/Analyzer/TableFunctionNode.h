@@ -19,9 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class ITableFunction;
-using TableFunctionPtr = std::shared_ptr<ITableFunction>;
-
 /** Table function node represents table function in query tree.
   * Example: SELECT a FROM table_function(arguments...).
   *
@@ -29,6 +26,9 @@ using TableFunctionPtr = std::shared_ptr<ITableFunction>;
   *
   * Table function resolution must be done during query analysis pass.
   */
+class ITableFunction;
+using TableFunctionPtr = std::shared_ptr<ITableFunction>;
+
 class TableFunctionNode;
 using TableFunctionNodePtr = std::shared_ptr<TableFunctionNode>;
 
@@ -86,6 +86,7 @@ public:
         return storage;
     }
 
+    /// Get storage, throws exception if table function node is not resolved
     const StoragePtr & getStorageOrThrow() const
     {
         if (!storage)
@@ -94,7 +95,7 @@ public:
         return storage;
     }
 
-    /// Resolve table function with table_function, storage and context
+    /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context);
 
     /// Get storage id, throws exception if function node is not resolved
@@ -110,7 +111,7 @@ public:
     }
 
     /// Get table expression modifiers
-    std::optional<TableExpressionModifiers> getTableExpressionModifiers() const
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
     }
@@ -120,7 +121,6 @@ public:
     {
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
-
 
     QueryTreeNodeType getNodeType() const override
     {

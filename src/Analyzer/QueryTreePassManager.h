@@ -28,7 +28,7 @@ public:
     void run(QueryTreeNodePtr query_tree_node);
 
     /** Run query tree passes on query tree up to up_to_pass_index.
-      * If up_to_pass_index is greater than passes size throws exception.
+      * Throws exception if up_to_pass_index is greater than passes size.
       */
     void run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index);
 
@@ -36,7 +36,7 @@ public:
     void dump(WriteBuffer & buffer);
 
     /** Dump query tree passes to up_to_pass_index.
-      * If up_to_pass_index is greater than passes size throws exception.
+      * Throws exception if up_to_pass_index is greater than passes size.
       */
     void dump(WriteBuffer & buffer, size_t up_to_pass_index);
 

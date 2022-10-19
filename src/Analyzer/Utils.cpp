@@ -132,11 +132,11 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     {
         result_table_expression->final = table_expression_modifiers->hasFinal();
 
-        auto sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
+        const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
             result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
 
-        auto sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
+        const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
     }
@@ -175,14 +175,14 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
         {
             auto table_expression_tables_in_select_query_ast = table_expression->toAST();
             tables_in_select_query_ast->children.reserve(table_expression_tables_in_select_query_ast->children.size());
-            for (auto && left_table_element_ast : table_expression_tables_in_select_query_ast->children)
-                tables_in_select_query_ast->children.push_back(std::move(left_table_element_ast));
+            for (auto && table_element_ast : table_expression_tables_in_select_query_ast->children)
+                tables_in_select_query_ast->children.push_back(std::move(table_element_ast));
             break;
         }
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                "Unexpected node type for table expression. Expected identifier, table, table function, query, union, join or array join. Actual {}",
                 table_expression->getNodeTypeName());
         }
     }

@@ -164,10 +164,11 @@ void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) 
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    settings.ostr << (settings.hilite ? hilite_keyword : "");
+
     const auto & qualifier = children.at(0);
     qualifier->formatImpl(settings, state, frame);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
     settings.ostr << quoteString(original_pattern);
     settings.ostr << ")";
@@ -212,10 +213,12 @@ void ASTQualifiedColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) co
 
 void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    settings.ostr << (settings.hilite ? hilite_keyword : "");
+
     const auto & qualifier = children.at(0);
     qualifier->formatImpl(settings, state, frame);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {

@@ -47,7 +47,7 @@ public:
         return window_frame;
     }
 
-    /// Has parent window name
+    /// Returns true if window node has parent window name, false otherwise
     bool hasParentWindowName() const
     {
         return parent_window_name.empty();
@@ -65,7 +65,7 @@ public:
         parent_window_name = std::move(parent_window_name_value);
     }
 
-    /// Has order by
+    /// Returns true if window node has order by, false otherwise
     bool hasOrderBy() const
     {
         return !getOrderBy().getNodes().empty();
@@ -83,19 +83,19 @@ public:
         return children[order_by_child_index]->as<ListNode &>();
     }
 
-    /// Get order by
+    /// Get order by node
     const QueryTreeNodePtr & getOrderByNode() const
     {
         return children[order_by_child_index];
     }
 
-    /// Get order by
+    /// Get order by node
     QueryTreeNodePtr & getOrderByNode()
     {
         return children[order_by_child_index];
     }
 
-    /// Has partition by
+    /// Returns true if window node has partition by, false otherwise
     bool hasPartitionBy() const
     {
         return !getPartitionBy().getNodes().empty();
@@ -113,19 +113,19 @@ public:
         return children[partition_by_child_index]->as<ListNode &>();
     }
 
-    /// Get partition by
+    /// Get partition by node
     const QueryTreeNodePtr & getPartitionByNode() const
     {
         return children[partition_by_child_index];
     }
 
-    /// Get partition by
+    /// Get partition by node
     QueryTreeNodePtr & getPartitionByNode()
     {
         return children[partition_by_child_index];
     }
 
-    /// Has frame begin offset
+    /// Returns true if window node has FRAME begin offset, false otherwise
     bool hasFrameBeginOffset() const
     {
         return getFrameBeginOffsetNode() != nullptr;
@@ -143,19 +143,19 @@ public:
         return children[frame_begin_offset_child_index];
     }
 
-    /// Has frame end offset
+    /// Returns true if window node has FRAME end offset, false otherwise
     bool hasFrameEndOffset() const
     {
         return getFrameEndOffsetNode() != nullptr;
     }
 
-    /// Get FRAME begin offset node
+    /// Get FRAME end offset node
     const QueryTreeNodePtr & getFrameEndOffsetNode() const
     {
         return children[frame_end_offset_child_index];
     }
 
-    /// Get FRAME begin offset node
+    /// Get FRAME end offset node
     QueryTreeNodePtr & getFrameEndOffsetNode()
     {
         return children[frame_end_offset_child_index];
