@@ -153,8 +153,8 @@ if __name__ == "__main__":
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
             for line in summary_f:
-                l=line.split('\t')
-                test_result.append((l[0],l[1]))
+                l = line.split('\t')
+                test_result.append((l[0], l[1]))
 
         with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
