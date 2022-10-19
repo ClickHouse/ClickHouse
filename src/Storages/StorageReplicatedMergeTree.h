@@ -631,6 +631,7 @@ private:
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);

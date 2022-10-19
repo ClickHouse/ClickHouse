@@ -3065,6 +3065,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
     const Names deduplicate_by_columns = {};
+    const bool cleanup = !(storage_settings_ptr->clean_deleted_rows.toString() == "never");
     CreateMergeEntryResult create_result = CreateMergeEntryResult::Other;
 
     try
@@ -3116,6 +3117,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     future_merged_part->type,
                     deduplicate,
                     deduplicate_by_columns,
+                    cleanup,
                     nullptr,
                     merge_pred.getVersion(),
                     future_merged_part->merge_type);
@@ -3207,6 +3209,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     const MergeTreeDataPartType & merged_part_type,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -3245,6 +3248,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
+    entry.cleanup = cleanup;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -4469,6 +4473,9 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception("OPTIMIZE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
+    if (cleanup)
+        LOG_DEBUG(log, "Cleanup the ReplicatedMergeTree.");
+
     auto handle_noop = [&] (const String & message)
     {
         if (query_context->getSettingsRef().optimize_throw_if_noop)
@@ -4533,6 +4540,7 @@ bool StorageReplicatedMergeTree::optimize(
                 zookeeper, future_merged_part->parts,
                 future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
                 deduplicate, deduplicate_by_columns,
+                cleanup,
                 &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
 
             if (create_result == CreateMergeEntryResult::MissingPart)
