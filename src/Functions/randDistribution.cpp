@@ -235,7 +235,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return Distribution::getNumberOfArguments(); }
     bool isVariadic() const override { return true; }
-    bool isStateful() const override { return true; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
