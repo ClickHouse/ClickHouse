@@ -75,7 +75,7 @@ void JoinClause::dump(WriteBuffer & buffer) const
         buffer << " left_condition_nodes: " + dump_dag_nodes(left_filter_condition_nodes);
 
     if (!right_filter_condition_nodes.empty())
-        buffer << " left_condition_nodes: " + dump_dag_nodes(right_filter_condition_nodes);
+        buffer << " right_condition_nodes: " + dump_dag_nodes(right_filter_condition_nodes);
 }
 
 String JoinClause::dump() const
@@ -190,7 +190,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "JOIN {} ON expression {} with constants is not supported",
                 join_node.formatASTForErrorMessage(),
-                join_expressions_actions_node->function->getName());
+                join_expressions_actions_node->result_name);
         }
         else if (left_expression_side_optional && !right_expression_side_optional)
         {
@@ -210,7 +210,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
                 const ActionsDAG::Node * left_key = left_child;
                 const ActionsDAG::Node * right_key = right_child;
 
-                if (left_expression_side_optional == JoinTableSide::Right)
+                if (left_expression_side == JoinTableSide::Right)
                 {
                     left_key = right_child;
                     right_key = left_child;
@@ -254,7 +254,6 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
                 join_node.formatASTForErrorMessage());
 
     auto expression_side = *expression_side_optional;
-
     join_clause.addCondition(expression_side, join_expressions_actions_node);
 }
 
@@ -269,7 +268,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     /** In ActionsDAG if input node has constant representation additional constant column is added.
       * That way we cannot simply check that node has INPUT type during resolution of expression join table side.
       * Put all nodes after actions dag initialization in set.
-      * To check if actions dag node is input column, we set contains node.
+      * To check if actions dag node is input column, we check if set contains it.
       */
     const auto & join_expression_actions_nodes = join_expression_actions->getNodes();
 
@@ -375,9 +374,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
             else
                 dag_filter_condition_node = left_filter_condition_nodes[0];
 
-            join_clause.getLeftFilterConditionNodes().clear();
-            join_clause.addCondition(JoinTableSide::Left, dag_filter_condition_node);
-
+            join_clause.getLeftFilterConditionNodes() = {dag_filter_condition_node};
             join_expression_actions->addOrReplaceInOutputs(*dag_filter_condition_node);
 
             add_necessary_name_if_needed(JoinTableSide::Left, dag_filter_condition_node->result_name);
@@ -393,9 +390,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
             else
                 dag_filter_condition_node = right_filter_condition_nodes[0];
 
-            join_clause.getRightFilterConditionNodes().clear();
-            join_clause.addCondition(JoinTableSide::Right, dag_filter_condition_node);
-
+            join_clause.getRightFilterConditionNodes() = {dag_filter_condition_node};
             join_expression_actions->addOrReplaceInOutputs(*dag_filter_condition_node);
 
             add_necessary_name_if_needed(JoinTableSide::Right, dag_filter_condition_node->result_name);
@@ -541,7 +536,8 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     else if (auto * table_function = table_expression->as<TableFunctionNode>())
         storage = table_function->getStorage();
 
-    if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
+    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    if (storage_join)
     {
         table_join->setStorageJoin(storage_join);
         return;
@@ -581,7 +577,9 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         clauses[0].key_names_left.size() == 1 &&
         clauses[0].key_names_right.size() == 1 &&
         !clauses[0].on_filter_condition_left &&
-        !clauses[0].on_filter_condition_right;
+        !clauses[0].on_filter_condition_right &&
+        clauses[0].analyzer_left_filter_condition_column_name.empty() &&
+        clauses[0].analyzer_right_filter_condition_column_name.empty();
 
     if (!only_one_key)
         return {};
@@ -604,7 +602,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
       * CREATE DICTIONARY test_dictionary (id UInt64, value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'test_dictionary_table')) LIFETIME(0);
       * SELECT t1.id FROM test_table AS t1 INNER JOIN test_dictionary AS t2 ON t1.id = t2.id;
       *
-      * Unique execution name for `id` column in right table expression `test_dictionary AS t2` for example can be `t2.id_0`.
+      * Unique execution name for `id` column from right table expression `test_dictionary AS t2` for example can be `t2.id_0`.
       * Storage column name is `id`.
       *
       * Here we create header for right table expression with original storage column names.
@@ -652,7 +650,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
-    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary.
+    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
         JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);

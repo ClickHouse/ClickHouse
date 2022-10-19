@@ -111,29 +111,34 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
         auto & query_context = planner_context->getQueryContext();
 
         auto from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-        const auto & columns_names = table_expression_data.getColumnsNames();
-        Names column_names(columns_names.begin(), columns_names.end());
+        const auto & columns_names_set = table_expression_data.getColumnsNames();
+        Names columns_names(columns_names_set.begin(), columns_names_set.end());
 
         /** The current user must have the SELECT privilege.
-          * We do not check access rights for table functions because they have beein already checked in ITablefunction::execute().
+          * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
           */
         if (table_node)
-            checkAccessRights(*table_node, column_names, planner_context->getQueryContext());
+        {
+            auto column_names_with_aliases = columns_names;
+            const auto & alias_columns_names = table_expression_data.getAliasColumnsNames();
+            column_names_with_aliases.insert(column_names_with_aliases.end(), alias_columns_names.begin(), alias_columns_names.end());
+            checkAccessRights(*table_node, column_names_with_aliases, planner_context->getQueryContext());
+        }
 
-        if (column_names.empty())
+        if (columns_names.empty())
         {
             auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
             auto additional_column_to_read = column_names_and_types.front();
 
             const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
-            column_names.push_back(additional_column_to_read.name);
+            columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
         }
 
         size_t max_block_size = query_context->getSettingsRef().max_block_size;
         size_t max_streams = query_context->getSettingsRef().max_threads;
 
-        bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(column_names);
+        bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(columns_names);
         if (need_rewrite_query_with_final)
         {
             if (table_expression_query_info.table_expression_modifiers)
@@ -154,12 +159,12 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
             }
         }
 
-        storage->read(query_plan, column_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+        storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+            auto source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
             Pipe pipe(std::make_shared<NullSource>(source_header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             read_from_pipe->setStepDescription("Read from NullSource");
@@ -181,11 +186,15 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
 
     auto rename_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
 
-    for (const auto & [column_name, column_identifier] : table_expression_data.getColumnNameToIdentifier())
+    for (auto & output_node : rename_actions_dag->getOutputs())
     {
-        auto position = query_plan.getCurrentDataStream().header.getPositionByName(column_name);
-        const auto * node_to_rename = rename_actions_dag->getOutputs()[position];
-        rename_actions_dag->getOutputs()[position] = &rename_actions_dag->addAlias(*node_to_rename, column_identifier);
+        const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
+
+        if (!column_identifier)
+            continue;
+
+        const auto * node_to_rename = output_node;
+        output_node = &rename_actions_dag->addAlias(*node_to_rename, *column_identifier);
     }
 
     auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), rename_actions_dag);
@@ -267,13 +276,13 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
             if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
-                auto left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
+                const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
                 left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
             }
 
             if (!right_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
             {
-                auto right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
+                const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);
             }
         }
@@ -468,18 +477,12 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         for (auto & join_using_node : using_list.getNodes())
         {
             auto & join_using_column_node = join_using_node->as<ColumnNode &>();
-            if (!join_using_column_node.getExpression() ||
-                join_using_column_node.getExpression()->getNodeType() != QueryTreeNodeType::LIST)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "JOIN {} column in USING does not have inner columns",
-                    join_node.formatASTForErrorMessage());
-
-            auto & using_join_columns_list = join_using_column_node.getExpression()->as<ListNode &>();
+            auto & using_join_columns_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
             auto & using_join_left_join_column_node = using_join_columns_list.getNodes().at(0);
             auto & using_join_right_join_column_node = using_join_columns_list.getNodes().at(1);
 
-            auto left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
-            auto right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
+            const auto & left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
+            const auto & right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
 
             table_join_clause.key_names_left.push_back(left_column_identifier);
             table_join_clause.key_names_right.push_back(right_column_identifier);
@@ -627,13 +630,13 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
 {
     auto & array_join_node = table_expression->as<ArrayJoinNode &>();
 
-    auto left_plan = buildQueryPlanForJoinTreeNode(array_join_node.getTableExpression(),
+    auto plan = buildQueryPlanForJoinTreeNode(array_join_node.getTableExpression(),
         select_query_info,
         select_query_options,
         planner_context);
-    auto left_plan_output_columns = left_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+    auto plan_output_columns = plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
 
-    ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(left_plan_output_columns);
+    ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(plan_output_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
 
     NameSet array_join_columns;
@@ -652,16 +655,16 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     }
 
     array_join_action_dag->projectInput();
-    auto array_join_actions = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), array_join_action_dag);
+    auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
-    left_plan.addStep(std::move(array_join_actions));
+    plan.addStep(std::move(array_join_actions));
 
     auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_columns, array_join_node.isLeft(), planner_context->getQueryContext());
-    auto array_join_step = std::make_unique<ArrayJoinStep>(left_plan.getCurrentDataStream(), std::move(array_join_action));
+    auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
     array_join_step->setStepDescription("ARRAY JOIN");
-    left_plan.addStep(std::move(array_join_step));
+    plan.addStep(std::move(array_join_step));
 
-    return left_plan;
+    return plan;
 }
 
 }
@@ -675,13 +678,13 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
 
     switch (join_tree_node_type)
     {
-        case QueryTreeNodeType::QUERY:
-            [[fallthrough]];
-        case QueryTreeNodeType::UNION:
-            [[fallthrough]];
         case QueryTreeNodeType::TABLE:
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
+            [[fallthrough]];
+        case QueryTreeNodeType::QUERY:
+            [[fallthrough]];
+        case QueryTreeNodeType::UNION:
         {
             return buildQueryPlanForTableExpression(join_tree_node, select_query_info, select_query_options, planner_context);
         }
@@ -696,7 +699,7 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected query, table, table function, join or array join query node. Actual {}",
+                "Expected table, table function, query, union, join or array join query node. Actual {}",
                 join_tree_node->formatASTForErrorMessage());
         }
     }

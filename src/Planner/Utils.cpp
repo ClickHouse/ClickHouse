@@ -32,6 +32,7 @@ String dumpQueryPlan(QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
     query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
+
     return query_plan_buffer.str();
 }
 
@@ -40,6 +41,7 @@ String dumpQueryPipeline(QueryPlan & query_plan)
     QueryPlan::ExplainPipelineOptions explain_pipeline;
     WriteBufferFromOwnString query_pipeline_buffer;
     query_plan.explainPipeline(query_pipeline_buffer, explain_pipeline);
+
     return query_pipeline_buffer.str();
 }
 
@@ -47,26 +49,26 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = queries_headers.front();
-    size_t num_columns = common_header.columns();
+    size_t columns_size = common_header.columns();
 
-    for (size_t query_num = 1; query_num < num_selects; ++query_num)
+    for (size_t query_number = 1; query_number < num_selects; ++query_number)
     {
-        if (queries_headers.at(query_num).columns() != num_columns)
+        if (queries_headers.at(query_number).columns() != columns_size)
             throw Exception(ErrorCodes::TYPE_MISMATCH,
                             "Different number of columns in UNION elements: {} and {}",
                             common_header.dumpNames(),
-                            queries_headers[query_num].dumpNames());
+                            queries_headers[query_number].dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
 
-    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &queries_headers[i].getByPosition(column_num);
+            columns[i] = &queries_headers[i].getByPosition(column_number);
 
-        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-        result_elem = getLeastSuperColumn(columns);
+        ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
+        result_element = getLeastSuperColumn(columns);
     }
 
     return common_header;
@@ -175,20 +177,18 @@ ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & express
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
     auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
-    action_dag->getOutputs().clear();
-
-    for (auto & expression_dag_index_node : expression_dag_index_nodes)
-        action_dag->getOutputs().push_back(expression_dag_index_node);
+    action_dag->getOutputs() = std::move(expression_dag_index_nodes);
 
     return action_dag;
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
 {
-    if (prefix.size() > full.size())
+    size_t prefix_size = prefix.size();
+    if (prefix_size > full.size())
         return false;
 
-    for (size_t i = 0; i < prefix.size(); ++i)
+    for (size_t i = 0; i < prefix_size; ++i)
     {
         if (full[i] != prefix[i])
             return false;
@@ -204,7 +204,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
     join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
 
-    while (join_tree_nodes_to_process.empty())
+    while (!join_tree_nodes_to_process.empty())
     {
         auto join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();
@@ -253,7 +253,7 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
     join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
 
-    while (join_tree_nodes_to_process.empty())
+    while (!join_tree_nodes_to_process.empty())
     {
         auto join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();

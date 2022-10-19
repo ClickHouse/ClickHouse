@@ -22,7 +22,7 @@ class TableExpressionData
 public:
     using ColumnNameToColumnIdentifier = std::unordered_map<std::string, ColumnIdentifier>;
 
-    using ColumnIdentifierToColumnName = std::unordered_map<std::string, ColumnIdentifier>;
+    using ColumnIdentifierToColumnName = std::unordered_map<ColumnIdentifier, std::string>;
 
     /// Return true if column with name exists, false otherwise
     bool hasColumn(const std::string & column_name) const
@@ -32,6 +32,8 @@ public:
 
     /** Add column in table expression data.
       * Column identifier must be created using global planner context.
+      *
+      * Logical error exception is thrown if column already exists.
       */
     void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
@@ -64,13 +66,13 @@ public:
         alias_columns_names.insert(column_name);
     }
 
-    /// Get alias column names
+    /// Get alias columns names
     const NameSet & getAliasColumnsNames() const
     {
         return alias_columns_names;
     }
 
-    /// Get column names
+    /// Get columns names
     const NameSet & getColumnsNames() const
     {
         return columns_names;
@@ -146,7 +148,7 @@ public:
         return &it->second;
     }
 
-    /** Cache value of storage is remote method call.
+    /** Returns true if storage is remote, false otherwise.
       *
       * Valid only for table and table function node.
       */
@@ -155,29 +157,29 @@ public:
         return is_remote;
     }
 
-    /// Set is remote value
+    /// Set is storage remote value
     void setIsRemote(bool is_remote_value)
     {
         is_remote = is_remote_value;
     }
 
 private:
-    /// Valid for table, table function, query table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     NamesAndTypesList columns;
 
-    /// Valid for table, table function, query table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     NameSet columns_names;
 
     /// Valid only for table table expression node
     NameSet alias_columns_names;
 
-    /// Valid for table, table function, query table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 
-    /// Valid for table, table function, query table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
 
-    /// Cached value if table expression receives data from remote server
+    /// Is storage remote
     bool is_remote = false;
 };
 

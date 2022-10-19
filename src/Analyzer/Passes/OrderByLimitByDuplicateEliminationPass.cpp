@@ -70,7 +70,7 @@ public:
 
             auto & query_limit_by_nodes = query_node->getLimitBy().getNodes();
 
-            for (auto & limit_by_node : query_node->getLimitBy().getNodes())
+            for (auto & limit_by_node : query_limit_by_nodes)
             {
                 auto [_, inserted] = unique_expressions_nodes_set.emplace(limit_by_node.get());
                 if (inserted)
@@ -79,8 +79,6 @@ public:
 
             query_limit_by_nodes = std::move(result_nodes);
         }
-
-        unique_expressions_nodes_set.clear();
     }
 
 private:

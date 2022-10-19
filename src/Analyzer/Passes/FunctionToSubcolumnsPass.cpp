@@ -35,7 +35,7 @@ public:
         if (!function_node)
             return;
 
-        auto function_arguments_nodes = function_node->getArguments().getNodes();
+        auto & function_arguments_nodes = function_node->getArguments().getNodes();
         size_t function_arguments_nodes_size = function_arguments_nodes.size();
 
         if (function_arguments_nodes.empty() || function_arguments_nodes_size > 2)
@@ -67,7 +67,7 @@ public:
             {
                 if (function_name == "length")
                 {
-                    /// Replace `length(array_argument)` with `array_argument.length`
+                    /// Replace `length(array_argument)` with `array_argument.size0`
                     column.name += ".size0";
 
                     node = std::make_shared<ColumnNode>(column, column_source);
@@ -78,15 +78,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
-                    auto equals_function = std::make_shared<FunctionNode>("equals");
-                    resolveOrdinaryFunctionNode(*equals_function, "equals");
+                    resolveOrdinaryFunctionNode(*function_node, "equals");
 
-                    auto & equals_function_arguments = equals_function->getArguments().getNodes();
-                    equals_function_arguments.reserve(2);
-                    equals_function_arguments.push_back(std::make_shared<ColumnNode>(column, column_source));
-                    equals_function_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    node = std::move(equals_function);
+                    function_arguments_nodes.clear();
+                    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
+                    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
                 }
                 else if (function_name == "notEmpty")
                 {
@@ -94,15 +90,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
-                    auto not_equals_function = std::make_shared<FunctionNode>("notEquals");
-                    resolveOrdinaryFunctionNode(*not_equals_function, "notEquals");
+                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
 
-                    auto & not_equals_function_arguments = not_equals_function->getArguments().getNodes();
-                    not_equals_function_arguments.reserve(2);
-                    not_equals_function_arguments.push_back(std::make_shared<ColumnNode>(column, column_source));
-                    not_equals_function_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    node = std::move(not_equals_function);
+                    function_arguments_nodes.clear();
+                    function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
+                    function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
                 }
             }
             else if (column_type.isNullable())
@@ -120,24 +112,18 @@ public:
                     column.name += ".null";
                     column.type = std::make_shared<DataTypeUInt8>();
 
-                    auto not_function = std::make_shared<FunctionNode>("not");
-                    resolveOrdinaryFunctionNode(*not_function, "not");
+                    resolveOrdinaryFunctionNode(*function_node, "not");
 
-                    auto & not_function_arguments = not_function->getArguments().getNodes();
-                    not_function_arguments.push_back(std::make_shared<ColumnNode>(column, column_source));
-
-                    node = std::move(not_function);
+                    function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
                 }
             }
             else if (column_type.isMap())
             {
-                const auto & data_type_map = assert_cast<const DataTypeMap &>(*column.type);
-
                 if (function_name == "mapKeys")
                 {
                     /// Replace `mapKeys(map_argument)` with `map_argument.keys`
                     column.name += ".keys";
-                    column.type = data_type_map.getKeyType();
+                    column.type = function_node->getResultType();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
@@ -145,7 +131,7 @@ public:
                 {
                     /// Replace `mapValues(map_argument)` with `map_argument.values`
                     column.name += ".values";
-                    column.type = data_type_map.getValueType();
+                    column.type = function_node->getResultType();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
@@ -183,9 +169,7 @@ public:
 
                 column.name += '.';
                 column.name += subcolumn_name;
-
-                size_t subcolumn_position = data_type_tuple.getPositionByName(subcolumn_name);
-                column.type = data_type_tuple.getElement(subcolumn_position);
+                column.type = function_node->getResultType();
 
                 node = std::make_shared<ColumnNode>(column, column_source);
             }
@@ -198,15 +182,9 @@ public:
                 column.type = data_type_map.getKeyType();
 
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
-                auto has_function = std::make_shared<FunctionNode>("has");
-                resolveOrdinaryFunctionNode(*has_function, "has");
+                resolveOrdinaryFunctionNode(*function_node, "has");
 
-                auto & has_function_arguments = has_function->getArguments().getNodes();
-                has_function_arguments.reserve(2);
-                has_function_arguments.push_back(std::move(has_function_argument));
-                has_function_arguments.push_back(std::move(function_arguments_nodes[1]));
-
-                node = std::move(has_function);
+                function_arguments_nodes[0] = std::move(has_function_argument);
             }
         }
     }

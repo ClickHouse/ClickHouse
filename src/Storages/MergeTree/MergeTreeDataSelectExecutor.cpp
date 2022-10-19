@@ -490,12 +490,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     {
         const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
         final = table_expression_modifiers.hasFinal();
-
-        if (table_expression_modifiers.hasSampleSizeRatio())
-            sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
-
-        if (table_expression_modifiers.hasSampleOffsetRatio())
-            sample_offset_ratio = table_expression_modifiers.getSampleSizeRatio();
+        sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
+        sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
     }
     else
     {

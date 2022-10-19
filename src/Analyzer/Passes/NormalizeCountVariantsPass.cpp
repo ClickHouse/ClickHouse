@@ -15,7 +15,7 @@ namespace
 class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
 {
 public:
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))

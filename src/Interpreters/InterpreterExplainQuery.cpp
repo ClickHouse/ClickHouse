@@ -374,7 +374,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::QueryTree:
         {
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERYTREE query");
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());

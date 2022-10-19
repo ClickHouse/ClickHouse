@@ -15,7 +15,7 @@ namespace
 class OrderByTupleEliminationVisitor : public InDepthQueryTreeVisitor<OrderByTupleEliminationVisitor>
 {
 public:
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * query_node = node->as<QueryNode>();
         if (!query_node || !query_node->hasOrderBy())
