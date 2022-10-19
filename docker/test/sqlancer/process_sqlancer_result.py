@@ -19,7 +19,7 @@ def process_result(result_folder):
         "TLPAggregate",
     ]
 
-    failed_tests= []
+    failed_tests = []
 
     for test in tests:
         err_path = "{}/{}.err".format(result_folder, test)
@@ -58,14 +58,17 @@ def process_result(result_folder):
     return status, description, summary, paths
 
 
-def write_results(results_file, status_file, description_file, results, status, description):
+def write_results(
+    results_file, status_file, description_file, results, status, description
+):
     with open(results_file, "w") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerows(results)
     with open(status_file, "w") as f:
-        f.write(status + '\n')
+        f.write(status + "\n")
     with open(description_file, "w") as f:
-        f.write(description + '\n')
+        f.write(description + "\n")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -80,5 +83,12 @@ if __name__ == "__main__":
 
     status, description, summary, logs = process_result(args.in_results_dir)
     logging.info("Result parsed")
-    write_results(args.out_results_file, args.out_status_file, args.out_description_file, summary, status, description)
+    write_results(
+        args.out_results_file,
+        args.out_status_file,
+        args.out_description_file,
+        summary,
+        status,
+        description,
+    )
     logging.info("Result written")
