@@ -509,7 +509,7 @@ enum class Checkpoint
 class Layer
 {
 public:
-    explicit Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = true) :
+    explicit Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = false) :
         allow_alias(allow_alias_), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
     virtual ~Layer() = default;
