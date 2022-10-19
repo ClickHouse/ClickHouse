@@ -874,7 +874,8 @@ public:
     static void assertBlockEqualsStructureUpToLowCard(const Block & lhs_block, const Block & rhs_block)
     {
         if (lhs_block.columns() != rhs_block.columns())
-            throw Exception("Different number of columns in blocks", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Different number of columns in blocks [{}] and [{}]",
+                lhs_block.dumpStructure(), rhs_block.dumpStructure());
 
         for (size_t i = 0; i < lhs_block.columns(); ++i)
         {
@@ -1671,6 +1672,9 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    if (data->released)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
+
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1985,6 +1989,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 BlocksList HashJoin::releaseJoinedBlocks()
 {
     BlocksList right_blocks = std::move(data->blocks);
+    data->released = true;
     BlocksList restored_blocks;
 
     /// names to positions optimization

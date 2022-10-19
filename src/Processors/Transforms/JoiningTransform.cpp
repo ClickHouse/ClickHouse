@@ -322,8 +322,12 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 
     auto & output = outputs.front();
 
+    auto & input = inputs.front();
+
     if (output_chunk)
     {
+        input.setNotNeeded();
+
         if (!output.canPush())
             return Status::PortFull;
 
@@ -331,8 +335,6 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
         output_chunk.clear();
         return Status::PortFull;
     }
-
-    auto & input = inputs.front();
 
     if (!task)
     {
@@ -342,7 +344,7 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
             return Status::NeedData;
         }
 
-        auto data = input.pullData();
+        auto data = input.pullData(true);
         if (data.exception)
         {
             output.pushException(data.exception);
@@ -352,6 +354,10 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
         if (!data.chunk.hasChunkInfo())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
         task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
+    }
+    else
+    {
+        input.setNotNeeded();
     }
 
     if (task->finished)
@@ -397,7 +403,7 @@ void DelayedJoinedBlocksTransform::work()
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
-    for (auto & output :outputs)
+    for (auto & output : outputs)
     {
         if (!output.canPush())
             return Status::PortFull;
@@ -405,7 +411,6 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
     if (finished)
     {
-
         for (auto & output : outputs)
         {
             Chunk chunk;

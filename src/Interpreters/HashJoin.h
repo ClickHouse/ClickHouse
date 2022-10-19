@@ -335,6 +335,8 @@ public:
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
+
+        bool released = false;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
