@@ -89,6 +89,7 @@ public:
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
+    ObjectStoragePtr getObjectStorage() override;
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
