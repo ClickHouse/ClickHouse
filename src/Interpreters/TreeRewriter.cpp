@@ -45,7 +45,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
@@ -787,17 +786,17 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 }
 
 
-static void recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(const IAST & from, ASTExpressionList & into)
+void recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(const IAST & from, ASTExpressionList & into)
 {
     checkStackSize();
-    
+
     const auto * function = from.as<ASTFunction>();
     if (!function)
         return;
-        
+
     if (AggregateUtils::isAggregateFunction(*function))
         return;
-    
+
     for (const auto & child : function->arguments->children)
     {
         if (child->as<ASTIdentifier>())
@@ -808,7 +807,7 @@ static void recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(const 
 }
 
 /// Expand GROUP BY ALL by listing all the SELECT-ed columns that are not expressions of the aggregate functions
-static void expandGroupByAll(ASTSelectQuery * select_query)
+void expandGroupByAll(ASTSelectQuery * select_query)
 {
     auto group_expression_list = std::make_shared<ASTExpressionList>();
 
@@ -817,7 +816,7 @@ static void expandGroupByAll(ASTSelectQuery * select_query)
         if (expr->as<ASTIdentifier>())
             group_expression_list->children.push_back(expr);
         else
-            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(expr, group_expression_list);
+            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(*expr, *group_expression_list);
     }
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
