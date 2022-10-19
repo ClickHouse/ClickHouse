@@ -333,11 +333,13 @@ namespace DB
     {
         /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
 
-        if (modified_julian_day < -678941)
-            modified_julian_day = -678941;
+        if constexpr (is_signed_v<decltype(modified_julian_day)> && std::numeric_limits<decltype(modified_julian_day)>::lowest() < -678941)
+            if (modified_julian_day < -678941)
+                modified_julian_day = -678941;
 
-        if (modified_julian_day > 2973119)
-            modified_julian_day = 2973119;
+        if constexpr (std::numeric_limits<decltype(modified_julian_day)>::max() > 2973119)
+            if (modified_julian_day > 2973119)
+                modified_julian_day = 2973119;
 
         const auto a         = modified_julian_day + 678575;
         const auto quad_cent = gd::div(a, 146097);
