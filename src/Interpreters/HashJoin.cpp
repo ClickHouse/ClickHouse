@@ -232,6 +232,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         data->type = Type::CROSS;
         sample_block_with_columns_to_add = right_sample_block;
     }
+    else if (table_join->getClauses().empty())
+    {
+        data->type = Type::EMPTY;
+        sample_block_with_columns_to_add = right_sample_block;
+    }
     else if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
