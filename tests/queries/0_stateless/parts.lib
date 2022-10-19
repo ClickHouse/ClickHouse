@@ -11,8 +11,8 @@ function wait_for_delete_empty_parts()
         res=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.parts WHERE database='$database' AND table='$table' AND active AND rows=0")
         [[ $res -eq 0 ]] && return 0
 
-        sleep 1.5
-        timeout=$(echo "$timeout - 1.5" | bc)
+        sleep 2
+        timeout=$((timeout - 2))
     done
 
     echo "Timed out while waiting for delete empty parts!" >&2
@@ -30,8 +30,8 @@ function wait_for_delete_inactive_parts()
         res=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.parts WHERE database='$database' AND table='$table' AND not active")
         [[ $res -eq 0 ]] && return 0
 
-        sleep 1.5
-        timeout=$(echo "$timeout - 1.5" | bc)
+        sleep 2
+        timeout=$((timeout - 2))
     done
 
     echo "Timed out while waiting for delete inactive parts!" >&2
