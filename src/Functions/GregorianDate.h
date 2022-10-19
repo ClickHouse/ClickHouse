@@ -329,7 +329,8 @@ namespace DB
     }
 
     template <typename YearT>
-    OrdinalDate<YearT>::OrdinalDate(is_integer auto modified_julian_day)
+    template <is_integer TDay>
+    OrdinalDate<YearT>::OrdinalDate(TDay modified_julian_day)
     {
         /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
 
