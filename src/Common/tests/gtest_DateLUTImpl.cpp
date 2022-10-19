@@ -133,6 +133,7 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 24237 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8078 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 435736 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 435757 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 26144180 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 1568650680 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 1568650811 /*time_t*/);
@@ -193,6 +194,7 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 23641 /*unsigned*/); // ?
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 7880 /*unsigned*/); // ?
     EXPECT_EQ(lut.toRelativeHourNum(time), 0 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 24 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 0 /*time_t*/);
@@ -254,6 +256,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 25273 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8424 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 1192873 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 1192897 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 71572397 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 4294343520 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 4294343872 /*time_t*/);
