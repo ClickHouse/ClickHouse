@@ -196,7 +196,8 @@ public:
         this->data(place).deserialize(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool MergeResult>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto arguments = this->data(place).getArguments(this->argument_types);
         ColumnRawPtrs arguments_raw(arguments.size());
@@ -205,7 +206,20 @@ public:
 
         assert(!arguments.empty());
         nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
-        nested_func->insertResultInto(getNestedPlace(place), to, arena);
+        if constexpr (MergeResult)
+            nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
+        else
+            nested_func->insertResultInto(getNestedPlace(place), to, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     size_t sizeOfData() const override
