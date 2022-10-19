@@ -122,7 +122,7 @@ detach table rmt1;
 
 -- create a gap in block numbers buy dropping part
 insert into rmt2 values (300);
-alter table rmt2 drop part 'all_19_19_0';
+alter table rmt2 drop part 'all_19_19_0';   -- remove 200
 insert into rmt2 values (400);
 insert into rmt2 values (500);
 insert into rmt2 values (600);
@@ -135,8 +135,8 @@ select sleep(2) format Null; -- increases probability of reproducing the issue
 -- rmt1 will mimic rmt2, but will not be able to fetch parts for a while
 system stop replicated sends rmt2;
 attach table rmt1;
--- rmt1 should not show the value (100) from dropped part
-select throwIf(n = 100) from rmt1 format Null;
+-- rmt1 should not show the value (200) from dropped part
+select throwIf(n = 200) from rmt1 format Null;
 select 11, arraySort(groupArray(n)) from rmt2;
 
 system start replicated sends rmt2;
