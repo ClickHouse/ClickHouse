@@ -40,7 +40,15 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 denominator_x = sx2 * sx2 / (nx * nx * (nx - 1));
         Float64 denominator_y = sy2 * sy2 / (ny * ny * (ny - 1));
 
-        return numerator / (denominator_x + denominator_y);
+        auto result = numerator / (denominator_x + denominator_y);
+
+        if (result <= 0 || std::isinf(result) || isNaN(result))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot calculate p_value, because the t-distribution \
+                has inappropriate value of degrees of freedom (={}). It should be > 0", result);
+
+        return result;
     }
 
     std::tuple<Float64, Float64> getResult() const
@@ -51,14 +59,6 @@ struct WelchTTestData : public TTestMoments<Float64>
         /// t-statistic
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
-
-        auto degrees_of_freedom = getDegreesOfFreedom();
-
-        if (degrees_of_freedom <= 0 || std::isinf(degrees_of_freedom) || isNaN(degrees_of_freedom))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot calculate p_value, because the t-distribution \
-                has inappropriate value of degrees of freedom (={}). It should be > 0", degrees_of_freedom);
 
         auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
         Float64 pvalue = 0;
