@@ -33,199 +33,6 @@ namespace ErrorCodes
 namespace
 {
 
-struct ToExtendedRelativeYearNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeYearNum";
-
-    static inline Int16 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYear(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYear(static_cast<time_t>(t));
-    }
-    static inline Int16 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYear(ExtendedDayNum(d));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYear(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeQuarterNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeQuarterNum";
-
-    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeQuarterNum(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeQuarterNum(static_cast<time_t>(t));
-    }
-    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeQuarterNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeMonthNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeMonthNum";
-
-    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMonthNum(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMonthNum(static_cast<time_t>(t));
-    }
-    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMonthNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeWeekNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeWeekNum";
-
-    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeWeekNum(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeWeekNum(static_cast<time_t>(t));
-    }
-    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeWeekNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeDayNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeDayNum";
-
-    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDayNum(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDayNum(static_cast<time_t>(t));
-    }
-    static inline Int32 execute(Int32 d, const DateLUTImpl &)
-    {
-        return static_cast<ExtendedDayNum>(d);
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
-    {
-        return static_cast<DayNum>(d);
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeHourNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeHourNum";
-
-    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toStableRelativeHourNum(t);
-    }
-    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toStableRelativeHourNum(static_cast<time_t>(t));
-    }
-    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toStableRelativeHourNum(ExtendedDayNum(d));
-    }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toStableRelativeHourNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeMinuteNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeMinuteNum";
-
-    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMinuteNum(t);
-    }
-    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMinuteNum(static_cast<time_t>(t));
-    }
-    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMinuteNum(ExtendedDayNum(d));
-    }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toRelativeMinuteNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToExtendedRelativeSecondNumImpl
-{
-    static constexpr auto name = "toExtendedRelativeSecondNum";
-
-    static inline Int64 execute(Int64 t, const DateLUTImpl &)
-    {
-        return t;
-    }
-    static inline UInt32 execute(UInt32 t, const DateLUTImpl &)
-    {
-        return t;
-    }
-    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
-    }
-    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.fromDayNum(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -256,7 +63,7 @@ public:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -305,21 +112,21 @@ public:
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
-            dispatchForColumns<ToExtendedRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeYearNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "quarter" || unit == "qq" || unit == "q")
-            dispatchForColumns<ToExtendedRelativeQuarterNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeQuarterNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "month" || unit == "mm" || unit == "m")
-            dispatchForColumns<ToExtendedRelativeMonthNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMonthNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "week" || unit == "wk" || unit == "ww")
-            dispatchForColumns<ToExtendedRelativeWeekNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeWeekNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToExtendedRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeDayNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "hour" || unit == "hh" || unit == "h")
-            dispatchForColumns<ToExtendedRelativeHourNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeHourNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
-            dispatchForColumns<ToExtendedRelativeMinuteNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMinuteNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "second" || unit == "ss" || unit == "s")
-            dispatchForColumns<ToExtendedRelativeSecondNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeSecondNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
