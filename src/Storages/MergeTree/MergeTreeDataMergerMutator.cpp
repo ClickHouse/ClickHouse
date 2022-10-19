@@ -333,6 +333,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         SimpleMergeSelector::Settings merge_settings;
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
+        merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
 
         if (aggressive)
             merge_settings.base = 1;
@@ -350,6 +351,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
         }
+
     }
 
     MergeTreeData::DataPartsVector parts;

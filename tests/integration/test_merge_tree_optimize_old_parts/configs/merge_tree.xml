@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <min_age_to_force_merge_seconds>2</min_age_to_force_merge_seconds>
+    </merge_tree>
+</clickhouse>

@@ -155,8 +155,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
-    if (storage.auto_optimize_partition_task)
-        storage.auto_optimize_partition_task->activateAndSchedule();
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
 

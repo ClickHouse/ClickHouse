@@ -38,21 +38,21 @@ def check_expected_result_or_fail(seconds, expected):
     assert ok
 
 
-def test_without_auto_optimize_merge_tree(start_cluster):
+def test_without_force_merge_old_parts(start_cluster):
     node.query("CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i;")
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
     node.query("INSERT INTO test SELECT 3")
 
     expected = TSV("""3\n""")
-    check_expected_result_or_fail(5, expected)
+    check_expected_result_or_fail(10, expected)
 
     node.query("DROP TABLE test;")
 
 
-def test_auto_optimize_merge_tree(start_cluster):
+def test_force_merge_old_parts(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS auto_optimize_partition_interval_seconds=5;"
+        "CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
     )
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
@@ -64,9 +64,9 @@ def test_auto_optimize_merge_tree(start_cluster):
     node.query("DROP TABLE test;")
 
 
-def test_auto_optimize_replicated_merge_tree(start_cluster):
+def test_force_merge_old_parts_replicated_merge_tree(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS auto_optimize_partition_interval_seconds=5;"
+        "CREATE TABLE test (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
     )
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
