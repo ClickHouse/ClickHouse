@@ -16,6 +16,9 @@ CREATE TABLE r2 (
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01509_parallel_quorum_insert_no_replicas', '2')
 ORDER BY tuple();
 
+SET insert_keeper_max_retries=100;
+SET insert_keeper_retry_max_backoff_ms=10;
+
 SET insert_quorum_parallel=1;
 
 SET insert_quorum=3;
@@ -99,5 +102,5 @@ SELECT 'insert happened';
 SELECT COUNT() FROM r1;
 SELECT COUNT() FROM r2;
 
-DROP TABLE IF EXISTS r1;
-DROP TABLE IF EXISTS r2;
+DROP TABLE IF EXISTS r1 SYNC;
+DROP TABLE IF EXISTS r2 SYNC;

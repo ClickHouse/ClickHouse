@@ -1,4 +1,6 @@
 -- Tags: long, no-parallel
+SET insert_keeper_max_retries=1000;
+SET insert_keeper_retry_max_backoff_ms=10;
 
 -- regression for MEMORY_LIMIT_EXCEEDED error because of deferred final part flush
 
