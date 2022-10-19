@@ -2209,6 +2209,10 @@ struct ToNumberMonotonicity
 
         /// Integer cases.
 
+        /// Do not support 128 bit integers and decimals for now.
+        if (!isNativeInteger(type))
+            return {};
+
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
