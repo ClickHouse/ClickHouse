@@ -798,7 +798,7 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
-std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
+MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
     const String & partition_id,
@@ -943,7 +943,7 @@ bool StorageMergeTree::merge(
 
     SelectPartsDecision select_decision;
 
-    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry;
+    MergeMutateSelectedEntryPtr merge_mutate_entry;
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -989,7 +989,7 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
     return currently_merging_mutating_parts.contains(part);
 }
 
-std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
+MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
@@ -1132,7 +1132,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
+    MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
