@@ -478,7 +478,10 @@ struct Operator
 {
     Operator() = default;
 
-    Operator(const std::string & function_name_, int priority_, int arity_ = 2, OperatorType type_ = OperatorType::None)
+    Operator(const std::string & function_name_,
+             int priority_,
+             int arity_,
+             OperatorType type_ = OperatorType::None)
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
     OperatorType type;
@@ -507,9 +510,7 @@ class Layer
 {
 public:
     explicit Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = true) :
-        allow_alias(allow_alias_), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-    {
-    }
+        allow_alias(allow_alias_), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
     virtual ~Layer() = default;
 
@@ -810,10 +811,10 @@ public:
 };
 
 
-class OrdinaryFunctionLayer : public Layer
+class FunctionLayer : public Layer
 {
 public:
-    explicit OrdinaryFunctionLayer(String function_name_, bool allow_function_parameters_ = true)
+    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true)
         : function_name(function_name_), allow_function_parameters(allow_function_parameters_){}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
@@ -958,7 +959,7 @@ public:
 
             if (parameters)
             {
-                function_node->parameters = parameters;
+                function_node->parameters = std::move(parameters);
                 function_node->children.push_back(function_node->parameters);
             }
 
@@ -991,7 +992,7 @@ public:
                     return false;
             }
 
-            elements = {function_node};
+            elements = {std::move(function_node)};
             finished = true;
         }
 
@@ -1990,9 +1991,9 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
         return std::make_unique<DateDiffLayer>();
     else if (function_name_lowercase == "grouping")
-        return std::make_unique<OrdinaryFunctionLayer>(function_name_lowercase, allow_function_parameters_);
+        return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
     else
-        return std::make_unique<OrdinaryFunctionLayer>(function_name, allow_function_parameters_);
+        return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_);
 }
 
 
@@ -2141,22 +2142,22 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
         {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
         {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
-        {"LIKE",          Operator("like",            9)},
-        {"ILIKE",         Operator("ilike",           9)},
-        {"NOT LIKE",      Operator("notLike",         9)},
-        {"NOT ILIKE",     Operator("notILike",        9)},
-        {"IN",            Operator("in",              9)},
-        {"NOT IN",        Operator("notIn",           9)},
-        {"GLOBAL IN",     Operator("globalIn",        9)},
-        {"GLOBAL NOT IN", Operator("globalNotIn",     9)},
+        {"LIKE",          Operator("like",            9,  2)},
+        {"ILIKE",         Operator("ilike",           9,  2)},
+        {"NOT LIKE",      Operator("notLike",         9,  2)},
+        {"NOT ILIKE",     Operator("notILike",        9,  2)},
+        {"IN",            Operator("in",              9,  2)},
+        {"NOT IN",        Operator("notIn",           9,  2)},
+        {"GLOBAL IN",     Operator("globalIn",        9,  2)},
+        {"GLOBAL NOT IN", Operator("globalNotIn",     9,  2)},
         {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
-        {"+",             Operator("plus",            11)},
-        {"-",             Operator("minus",           11)},
-        {"*",             Operator("multiply",        12)},
-        {"/",             Operator("divide",          12)},
-        {"%",             Operator("modulo",          12)},
-        {"MOD",           Operator("modulo",          12)},
-        {"DIV",           Operator("intDiv",          12)},
+        {"+",             Operator("plus",            11, 2)},
+        {"-",             Operator("minus",           11, 2)},
+        {"*",             Operator("multiply",        12, 2)},
+        {"/",             Operator("divide",          12, 2)},
+        {"%",             Operator("modulo",          12, 2)},
+        {"MOD",           Operator("modulo",          12, 2)},
+        {"DIV",           Operator("intDiv",          12, 2)},
         {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
         {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
         {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
