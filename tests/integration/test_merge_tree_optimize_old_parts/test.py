@@ -7,7 +7,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/zookeeper_config.xml", "configs/merge_tree.xml"],
+    main_configs=["configs/zookeeper_config.xml"],
     with_zookeeper=True,
 )
 
@@ -22,57 +22,67 @@ def start_cluster():
         cluster.shutdown()
 
 
-def check_expected_result_or_fail(seconds, expected):
+def get_part_number(table_name):
+    return TSV(
+        node.query(
+            f"SELECT count(*) FROM system.parts where table='{table_name}' and active=1"
+        )
+    )
+
+
+def check_expected_part_number(seconds, table_name, expected):
     ok = False
     for i in range(int(seconds) * 2):
-        result = TSV(
-            node.query(
-                "SELECT count(*) FROM system.parts where table='test' and active=1"
-            )
-        )
+        result = get_part_number(table_name)
         if result == expected:
             ok = True
             break
         else:
-            time.sleep(0.5)
+            time.sleep(1)
     assert ok
 
 
 def test_without_force_merge_old_parts(start_cluster):
-    node.query("CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i;")
-    node.query("INSERT INTO test SELECT 1")
-    node.query("INSERT INTO test SELECT 2")
-    node.query("INSERT INTO test SELECT 3")
+    node.query(
+        "CREATE TABLE test_without_merge (i Int64) ENGINE = MergeTree ORDER BY i;"
+    )
+    node.query("INSERT INTO test_without_merge SELECT 1")
+    node.query("INSERT INTO test_without_merge SELECT 2")
+    node.query("INSERT INTO test_without_merge SELECT 3")
 
     expected = TSV("""3\n""")
-    check_expected_result_or_fail(10, expected)
+    # verify that the parts don't get merged
+    for i in range(10):
+        if get_part_number("test_without_merge") != expected:
+            assert False
+        time.sleep(1)
 
-    node.query("DROP TABLE test;")
+    node.query("DROP TABLE test_without_merge;")
 
 
 def test_force_merge_old_parts(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
+        "CREATE TABLE test_with_merge (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
     )
-    node.query("INSERT INTO test SELECT 1")
-    node.query("INSERT INTO test SELECT 2")
-    node.query("INSERT INTO test SELECT 3")
+    node.query("INSERT INTO test_with_merge SELECT 1")
+    node.query("INSERT INTO test_with_merge SELECT 2")
+    node.query("INSERT INTO test_with_merge SELECT 3")
 
     expected = TSV("""1\n""")
-    check_expected_result_or_fail(10, expected)
+    check_expected_part_number(10, "test_with_merge", expected)
 
-    node.query("DROP TABLE test;")
+    node.query("DROP TABLE test_with_merge;")
 
 
 def test_force_merge_old_parts_replicated_merge_tree(start_cluster):
     node.query(
-        "CREATE TABLE test (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
+        "CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
     )
-    node.query("INSERT INTO test SELECT 1")
-    node.query("INSERT INTO test SELECT 2")
-    node.query("INSERT INTO test SELECT 3")
+    node.query("INSERT INTO test_replicated SELECT 1")
+    node.query("INSERT INTO test_replicated SELECT 2")
+    node.query("INSERT INTO test_replicated SELECT 3")
 
     expected = TSV("""1\n""")
-    check_expected_result_or_fail(10, expected)
+    check_expected_part_number(10, "test_replicated", expected)
 
-    node.query("DROP TABLE test;")
+    node.query("DROP TABLE test_replicated;")
