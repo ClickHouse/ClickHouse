@@ -468,7 +468,9 @@ public:
         {
             block = left_reader.read();
             if (!block)
+            {
                 return {};
+            }
 
             Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
             block = std::move(blocks[current_idx]);
