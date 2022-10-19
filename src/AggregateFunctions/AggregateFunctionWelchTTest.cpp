@@ -52,6 +52,14 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
 
+        auto degrees_of_freedom = getDegreesOfFreedom();
+
+        if (degrees_of_freedom <= 0 || std::isinf(degrees_of_freedom) || isNaN(degrees_of_freedom))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot calculate p_value, because the t-distribution \
+                has inappropriate value of degrees of freedom (={}). It should be > 0", degrees_of_freedom);
+
         auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
         Float64 pvalue = 0;
         if (t_stat > 0)
