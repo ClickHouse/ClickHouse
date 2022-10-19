@@ -1110,7 +1110,10 @@ private:
 
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
-    ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
+    ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node,
+        const QueryTreeNodePtr & lambda_node_to_resolve,
+        const QueryTreeNodes & lambda_arguments,
+        IdentifierResolveScope & scope);
 
     ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
 
@@ -3103,7 +3106,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     auto lambda_expression_to_resolve = expression_node->clone();
                     IdentifierResolveScope lambda_scope(expression_node, &scope /*parent_scope*/);
-                    node_projection_names = resolveLambda(lambda_expression_to_resolve, {node}, lambda_scope);
+                    node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
                 }
@@ -3398,21 +3401,25 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
   * Lambda expression can be resolved into list node. It is caller responsibility to handle it properly.
   *
   * lambda_node - node that must have LambdaNode type.
+  * lambda_node_to_resolve - lambda node to resolve that must have LambdaNode type.
   * arguments - lambda arguments.
   * scope - lambda scope. It is client responsibility to create it.
   *
   * Resolve steps:
   * 1. Validate arguments.
-  * 2. Register lambda in lambdas in resolve process. This is necessary to prevent recursive lambda resolving.
+  * 2. Register lambda node in lambdas in resolve process. This is necessary to prevent recursive lambda resolving.
   * 3. Initialize scope with lambda aliases.
   * 4. Validate lambda argument names, and scope expressions.
   * 5. Resolve lambda body expression.
-  * 6. Deregister lambda from lambdas in resolve process.
+  * 6. Deregister lambda node from lambdas in resolve process.
   */
-ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node,
+    const QueryTreeNodePtr & lambda_node_to_resolve,
+    const QueryTreeNodes & lambda_arguments,
+    IdentifierResolveScope & scope)
 {
-    auto & lambda = lambda_node->as<LambdaNode &>();
-    auto & lambda_arguments_nodes = lambda.getArguments().getNodes();
+    auto & lambda_to_resolve = lambda_node_to_resolve->as<LambdaNode &>();
+    auto & lambda_arguments_nodes = lambda_to_resolve.getArguments().getNodes();
     size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
@@ -3422,21 +3429,22 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     if (it != lambdas_in_resolve_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
-            lambda.formatASTForErrorMessage(),
+            lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
+    lambdas_in_resolve_process.emplace(lambda_node.get());
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Lambda {} expect {} arguments. Actual {}. In scope {}",
-            lambda.formatASTForErrorMessage(),
+            lambda_to_resolve.formatASTForErrorMessage(),
             arguments_size,
             lambda_arguments_nodes_size,
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
     QueryExpressionsAliasVisitor visitor(scope);
-    visitor.visit(lambda.getExpression());
+    visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
       * Additionally validate that there are no aliases with same name as lambda arguments.
@@ -3467,10 +3475,10 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         lambda_new_arguments_nodes.push_back(lambda_arguments[i]);
     }
 
-    lambda.getArguments().getNodes() = std::move(lambda_new_arguments_nodes);
+    lambda_to_resolve.getArguments().getNodes() = std::move(lambda_new_arguments_nodes);
 
     /// Lambda body expression is resolved as standard query expression node.
-    auto result_projection_names = resolveExpressionNode(lambda.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+    auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     lambdas_in_resolve_process.erase(lambda_node.get());
 
@@ -3770,7 +3778,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
-            ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_clone, function_arguments, lambda_scope);
+            ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
             node = resolved_lambda.getExpression();
@@ -3906,7 +3914,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         ProjectionNames lambda_projection_names;
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
-            auto lambda_to_resolve = function_arguments[function_lambda_argument_index]->clone();
+            auto & lambda_argument = function_arguments[function_lambda_argument_index];
+            auto lambda_to_resolve = lambda_argument->clone();
             auto & lambda_to_resolve_typed = lambda_to_resolve->as<LambdaNode &>();
 
             const auto & lambda_argument_names = lambda_to_resolve_typed.getArgumentNames();
@@ -3943,7 +3952,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
-            lambda_projection_names = resolveLambda(lambda_to_resolve, lambda_arguments, lambda_scope);
+            lambda_projection_names = resolveLambda(lambda_argument, lambda_to_resolve, lambda_arguments, lambda_scope);
 
             if (auto * lambda_list_node_result = lambda_to_resolve_typed.getExpression()->as<ListNode>())
             {
