@@ -267,7 +267,7 @@ protected:
         Poco::Event event;
 
         /// To allow joining to the same
-        std::atomic<bool> finished{true};
+        std::atomic<bool> finished{false};
     };
     std::shared_ptr<State> state;
 
