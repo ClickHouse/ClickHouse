@@ -132,6 +132,16 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             ErrorCodes::INCORRECT_DATA,
             "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
     }
+    else
+    {
+        std::unordered_set<std::string_view> names_set;
+        for (const auto & name : column_names)
+        {
+            if (names_set.contains(name))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
+            names_set.insert(name);
+        }
+    }
 
     for (size_t i = 0; i != column_names.size(); ++i)
     {
@@ -224,6 +234,9 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     names_order.reserve(names_and_types.size());
     for (const auto & [name, type] : names_and_types)
     {
+        if (names_to_types.contains(name))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
+
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
             names_to_types[name] = hint_it->second;
@@ -240,8 +253,13 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// We reached eof.
             break;
 
+        std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
         for (auto & [name, new_type] : new_names_and_types)
         {
+            if (names_set.contains(name))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
+            names_set.insert(name);
+
             auto it = names_to_types.find(name);
             /// If we didn't see this column before, just add it.
             if (it == names_to_types.end())

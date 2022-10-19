@@ -175,4 +175,10 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
     transform_simple_types(types);
 }
 
+void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
+{
+    DataTypes types = {type};
+    transformTypesRecursively(types, [callback](auto & data_types){ callback(data_types[0]); }, {});
+}
+
 }
