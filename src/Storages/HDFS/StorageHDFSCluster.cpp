@@ -33,11 +33,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 StorageHDFSCluster::StorageHDFSCluster(
     ContextPtr context_,
     String cluster_name_,
