@@ -587,9 +587,6 @@ private:
 
     void mutationsUpdatingTask();
 
-    /** Auto optimize partitions
-     */
-    void autoOptimizePartitionTask();
     /** Clone data from another replica.
       * If replica can not be cloned throw Exception.
       */

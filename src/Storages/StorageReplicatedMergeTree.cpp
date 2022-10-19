@@ -4452,6 +4452,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
         local_context);
 }
 
+
 bool StorageReplicatedMergeTree::optimize(
     const ASTPtr &,
     const StorageMetadataPtr &,
@@ -4581,6 +4582,9 @@ bool StorageReplicatedMergeTree::optimize(
     }
 
     table_lock.reset();
+
+    for (auto & merge_entry : merge_entries)
+        waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context);
 
     return assigned;
 }

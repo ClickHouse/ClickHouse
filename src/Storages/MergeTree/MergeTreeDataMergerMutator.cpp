@@ -351,7 +351,6 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
         }
-
     }
 
     MergeTreeData::DataPartsVector parts;
