@@ -31,6 +31,40 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
     }});
     setInMemoryMetadata(storage_metadata);
 }
+static void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UInt64 & total_size)
+{
+    /// Files or directories of detached part may not exist. Only count the size of existing files.
+    if (disk->isFile(from))
+    {
+        try
+        {
+            total_size += disk->getFileSize(from);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
+    }
+    std::vector<std::string> files;
+    try
+    {
+        disk->listFiles(from, files);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    for (const auto & file : files)
+        calculateTotalSizeOnDiskImpl(disk, fs::path(from) / file, total_size);
+}
+
+static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
+{
+    UInt64 total_size = 0;
+    calculateTotalSizeOnDiskImpl(disk, from, total_size);
+    return total_size;
+}
 
 Pipe StorageSystemDetachedParts::read(
     const Names & /* column_names */,
@@ -58,18 +92,7 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
-
-            UInt64 bytes_on_disk = 0;
-            try
-            {
-                /// Files of detached part may be not exist, and then set file size is 0.
-                bytes_on_disk = DataPartStorageOnDisk::calculateTotalSizeOnDisk(
-                        p.disk, fs::path(info.data->getRelativeDataPath()) / detached_part_path);
-            }
-            catch (...)
-            {}
-
-            new_columns[i++]->insert(bytes_on_disk);
+            new_columns[i++]->insert(calculateTotalSizeOnDisk(p.disk, fs::path(info.data->getRelativeDataPath()) / detached_part_path));
             new_columns[i++]->insert(p.disk->getName());
             new_columns[i++]->insert((fs::path(info.data->getFullPathOnDisk(p.disk)) / detached_part_path).string());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());

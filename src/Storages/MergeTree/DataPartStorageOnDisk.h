@@ -113,8 +113,6 @@ public:
 
     DataPartStorageBuilderPtr getBuilder() const override;
 
-    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from);
-
 private:
     VolumePtr volume;
     std::string root_path;
