@@ -33,7 +33,7 @@ private:
     size_t num_finished_port_pairs = 0;
 
     bool is_negative;
-    std::list<PortsData> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
+    std::list<PortsData> queue; /// used when offset is negative, storing at least offset rows
     UInt64 rows_in_queue = 0;
 
     bool popWithoutCut();

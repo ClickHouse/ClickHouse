@@ -67,7 +67,6 @@ IProcessor::Status LimitTransform::prepare(
 
     auto process_pair = [&](size_t pos)
     {
-        //auto status = is_negative ? preparePairNegative(ports_data[pos]) : preparePair(ports_data[pos]);
         auto status = is_negative ? preparePairNegative(ports_data[pos]) : preparePair(ports_data[pos]);
 
         switch (status)
