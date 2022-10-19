@@ -113,17 +113,23 @@ if __name__ == "__main__":
     paths = {
         "runlog.log": run_log_path,
         "TLPWhere": os.path.join(workspace_path, "TLPWhere.log"),
-        "TLPGroupBy": os.path.join(workspace_path, "TLPGroupBy.log"),
-        "TLPHaving": os.path.join(workspace_path, "TLPHaving.log"),
-        "TLPWhereGroupBy": os.path.join(workspace_path, "TLPWhereGroupBy.log"),
-        "TLPDistinct": os.path.join(workspace_path, "TLPDistinct.log"),
-        "TLPAggregate": os.path.join(workspace_path, "TLPAggregate.log"),
+        "TLPAggregate.err": os.path.join(workspace_path, "TLPAggregate.err"),
+        "TLPAggregate.out": os.path.join(workspace_path, "TLPAggregate.out"),
+        "TLPDistinct.err": os.path.join(workspace_path, "TLPDistinct.err"),
+        "TLPDistinct.out": os.path.join(workspace_path, "TLPDistinct.out"),
+        "TLPGroupBy.err": os.path.join(workspace_path, "TLPGroupBy.err"),
+        "TLPGroupBy.out": os.path.join(workspace_path, "TLPGroupBy.out"),
+        "TLPHaving.err": os.path.join(workspace_path, "TLPHaving.err"),
+        "TLPHaving.out": os.path.join(workspace_path, "TLPHaving.out"),
+        "TLPWhere.err": os.path.join(workspace_path, "TLPWhere.err"),
+        "TLPWhere.out": os.path.join(workspace_path, "TLPWhere.out"),
+        "TLPWhereGroupBy.err": os.path.join(workspace_path, "TLPWhereGroupBy.err"),
+        "TLPWhereGroupBy.out": os.path.join(workspace_path, "TLPWhereGroupBy.out"),
+        "clickhouse-server.log": os.path.join(workspace_path, "clickhouse-server"),
+        "clickhouse-server.log.err": os.path.join(workspace_path, "clickhouse-server"),
         "stderr.log": os.path.join(workspace_path, "stderr.log"),
         "stdout.log": os.path.join(workspace_path, "stdout.log"),
-        "clickhouse-server.log": os.path.join(workspace_path, "clickhouse-server.log"),
-        "check_status.tsv": os.path.join(workspace_path, "check_status.tsv"),
-        "report.html": os.path.join(workspace_path, "report.html"),
-        "logs.tar.gz": os.path.join(workspace_path, "logs.tar.gz"),
+        "test_results.tsv": os.path.join(workspace_path, "test_results.tsv"),
     }
 
     s3_helper = S3Helper()
@@ -135,14 +141,6 @@ if __name__ == "__main__":
             paths[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["stderr.log"]:
-        report_url = paths["stderr.log"]
-    if paths["stdout.log"]:
-        report_url = paths["stdout.log"]
-    if paths["clickhouse-server.log"]:
-        report_url = paths["clickhouse-server.log"]
-    if paths["report.html"]:
-        report_url = paths["report.html"]
 
     # Try to get status message saved by the SQLancer
     try:
@@ -152,17 +150,19 @@ if __name__ == "__main__":
             status = status_f.readline().rstrip("\n")
 
         with open(
+            os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
+        ) as summary_f:
+            for line in summary_f:
+                l=line.split('\t')
+                test_result.append((l[0],l[1]))
+
+        with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
         ) as desc_f:
             description = desc_f.readline().rstrip("\n")[:140]
     except:
         status = "failure"
         description = "Task failed: $?=" + str(retcode)
-
-    if "fail" in status:
-        test_result = [(description, "FAIL")]
-    else:
-        status = "success"
 
     ch_helper = ClickHouseHelper()
 
