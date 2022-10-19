@@ -248,7 +248,7 @@ public:
 
         for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
         {
-            auto & type = arguments[i];
+            const auto & type = arguments[i];
             WhichDataType which(type);
             if (!which.isFloat() && !which.isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
