@@ -5320,10 +5320,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (auto & node : with_nodes)
     {
         auto * subquery_node = node->as<QueryNode>();
-        if (!subquery_node || !subquery_node->isCTE())
+        auto * union_node = node->as<UnionNode>();
+
+        bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
+
+        if (!subquery_is_cte)
             continue;
 
-        const auto & cte_name = subquery_node->getCTEName();
+        const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
+
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -5335,7 +5340,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     std::erase_if(with_nodes, [](const QueryTreeNodePtr & node)
     {
         auto * subquery_node = node->as<QueryNode>();
-        return subquery_node && subquery_node->isCTE();
+        auto * union_node = node->as<UnionNode>();
+
+        return (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
     });
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
@@ -5364,7 +5371,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       *
       * Example: SELECT id FROM test_table AS t1 INNER JOIN test_table AS t2 ON t1.id = t2.id INNER JOIN test_table AS t3 ON t1.id = t3.id
       * In first join expression ON t1.id = t2.id t1.id is resolved into test_table.id column.
-      * IN second join expression ON t1.id = t3.id t1.id must be resolved into join column that wrap test_table.id column.
+      * In second join expression ON t1.id = t3.id t1.id must be resolved into test_table.id column after first JOIN.
       */
     scope.use_identifier_lookup_to_result_cache = false;
 
