@@ -156,3 +156,48 @@ Result:
 │          -1 │
 └─────────────┘
 ```
+
+## multiplyDecimal(a, b[, result_scale])
+## divideDecimal(a, b[, result_scale])
+
+Performs multiplication/division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Result scale can be explicitely specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the scale of first argument.
+
+**Syntax**
+
+```sql
+multiplyDecimal(a, b[, result_scale])
+divideDecimal(a, b[, result_scale])
+```
+
+**Arguments**
+
+-   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   The result of multiplication/division with given scale.
+
+Type: [Decimal256](../../sql-reference/data-types/decimal.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10);
+SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1);
+```
+
+Result:
+
+```text
+┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
+│                                                -5.7142857142 │
+└──────────────────────────────────────────────────────────────┘
+┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
+│                                                           25.2 │
+└────────────────────────────────────────────────────────────────┘
+```

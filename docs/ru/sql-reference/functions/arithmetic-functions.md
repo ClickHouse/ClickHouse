@@ -159,3 +159,49 @@ SELECT min2(-1, 2);
 └─────────────┘
 ```
 
+## multiplyDecimal(a, b[, result_scale])
+## divideDecimal(a, b[, result_scale])
+
+Совершает умножение/деление двух Decimal. Результат будет иметь тип [Decimal256](../../sql-reference/data-types/decimal.md).
+Scale (размер дробной части) результат можно явно задать аргументом `result_scale`  (целочисленная константа из интервала `[0, 76]`).
+Если этот аргумент не задан, то scale результата будет равен scale первого аргумента.
+
+**Синтаксис**
+
+```sql
+multiplyDecimal(a, b[, result_scale])
+divideDecimal(a, b[, result_scale])
+```
+
+**Аргументы**
+
+-   `a` — Первый сомножитель/делимое: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `b` — Второй сомножитель/делитель: [Decimal](../../sql-reference/data-types/decimal.md).
+-   `result_scale` — Scale результата: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Результат умножения/деления с заданным scale.
+
+Тип: [Decimal256](../../sql-reference/data-types/decimal.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10);
+SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1);
+```
+
+Результат:
+
+```text
+┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
+│                                                -5.7142857142 │
+└──────────────────────────────────────────────────────────────┘
+┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
+│                                                           25.2 │
+└────────────────────────────────────────────────────────────────┘
+```
+
