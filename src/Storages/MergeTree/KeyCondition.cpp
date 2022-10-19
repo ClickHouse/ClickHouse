@@ -1182,10 +1182,12 @@ bool KeyCondition::transformConstantWithValidFunctions(
             {
                 auto const_type = cur_node->result_type;
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
+                auto maybe_const_value_column = tryCastColumnAccurate({const_column, out_type, ""}, const_type);
 
-                if (const_value.isNull())
+                if (maybe_const_value_column == nullptr)
                     return false;
+
+                auto const_value = (*maybe_const_value_column)[0];
 
                 while (!chain.empty())
                 {

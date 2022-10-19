@@ -51,4 +51,14 @@ ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const Data
     return castColumn<CastType::accurateOrNull>(arg, type);
 }
 
+ColumnPtr tryCastColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
+try
+{
+    return castColumn<CastType::accurate>(arg, type);
+}
+catch (...)
+{
+    return nullptr;
+}
+
 }
