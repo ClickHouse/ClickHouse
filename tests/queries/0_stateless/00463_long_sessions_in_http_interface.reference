@@ -18,7 +18,7 @@ World
 And cannot be accessed for a non-existent user:
 1
 The temporary tables created in a session are not accessible without entering this session:
-0
+1
 A session successfully expire after a timeout:
 111
 A session successfully expire after a timeout and the session's temporary table shadows the permanent table:
