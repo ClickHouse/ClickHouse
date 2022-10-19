@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_DIVISION;
 }
 
 
@@ -31,7 +32,7 @@ struct DecimalOpHerpers
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        std::vector<UInt8> result(len1 + len2, 0);
+        std::vector<UInt8> result(77, 0);
         int i_n1 = 0;
         int i_n2;
 
@@ -67,7 +68,7 @@ struct DecimalOpHerpers
 
     static std::vector<UInt8> divide(std::vector<UInt8> number, Int256 divisor)
     {
-        std::vector<UInt8> result;
+        std::vector<UInt8> result(77, 0);
 
         int idx = 0;
         int temp = number[idx];
@@ -118,23 +119,41 @@ struct DivideDecimalsImpl
     static inline NO_SANITIZE_UNDEFINED Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
+        if (b.value == 0)
+            throw DB::Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+        if (a.value == 0)
+            return Decimal256(0);
+
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
-        std::vector<UInt8> a_digits = DecimalOpHerpers::getDigits(a.value * sign_a);
 
-        for (int i = 0; i < scale_b - scale_a; ++i)
+        std::vector<UInt8> a_digits = DecimalOpHerpers::getDigits(a.value * sign_a);
+        for (int i = a_digits.size() - 1; a_digits[i] == 0; --i)
+        {
+            a_digits.pop_back();
+            --scale_a;
+        }
+
+        while (!(b.value % 10))
+        {
+            b.value /= 10;
+            --scale_b;
+        }
+
+        auto product_scale = scale_a - scale_b;
+        for (int i = product_scale; i < result_scale; ++i)
         {
             a_digits.push_back(0);
         }
 
-        for (int i = 0; i < result_scale; ++i)
+        for (int i = product_scale; i > result_scale; --i)
         {
-            a_digits.push_back(0);
+            a_digits.pop_back();
         }
 
         auto divided = DecimalOpHerpers::divide(a_digits, b.value);
         if (divided.size() > 76)
-            throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(divided));
     }
@@ -154,18 +173,33 @@ struct MultiplyDecimalsImpl
         std::vector<UInt8> a_digits = DecimalOpHerpers::getDigits(a.value * sign_a);
         std::vector<UInt8> b_digits = DecimalOpHerpers::getDigits(b.value * sign_b);
 
+        for (int i = a_digits.size() - 1; a_digits[i] == 0; --i)
+        {
+            a_digits.pop_back();
+            --scale_a;
+        }
+
+        for (int i = b_digits.size() - 1; b_digits[i] == 0; --i)
+        {
+            b_digits.pop_back();
+            --scale_b;
+        }
+
         auto multiplied = DecimalOpHerpers::multiply(a_digits, b_digits);
 
-        if (result_scale > scale_a + scale_b)
-            for (UInt8 i = 0; i < result_scale - (scale_a + scale_b); ++i)
-                multiplied.push_back(0);
+        auto product_scale = scale_a + scale_b;
+        for (int i = product_scale; i < result_scale; ++i)
+        {
+            a_digits.push_back(0);
+        }
 
-        if (result_scale < scale_a + scale_b)
-            for (UInt8 i = 0; i < scale_a + scale_b - result_scale; ++i)
-                multiplied.pop_back();
+        for (int i = product_scale; i > result_scale; --i)
+        {
+            a_digits.pop_back();
+        }
 
         if (multiplied.size() > 76)
-            throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(multiplied));
     }
