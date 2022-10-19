@@ -266,7 +266,7 @@ protected:
         /// The state used in this object and inside the thread job.
         Poco::Event event;
 
-        /// To allow joining to the same
+        /// To allow joining to the same std::thread after finishing
         std::atomic<bool> finished{false};
     };
     std::shared_ptr<State> state;
