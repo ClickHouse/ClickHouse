@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
-
 #include <IO/WriteHelpers.h>
 
 
@@ -68,22 +67,23 @@ struct DecimalOpHerpers
 
     static std::vector<UInt8> divide(std::vector<UInt8> number, Int256 divisor)
     {
-        std::vector<UInt8> ans;
+        std::vector<UInt8> result;
 
         int idx = 0;
         int temp = number[idx];
         while (temp < divisor)
             temp = temp * 10 + (number[++idx]);
 
-        while (int(number.size()) > idx) {
-            ans.push_back(temp / divisor);
+        while (int(number.size()) > idx)
+        {
+            result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[++idx];
         }
 
-        if (ans.empty())
+        if (result.empty())
             return {0};
 
-        return ans;
+        return result;
     }
 
     static std::vector<UInt8> getDigits(Int256 x)
@@ -96,10 +96,12 @@ struct DecimalOpHerpers
         return result;
     }
 
-    static Int256 fromDigits(std::vector<UInt8> digits) {
+    static Int256 fromDigits(std::vector<UInt8> digits)
+    {
         Int256 result = 0;
         Int256 multiplier = 1;
-        for (auto i = digits.rbegin(); i != digits.rend(); ++i ) {
+        for (auto i = digits.rbegin(); i != digits.rend(); ++i )
+        {
             result += multiplier * (*i);
             multiplier *= 10;
         }
@@ -137,6 +139,7 @@ struct DivideDecimalsImpl
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(divided));
     }
 };
+
 
 struct MultiplyDecimalsImpl
 {
@@ -263,7 +266,6 @@ struct DecimalArithmeticsImpl
 };
 
 
-
 template <typename Transform>
 class FunctionsDecimalArithmetics : public IFunction
 {
@@ -282,17 +284,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3) {
+        if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception("Number of arguments for function " + getName() + " does not match: 2 or 3 expected",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
 
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
             throw Exception("Arguments for " + getName() + " function must be Decimal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 3 && !isUnsignedInteger(arguments[2].type))
-            throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() +
-                                    ". Should be constant Integer from range[0, 76]", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception("Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() +
+                                    ". Should be constant Integer from range[0, 76]", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         UInt16 scale = arguments.size() == 3 ? checkAndGetColumnConst<ColumnUInt16>(arguments[2].column.get())->getValue<UInt16>() :
                                              std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
@@ -306,10 +307,8 @@ public:
         if (scale <= 76)
             return std::make_shared<DataTypeDecimal256>(76, scale);
 
-        throw Exception{
-            "Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+        throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
