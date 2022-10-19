@@ -243,6 +243,9 @@ bool VersionMetadata::canBeRemoved()
     {
         /// Avoid access to Transaction log if transactions are not involved
 
+        if (creation_csn.load(std::memory_order_relaxed) == Tx::RolledBackCSN)
+            return true;
+
         TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
         if (!removal_lock)
             return false;
