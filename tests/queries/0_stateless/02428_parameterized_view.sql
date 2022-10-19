@@ -15,6 +15,10 @@ CREATE VIEW v1 AS SELECT * FROM Catalog WHERE Price={price:UInt64};
 SELECT Price FROM v1(price=20);
 SELECT Price FROM `v1`(price=20);
 
+set param_price=10;
+SELECT Price FROM v1;  -- { serverError UNKNOWN_QUERY_PARAMETER}
+SELECT Price FROM v1(price={price:UInt64});
+
 DETACH TABLE v1;
 ATTACH TABLE v1;
 

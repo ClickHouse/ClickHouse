@@ -145,7 +145,6 @@ public:
     bool has_query_parameters = false;
     bool hasQueryParameters() const { return has_query_parameters; }
     void setHasQueryParameters();
-    NameToNameMap getQueryParameterValues() const;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

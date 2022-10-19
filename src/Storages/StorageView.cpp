@@ -185,13 +185,14 @@ void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query,
     }
 }
 
-void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name)
+void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
     {
-        // If it's a view or merge table function, add a fake db.table name.
+        /// If it's a view or merge table function, add a fake db.table name.
+        /// For parameterized view, the function name is the db.view name, so add the function name
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
@@ -199,7 +200,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
             else if (table_function_name == "merge")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
-            else
+            else if (parameterized_view)
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_function_name);
 
         }
