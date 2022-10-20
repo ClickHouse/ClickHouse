@@ -53,9 +53,31 @@ IQueryTreeNode::IQueryTreeNode(size_t children_size)
     children.resize(children_size);
 }
 
+namespace
+{
+
+using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
+
+struct NodePairHash
+{
+    size_t operator()(const NodePair & node_pair) const
+    {
+        auto hash = std::hash<const IQueryTreeNode *>();
+
+        size_t result = 0;
+        boost::hash_combine(result, hash(node_pair.first));
+        boost::hash_combine(result, hash(node_pair.second));
+
+        return result;
+    }
+};
+
+}
+
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
 {
-    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_process;
+    std::vector<NodePair> nodes_to_process;
+    std::unordered_set<NodePair, NodePairHash> equals_pairs;
 
     nodes_to_process.emplace_back(this, &rhs);
 
@@ -66,6 +88,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
 
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
+
+        if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
+            continue;
 
         assert(lhs_node_to_compare);
         assert(rhs_node_to_compare);
@@ -121,6 +146,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
 
             nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
         }
+
+        equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
     }
 
     return true;
