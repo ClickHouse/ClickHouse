@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
+#include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
 
@@ -33,7 +34,7 @@ namespace ErrorCodes
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
-    return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
+    return Field(ServerUUID::get()).dump();
 }
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
@@ -53,32 +54,32 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    /// Shedule ourselves according to the timetable
-    /// Will reshedule in case of any errors
-    /// Note: sheduling ourselves from the middle of running function is safe
-    /// because TaskHolder has mutex inside and another thread which may pick up
-    /// us will wait until current execution will be finished.
-    task->scheduleAfter(check_period_ms);
+    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
+    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 1000 ms
+    const size_t immediately_ms = static_cast<size_t>(std::min(1000u, 100 * (consecutive_check_failures + 1)));
 
     try
     {
         bool replica_is_active = runImpl();
-        if (!replica_is_active)
+        if (replica_is_active)
         {
-            LOG_TEST(log, "Replica appeared not to be active. Resheduling restarting thread immediately");
-            task->schedule();
+            consecutive_check_failures = 0;
+            task->scheduleAfter(check_period_ms);
+        }
+        else
+        {
+            consecutive_check_failures++;
+            task->scheduleAfter(immediately_ms);
         }
     }
     catch (...)
     {
-        LOG_TEST(log, "Exception occured while activating replica. Task will be resheduled immediately");
-        /// In case of any exceptions we want to rerun the this task as fast as possible
-        /// And we do this before any other actions, because another exceptions may occur
-        task->schedule();
+        task->scheduleAfter(immediately_ms);
 
-        /// We couldn't activate table let's set it into readonly mode
+        /// We couldn't activate table let's set it into readonly mode if necessary
+        /// We do this after scheduling the task in case it throws
         partialShutdown();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        tryLogCurrentException(log, "Failed to restart the table. Will try again");
     }
 
     if (first_time)
@@ -124,8 +125,8 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
     catch (const Coordination::Exception &)
     {
-        /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
+        tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
         assert(storage.is_readonly);
         return false;
     }
@@ -295,7 +296,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->waitForEphemeralToDisappearIfAny(is_active_path);
+    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
@@ -340,10 +341,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
     storage.partial_shutdown_event.set();
     storage.replica_is_active_node = nullptr;
 
-
-    Stopwatch watch;
-    LOG_TRACE(log, "Waiting for background threads to finish");
-
     storage.merge_selecting_task->deactivate();
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
@@ -359,8 +356,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
         storage.background_operations_assignee.finish();
     }
-
-    LOG_TRACE(log, "Threads finished after {} ms", watch.elapsedMilliseconds());
 }
 
 
