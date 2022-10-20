@@ -36,7 +36,6 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     select_with_union_query->list_of_selects = list_node;
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
     select_with_union_query->list_of_modes = parser.getUnionModes();
-    select_with_union_query->setHasQueryParameters();
 
     return true;
 }

@@ -478,14 +478,17 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
 }
 
-
-void ASTSelectQuery::setHasQueryParameters()
+bool ASTSelectQuery::hasQueryParameters() const
 {
-    if (!this->where())
-        return;
+    if (!has_query_parameters.has_value())
+    {
+        if (analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty())
+            has_query_parameters = false;
+        else
+            has_query_parameters = true;
+    }
 
-    if (!analyzeReceiveQueryParams(this->where()).empty())
-        has_query_parameters = true;
+    return  has_query_parameters.value();
 }
 
 }

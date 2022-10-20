@@ -142,9 +142,8 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
-    bool has_query_parameters = false;
-    bool hasQueryParameters() const { return has_query_parameters; }
-    void setHasQueryParameters();
+    mutable std::optional<bool> has_query_parameters;
+    bool hasQueryParameters() const;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
