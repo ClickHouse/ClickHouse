@@ -163,7 +163,9 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "ignored",
         "broken-on-start",
         "deleting",
-        "clone"
+        "clone",
+        "merge-not-byte-identical",
+        "mutate-not-byte-identical"
     });
 
     /// NOTE: It may parse part info incorrectly.
