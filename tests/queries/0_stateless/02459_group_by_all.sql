@@ -2,16 +2,14 @@ DROP TABLE IF EXISTS group_by_all;
 
 CREATE TABLE group_by_all
 (
-    a int,
-    b int,
-    ALL int
+    a String,
+    b int
 )
 engine = Memory;
 
-INSERT INTO group_by_all VALUES (1, 2, 3), (1, 2, 3), (2, 4, 4), (2, 5, 4), (3, 5, 5), (3, 5, 6);
+insert into group_by_all values ('abc1', 0), ('abc2', 0), ('abc3', 0), ('abc4', 0);
 
-SELECT a, COUNT(b) FROM group_by_all GROUP BY ALL;
-SELECT 1, a, COUNT(b) FROM group_by_all GROUP BY ALL;
-SELECT (a * 2) + 1, COUNT(b) FROM group_by_all GROUP BY ALL;
-SELECT `ALL`, COUNT(b) FROM group_by_all GROUP BY `ALL`;
-SELECT a, `ALL`, COUNT(b) FROM group_by_all GROUP BY ALL;
+select a, count(b) from group_by_all group by all;
+select substring(a, 1, 3), count(b) from group_by_all group by all;
+select substring(a, 1, 3), substring(substring(a, 1, 2), 1, count(b)) from group_by_all group by all;
+select substring(a, 1, 3), substring(a, 1, count(b)) from group_by_all group by all;

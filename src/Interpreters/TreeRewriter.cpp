@@ -786,27 +786,52 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 }
 
 
-void recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(const IAST & from, ASTExpressionList & into)
+std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressionsFromFunctionArgs(const ASTFunction & function, ASTExpressionList & into)
 {
     checkStackSize();
 
-    const auto * function = from.as<ASTFunction>();
-    if (!function)
-        return;
+    if (AggregateUtils::isAggregateFunction(function))
+        return {true, 0};
 
-    if (AggregateUtils::isAggregateFunction(*function))
-        return;
+    UInt64 pushed_children = 0;
+    bool has_aggregate = false;
 
-    for (const auto & child : function->arguments->children)
+    for (const auto & child : function.arguments->children)
     {
         if (child->as<ASTIdentifier>())
+        {
             into.children.push_back(child);
-        else
-            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(*child, into);
+            pushed_children++;
+        }
+        else if (child->as<ASTFunction>())
+        {
+            const auto * child_func = child->as<ASTFunction>();
+
+            auto [child_has_aggregate, child_pushed_children] = recursivelyCollectMaxOrdinaryExpressionsFromFunctionArgs(*child_func, into);
+
+            /// The current function is not aggregate function and there is no aggregate function in its arguments,
+            /// so use the current function to replace its children
+            if (!child_has_aggregate)
+            {
+                for (UInt64 i = 0; i < child_pushed_children; i++)
+                {
+                    into.children.pop_back();
+                }
+                into.children.push_back(child);
+                pushed_children = pushed_children - child_pushed_children + 1;
+            }
+            else
+            {
+                has_aggregate = true;
+                pushed_children += child_pushed_children;
+            }
+        }
     }
+
+    return {has_aggregate, pushed_children};
 }
 
-/// Expand GROUP BY ALL by listing all the SELECT-ed columns that are not expressions of the aggregate functions
+/// Expand GROUP BY ALL
 void expandGroupByAll(ASTSelectQuery * select_query)
 {
     auto group_expression_list = std::make_shared<ASTExpressionList>();
@@ -815,13 +840,25 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     {
         if (expr->as<ASTIdentifier>())
             group_expression_list->children.push_back(expr);
-        else
-            recursivelyCollectIdentifiersFromArgumentsOfOrdinaryFunctions(*expr, *group_expression_list);
+        else if (expr->as<ASTFunction>())
+        {
+            auto [has_aggregate, pushed_children] = recursivelyCollectMaxOrdinaryExpressionsFromFunctionArgs(*expr->as<ASTFunction>(), *group_expression_list);
+
+            /// The current function is not aggregate function and there is no aggregate function in its arguments,
+            /// so use the current function to replace its children
+            if (!has_aggregate)
+            {
+                for (UInt64 i = 0; i < pushed_children; i++)
+                {
+                    group_expression_list->children.pop_back();
+                }
+                group_expression_list->children.push_back(expr);
+            }
+        }
     }
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
-
 
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
