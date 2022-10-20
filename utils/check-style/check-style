@@ -59,10 +59,7 @@ declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
-declare -A EXTERN_ALLOWED_CHARS
-EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Z'
-EXTERN_ALLOWED_CHARS[ProfileEvents]='_A-Za-z'
-EXTERN_ALLOWED_CHARS[CurrentMetrics]='_A-Za-z'
+
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
     ProfileEvents::Event
@@ -87,18 +84,30 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
+
+    ErrorCodes::ErrorCode
+    ErrorCodes::getName
+    ErrorCodes::increment
+    ErrorCodes::end
+    ErrorCodes::values
+    ErrorCodes::values[i]
+    ErrorCodes::getErrorCodeByName
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
-    allowed_chars=${EXTERN_ALLOWED_CHARS[$extern_type]}
+    allowed_chars='[_A-Za-z]+'
 
     # Unused
     # NOTE: to fix automatically, replace echo with:
     # sed -i "/extern const $type_of_extern $val/d" $file
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern [$allowed_chars]+"
+        # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
+        # and this matches with zkutil::CreateMode
+        grep -v 'src/Common/ZooKeeper/Types.h'
+    } | {
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sed -r -e "s/^.*?extern const $type_of_extern ([$allowed_chars]+);.*?$/\1/" | while read val; do
+        grep -P "extern const $type_of_extern $allowed_chars;" $file | sed -r -e "s/^.*?extern const $type_of_extern ($allowed_chars);.*?$/\1/" | while read val; do
             if ! grep -q "$extern_type::$val" $file; then
                 # Excludes for SOFTWARE_EVENT/HARDWARE_EVENT/CACHE_EVENT in ThreadProfileEvents.cpp
                 if [[ ! $extern_type::$val =~ ProfileEvents::Perf.* ]]; then
@@ -110,11 +119,13 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Undefined
     # NOTE: to fix automatically, replace echo with:
-    # ( grep -q -F 'namespace $extern_type' $file && sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
+    # ( grep -q -F 'namespace $extern_type' $file && \
+    #   sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || \
+    #     awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
-        grep -P "$extern_type::[$allowed_chars]+" $file | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
+        grep -P "$extern_type::$allowed_chars" $file | grep -P -v '^\s*//' | sed -r -e "s/^.*?$extern_type::($allowed_chars).*?$/\1/" | while read val; do
             if ! grep -q "extern const $type_of_extern $val" $file; then
                 if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
                     echo "$extern_type::$val is used in file $file but not defined"
@@ -125,9 +136,9 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
 
     # Duplicates
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
+        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::$allowed_chars"
     } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
+        grep -P "extern const $type_of_extern $allowed_chars;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
     done
 done
 
