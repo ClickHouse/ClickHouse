@@ -3,7 +3,7 @@ toc_priority: 30
 toc_title: MySQL
 ---
 
-# MySQL
+# MySQL {#mysql}
 
 Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
 
