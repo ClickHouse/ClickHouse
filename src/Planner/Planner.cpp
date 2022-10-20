@@ -136,7 +136,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan, const SelectQ
     PreparedSets::SubqueriesForSets subqueries_for_sets;
     const auto & set_key_to_planner_set = planner_context->getRegisteredSets();
 
-    for (auto [key, planner_set] : set_key_to_planner_set)
+    for (const auto & [key, planner_set] : set_key_to_planner_set)
     {
         const auto subquery_node = planner_set.getSubqueryNode();
         if (!subquery_node)
@@ -188,19 +188,18 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     ContextPtr context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
-    , planner_context(std::make_shared<PlannerContext>(context_, std::make_shared<GlobalPlannerContext>()))
+    , planner_context(std::make_shared<PlannerContext>(std::move(context_), std::make_shared<GlobalPlannerContext>()))
 {
     initialize();
 }
 
-/// Initialize interpreter with query tree after query analysis phase and global planner context
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
     ContextPtr context_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
-    , planner_context(std::make_shared<PlannerContext>(context_, std::move(global_planner_context_)))
+    , planner_context(std::make_shared<PlannerContext>(std::move(context_), std::move(global_planner_context_)))
 {
     initialize();
 }
@@ -244,7 +243,7 @@ void Planner::initialize()
         if (need_apply_query_settings)
             updated_context->applySettingsChanges(query_node->getSettingsChanges());
 
-        /// Disable two-level aggregation due to version incompatibility.
+        /// Disable two-level aggregation due to version incompatibility
         if (need_to_disable_two_level_aggregation)
         {
             updated_context->setSetting("group_by_two_level_threshold", Field(0));
@@ -514,6 +513,7 @@ void Planner::buildQueryPlanIfNeeded()
         {
             const auto & having_analysis_result = expression_analysis_result.getHaving();
             bool final = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+            having_executed = true;
 
             auto totals_having_step = std::make_unique<TotalsHavingStep>(
                 query_plan.getCurrentDataStream(),
@@ -575,7 +575,7 @@ void Planner::buildQueryPlanIfNeeded()
                     query_plan.getCurrentDataStream(),
                     window_description.full_sort_description,
                     settings.max_block_size,
-                    0 /* LIMIT */,
+                    0 /*limit*/,
                     SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
                     settings.max_bytes_before_remerge_sort,
                     settings.remerge_sort_lowered_memory_bytes_ratio,
@@ -664,16 +664,16 @@ void Planner::buildQueryPlanIfNeeded()
 
         UInt64 partial_sorting_limit = 0;
 
-        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN.
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
         if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() &&
             !query_has_array_join_in_join_tree && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         {
             partial_sorting_limit = limit_length + limit_offset;
         }
 
-        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+        const Settings & settings = query_context->getSettingsRef();
 
-        /// Merge the sorted blocks.
+        /// Merge the sorted blocks
         auto sorting_step = std::make_unique<SortingStep>(
             query_plan.getCurrentDataStream(),
             sort_description,
@@ -683,7 +683,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.max_bytes_before_remerge_sort,
             settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort,
-            planner_context->getQueryContext()->getTempDataOnDisk(),
+            query_context->getTempDataOnDisk(),
             settings.min_free_disk_space_for_temporary_data,
             settings.optimize_sorting_by_input_stream_properties);
 
@@ -814,7 +814,7 @@ void Planner::buildQueryPlanIfNeeded()
 
     if (query_node.hasLimit())
     {
-        const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+        const Settings & settings = query_context->getSettingsRef();
         bool always_read_till_end = settings.exact_rows_before_limit;
         bool limit_with_ties = query_node.isLimitWithTies();
 

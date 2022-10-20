@@ -24,11 +24,11 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
   * 1. Table expression data for table expression nodes is collected in planner context.
   * For column node, that has column table expression source, identifier for column name in table expression data
   * is used as action dag node name.
-  * 2. Sets for IN functions are already collected in planner global context.
+  * 2. Sets for IN functions are already collected in planner context.
   *
   * During actions build, there is special handling for following functions:
   * 1. Aggregate functions are added in actions dag as INPUT nodes. Aggregate functions arguments are not added.
-  * 2. For function `in` and its variants, already collected sets from global context are used.
+  * 2. For function `in` and its variants, already collected sets from planner context are used.
   */
 class PlannerActionsVisitor
 {
@@ -45,7 +45,7 @@ private:
     const PlannerContextPtr planner_context;
 };
 
-/** Calculate query tree expression node name action dag name and add them into node to name map.
+/** Calculate query tree expression node action dag name and add them into node to name map.
   * If node exists in map, name from map is used.
   *
   * For column node column node identifier from planner context is used.

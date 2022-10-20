@@ -223,7 +223,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return visitQueryOrUnion(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Expected only column, constant or function node. Actual {}",
+        "Expected column, constant, function, query or union node. Actual {}",
         node->formatASTForErrorMessage());
 }
 
@@ -285,13 +285,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             "Lambda {} is not resolved during query analysis",
             lambda_node.formatASTForErrorMessage());
 
+    auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+    size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
+
     NamesAndTypesList lambda_arguments_names_and_types;
 
-    for (auto & lambda_node_argument : lambda_node.getArguments().getNodes())
+    for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
     {
-        auto lambda_argument_name = lambda_node_argument->getName();
-        auto lambda_argument_type = lambda_node_argument->getResultType();
-        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, lambda_argument_type);
+        const auto & lambda_argument_name = lambda_node.getArgumentNames().at(i);
+        auto lambda_argument_type = lambda_arguments_nodes[i]->getResultType();
+        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
     }
 
     size_t previous_scope_node_actions_stack_index = actions_stack.size() - 1;
@@ -332,7 +335,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (level == actions_stack.size())
         --level;
 
-    actions_stack[level].addFunctionIfNecessary(lambda_node_name, lambda_children, function_capture);
+    actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), std::move(function_capture));
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = level + 1; i < actions_stack_size; ++i)
@@ -350,7 +353,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
     auto set_key = planner_context->createSetKey(in_second_argument);
-    auto planner_set = planner_context->getSetOrThrow(set_key);
+    const auto & planner_set = planner_context->getSetOrThrow(set_key);
 
     ColumnWithTypeAndName column;
     column.name = set_key;

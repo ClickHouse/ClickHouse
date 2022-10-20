@@ -66,11 +66,13 @@ public:
         , subquery_node(std::move(subquery_node_))
     {}
 
+    /// Get set
     const SetPtr & getSet() const
     {
         return set;
     }
 
+    /// Get subquery node
     const QueryTreeNodePtr & getSubqueryNode() const
     {
         return subquery_node;
@@ -135,7 +137,7 @@ public:
       */
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
-    /// Get table expression node to data map read only map
+    /// Get table expression node to data read only map
     const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
     {
         return table_expression_node_to_data;

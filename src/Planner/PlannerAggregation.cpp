@@ -81,7 +81,7 @@ public:
             if (it == aggegation_key_to_index.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Argument of GROUPING function {} is not a part of GROUP BY clause",
-                        argument->formatASTForErrorMessage());
+                    argument->formatASTForErrorMessage());
 
             arguments_indexes.push_back(it->second);
         }
@@ -98,30 +98,30 @@ public:
             {
                 auto grouping_ordinary_function = std::make_shared<FunctionGroupingOrdinary>(arguments_indexes, force_grouping_standard_compatibility);
                 auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
-                function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
+                function_node->resolveAsFunction(std::move(grouping_ordinary_function_adaptor), std::make_shared<DataTypeUInt64>());
                 break;
             }
             case GroupByKind::ROLLUP:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
-                auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
-                function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
+                auto grouping_rollup_function = std::make_shared<FunctionGroupingForRollup>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                auto grouping_rollup_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_rollup_function));
+                function_node->resolveAsFunction(std::move(grouping_rollup_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
             case GroupByKind::CUBE:
             {
-                auto grouping_ordinary_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
-                auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_ordinary_function));
-                function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
+                auto grouping_cube_function = std::make_shared<FunctionGroupingForCube>(arguments_indexes, aggregation_keys_size, force_grouping_standard_compatibility);
+                auto grouping_cube_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_cube_function));
+                function_node->resolveAsFunction(std::move(grouping_cube_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
                 auto grouping_grouping_sets_function = std::make_shared<FunctionGroupingForGroupingSets>(arguments_indexes, grouping_sets_keys_indices, force_grouping_standard_compatibility);
-                auto grouping_ordinary_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
-                function_node->resolveAsFunction(grouping_ordinary_function_adaptor, std::make_shared<DataTypeUInt64>());
+                auto grouping_grouping_sets_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_grouping_sets_function));
+                function_node->resolveAsFunction(std::move(grouping_grouping_sets_function_adaptor), std::make_shared<DataTypeUInt64>());
                 function_node->getArguments().getNodes().push_back(std::move(grouping_set_argument_column));
                 break;
             }
@@ -147,8 +147,17 @@ void resolveGroupingFunctions(QueryTreeNodePtr & node,
     const GroupingSetsParamsList & grouping_sets_parameters_list,
     const PlannerContext & planner_context)
 {
+    auto & query_node_typed = node->as<QueryNode &>();
+
     GroupingFunctionResolveVisitor visitor(group_by_kind, aggregation_keys, grouping_sets_parameters_list, planner_context);
-    visitor.visit(node);
+
+    if (query_node_typed.hasHaving())
+        visitor.visit(query_node_typed.getHaving());
+
+    if (query_node_typed.hasOrderBy())
+        visitor.visit(query_node_typed.getOrderByNode());
+
+    visitor.visit(query_node_typed.getProjectionNode());
 }
 
 }
@@ -168,26 +177,7 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node,
     else if (query_node_typed.isGroupByWithGroupingSets())
         group_by_kind = GroupByKind::GROUPING_SETS;
 
-    if (query_node_typed.hasHaving())
-    {
-        resolveGroupingFunctions(query_node_typed.getHaving(),
-            group_by_kind,
-            aggregation_keys,
-            grouping_sets_parameters_list,
-            planner_context);
-    }
-
-    resolveGroupingFunctions(query_node_typed.getOrderByNode(),
-        group_by_kind,
-        aggregation_keys,
-        grouping_sets_parameters_list,
-        planner_context);
-
-    resolveGroupingFunctions(query_node_typed.getProjectionNode(),
-        group_by_kind,
-        aggregation_keys,
-        grouping_sets_parameters_list,
-        planner_context);
+    resolveGroupingFunctions(query_node, group_by_kind, aggregation_keys, grouping_sets_parameters_list, planner_context);
 }
 
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
@@ -225,7 +215,7 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
             aggregate_description.argument_names.emplace_back(std::move(argument_node_name));
         }
 
-        aggregate_description.column_name = node_name;
+        aggregate_description.column_name = std::move(node_name);
         aggregate_descriptions.push_back(std::move(aggregate_description));
     }
 
