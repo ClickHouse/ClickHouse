@@ -1286,10 +1286,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    // expand GROUP BY ALL
-    if (select_query->group_by_all)
-        expandGroupByAll(select_query);
-
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
 
@@ -1357,6 +1353,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
+
+    // expand GROUP BY ALL
+    if (select_query->group_by_all)
+        expandGroupByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
