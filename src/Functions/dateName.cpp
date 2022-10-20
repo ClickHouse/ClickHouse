@@ -78,7 +78,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}",
                 getName(),
-                toString(arguments.size()));
+                arguments.size());
 
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
@@ -114,8 +114,8 @@ public:
         ColumnPtr res;
 
         if (!((res = executeType<DataTypeDate>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type))
             || (res = executeType<DataTypeDate32>(arguments, result_type))
+            || (res = executeType<DataTypeDateTime>(arguments, result_type))
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
