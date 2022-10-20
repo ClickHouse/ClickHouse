@@ -2408,6 +2408,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     std::vector<QueueEntryInfo> source_queue;
     ActiveDataPartSet get_part_set{format_version};
     ActiveDataPartSet drop_range_set{format_version};
+    std::unordered_set<String> exact_part_names;
 
     {
         std::vector<zkutil::ZooKeeper::FutureGet> queue_get_futures;
@@ -2445,13 +2446,21 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             info.parsed_entry->znode_name = source_queue_names[i];
 
             if (info.parsed_entry->type == LogEntry::DROP_RANGE)
+            {
                 drop_range_set.add(info.parsed_entry->new_part_name);
-
-            if (info.parsed_entry->type == LogEntry::GET_PART)
+            }
+            else if (info.parsed_entry->type == LogEntry::GET_PART)
             {
                 String maybe_covering_drop_range = drop_range_set.getContainingPart(info.parsed_entry->new_part_name);
                 if (maybe_covering_drop_range.empty())
                     get_part_set.add(info.parsed_entry->new_part_name);
+            }
+            else
+            {
+                /// We should keep local parts if they present in the queue of source replica.
+                /// There's a chance that we are the only replica that has these parts.
+                Strings entry_virtual_parts = info.parsed_entry->getVirtualPartNames(format_version);
+                std::move(entry_virtual_parts.begin(), entry_virtual_parts.end(), std::inserter(exact_part_names, exact_part_names.end()));
             }
         }
     }
@@ -2472,11 +2481,17 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     for (const auto & part : local_parts_in_zk)
     {
-        if (get_part_set.getContainingPart(part).empty())
-        {
-            parts_to_remove_from_zk.emplace_back(part);
-            LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
-        }
+        /// We look for exact match (and not for any covering part)
+        /// because our part might be dropped and covering part might be merged though gap.
+        /// (avoid resurrection of data that was removed a long time ago)
+        if (get_part_set.getContainingPart(part) == part)
+            continue;
+
+        if (exact_part_names.contains(part))
+            continue;
+
+        parts_to_remove_from_zk.emplace_back(part);
+        LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
     }
 
     {
@@ -2498,11 +2513,14 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     for (const auto & part : local_active_parts)
     {
-        if (get_part_set.getContainingPart(part->name).empty())
-        {
-            parts_to_remove_from_working_set.emplace_back(part);
-            LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
-        }
+        if (get_part_set.getContainingPart(part->name) == part->name)
+            continue;
+
+        if (exact_part_names.contains(part->name))
+            continue;
+
+        parts_to_remove_from_working_set.emplace_back(part);
+        LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
     }
 
     if (getSettings()->detach_old_local_parts_when_cloning_replica)
