@@ -262,7 +262,7 @@ is the same as
 
 ``` sql
 SELECT
-    a,
+    a * 2,
     b,
     count(c),
 FROM t
