@@ -245,7 +245,7 @@ You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](../.
 
 ## GROUP BY ALL
 
-`GROUP BY ALL` is equivalent to listing all the SELECT-ed expressions that are aggregate functions.
+`GROUP BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
 
 For example:
 
