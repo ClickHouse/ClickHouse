@@ -245,13 +245,13 @@ You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](../.
 
 ## GROUP BY ALL
 
-`GROUP BY ALL` is equivalent to listing all the SELECT-ed columns that are not expressions of the aggregate functions.
+`GROUP BY ALL` is equivalent to listing all the SELECT-ed expressions that are aggregate functions.
 
 For example:
 
 ``` sql
 SELECT
-    a,
+    a * 2,
     b,
     count(c),
 FROM t
@@ -266,7 +266,29 @@ SELECT
     b,
     count(c),
 FROM t
-GROUP BY a, b
+GROUP BY a * 2, b
+```
+
+For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `GROUP BY` key will contain the max non-aggregate fields we can extract from it.
+
+For example:
+
+``` sql
+SELECT
+    substring(a, 4, 2)
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY ALL
+```
+
+is the same as
+
+``` sql
+SELECT
+    substring(a, 4, 2)
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
 ## Examples
