@@ -224,7 +224,7 @@ public:
         ///         thread->join();
         /// Where join() won't be executed in case when we call it
         /// from the same std::thread and it will end to std::abort().
-        /// So we just reset the state in this case.
+        /// So we just do nothing in this case
         if (state->finished)
             return;
 
