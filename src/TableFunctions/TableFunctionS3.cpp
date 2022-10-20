@@ -41,7 +41,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
-        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        auto * header_it = StorageURL::collectHeaders(args, s3_configuration, context);
         if (header_it != args.end())
             args.erase(header_it);
 
