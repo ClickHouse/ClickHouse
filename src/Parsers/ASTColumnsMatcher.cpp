@@ -112,11 +112,8 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
     settings.ostr << ")";
 
     /// Format column transformers
-    size_t children_size = children.size();
-
-    for (size_t i = 1; i < children_size; ++i)
+    for (const auto & child : children)
     {
-        const auto & child = children[i];
         settings.ostr << ' ';
         child->formatImpl(settings, state, frame);
     }
@@ -236,8 +233,11 @@ void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings,
     settings.ostr << ")";
 
     /// Format column transformers
-    for (const auto & child : children)
+    size_t children_size = children.size();
+
+    for (size_t i = 1; i < children_size; ++i)
     {
+        const auto & child = children[i];
         settings.ostr << ' ';
         child->formatImpl(settings, state, frame);
     }
