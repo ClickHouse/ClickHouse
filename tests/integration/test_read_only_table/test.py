@@ -54,7 +54,6 @@ def test_restart_zookeeper(start_cluster):
         node1.query(
             f"INSERT INTO test_table_{table_id} VALUES (1), (2), (3), (4), (5);"
         )
-        # sync_replicas(f"test_table_{table_id}")
 
     logging.info("Inserted test data and initialized all tables")
 
@@ -80,9 +79,9 @@ def test_restart_zookeeper(start_cluster):
 
     node1_zk = get_zookeeper_which_node_connected_to(node1)
 
-    # ClickHouse should +- immediately reconnect to another zookeper node
+    # ClickHouse should +- immediately reconnect to another zookeeper node
     cluster.stop_zookeeper_nodes([node1_zk])
-    time.sleep(10)
+    time.sleep(5)
 
     for table_id in range(NUM_TABLES):
         node1.query(
