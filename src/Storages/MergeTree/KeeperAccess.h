@@ -177,10 +177,22 @@ public:
             "get", path, [&]() { return keeper->get(path, stat, watch); }, [](const std::string &) {});
     }
 
+    zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths)
+    {
+        return access<zkutil::ZooKeeper::MultiGetResponse>(
+            "get", paths.front(), [&]() { return keeper->get(paths); }, noop_cleanup);
+    }
+
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
         return access<bool>(
             "exists", path, [&]() { return keeper->exists(path, stat, watch); }, noop_cleanup);
+    }
+
+    zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths)
+    {
+        return access<zkutil::ZooKeeper::MultiExistsResponse>(
+            "exists", paths.front(), [&]() { return keeper->exists(paths); }, noop_cleanup);
     }
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)
