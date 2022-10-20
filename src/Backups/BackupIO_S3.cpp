@@ -31,6 +31,16 @@ namespace
     std::shared_ptr<Aws::S3::S3Client>
     makeS3Client(const S3::URI & s3_uri, const String & access_key_id, const String & secret_access_key, const ContextPtr & context)
     {
+        LOG_INFO(
+            &Poco::Logger::get("!!!"),
+            "makeS3Client: s3_uri: (uri={}, endpoint={}, bucket={}, key={}), access_key_id={}, secret_access_key={}",
+            s3_uri.uri.toString(),
+            s3_uri.endpoint,
+            s3_uri.bucket,
+            s3_uri.key,
+            access_key_id,
+            secret_access_key);
+
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
@@ -73,6 +83,7 @@ namespace
         Aws::S3::Model::ListObjectsRequest request;
         request.SetBucket(s3_uri.bucket);
         request.SetPrefix(fs::path{s3_uri.key} / file_name);
+        LOG_INFO(&Poco::Logger::get("!!!"), "listObjects: s3_uri.bucket={}, prefix={}", s3_uri.bucket, String{fs::path{s3_uri.key} / file_name});
         request.SetMaxKeys(1);
         auto outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
