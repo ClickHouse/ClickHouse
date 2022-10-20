@@ -285,20 +285,31 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
+    /// We create and deactivate all tasks for consistency.
+    /// They all will be scheduled and activated by the restarting thread.
     queue_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
+
+    queue_updating_task->deactivate();
 
     mutations_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
 
+    mutations_updating_task->deactivate();
+
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
-    /// Will be activated if we win leader election.
+    /// Will be activated if we will achieve leader state.
     merge_selecting_task->deactivate();
 
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+
+    /// This task can be scheduled by different parts of code even when storage is readonly.
+    /// This can lead to redundant exceptions during startup.
+    /// Will be activated by restarting thread.
+    mutations_finalizing_task->deactivate();
 
     bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
     if (has_zookeeper)
@@ -2408,6 +2419,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     std::vector<QueueEntryInfo> source_queue;
     ActiveDataPartSet get_part_set{format_version};
     ActiveDataPartSet drop_range_set{format_version};
+    std::unordered_set<String> exact_part_names;
 
     {
         std::vector<zkutil::ZooKeeper::FutureGet> queue_get_futures;
@@ -2445,13 +2457,21 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             info.parsed_entry->znode_name = source_queue_names[i];
 
             if (info.parsed_entry->type == LogEntry::DROP_RANGE)
+            {
                 drop_range_set.add(info.parsed_entry->new_part_name);
-
-            if (info.parsed_entry->type == LogEntry::GET_PART)
+            }
+            else if (info.parsed_entry->type == LogEntry::GET_PART)
             {
                 String maybe_covering_drop_range = drop_range_set.getContainingPart(info.parsed_entry->new_part_name);
                 if (maybe_covering_drop_range.empty())
                     get_part_set.add(info.parsed_entry->new_part_name);
+            }
+            else
+            {
+                /// We should keep local parts if they present in the queue of source replica.
+                /// There's a chance that we are the only replica that has these parts.
+                Strings entry_virtual_parts = info.parsed_entry->getVirtualPartNames(format_version);
+                std::move(entry_virtual_parts.begin(), entry_virtual_parts.end(), std::inserter(exact_part_names, exact_part_names.end()));
             }
         }
     }
@@ -2472,11 +2492,17 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     for (const auto & part : local_parts_in_zk)
     {
-        if (get_part_set.getContainingPart(part).empty())
-        {
-            parts_to_remove_from_zk.emplace_back(part);
-            LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
-        }
+        /// We look for exact match (and not for any covering part)
+        /// because our part might be dropped and covering part might be merged though gap.
+        /// (avoid resurrection of data that was removed a long time ago)
+        if (get_part_set.getContainingPart(part) == part)
+            continue;
+
+        if (exact_part_names.contains(part))
+            continue;
+
+        parts_to_remove_from_zk.emplace_back(part);
+        LOG_WARNING(log, "Source replica does not have part {}. Removing it from ZooKeeper.", part);
     }
 
     {
@@ -2498,11 +2524,14 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     for (const auto & part : local_active_parts)
     {
-        if (get_part_set.getContainingPart(part->name).empty())
-        {
-            parts_to_remove_from_working_set.emplace_back(part);
-            LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
-        }
+        if (get_part_set.getContainingPart(part->name) == part->name)
+            continue;
+
+        if (exact_part_names.contains(part->name))
+            continue;
+
+        parts_to_remove_from_working_set.emplace_back(part);
+        LOG_WARNING(log, "Source replica does not have part {}. Removing it from working set.", part->name);
     }
 
     if (getSettings()->detach_old_local_parts_when_cloning_replica)
@@ -3206,16 +3235,17 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     int32_t log_version,
     MergeType merge_type)
 {
-    std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
-    exists_futures.reserve(parts.size());
+    Strings exists_paths;
+    exists_paths.reserve(parts.size());
     for (const auto & part : parts)
-        exists_futures.emplace_back(zookeeper->asyncExists(fs::path(replica_path) / "parts" / part->name));
+        exists_paths.emplace_back(fs::path(replica_path) / "parts" / part->name);
 
+    auto exists_results = zookeeper->exists(exists_paths);
     bool all_in_zk = true;
     for (size_t i = 0; i < parts.size(); ++i)
     {
         /// If there is no information about part in ZK, we will not merge it.
-        if (exists_futures[i].get().error == Coordination::Error::ZNONODE)
+        if (exists_results[i].error == Coordination::Error::ZNONODE)
         {
             all_in_zk = false;
 
@@ -6228,19 +6258,20 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
 
             auto zookeeper = getZooKeeper();
 
-            std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
-            exists_futures.reserve(part_names.size());
+            Strings exists_paths;
+            exists_paths.reserve(part_names.size());
             for (const String & part_name : part_names)
             {
-                String part_path = fs::path(replica_path) / "parts" / part_name;
-                exists_futures.emplace_back(zookeeper->asyncExists(part_path));
+                exists_paths.emplace_back(fs::path(replica_path) / "parts" / part_name);
             }
+
+            auto exists_results = zookeeper->exists(exists_paths);
 
             std::vector<std::future<Coordination::MultiResponse>> remove_futures;
             remove_futures.reserve(part_names.size());
             for (size_t i = 0; i < part_names.size(); ++i)
             {
-                Coordination::ExistsResponse exists_resp = exists_futures[i].get();
+                Coordination::ExistsResponse exists_resp = exists_results[i];
                 if (exists_resp.error == Coordination::Error::ZOK)
                 {
                     Coordination::Requests ops;
@@ -6286,9 +6317,9 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(const Strin
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(
     zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names, NameSet * parts_should_be_retried)
 {
-    std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
+    Strings exists_paths;
     std::vector<std::future<Coordination::MultiResponse>> remove_futures;
-    exists_futures.reserve(part_names.size());
+    exists_paths.reserve(part_names.size());
     remove_futures.reserve(part_names.size());
     try
     {
@@ -6296,13 +6327,14 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
         /// if zk session will be dropped
         for (const String & part_name : part_names)
         {
-            String part_path = fs::path(replica_path) / "parts" / part_name;
-            exists_futures.emplace_back(zookeeper->asyncExists(part_path));
+            exists_paths.emplace_back(fs::path(replica_path) / "parts" / part_name);
         }
+
+        auto exists_results = zookeeper->exists(exists_paths);
 
         for (size_t i = 0; i < part_names.size(); ++i)
         {
-            Coordination::ExistsResponse exists_resp = exists_futures[i].get();
+            auto exists_resp = exists_results[i];
             if (exists_resp.error == Coordination::Error::ZOK)
             {
                 Coordination::Requests ops;
