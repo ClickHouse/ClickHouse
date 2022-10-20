@@ -537,6 +537,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
                 return;
             }
+
             LOG_INFO(log, "Block with ID {} already exists on other replicas as part {}; will write it locally with that name.",
                 block_id, existing_part_name);
 
@@ -638,7 +639,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 builder->commit();
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
-                /// than it will be ignored on the next itration.
+                /// than it will be ignored on the next iteration.
                 ++loop_counter;
                 if (loop_counter == max_iterations)
                 {
