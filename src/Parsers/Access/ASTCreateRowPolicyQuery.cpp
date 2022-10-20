@@ -124,7 +124,21 @@ String ASTCreateRowPolicyQuery::getID(char) const
 
 ASTPtr ASTCreateRowPolicyQuery::clone() const
 {
-    return std::make_shared<ASTCreateRowPolicyQuery>(*this);
+    auto res = std::make_shared<ASTCreateRowPolicyQuery>(*this);
+
+    if (names)
+        res->names = std::static_pointer_cast<ASTRowPolicyNames>(names->clone());
+
+    if (roles)
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+
+    for (auto & [_, res_filter] : res->filters)
+    {
+        if (res_filter)
+            res_filter = res_filter->clone();
+    }
+
+    return res;
 }
 
 
