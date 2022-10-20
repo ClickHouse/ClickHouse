@@ -2,6 +2,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace Poco
 {
@@ -21,6 +22,7 @@ public:
     ReplacingSortedAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_, const String & version_column,
+        const MergeTreeData::MergingParams::VersionRule & version_rule,
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
@@ -31,6 +33,8 @@ private:
     MergedData merged_data;
 
     ssize_t version_column_number = -1;
+
+    bool use_minimum_version_in_replacing = false;
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

@@ -14,6 +14,7 @@ public:
     ReplacingSortedTransform(
         const Block & header, size_t num_inputs,
         SortDescription description_, const String & version_column,
+        const MergeTreeData::MergingParams::VersionRule & version_rule,
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
@@ -23,6 +24,7 @@ public:
             num_inputs,
             std::move(description_),
             version_column,
+            version_rule,
             max_block_size,
             out_row_sources_buf_,
             use_average_block_sizes)

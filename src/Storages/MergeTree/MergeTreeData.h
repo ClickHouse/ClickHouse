@@ -335,6 +335,14 @@ public:
             VersionedCollapsing = 7,
         };
 
+        /// For Replacing mode. version_column rule
+        enum VersionRule
+        {
+            Unknown             = 0,
+            Maximum             = 1,
+            Minimum             = 2,
+        };
+
         Mode mode;
 
         /// For Collapsing and VersionedCollapsing mode.
@@ -346,6 +354,9 @@ public:
         /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;
 
+        /// For Replacing mode. Can be empty for Replacing.
+        VersionRule version_rule = Unknown;
+
         /// For Graphite mode.
         Graphite::Params graphite_params;
 
@@ -353,6 +364,10 @@ public:
         void check(const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
+
+        String getVersionRuleName() const;
+
+        VersionRule getVersionRuleByName(const String & versionRuleName) const;
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.

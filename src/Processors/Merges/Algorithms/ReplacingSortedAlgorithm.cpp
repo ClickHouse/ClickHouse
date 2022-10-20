@@ -9,6 +9,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     size_t num_inputs,
     SortDescription description_,
     const String & version_column,
+    const MergeTreeData::MergingParams::VersionRule & version_rule,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
@@ -16,7 +17,22 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
 {
     if (!version_column.empty())
+    {
         version_column_number = header_.getPositionByName(version_column);
+
+        switch (version_rule)
+        {
+            case MergeTreeData::MergingParams::VersionRule::Maximum:
+                use_minimum_version_in_replacing = false;
+                break ;
+            case MergeTreeData::MergingParams::VersionRule::Minimum:
+                use_minimum_version_in_replacing = true;
+                break ;
+            default:
+                use_minimum_version_in_replacing = false;
+                break ;
+        }
+    }
 }
 
 void ReplacingSortedAlgorithm::insertRow()
@@ -74,10 +90,11 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         /// A non-strict comparison, since we select the last row for the same version values.
         if (version_column_number == -1
             || selected_row.empty()
-            || current->all_columns[version_column_number]->compareAt(
-                current->getRow(), selected_row.row_num,
-                *(*selected_row.all_columns)[version_column_number],
-                /* nan_direction_hint = */ 1) >= 0)
+            || (current->all_columns[version_column_number]->compareAt(
+                    current->getRow(), selected_row.row_num,
+                    *(*selected_row.all_columns)[version_column_number],
+                    /* nan_direction_hint = */ 1) >= 0 ? !use_minimum_version_in_replacing : use_minimum_version_in_replacing)
+            || (*(*selected_row.all_columns)[version_column_number])[selected_row.row_num].isNull())
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);

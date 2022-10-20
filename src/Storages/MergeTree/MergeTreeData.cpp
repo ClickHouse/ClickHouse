@@ -708,6 +708,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         throw Exception("Version column for MergeTree cannot be specified in modes except Replacing or VersionedCollapsing.",
                         ErrorCodes::LOGICAL_ERROR);
 
+    if (version_rule != Unknown && mode != MergingParams::Replacing)
+        throw Exception("Version rule for MergeTree cannot be specified in modes except Replacing.",
+                        ErrorCodes::LOGICAL_ERROR);
+
     if (!columns_to_sum.empty() && mode != MergingParams::Summing)
         throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
                         ErrorCodes::LOGICAL_ERROR);
@@ -929,6 +933,34 @@ String MergeTreeData::MergingParams::getModeName() const
     }
 
     UNREACHABLE();
+}
+
+String MergeTreeData::MergingParams::getVersionRuleName() const
+{
+    switch (version_rule)
+    {
+        case Maximum:      return "maximum";
+        case Minimum:      return "minimum";
+        case Unknown:      return "unknown";
+    }
+
+    UNREACHABLE();
+}
+
+MergeTreeData::MergingParams::VersionRule MergeTreeData::MergingParams::getVersionRuleByName(const String & versionRuleName) const
+{
+    if (versionRuleName == "maximum")
+    {
+        return Maximum;
+    }
+    else if (versionRuleName == "minimum")
+    {
+        return Minimum;
+    }
+    else
+    {
+        return Unknown;
+    }
 }
 
 Int64 MergeTreeData::getMaxBlockNumber() const

@@ -235,6 +235,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             break;
         case MergeTreeData::MergingParams::Replacing:
             add_optional_param("version");
+            add_optional_param("version rule");
             break;
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
@@ -445,14 +446,48 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
-        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
-        {
-            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-                throw Exception(
-                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                    ErrorCodes::BAD_ARGUMENTS);
-            --arg_cnt;
+        /// If the last element is not index_granularity or replica_name (a literal), and only one parameter, then this is the name of the version column.
+        /// if passed two parameters，then the last one as version rule and the next to last as version column.
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>()){
+            if (arg_cnt - 1 && !engine_args[arg_cnt - 2]->as<ASTLiteral>())
+            {
+                String version_rule_name;
+                if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], version_rule_name))
+                {
+                    throw Exception(
+                        "Version rule name must be an unquoted string [maximum|minimum]" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+                }
+                else
+                {
+                    MergeTreeData::MergingParams::VersionRule version_rule = merging_params.getVersionRuleByName(version_rule_name);
+                    if (version_rule != MergeTreeData::MergingParams::VersionRule::Unknown)
+                    {
+                        merging_params.version_rule = version_rule;
+                    }
+                    else
+                    {
+                        throw Exception(
+                            "Version rule name must be an unquoted string [maximum|minimum]" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                            ErrorCodes::BAD_ARGUMENTS);
+                    }
+                }
+                --arg_cnt;
+
+                if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+                    throw Exception(
+                        "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+                --arg_cnt;
+            }
+            else
+            {
+                if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+                    throw Exception(
+                        "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
+                --arg_cnt;
+            }
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
