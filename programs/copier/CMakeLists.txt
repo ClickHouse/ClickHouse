@@ -4,7 +4,8 @@ set(CLICKHOUSE_COPIER_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/Internals.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/ShardPartition.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/ShardPartitionPiece.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/TaskCluster.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/TaskCluster.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/TaskTableAndShard.cpp")
 
 set (CLICKHOUSE_COPIER_LINK
         PRIVATE
