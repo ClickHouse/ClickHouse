@@ -89,7 +89,8 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit OrdinalDate(is_integer auto modified_julian_day);
+        template <is_integer DayT>
+        explicit OrdinalDate(DayT modified_julian_day);
 
         /** Convert to Modified Julian Day. The type T is an integral
           * type which should be at least 32 bits wide, and should
@@ -328,16 +329,17 @@ namespace DB
         }
     }
 
-    template <is_integer TDay>
-    OrdinalDate<YearT>::OrdinalDate(TDay modified_julian_day)
+    template <typename YearT>
+    template <is_integer DayT>
+    OrdinalDate<YearT>::OrdinalDate(DayT modified_julian_day)
     {
         /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
 
-        if constexpr (is_signed_v<TDay> && std::numeric_limits<TDay>::lowest() < -678941)
+        if constexpr (is_signed_v<DayT> && std::numeric_limits<DayT>::lowest() < -678941)
             if (modified_julian_day < -678941)
                 modified_julian_day = -678941;
 
-        if constexpr (std::numeric_limits<TDay>::max() > 2973119)
+        if constexpr (std::numeric_limits<DayT>::max() > 2973119)
             if (modified_julian_day > 2973119)
                 modified_julian_day = 2973119;
 
