@@ -2678,7 +2678,9 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
+                if instance.contains_in_log(
+                    SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                ):
                     sanitizer_assert_instance = instance.grep_in_log(
                         SANITIZER_SIGN, from_host=True, filename="stderr.log"
                     )
