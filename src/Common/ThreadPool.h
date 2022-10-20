@@ -217,6 +217,17 @@ public:
 
     ~ThreadFromGlobalPoolImpl()
     {
+        /// The problem is that the our ThreadFromGlobalPool can be actually finished
+        /// before we try to join the thread or check whether it is joinable or not.
+        /// In some places we have code like:
+        ///     if (thread->joinable())
+        ///         thread->join();
+        /// Where join() won't be executed in case when we call it
+        /// from the same std::thread and it will end to std::abort().
+        /// So we just reset the state in this case.
+        if (state->finished)
+            state.reset();
+
         if (initialized())
             abort();
     }
@@ -241,15 +252,6 @@ public:
     {
         if (!state)
             return false;
-        /// The problem is that the our ThreadFromGlobalPool can be actually finished
-        /// before we try to join the thread or check whether it is joinable or not.
-        /// In some places we have code like:
-        ///     if (thread->joinable())
-        ///         thread->join();
-        /// Where join() won't be executed in case when we call it
-        /// from the same std::thread and it will end to std::abort().
-        if (state->finished)
-            return true;
         /// Thread cannot join itself.
         if (state->thread_id == std::this_thread::get_id())
             return false;
