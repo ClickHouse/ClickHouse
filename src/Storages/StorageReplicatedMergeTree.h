@@ -269,21 +269,40 @@ public:
     DataPartStoragePtr executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
     /// Lock part in zookeeper for use shared data in several nodes
-    void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;
+    void lockSharedData(
+        const IMergeTreeDataPart & part,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files) const override;
+    void lockSharedData(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files) const;
 
     void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart & part) const override;
+    std::pair<bool, NameSet>
+    unlockSharedData(const IMergeTreeDataPart & part) const override;
+    std::pair<bool, NameSet>
+    unlockSharedData(const IMergeTreeDataPart & part, const ZooKeeperWithFaultInjectionPtr & zookeeper) const;
 
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
-        std::string disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
+    static std::pair<bool, NameSet> unlockSharedDataByID(
+        String part_id,
+        const String & table_uuid,
+        const String & part_name,
+        const String & replica_name_,
+        std::string disk_type,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper_,
+        const MergeTreeSettings & settings,
+        Poco::Logger * logger,
+        const String & zookeeper_path_old,
+        MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
     DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -838,7 +857,7 @@ private:
         const String & part_name, const String & zookeeper_path_old);
 
     static void createZeroCopyLockNode(
-        const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 

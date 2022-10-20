@@ -63,7 +63,12 @@ class ZooKeeperWithFaultInjection
             fault_policy = std::make_unique<RandomFaultInjection>(fault_injection_probability, fault_injection_seed);
 
         if (unlikely(logger))
-            LOG_TRACE(logger, "ZooKeeperWithFailtInjection created: name={} seed={} fault_probability={}", name, seed, fault_injection_probability);
+            LOG_TRACE(
+                logger,
+                "ZooKeeperWithFailtInjection created: name={} seed={} fault_probability={}",
+                name,
+                seed,
+                fault_injection_probability);
     }
 
 public:
@@ -107,6 +112,9 @@ public:
     }
 
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
+    bool isNull() const { return keeper.get() == nullptr; }
+    /// todo: remove it, currently it's just for workarounds
+    zk::Ptr getKeeper() const { return keeper; }
 
     ///
     /// mirror ZooKeeper interface
@@ -120,6 +128,20 @@ public:
     {
         return access<Strings>(
             "getChildren", path, [&]() { return keeper->getChildren(path, stat, watch, list_request_type); }, noop_cleanup);
+    }
+
+    Coordination::Error tryGetChildren(
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat = nullptr,
+        const zkutil::EventPtr & watch = nullptr,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    {
+        return access<Coordination::Error>(
+            "tryGetChildren",
+            path,
+            [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); },
+            [&](Coordination::Error) {});
     }
 
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
@@ -154,7 +176,7 @@ public:
             [&](Coordination::Error err)
             {
                 if (err == Coordination::Error::ZOK)
-                    faultInjectionCleanup("tryMultiNoThrow", requests, responses);
+                    faultInjectionCleanup("tryMulti", requests, responses);
             });
     }
 
@@ -236,7 +258,47 @@ public:
             [&](Coordination::Responses const & responses) { faultInjectionCleanup("multi", requests, responses); });
     }
 
+    void createAncestors(const std::string & path)
+    {
+        access<void>(
+            "createAncestors", path, [&]() { return keeper->createAncestors(path); }, noop_cleanup);
+    }
+
+    Coordination::Error tryRemove(const std::string & path, int32_t version = -1)
+    {
+        return access<Coordination::Error>(
+            "tryRemove", path, [&]() { return keeper->tryRemove(path, version); }, [&](Coordination::Error) {});
+    }
+
 private:
+    template <typename Result, typename FaultCleanup>
+    void faultInjectionAfter(const Result & res, FaultCleanup fault_cleanup)
+    {
+        try
+        {
+            if (unlikely(fault_policy))
+                fault_policy->afterOperation();
+        }
+        catch (const zkutil::KeeperException &)
+        {
+            if constexpr (std::is_same_v<void, std::decay_t<Result>>)
+                fault_cleanup();
+            else
+            {
+                if constexpr (std::is_same_v<Result, std::string>)
+                    fault_cleanup(res);
+                else if constexpr (std::is_same_v<Result, Coordination::Responses>)
+                    fault_cleanup(res);
+                else if constexpr (std::is_same_v<Result, Coordination::Error>)
+                    fault_cleanup(res);
+                else
+                    fault_cleanup();
+            }
+
+            throw;
+        }
+    }
+
     void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
     {
         if (responses.empty())
@@ -287,43 +349,42 @@ private:
                     fault_policy->beforeOperation();
             }
 
-            Result res = operation();
-
-            /// if connectivity error occurred w/o fault injection -> just return it
-            if constexpr (std::is_same_v<Coordination::Error, Result>)
+            if constexpr (!std::is_same_v<Result, void>)
             {
-                if (Coordination::isHardwareError(res))
-                    return res;
-            }
+                Result res = operation();
 
-            if constexpr (inject_failure_after_op)
+                /// if connectivity error occurred w/o fault injection -> just return it
+                if constexpr (std::is_same_v<Coordination::Error, Result>)
+                {
+                    if (Coordination::isHardwareError(res))
+                        return res;
+                }
+
+                if constexpr (inject_failure_after_op)
+                    faultInjectionAfter(res, fault_after_op_cleanup);
+
+                ++calls_without_fault_injection;
+
+                if (unlikely(logger))
+                    LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
+
+                return res;
+            }
+            else
             {
-                try
-                {
-                    if (unlikely(fault_policy))
-                        fault_policy->afterOperation();
-                }
-                catch (const zkutil::KeeperException &)
-                {
-                    if constexpr (std::is_same_v<Result, std::string>)
-                        fault_after_op_cleanup(res);
-                    else if constexpr (std::is_same_v<Result, Coordination::Responses>)
-                        fault_after_op_cleanup(res);
-                    else if constexpr (std::is_same_v<Result, Coordination::Error>)
-                        fault_after_op_cleanup(res);
-                    else
-                        fault_after_op_cleanup();
+                operation();
 
-                    throw;
+                if constexpr (inject_failure_after_op)
+                {
+                    void * stub = nullptr; /// just for template overloading
+                    faultInjectionAfter(stub, fault_after_op_cleanup);
                 }
+
+                ++calls_without_fault_injection;
+
+                if (unlikely(logger))
+                    LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
             }
-
-            ++calls_without_fault_injection;
-
-            if (unlikely(logger))
-                LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
-
-            return res;
         }
         catch (const zkutil::KeeperException & e)
         {
