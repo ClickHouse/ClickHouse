@@ -1415,7 +1415,7 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
         table_join->setKind(DB::ASTTableJoin::Kind::Inner);
         table_join->setStrictness(DB::ASTTableJoin::Strictness::All);
     }
-    else if (join.type() == substrait::JoinRel_JoinType_JOIN_TYPE_SEMI)
+    else if (join.type() == substrait::JoinRel_JoinType_JOIN_TYPE_LEFT_SEMI)
     {
         table_join->setKind(DB::ASTTableJoin::Kind::Left);
         table_join->setStrictness(DB::ASTTableJoin::Strictness::Semi);
