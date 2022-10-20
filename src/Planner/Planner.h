@@ -24,7 +24,7 @@ public:
         const SelectQueryOptions & select_query_options_,
         ContextPtr context_);
 
-    /// Initialize interpreter with query tree after query analysis phase and global planner context
+    /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
         const SelectQueryOptions & select_query_options_,
         ContextPtr context_,

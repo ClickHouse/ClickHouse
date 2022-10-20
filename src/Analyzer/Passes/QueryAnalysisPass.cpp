@@ -1451,7 +1451,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
         if (query_node)
             query_node->performConstantFolding(std::move(constant_value));
         else if (union_node)
-            query_node->performConstantFolding(std::move(constant_value));
+            union_node->performConstantFolding(std::move(constant_value));
 
         return;
     }

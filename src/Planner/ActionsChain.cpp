@@ -11,12 +11,35 @@
 namespace DB
 {
 
+ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_)
+    : actions(std::move(actions_))
+    , available_output_columns_strategy(available_output_columns_stategy_)
+{
+    initialize();
+}
+
+ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
+    AvailableOutputColumnsStrategy available_output_columns_stategy_,
+    ColumnsWithTypeAndName additional_output_columns_)
+    : actions(std::move(actions_))
+    , available_output_columns_strategy(available_output_columns_stategy_)
+    , additional_output_columns(std::move(additional_output_columns_))
+{
+    initialize();
+}
+
+
 void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns)
 {
     child_required_output_columns_names.clear();
-    std::vector<const ActionsDAG::Node *> required_output_nodes;
 
     auto child_input_columns_copy = child_input_columns;
+
+    std::unordered_set<std::string_view> output_nodes_names;
+    output_nodes_names.reserve(actions->getOutputs().size());
+
+    for (auto & output_node : actions->getOutputs())
+        output_nodes_names.insert(output_node->result_name);
 
     for (const auto & node : actions->getNodes())
     {
@@ -24,13 +47,15 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         if (it == child_input_columns_copy.end())
             continue;
 
-        child_required_output_columns_names.insert(node.result_name);
-        required_output_nodes.push_back(&node);
         child_input_columns_copy.erase(it);
-    }
+        child_required_output_columns_names.insert(node.result_name);
 
-    for (auto & required_output_node : required_output_nodes)
-        actions->addOrReplaceInOutputs(*required_output_node);
+        if (output_nodes_names.contains(node.result_name))
+            continue;
+
+        actions->getOutputs().push_back(&node);
+        output_nodes_names.insert(node.result_name);
+    }
 
     actions->removeUnusedActions();
     /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
@@ -49,6 +74,7 @@ void ActionsChainStep::dump(WriteBuffer & buffer) const
         for (const auto & column : additional_output_columns)
             buffer << "Name " << column.name << " type " << column.type->getName() << '\n';
     }
+
     if (!child_required_output_columns_names.empty())
     {
         buffer << "Child required output columns " << boost::join(child_required_output_columns_names, ", ");
@@ -121,13 +147,13 @@ void ActionsChain::finalize()
 
 void ActionsChain::dump(WriteBuffer & buffer) const
 {
-    size_t nodes_size = steps.size();
+    size_t steps_size = steps.size();
 
-    for (size_t i = 0; i < nodes_size; ++i)
+    for (size_t i = 0; i < steps_size; ++i)
     {
-        const auto & node = steps[i];
+        const auto & step = steps[i];
         buffer << "Step " << i << '\n';
-        node->dump(buffer);
+        step->dump(buffer);
 
         buffer << '\n';
     }
@@ -137,6 +163,7 @@ String ActionsChain::dump() const
 {
     WriteBufferFromOwnString buffer;
     dump(buffer);
+
     return buffer.str();
 }
 

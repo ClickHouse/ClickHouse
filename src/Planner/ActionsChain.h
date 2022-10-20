@@ -19,9 +19,9 @@ namespace ErrorCodes
   * We want to reuse expr(id) from previous expressions step, and not recalculate it in projection.
   * To do this we build a chain of all query action steps.
   * For example:
-  * 1. before where
-  * 2. before order by
-  * 3. projection
+  * 1. Before where.
+  * 2. Before order by.
+  * 3. Projection.
   *
   * Initially root of chain is initialized with join tree query plan header.
   * Each next chain step, must be initialized with previous step available output columns.
@@ -56,22 +56,11 @@ public:
       * If available output columns strategy is ALL_NODES, then available output columns initialized using actions dag nodes.
       * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes.
       */
-    explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES)
-        : actions(std::move(actions_))
-        , available_output_columns_strategy(available_output_columns_stategy_)
-    {
-        initialize();
-    }
+    explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES);
 
     explicit ActionsChainStep(ActionsDAGPtr actions_,
         AvailableOutputColumnsStrategy available_output_columns_stategy_,
-        ColumnsWithTypeAndName additional_output_columns_)
-        : actions(std::move(actions_))
-        , available_output_columns_strategy(available_output_columns_stategy_)
-        , additional_output_columns(std::move(additional_output_columns_))
-    {
-        initialize();
-    }
+        ColumnsWithTypeAndName additional_output_columns_);
 
     /// Get actions
     ActionsDAGPtr & getActions()
@@ -225,7 +214,7 @@ public:
         return steps.back()->getAvailableOutputColumns();
     }
 
-    /// Get last step available output columns or throw exception if chain is empty
+    /// Get last step available output columns or null if chain is empty
     const ColumnsWithTypeAndName * getLastStepAvailableOutputColumnsOrNull() const
     {
         if (steps.empty())
