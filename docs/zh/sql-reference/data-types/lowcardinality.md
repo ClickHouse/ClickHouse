@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/data-types/lowcardinality
-sidebar_position: 51
-sidebar_label: 低基数类型
+toc_priority: 51
+toc_title: 低基数类型
 ---
 
 # 低基数类型 {#lowcardinality-data-type}

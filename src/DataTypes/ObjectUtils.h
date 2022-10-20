@@ -5,6 +5,7 @@
 #include <Common/FieldVisitors.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
 
@@ -37,7 +38,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column);
 
 /// Converts Object types and columns to Tuples in @columns_list and @block
 /// and checks that types are consistent with types in @extended_storage_columns.
-void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns);
+void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 
 /// Checks that each path is not the prefix of any other path.
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);
@@ -51,7 +52,7 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
 
 NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
 bool hasObjectColumns(const ColumnsDescription & columns);
-void finalizeObjectColumns(const MutableColumns & columns);
+void finalizeObjectColumns(MutableColumns & columns);
 
 /// Updates types of objects in @object_columns inplace
 /// according to types in new_columns.
@@ -73,13 +74,10 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
-std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
-
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
-
 
 /// For all columns which exist in @expected_columns and
 /// don't exist in @available_columns adds to WITH clause
@@ -88,37 +86,6 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     ASTPtr query);
-
-/// Visitor that keeps @num_dimensions_to_keep dimensions in arrays
-/// and replaces all scalars or nested arrays to @replacement at that level.
-class FieldVisitorReplaceScalars : public StaticVisitor<Field>
-{
-public:
-    FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
-        : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
-    {
-    }
-
-    Field operator()(const Array & x) const;
-
-    template <typename T>
-    Field operator()(const T &) const { return replacement; }
-
-private:
-    const Field & replacement;
-    size_t num_dimensions_to_keep;
-};
-
-/// Calculates number of dimensions in array field.
-/// Returns 0 for scalar fields.
-class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
-{
-public:
-    size_t operator()(const Array & x) const;
-
-    template <typename T>
-    size_t operator()(const T &) const { return 0; }
-};
 
 /// Receives range of objects, which contains collections
 /// of columns-like objects (e.g. ColumnsDescription or NamesAndTypesList)

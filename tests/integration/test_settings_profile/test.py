@@ -115,7 +115,7 @@ def test_smoke():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
@@ -158,7 +158,7 @@ def test_smoke():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
@@ -228,7 +228,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
 
@@ -240,7 +240,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile_elements(role_name="worker") == []
@@ -278,7 +278,7 @@ def test_settings_from_granted_role():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 120000000", user="robin")
     assert system_settings_profile("xyz") == [
@@ -360,7 +360,7 @@ def test_alter_and_drop():
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",
             user="robin",
         )
-        == "0\n"
+        == "10000000000\n"
     )
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
@@ -374,17 +374,17 @@ def test_show_profiles():
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
-        == "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
     )
     assert (
         instance.query("SHOW CREATE PROFILES")
-        == "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )
 
     expected_access = (
-        "CREATE SETTINGS PROFILE default SETTINGS load_balancing = \\'random\\'\n"
+        "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
         "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE xyz\n"
     )

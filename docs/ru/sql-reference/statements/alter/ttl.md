@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/alter/ttl
-sidebar_position: 44
-sidebar_label: TTL
+toc_priority: 44
+toc_title: TTL
 ---
 
 #  Манипуляции с TTL таблицы {#manipuliatsii-s-ttl-tablitsy}

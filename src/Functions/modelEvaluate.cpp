@@ -168,7 +168,7 @@ private:
 };
 
 
-REGISTER_FUNCTION(ExternalModels)
+void registerFunctionsExternalModels(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModelEvaluate>();
 }

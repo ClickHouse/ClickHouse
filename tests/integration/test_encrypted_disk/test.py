@@ -252,21 +252,3 @@ EOF""".format(
     # Detach the part encrypted with the wrong key and check that another part containing "(2,'data'),(3,'data')" still can be read.
     node.query("ALTER TABLE encrypted_test DETACH PART '{}'".format(FIRST_PART_NAME))
     assert node.query(select_query) == "(2,'data'),(3,'data')"
-
-
-def test_read_in_order():
-    node.query(
-        "CREATE TABLE encrypted_test(`a` UInt64,  `b` String(150)) ENGINE = MergeTree() ORDER BY (a, b) SETTINGS storage_policy='encrypted_policy'"
-    )
-
-    node.query(
-        "INSERT INTO encrypted_test SELECT * FROM generateRandom('a UInt64, b FixedString(150)') LIMIT 100000"
-    )
-
-    node.query(
-        "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=1 FORMAT Null"
-    )
-
-    node.query(
-        "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=0 FORMAT Null"
-    )

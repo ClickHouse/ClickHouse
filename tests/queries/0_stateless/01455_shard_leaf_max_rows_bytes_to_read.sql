@@ -20,7 +20,6 @@ SELECT count() FROM (SELECT * FROM remote('127.0.0.2', system.numbers) LIMIT 100
 DROP TABLE IF EXISTS test_local;
 DROP TABLE IF EXISTS test_distributed;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test_local (date Date, value UInt32) ENGINE = MergeTree(date, date, 8192);
 CREATE TABLE test_distributed AS test_local ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), test_local, rand());
 

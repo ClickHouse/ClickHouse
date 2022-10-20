@@ -1,6 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/misc
-sidebar_position: 41
+toc_hidden: true
+toc_priority: 41
 ---
 
 # Прочие виды запросов {#prochie-vidy-zaprosov}

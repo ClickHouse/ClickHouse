@@ -2,7 +2,6 @@
 #include <cstddef>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <IO/WriteSettings.h>
 
 
 namespace DB
@@ -21,10 +20,6 @@ struct MergeTreeReaderSettings
     bool save_marks_in_cache = false;
     /// Validate checksums on reading (should be always enabled in production).
     bool checksum_on_read = true;
-    /// True if we read in order of sorting key.
-    bool read_in_order = false;
-    /// Deleted mask is applied to all reads except internal select from mutate some part columns.
-    bool apply_deleted_mask = true;
 };
 
 struct MergeTreeWriterSettings
@@ -33,7 +28,6 @@ struct MergeTreeWriterSettings
 
     MergeTreeWriterSettings(
         const Settings & global_settings,
-        const WriteSettings & query_write_settings_,
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
@@ -46,7 +40,6 @@ struct MergeTreeWriterSettings
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
-        , query_write_settings(query_write_settings_)
     {
     }
 
@@ -55,7 +48,6 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
-    WriteSettings query_write_settings;
 };
 
 }

@@ -2,10 +2,8 @@
 #include <iostream>
 #include <gtest/gtest.h>
 #include <Common/FileCache.h>
-#include <Common/FileSegment.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/FileCacheSettings.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
@@ -33,7 +31,7 @@ void assertRange(
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
     ASSERT_EQ(file_segment->state(), expected_state);
-}
+};
 
 void printRanges(const auto & segments)
 {
@@ -47,9 +45,14 @@ std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder
     return std::vector<DB::FileSegmentPtr>(holder.file_segments.begin(), holder.file_segments.end());
 }
 
-String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
+String keyToStr(const DB::IFileCache::Key & key)
 {
-    auto key_str = key.toString();
+    return getHexUIntLowercase(key);
+}
+
+String getFileSegmentPath(const String & base_path, const DB::IFileCache::Key & key, size_t offset)
+{
+    auto key_str = keyToStr(key);
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
@@ -58,13 +61,13 @@ void download(DB::FileSegmentPtr file_segment)
     const auto & key = file_segment->key();
     size_t size = file_segment->range().size();
 
-    auto key_str = key.toString();
+    auto key_str = keyToStr(key);
     auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
     if (!fs::exists(subdir))
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment->write(data.data(), size, file_segment->getDownloadOffset());
+    file_segment->write(data.data(), size);
 }
 
 void prepareAndDownload(DB::FileSegmentPtr file_segment)
@@ -80,12 +83,12 @@ void complete(const DB::FileSegmentsHolder & holder)
     {
         ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(file_segment);
-        file_segment->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        file_segment->complete(DB::FileSegment::State::DOWNLOADED);
     }
 }
 
 
-TEST(FileCache, get)
+TEST(LRUFileCache, get)
 {
     if (fs::exists(cache_base_path))
         fs::remove_all(cache_base_path);
@@ -94,21 +97,17 @@ TEST(FileCache, get)
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
-    std::string query_id = "query_id";
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
-    query_context->setCurrentQueryId(query_id);
+    query_context->setCurrentQueryId("query_id");
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
-    DB::FileCacheSettings settings;
-    settings.max_size = 30;
-    settings.max_elements = 5;
-    auto cache = DB::FileCache(cache_base_path, settings);
+    auto cache = DB::LRUFileCache(cache_base_path, 30, 5);
     cache.initialize();
     auto key = cache.hash("key1");
 
     {
-        auto holder = cache.getOrSet(key, 0, 10, false);  /// Add range [0, 9]
+        auto holder = cache.getOrSet(key, 0, 10);  /// Add range [0, 9]
         auto segments = fromHolder(holder);
         /// Range was not present in cache. It should be added in cache as one while file segment.
         ASSERT_EQ(segments.size(), 1);
@@ -116,28 +115,26 @@ TEST(FileCache, get)
         assertRange(1, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::EMPTY);
 
         /// Exception because space not reserved.
-        /// EXPECT_THROW(download(segments[0]), DB::Exception);
+        EXPECT_THROW(download(segments[0]), DB::Exception);
         /// Exception because space can be reserved only by downloader
-        /// EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
+        EXPECT_THROW(segments[0]->reserve(segments[0]->range().size()), DB::Exception);
 
         ASSERT_TRUE(segments[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         ASSERT_TRUE(segments[0]->reserve(segments[0]->range().size()));
         assertRange(2, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADING);
 
         download(segments[0]);
-        segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[0]->complete(DB::FileSegment::State::DOWNLOADED);
         assertRange(3, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
     }
 
     /// Current cache:    [__________]
     ///                   ^          ^
     ///                   0          9
-    ASSERT_EQ(cache.getFileSegmentsNum(), 1);
-    ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
     {
         /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
-        auto holder = cache.getOrSet(key, 5, 10, false);
+        auto holder = cache.getOrSet(key, 5, 10);
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 2);
 
@@ -146,25 +143,23 @@ TEST(FileCache, get)
 
         ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[1]);
-        segments[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[1]->complete(DB::FileSegment::State::DOWNLOADED);
         assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
     }
 
     /// Current cache:    [__________][_____]
     ///                   ^          ^^     ^
     ///                   0          910    14
-    ASSERT_EQ(cache.getFileSegmentsNum(), 2);
-    ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
     {
-        auto holder = cache.getOrSet(key, 9, 1, false);  /// Get [9, 9]
+        auto holder = cache.getOrSet(key, 9, 1);  /// Get [9, 9]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(7, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
     }
 
     {
-        auto holder = cache.getOrSet(key, 9, 2, false);  /// Get [9, 10]
+        auto holder = cache.getOrSet(key, 9, 2);  /// Get [9, 10]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 2);
         assertRange(8, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
@@ -172,25 +167,23 @@ TEST(FileCache, get)
     }
 
     {
-        auto holder = cache.getOrSet(key, 10, 1, false);  /// Get [10, 10]
+        auto holder = cache.getOrSet(key, 10, 1);  /// Get [10, 10]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(10, segments[0], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
     }
 
-    complete(cache.getOrSet(key, 17, 4, false)); /// Get [17, 20]
-    complete(cache.getOrSet(key, 24, 3, false)); /// Get [24, 26]
-    /// complete(cache.getOrSet(key, 27, 1, false)); /// Get [27, 27]
+    complete(cache.getOrSet(key, 17, 4)); /// Get [17, 20]
+    complete(cache.getOrSet(key, 24, 3)); /// Get [24, 26]
+    complete(cache.getOrSet(key, 27, 1)); /// Get [27, 27]
 
     /// Current cache:    [__________][_____]   [____]    [___][]
     ///                   ^          ^^     ^   ^    ^    ^   ^^^
     ///                   0          910    14  17   20   24  2627
     ///
-    ASSERT_EQ(cache.getFileSegmentsNum(), 4);
-    ASSERT_EQ(cache.getUsedCacheSize(), 22);
 
     {
-        auto holder = cache.getOrSet(key, 0, 26, false); /// Get [0, 25]
+        auto holder = cache.getOrSet(key, 0, 26); /// Get [0, 25]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 6);
 
@@ -203,7 +196,7 @@ TEST(FileCache, get)
         ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[2]);
 
-        segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
 
         assertRange(14, segments[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
 
@@ -224,14 +217,14 @@ TEST(FileCache, get)
         /// as max elements size is reached, next attempt to put something in cache should fail.
         /// This will also check that [27, 27] was indeed evicted.
 
-        auto holder1 = cache.getOrSet(key, 27, 1, false);
+        auto holder1 = cache.getOrSet(key, 27, 1);
         auto segments_1 = fromHolder(holder1); /// Get [27, 27]
         ASSERT_EQ(segments_1.size(), 1);
         assertRange(17, segments_1[0], DB::FileSegment::Range(27, 27), DB::FileSegment::State::EMPTY);
     }
 
     {
-        auto holder = cache.getOrSet(key, 12, 10, false); /// Get [12, 21]
+        auto holder = cache.getOrSet(key, 12, 10); /// Get [12, 21]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 4);
 
@@ -244,7 +237,7 @@ TEST(FileCache, get)
         ASSERT_TRUE(segments[3]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[3]);
 
-        segments[3]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[3]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[3]->state() == DB::FileSegment::State::DOWNLOADED);
     }
 
@@ -252,10 +245,10 @@ TEST(FileCache, get)
     ///                   ^          ^       ^   ^   ^
     ///                   10         17      21  24  26
 
-    ASSERT_EQ(cache.getFileSegmentsNum(), 5);
+    ASSERT_EQ(cache.getStat().size, 5);
 
     {
-        auto holder = cache.getOrSet(key, 23, 5, false); /// Get [23, 28]
+        auto holder = cache.getOrSet(key, 23, 5); /// Get [23, 28]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 3);
 
@@ -267,8 +260,8 @@ TEST(FileCache, get)
         ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[0]);
         prepareAndDownload(segments[2]);
-        segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
-        segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[0]->complete(DB::FileSegment::State::DOWNLOADED);
+        segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
     }
 
     /// Current cache:    [____][_]  [][___][__]
@@ -276,12 +269,12 @@ TEST(FileCache, get)
     ///                   17      21 2324  26  28
 
     {
-        auto holder5 = cache.getOrSet(key, 2, 3,false); /// Get [2, 4]
+        auto holder5 = cache.getOrSet(key, 2, 3); /// Get [2, 4]
         auto s5 = fromHolder(holder5);
         ASSERT_EQ(s5.size(), 1);
         assertRange(25, s5[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::EMPTY);
 
-        auto holder1 = cache.getOrSet(key, 30, 2, false); /// Get [30, 31]
+        auto holder1 = cache.getOrSet(key, 30, 2); /// Get [30, 31]
         auto s1 = fromHolder(holder1);
         ASSERT_EQ(s1.size(), 1);
         assertRange(26, s1[0], DB::FileSegment::Range(30, 31), DB::FileSegment::State::EMPTY);
@@ -290,27 +283,27 @@ TEST(FileCache, get)
         ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(s5[0]);
         prepareAndDownload(s1[0]);
-        s5[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
-        s1[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        s5[0]->complete(DB::FileSegment::State::DOWNLOADED);
+        s1[0]->complete(DB::FileSegment::State::DOWNLOADED);
 
         /// Current cache:    [___]       [_][___][_]   [__]
         ///                   ^   ^       ^  ^   ^  ^   ^  ^
         ///                   2   4       23 24  26 27  30 31
 
-        auto holder2 = cache.getOrSet(key, 23, 1, false); /// Get [23, 23]
+        auto holder2 = cache.getOrSet(key, 23, 1); /// Get [23, 23]
         auto s2 = fromHolder(holder2);
         ASSERT_EQ(s2.size(), 1);
 
-        auto holder3 = cache.getOrSet(key, 24, 3, false); /// Get [24, 26]
+        auto holder3 = cache.getOrSet(key, 24, 3); /// Get [24, 26]
         auto s3 = fromHolder(holder3);
         ASSERT_EQ(s3.size(), 1);
 
-        auto holder4 = cache.getOrSet(key, 27, 1, false); /// Get [27, 27]
+        auto holder4 = cache.getOrSet(key, 27, 1); /// Get [27, 27]
         auto s4 = fromHolder(holder4);
         ASSERT_EQ(s4.size(), 1);
 
         /// All cache is now unreleasable because pointers are still hold
-        auto holder6 = cache.getOrSet(key, 0, 40, false);
+        auto holder6 = cache.getOrSet(key, 0, 40);
         auto f = fromHolder(holder6);
         ASSERT_EQ(f.size(), 9);
 
@@ -331,7 +324,7 @@ TEST(FileCache, get)
     }
 
     {
-        auto holder = cache.getOrSet(key, 2, 3, false); /// Get [2, 4]
+        auto holder = cache.getOrSet(key, 2, 3); /// Get [2, 4]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(31, segments[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::DOWNLOADED);
@@ -342,7 +335,7 @@ TEST(FileCache, get)
     ///                   2   4       23 24  26 27  30 31
 
     {
-        auto holder = cache.getOrSet(key, 25, 5, false); /// Get [25, 29]
+        auto holder = cache.getOrSet(key, 25, 5); /// Get [25, 29]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 3);
 
@@ -366,7 +359,7 @@ TEST(FileCache, get)
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
             thread_status_1.attachQueryContext(query_context_1);
 
-            auto holder_2 = cache.getOrSet(key, 25, 5, false); /// Get [25, 29] once again.
+            auto holder_2 = cache.getOrSet(key, 25, 5); /// Get [25, 29] once again.
             auto segments_2 = fromHolder(holder_2);
             ASSERT_EQ(segments.size(), 3);
 
@@ -393,7 +386,7 @@ TEST(FileCache, get)
         }
 
         prepareAndDownload(segments[2]);
-        segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
 
         other_1.join();
@@ -409,7 +402,7 @@ TEST(FileCache, get)
         /// and notify_all() is also called from destructor of holder.
 
         std::optional<DB::FileSegmentsHolder> holder;
-        holder.emplace(cache.getOrSet(key, 3, 23, false)); /// Get [3, 25]
+        holder.emplace(cache.getOrSet(key, 3, 23)); /// Get [3, 25]
 
         auto segments = fromHolder(*holder);
         ASSERT_EQ(segments.size(), 3);
@@ -435,7 +428,7 @@ TEST(FileCache, get)
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
             thread_status_1.attachQueryContext(query_context_1);
 
-            auto holder_2 = cache.getOrSet(key, 3, 23, false); /// Get [3, 25] once again
+            auto holder_2 = cache.getOrSet(key, 3, 23); /// Get [3, 25] once again
             auto segments_2 = fromHolder(*holder);
             ASSERT_EQ(segments_2.size(), 3);
 
@@ -458,7 +451,7 @@ TEST(FileCache, get)
 
             ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments_2[1]);
-            segments_2[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
+            segments_2[1]->complete(DB::FileSegment::State::DOWNLOADED);
         });
 
         {
@@ -479,11 +472,12 @@ TEST(FileCache, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(cache_base_path, settings);
+        auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
         cache2.initialize();
 
-        auto holder1 = cache2.getOrSet(key, 2, 28, false); /// Get [2, 29]
+        ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
+        auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
         auto segments1 = fromHolder(holder1);
         ASSERT_EQ(segments1.size(), 5);
 
@@ -497,12 +491,10 @@ TEST(FileCache, get)
     {
         /// Test max file segment size
 
-        auto settings2 = settings;
-        settings2.max_file_segment_size = 10;
-        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
+        auto cache2 = DB::LRUFileCache(caches_dir / "cache2", 30, 5, /* max_file_segment_size */10);
         cache2.initialize();
 
-        auto holder1 = cache2.getOrSet(key, 0, 25, false); /// Get [0, 24]
+        auto holder1 = cache2.getOrSet(key, 0, 25); /// Get [0, 24]
         auto segments1 = fromHolder(holder1);
 
         ASSERT_EQ(segments1.size(), 3);
@@ -510,5 +502,4 @@ TEST(FileCache, get)
         assertRange(49, segments1[1], DB::FileSegment::Range(10, 19), DB::FileSegment::State::EMPTY);
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
-
 }

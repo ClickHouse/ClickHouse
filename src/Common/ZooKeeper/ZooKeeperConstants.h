@@ -32,10 +32,6 @@ enum class OpNum : int32_t
     Check = 13,
     Multi = 14,
     Auth = 100,
-
-    // CH Keeper specific operations
-    FilteredList = 500,
-
     SessionID = 997, /// Special internal request
 };
 

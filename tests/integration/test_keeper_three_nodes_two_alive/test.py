@@ -6,6 +6,7 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from kazoo.client import KazooClient, KazooState
 

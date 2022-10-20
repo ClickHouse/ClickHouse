@@ -50,11 +50,7 @@ public:
          return expr_columns.getByName(signature->return_name).column;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    /// It's possible if expression_actions contains function that don't use
-    /// default implementation for Nothing.
-    /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
-    bool useDefaultImplementationForNothing() const override { return false; }
+bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -122,10 +118,6 @@ public:
     String getName() const override { return "FunctionCapture"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// It's possible if expression_actions contains function that don't use
-    /// default implementation for Nothing and one of captured columns can be Nothing
-    /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -255,8 +247,6 @@ public:
 
     String getName() const override { return name; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// See comment in ExecutableFunctionCapture.
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }

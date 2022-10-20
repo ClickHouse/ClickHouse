@@ -1,8 +1,7 @@
 ---
-slug: /zh/faq/general/mapreduce
 title: 为何不使用 MapReduce等技术?
 toc_hidden: true
-sidebar_position: 110
+toc_priority: 110
 ---
 
 # 为何不使用 MapReduce等技术? {#why-not-use-something-like-mapreduce}

@@ -114,6 +114,11 @@ public:
         nested_function->destroy(nestedPlace(place));
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroyUpToState(nestedPlace(place));
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
@@ -187,6 +192,21 @@ public:
     bool isState() const override
     {
         return nested_function->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_function->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_function->getDefaultVersion();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
@@ -307,22 +327,17 @@ public:
     }
 
     void addBatchSinglePlace( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
+            batch_size, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
         if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, row_begin, row_end, 1))
+            if (!memoryIsByte(null_map, batch_size, 1))
                 this->setFlag(place);
     }
 

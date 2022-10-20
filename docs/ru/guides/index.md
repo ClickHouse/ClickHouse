@@ -1,7 +1,7 @@
 ---
-slug: /ru/guides/
-sidebar_position: 38
-sidebar_label: "Руководства"
+toc_folder_title: "Руководства"
+toc_priority: 38
+toc_title: "Обзор"
 ---
 
 # Руководства {#rukovodstva}

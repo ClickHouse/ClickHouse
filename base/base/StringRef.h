@@ -37,8 +37,7 @@ struct StringRef
     size_t size = 0;
 
     /// Non-constexpr due to reinterpret_cast.
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
     {
         /// Sanity check for overflowed values.
@@ -52,20 +51,14 @@ struct StringRef
     constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
     constexpr StringRef() = default;
 
-    bool empty() const { return size == 0; }
-
     std::string toString() const { return std::string(data, size); }
-    explicit operator std::string() const { return toString(); }
 
+    explicit operator std::string() const { return toString(); }
     std::string_view toView() const { return std::string_view(data, size); }
+
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
-/// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
-/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
-/// and the UBSan thinks that something like nullptr + 8 is UB.
-constexpr const inline char empty_string_ref_addr{};
-constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};
 
 using StringRefs = std::vector<StringRef>;
 

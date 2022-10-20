@@ -137,9 +137,41 @@ Field QueryFuzzer::fuzzField(Field field)
             break;
         }
     }
-    else if (type == Field::Types::Array || type == Field::Types::Tuple)
+    else if (type == Field::Types::Array)
     {
-        auto & arr = field.reinterpret<FieldVector>();
+        auto & arr = field.get<Array>();
+
+        if (fuzz_rand() % 5 == 0 && !arr.empty())
+        {
+            size_t pos = fuzz_rand() % arr.size();
+            arr.erase(arr.begin() + pos);
+            std::cerr << "erased\n";
+        }
+
+        if (fuzz_rand() % 5 == 0)
+        {
+            if (!arr.empty())
+            {
+                size_t pos = fuzz_rand() % arr.size();
+                arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
+                std::cerr << fmt::format("inserted (pos {})\n", pos);
+            }
+            else
+            {
+                arr.insert(arr.begin(), getRandomField(0));
+                std::cerr << "inserted (0)\n";
+            }
+
+        }
+
+        for (auto & element : arr)
+        {
+            element = fuzzField(element);
+        }
+    }
+    else if (type == Field::Types::Tuple)
+    {
+        auto & arr = field.get<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -329,9 +361,9 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
         case 0:
         {
             const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
-                : r == 1 ? WindowFrame::FrameType::RANGE
-                    : WindowFrame::FrameType::GROUPS;
+            def.frame_type = r == 0 ? WindowFrame::FrameType::Rows
+                : r == 1 ? WindowFrame::FrameType::Range
+                    : WindowFrame::FrameType::Groups;
             break;
         }
         case 1:
@@ -385,7 +417,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             break;
     }
 
-    if (def.frame_type == WindowFrame::FrameType::RANGE
+    if (def.frame_type == WindowFrame::FrameType::Range
         && def.frame_begin_type == WindowFrame::BoundaryType::Unbounded
         && def.frame_begin_preceding
         && def.frame_end_type == WindowFrame::BoundaryType::Current)

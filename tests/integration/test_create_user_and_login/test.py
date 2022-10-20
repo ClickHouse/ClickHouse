@@ -81,23 +81,18 @@ EOF""",
             ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
         )
 
-        expected_errors = ["no user with such name", "not found in user directories"]
+        expected_error = "no user with such name"
         while True:
             out, err = instance.query_and_get_answer_with_error("SELECT 1", user="C")
-            found_error = [
-                expected_error
-                for expected_error in expected_errors
-                if (expected_error in err)
-            ]
-            if found_error:
-                logging.debug(f"Got error '{found_error}' just as expected")
+            if expected_error in err:
+                logging.debug(f"Got error '{expected_error}' just as expected")
                 break
             if out == "1\n":
                 logging.debug(f"Got output '1', retrying...")
                 time.sleep(0.5)
                 continue
             raise Exception(
-                f"Expected either output '1' or one of errors '{expected_errors}', got output={out} and error={err}"
+                f"Expected either output '1' or error '{expected_error}', got output={out} and error={err}"
             )
 
         assert instance.query("SELECT name FROM system.users WHERE name='C'") == ""

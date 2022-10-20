@@ -13,6 +13,7 @@
     <path>./</path>
 
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
+    <mark_cache_size>5368709120</mark_cache_size>
     <mlock_executable>true</mlock_executable>
 
     <users>

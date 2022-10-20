@@ -43,7 +43,7 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insertOriginal(StringRef value)
+    void insertOriginal(const StringRef & value)
     {
         getSkUpdate()->update(value.data, value.size);
     }

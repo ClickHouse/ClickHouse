@@ -501,6 +501,15 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
         callback(column);
 }
 
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & column : columns)
+    {
+        callback(column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+}
+
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
@@ -559,6 +568,17 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
+}
+
+SerializationInfoPtr ColumnTuple::getSerializationInfo() const
+{
+    MutableSerializationInfos infos;
+    infos.reserve(columns.size());
+
+    for (const auto & column : columns)
+        infos.push_back(const_pointer_cast<SerializationInfo>(column->getSerializationInfo()));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), SerializationInfo::Settings{});
 }
 
 }

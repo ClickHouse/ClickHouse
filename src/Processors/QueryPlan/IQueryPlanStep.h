@@ -3,6 +3,8 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
+namespace JSONBuilder { class JSONMap; }
+
 namespace DB
 {
 
@@ -25,7 +27,7 @@ public:
 
     /// Tuples with those columns are distinct.
     /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list breaks this invariant.
+    /// Removing any column from this list brakes this invariant.
     NameSet distinct_columns = {};
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
@@ -34,7 +36,6 @@ public:
     /// How data is sorted.
     enum class SortMode
     {
-        None,
         Chunk, /// Separate chunks are sorted
         Port, /// Data from each port is sorted
         Stream, /// Data is globally sorted
@@ -42,7 +43,7 @@ public:
 
     /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
-    SortMode sort_mode = SortMode::None;
+    SortMode sort_mode = SortMode::Chunk;
 
     /// Things which may be added:
     /// * limit

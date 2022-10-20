@@ -32,8 +32,10 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         {})
     , part_in_memory(std::move(data_part_))
 {
-    for (const auto & [name, type] : columns_to_read)
+    for (const auto & name_and_type : columns)
     {
+        auto [name, type] = getColumnFromPart(name_and_type);
+
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
         if (!part_in_memory->block.has(name) && typeid_cast<const DataTypeArray *>(type.get()))
@@ -62,19 +64,20 @@ size_t MergeTreeReaderInMemory::readRows(
             + toString(total_rows_read) + ". Rows in part: " + toString(part_rows), ErrorCodes::CANNOT_READ_ALL_DATA);
 
     size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
-    for (size_t i = 0; i < num_columns; ++i)
+    auto column_it = columns.begin();
+    for (size_t i = 0; i < num_columns; ++i, ++column_it)
     {
-        const auto & column_to_read = columns_to_read[i];
+        auto name_type = getColumnFromPart(*column_it);
 
         /// Copy offsets, if array of Nested column is missing in part.
-        auto offsets_it = positions_for_offsets.find(column_to_read.name);
-        if (offsets_it != positions_for_offsets.end() && !column_to_read.isSubcolumn())
+        auto offsets_it = positions_for_offsets.find(name_type.name);
+        if (offsets_it != positions_for_offsets.end() && !name_type.isSubcolumn())
         {
             const auto & source_offsets = assert_cast<const ColumnArray &>(
                 *part_in_memory->block.getByPosition(offsets_it->second).column).getOffsets();
 
             if (res_columns[i] == nullptr)
-                res_columns[i] = column_to_read.type->createColumn();
+                res_columns[i] = name_type.type->createColumn();
 
             auto mutable_column = res_columns[i]->assumeMutable();
             auto & res_offstes = assert_cast<ColumnArray &>(*mutable_column).getOffsets();
@@ -84,9 +87,9 @@ size_t MergeTreeReaderInMemory::readRows(
 
             res_columns[i] = std::move(mutable_column);
         }
-        else if (part_in_memory->hasColumnFiles(column_to_read))
+        else if (part_in_memory->hasColumnFiles(name_type))
         {
-            auto block_column = getColumnFromBlock(part_in_memory->block, column_to_read);
+            auto block_column = getColumnFromBlock(part_in_memory->block, name_type);
             if (rows_to_read == part_rows)
             {
                 res_columns[i] = block_column;
@@ -94,7 +97,7 @@ size_t MergeTreeReaderInMemory::readRows(
             else
             {
                 if (res_columns[i] == nullptr)
-                    res_columns[i] = column_to_read.type->createColumn();
+                    res_columns[i] = name_type.type->createColumn();
 
                 auto mutable_column = res_columns[i]->assumeMutable();
                 mutable_column->insertRangeFrom(*block_column, total_rows_read, rows_to_read);

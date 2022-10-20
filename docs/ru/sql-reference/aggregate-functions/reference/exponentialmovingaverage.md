@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/exponentialmovingaverage
-sidebar_position: 108
+toc_priority: 108
 ---
 
 ## exponentialMovingAverage {#exponential-moving-average}

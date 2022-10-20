@@ -7,8 +7,11 @@ concurrency:
 on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */6 * * *'
+  workflow_run:
+    workflows: ["PullRequestCI"]
+    types:
+      - completed
   workflow_dispatch:
-  workflow_call:
 jobs:
   KeeperJepsenRelease:
     runs-on: [self-hosted, style-checker]
@@ -36,8 +39,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
           sudo rm -fr "$TEMP_PATH"
