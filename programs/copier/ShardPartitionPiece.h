@@ -1,13 +1,15 @@
 #pragma once
 
-#include "Internals.h"
+#include <base/types.h>
 
 namespace DB
 {
 
+struct ShardPartition;
+
 struct ShardPartitionPiece
 {
-    ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_present_piece_);
+    ShardPartitionPiece(ShardPartition & parent, size_t current_piece_number_, bool is_present_piece_);
 
     String getPartitionPiecePath() const;
 
@@ -33,5 +35,7 @@ struct ShardPartitionPiece
 
     ShardPartition & shard_partition;
 };
+
+using PartitionPieces = std::vector<ShardPartitionPiece>;
 
 }

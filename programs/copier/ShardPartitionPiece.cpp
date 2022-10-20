@@ -1,11 +1,19 @@
 #include "ShardPartitionPiece.h"
 
+#include "ShardPartition.h"
+#include "TaskShard.h"
+
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 
-ShardPartitionPiece::ShardPartitionPiece(ShardPartition &parent, size_t current_piece_number_, bool is_present_piece_)
-        : is_absent_piece(!is_present_piece_), current_piece_number(current_piece_number_),
-          shard_partition(parent) {}
+ShardPartitionPiece::ShardPartitionPiece(ShardPartition & parent, size_t current_piece_number_, bool is_present_piece_)
+    : is_absent_piece(!is_present_piece_)
+    , current_piece_number(current_piece_number_)
+    , shard_partition(parent)
+{
+}
 
 String ShardPartitionPiece::getPartitionPiecePath() const
 {

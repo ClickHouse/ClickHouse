@@ -1,7 +1,13 @@
 #pragma once
 
-#include "Aliases.h"
+#include "TaskTable.h"
+
+#include <Core/Settings.h>
+#include <base/types.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <random>
 
 namespace DB
 {
