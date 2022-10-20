@@ -395,6 +395,7 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
+    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -584,6 +585,9 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
+    if (!connected.load(std::memory_order_acquire))
+        return;
+
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);
