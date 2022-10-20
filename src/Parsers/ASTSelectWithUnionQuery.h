@@ -32,9 +32,8 @@ public:
     /// Consider any mode other than ALL as non-default.
     bool hasNonDefaultUnionMode() const;
 
-    bool has_query_parameters = false;
-    bool hasQueryParameters() const { return has_query_parameters; }
-    void setHasQueryParameters();
+    mutable std::optional<bool> has_query_parameters;
+    bool hasQueryParameters() const;
 
 };
 

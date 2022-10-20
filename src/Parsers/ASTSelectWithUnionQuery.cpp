@@ -95,24 +95,25 @@ bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
         || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
 }
 
-
-void ASTSelectWithUnionQuery::setHasQueryParameters()
+bool ASTSelectWithUnionQuery::hasQueryParameters() const
 {
-    if (!list_of_selects)
-        return;
-
-    for (const auto & child : list_of_selects->children)
+    if (!has_query_parameters.has_value())
     {
-        if (auto * select_node = child->as<ASTSelectQuery>())
+        for (const auto & child : list_of_selects->children)
         {
-            select_node->setHasQueryParameters();
-            if (select_node->hasQueryParameters())
+            if (auto * select_node = child->as<ASTSelectQuery>())
             {
-                has_query_parameters = true;
-                break;
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
             }
         }
+        has_query_parameters = false;
     }
+
+    return  has_query_parameters.value();
 }
 
 }

@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Find parameters in a query paramater values and collect them into map.
+/// Find parameters in a query parameter values and collect them into map.
 NameToNameMap analyzeReceiveFunctionParamValues(const ASTPtr & ast);
 
 }

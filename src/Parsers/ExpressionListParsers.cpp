@@ -221,7 +221,6 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
-    select_with_union_query->setHasQueryParameters();
 
     auto new_subquery = std::make_shared<ASTSubquery>();
     new_subquery->children.push_back(select_with_union_query);
