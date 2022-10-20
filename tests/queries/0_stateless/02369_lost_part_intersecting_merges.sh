@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-random-detach
+# Tag no-random-detach: test relies on DETACH/ATTACH in specific place
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
