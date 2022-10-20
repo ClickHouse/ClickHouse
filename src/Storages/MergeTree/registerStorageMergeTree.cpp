@@ -446,7 +446,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (arg_cnt > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
                 throw Exception(
