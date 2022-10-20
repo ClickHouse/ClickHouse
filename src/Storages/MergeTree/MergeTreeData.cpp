@@ -954,6 +954,8 @@ void MergeTreeData::loadDataPartsFromDisk(
     /// Parallel loading of data parts.
     pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
     size_t num_threads = pool.getMaxThreads();
+    LOG_DEBUG(log, "Going to use {} threads to load parts", num_threads);
+
     std::vector<size_t> parts_per_thread(num_threads, num_parts / num_threads);
     for (size_t i = 0ul; i < num_parts % num_threads; ++i)
         ++parts_per_thread[i];
@@ -1016,6 +1018,8 @@ void MergeTreeData::loadDataPartsFromDisk(
         auto part_opt = MergeTreePartInfo::tryParsePartName(part_name, format_version);
         if (!part_opt)
             return;
+
+        LOG_TRACE(log, "Loading part {} from disk {}", part_name, part_disk_ptr->getName());
         const auto & part_info = *part_opt;
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
         auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, part_name);
@@ -1119,6 +1123,7 @@ void MergeTreeData::loadDataPartsFromDisk(
         }
 
         addPartContributionToDataVolume(part);
+        LOG_TRACE(log, "Finished part {} load on disk {}", part_name, part_disk_ptr->getName());
     };
 
     std::mutex part_select_mutex;
@@ -1311,8 +1316,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     size_t num_parts = 0;
     std::queue<std::vector<std::pair<String, DiskPtr>>> parts_queue;
-    for (auto & [_, disk_parts] : disk_part_map)
+    for (auto & [disk_name, disk_parts] : disk_part_map)
     {
+        LOG_INFO(log, "Found {} parts for disk '{}' to load", disk_parts.size(), disk_name);
+
         if (disk_parts.empty())
             continue;
         num_parts += disk_parts.size();
@@ -1692,7 +1699,13 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     if (!lock.try_lock())
         return res;
 
+    /// Concurrent parts removal is disabled for "zero-copy replication" (a non-production feature),
+    /// because parts removal involves hard links and concurrent hard link operations don't work correctly
+    /// in the "zero-copy replication" (because it is a non-production feature).
+    /// Please don't use "zero-copy replication" (a non-production feature) in production.
+    /// It is not ready for production usage. Don't use it.
     bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
+
     if (need_remove_parts_in_order)
     {
         bool has_zero_copy_disk = false;
@@ -1907,9 +1920,19 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
     const auto settings = getSettings();
+    bool has_zero_copy_parts = false;
+    if (supportsReplication() && settings->allow_remote_fs_zero_copy_replication)
+    {
+        has_zero_copy_parts = std::any_of(
+            parts_to_remove.begin(), parts_to_remove.end(),
+            [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport(); }
+        );
+    }
+
     if (parts_to_remove.size() > 1
         && settings->max_part_removal_threads > 1
-        && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
+        && parts_to_remove.size() > settings->concurrent_part_removal_threshold
+        && !has_zero_copy_parts) /// parts must be removed in order for zero-copy replication
     {
         /// Parallel parts removal.
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
@@ -3222,7 +3245,10 @@ void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part
         LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
 
     part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
-    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
+
+    DataPartsLock lock = lockParts();
+    if (part_to_detach->getState() == DataPartState::Active)
+        removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true, &lock);
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
@@ -5676,7 +5702,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
+    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
+        || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
 
     // Currently projections don't support parallel replicas reading yet.
@@ -6226,7 +6253,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+        src_part_storage = src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
     }
 
     String with_copy;
@@ -6410,7 +6437,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         if (auto part_in_memory = asInMemoryPart(part))
         {
             auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
-            data_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+            data_part_storage = part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
         }
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
