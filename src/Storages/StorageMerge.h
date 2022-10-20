@@ -83,6 +83,8 @@ private:
     String source_database_name_or_regexp;
     bool database_is_regexp = false;
 
+    Poco::Logger * log;
+
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;

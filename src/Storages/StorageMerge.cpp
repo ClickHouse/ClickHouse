@@ -67,6 +67,7 @@ StorageMerge::StorageMerge(
     , source_databases_and_tables(source_databases_and_tables_)
     , source_database_name_or_regexp(source_database_name_or_regexp_)
     , database_is_regexp(database_is_regexp_)
+    , log(&Poco::Logger::get(fmt::format("StorageMerge({}.{})", table_id_.database_name, table_id_.table_name)))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
@@ -274,6 +275,12 @@ void StorageMerge::read(
 
     StorageListWithLocks selected_tables
         = getSelectedTables(modified_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+
+    Strings tables;
+    tables.reserve(selected_tables.size())
+    for (const auto & entry : selected_tables)
+        tables.push_back(fmt::format("{}.{}", std::get<0>(entry), std::get<3>(entry)));
+    LOG_TRACE(log, "Will read from {} tables: ", fmt::join(tables, ","));
 
     InputOrderInfoPtr input_sorting_info;
     if (query_info.order_optimizer)
