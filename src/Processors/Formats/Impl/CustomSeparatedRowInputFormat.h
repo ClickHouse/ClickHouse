@@ -30,6 +30,7 @@ private:
 
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
+    void readPrefix() override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;

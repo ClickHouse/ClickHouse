@@ -53,7 +53,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -62,6 +61,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -82,13 +82,17 @@
 #if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
 #endif
+#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProxyV1HandlerFactory.h>
+#include <Server/TLSHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
+#include <unordered_set>
 
 #include "config.h"
 #include "config_version.h"
@@ -387,7 +391,16 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config)
 {
     bool listen_try = config.getBool("listen_try", false);
     if (!listen_try)
-        listen_try = DB::getMultipleValuesFromConfig(config, "", "listen_host").empty();
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        listen_try =
+            DB::getMultipleValuesFromConfig(config, "", "listen_host").empty() &&
+            std::none_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+            {
+                return config.has("protocols." + protocol + ".host") && config.has("protocols." + protocol + ".port");
+            });
+    }
     return listen_try;
 }
 
@@ -1010,12 +1023,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         fs::create_directories(user_scripts_path);
     }
 
-    {
-        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
-        global_context->setUserDefinedPath(user_defined_path);
-        fs::create_directories(user_defined_path);
-    }
-
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -1559,18 +1566,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
@@ -1598,6 +1593,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
+        /// Load user-defined SQL functions.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {
@@ -1853,6 +1850,82 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 
+std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & protocol,
+    Poco::Net::HTTPServerParams::Ptr http_params,
+    AsynchronousMetrics & async_metrics,
+    bool & is_secure)
+{
+    auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
+    {
+        if (type == "tcp")
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+
+        if (type == "tls")
+#if USE_SSL
+            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
+#else
+            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+
+        if (type == "proxy1")
+            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
+        if (type == "mysql")
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+        if (type == "postgres")
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+        if (type == "http")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+            );
+        if (type == "prometheus")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+            );
+        if (type == "interserver")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+            );
+
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
+    };
+
+    std::string conf_name = "protocols." + protocol;
+    std::string prefix = conf_name + ".";
+    std::unordered_set<std::string> pset {conf_name};
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
+    while (true)
+    {
+        // if there is no "type" - it's a reference to another protocol and this is just an endpoint
+        if (config.has(prefix + "type"))
+        {
+            std::string type = config.getString(prefix + "type");
+            if (type == "tls")
+            {
+                if (is_secure)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
+                is_secure = true;
+            }
+
+            stack->append(create_factory(type, conf_name));
+        }
+
+        if (!config.has(prefix + "impl"))
+            break;
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        if (!pset.insert(conf_name).second)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+    }
+
+    return stack;
+}
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
@@ -1870,6 +1943,55 @@ void Server::createServers(
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::vector<std::string> hosts;
+        if (config.has("protocols." + protocol + ".host"))
+            hosts.push_back(config.getString("protocols." + protocol + ".host"));
+        else
+            hosts = listen_hosts;
+
+        for (const auto & host : hosts)
+        {
+            std::string conf_name = "protocols." + protocol;
+            std::string prefix = conf_name + ".";
+
+            if (!config.has(prefix + "port"))
+                continue;
+
+            std::string description {"<undefined> protocol"};
+            if (config.has(prefix + "description"))
+                description = config.getString(prefix + "description");
+            std::string port_name = prefix + "port";
+            bool is_secure = false;
+            auto stack = buildProtocolStackFromConfig(config, protocol, http_params, async_metrics, is_secure);
+
+            if (stack->empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
+
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, host, port, is_secure);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+
+                return ProtocolServerAdapter(
+                    host,
+                    port_name.c_str(),
+                    description + ": " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        stack.release(),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+            });
+        }
+    }
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -2118,13 +2240,50 @@ void Server::updateServers(
     {
         if (!server.isStopping())
         {
-            bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
-            bool has_port = !config.getString(server.getPortName(), "").empty();
+            std::string port_name = server.getPortName();
+            bool has_host = false;
+            bool is_http = false;
+            if (port_name.starts_with("protocols."))
+            {
+                std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
+                has_host = config.has(protocol + ".host");
 
-            /// NOTE: better to compare using getPortName() over using
-            /// dynamic_cast<> since HTTPServer is also used for prometheus and
-            /// internal replication communications.
-            bool is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+                std::string conf_name = protocol;
+                std::string prefix = protocol + ".";
+                std::unordered_set<std::string> pset {conf_name};
+                while (true)
+                {
+                    if (config.has(prefix + "type"))
+                    {
+                        std::string type = config.getString(prefix + "type");
+                        if (type == "http")
+                        {
+                            is_http = true;
+                            break;
+                        }
+                    }
+
+                    if (!config.has(prefix + "impl"))
+                        break;
+
+                    conf_name = "protocols." + config.getString(prefix + "impl");
+                    prefix = conf_name + ".";
+
+                    if (!pset.insert(conf_name).second)
+                        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+                }
+            }
+            else
+            {
+                /// NOTE: better to compare using getPortName() over using
+                /// dynamic_cast<> since HTTPServer is also used for prometheus and
+                /// internal replication communications.
+                is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            }
+
+            if (!has_host)
+                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+            bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
             if (force_restart)
                 LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
