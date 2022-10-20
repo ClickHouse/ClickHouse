@@ -226,7 +226,7 @@ public:
         /// from the same std::thread and it will end to std::abort().
         /// So we just reset the state in this case.
         if (state->finished)
-            state.reset();
+            return;
 
         if (initialized())
             abort();
