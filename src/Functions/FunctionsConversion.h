@@ -2209,15 +2209,15 @@ struct ToNumberMonotonicity
 
         /// Integer cases.
 
-        /// Do not support 128 bit integers and decimals for now.
-        if (!isNativeInteger(type))
-            return {};
-
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
+
+        /// Do not support 128 bit integers and decimals for now.
+        if (size_of_from > sizeof(Int64))
+            return {};
 
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
