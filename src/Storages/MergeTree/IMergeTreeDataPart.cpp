@@ -1190,12 +1190,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         auto in = metadata_manager->read("columns.txt");
         loaded_columns.readText(*in);
 
-        for (const auto & column : loaded_columns)
-        {
-            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-                aggregate_function_data_type->setVersion(0, /* if_empty */true);
-        }
+        for (auto & column : loaded_columns)
+            setVersionToAggregateFunctions(column.type, true);
     }
 
     SerializationInfo::Settings settings =
