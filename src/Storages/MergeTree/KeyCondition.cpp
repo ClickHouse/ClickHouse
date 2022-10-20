@@ -6,7 +6,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
@@ -1181,13 +1180,9 @@ bool KeyCondition::transformConstantWithValidFunctions(
             if (is_valid_chain)
             {
                 auto const_type = cur_node->result_type;
-                auto const_column = out_type->createColumnConst(1, out_value);
-                auto maybe_const_value_column = tryCastColumnAccurate({const_column, out_type, ""}, const_type);
-
-                if (maybe_const_value_column == nullptr)
+                auto const_value = convertFieldToType(out_value, *const_type);
+                if (const_value.isNull())
                     return false;
-
-                auto const_value = (*maybe_const_value_column)[0];
 
                 while (!chain.empty())
                 {
