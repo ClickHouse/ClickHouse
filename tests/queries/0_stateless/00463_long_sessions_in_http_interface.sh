@@ -79,7 +79,7 @@ ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABA
 # An infinite loop is required to make the test reliable. We will ensure that at least once the query on the line above has started before this check
 while true
 do
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_9'" | grep -c -F '1' && break || sleep 1
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_9'" | grep -F '1' && break || sleep 1
 done
 
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT 1" | grep -c -F 'Session is locked'
