@@ -7,7 +7,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/KeeperAccess.h>
 
 namespace ProfileEvents
 {

@@ -3,8 +3,8 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Storages/MergeTree/KeeperRetries.h>
-#include <Storages/MergeTree/KeeperAccess.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
 
 
 namespace Poco { class Logger; }
