@@ -208,7 +208,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     return aggregation_analysis_result;
 }
 
-/** Construct aggregation analysis result if query tree has window functions.
+/** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
 std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
@@ -323,8 +323,8 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     if (projection_columns_size != projection_outputs_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "QueryTree projection nodes size mismatch. Expected {}. Actual {}",
-            projection_outputs_size,
-            projection_columns_size);
+            projection_columns_size,
+            projection_outputs_size);
 
     for (size_t i = 0; i < projection_outputs_size; ++i)
     {
@@ -487,7 +487,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr 
 
     if (having_action_step_index_optional && having_analysis_result_optional)
     {
-        auto & having_analysis_result = *where_analysis_result_optional;
+        auto & having_analysis_result = *having_analysis_result_optional;
         auto & having_actions_chain_node = actions_chain.at(*having_action_step_index_optional);
         having_analysis_result.remove_filter_column = !having_actions_chain_node->getChildRequiredOutputColumnsNames().contains(having_analysis_result.filter_column_name);
         expressions_analysis_result.addHaving(std::move(having_analysis_result));
