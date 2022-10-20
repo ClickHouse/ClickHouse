@@ -122,7 +122,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-    
+
         {"used_row_policies.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
         {"used_row_policies.uuid", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUUID>())},
 
