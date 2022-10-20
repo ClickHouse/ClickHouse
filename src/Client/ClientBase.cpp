@@ -1,7 +1,6 @@
 #include <Client/ClientBase.h>
 
 #include <iostream>
-#include <iomanip>
 #include <filesystem>
 #include <map>
 #include <unordered_map>
@@ -9,7 +8,6 @@
 #include "config.h"
 
 #include <Common/DateLUT.h>
-#include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
 #include <base/argsToConfig.h>
 #include <base/LineReader.h>
@@ -32,7 +30,6 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/Config/configReadClient.h>
 #include <Common/NetException.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -70,9 +67,9 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1925,7 +1922,7 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::prompt() const
 {
-    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    return prompt_by_server_display_name;
 }
 
 
