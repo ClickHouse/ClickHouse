@@ -153,17 +153,19 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         ::sort(children.begin(), children.end());
 
-        zkutil::AsyncResponses<Coordination::GetResponse> futures;
-        futures.reserve(children.size());
+        auto children_num = children.size();
+        std::vector<std::string> paths;
+        paths.reserve(children_num);
 
         for (const String & child : children)
-            futures.emplace_back(child, zookeeper->asyncGet(fs::path(queue_path) / child));
+            paths.emplace_back(fs::path(queue_path) / child);
 
-        for (auto & future : futures)
+        auto results = zookeeper->get(paths);
+        for (size_t i = 0; i < children_num; ++i)
         {
-            Coordination::GetResponse res = future.second.get();
+            auto res = results[i];
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
-            entry->znode_name = future.first;
+            entry->znode_name = children[i];
 
             std::lock_guard lock(state_mutex);
 
@@ -641,11 +643,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             LOG_DEBUG(log, "Pulling {} entries to queue: {} - {}", (end - begin), *begin, *last);
 
-            zkutil::AsyncResponses<Coordination::GetResponse> futures;
-            futures.reserve(end - begin);
+            Strings get_paths;
+            get_paths.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                futures.emplace_back(*it, zookeeper->asyncGet(fs::path(zookeeper_path) / "log" / *it));
+                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -655,9 +657,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             std::optional<time_t> min_unprocessed_insert_time_changed;
 
-            for (auto & future : futures)
+            auto get_results = zookeeper->get(get_paths);
+            auto get_num = get_results.size();
+            for (size_t i = 0; i < get_num; ++i)
             {
-                Coordination::GetResponse res = future.second.get();
+                auto res = get_results[i];
 
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
