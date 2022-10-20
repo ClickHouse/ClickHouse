@@ -225,7 +225,7 @@ public:
         /// Where join() won't be executed in case when we call it
         /// from the same std::thread and it will end to std::abort().
         /// So we just do nothing in this case
-        if (state->finished)
+        if (state && state->finished)
             return;
 
         if (initialized())
