@@ -101,7 +101,7 @@ struct DecimalOpHerpers
     {
         Int256 result = 0;
         Int256 multiplier = 1;
-        for (auto i = digits.rbegin(); i != digits.rend(); ++i )
+        for (auto i = digits.rbegin(); i != digits.rend(); ++i)
         {
             result += multiplier * (*i);
             multiplier *= 10;
