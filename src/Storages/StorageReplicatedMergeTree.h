@@ -269,10 +269,7 @@ public:
     DataPartStoragePtr executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
     /// Lock part in zookeeper for use shared data in several nodes
-    void lockSharedData(
-        const IMergeTreeDataPart & part,
-        bool replace_existing_lock,
-        std::optional<HardlinkedFiles> hardlinked_files) const override;
+    void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;
     void lockSharedData(
         const IMergeTreeDataPart & part,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
@@ -284,8 +281,7 @@ public:
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    std::pair<bool, NameSet>
-    unlockSharedData(const IMergeTreeDataPart & part) const override;
+    std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart & part) const override;
     std::pair<bool, NameSet>
     unlockSharedData(const IMergeTreeDataPart & part, const ZooKeeperWithFaultInjectionPtr & zookeeper) const;
 
