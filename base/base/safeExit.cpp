@@ -3,7 +3,6 @@
 #endif
 #include <unistd.h>
 #include <base/safeExit.h>
-#include <base/defines.h>
 
 [[noreturn]] void safeExit(int code)
 {

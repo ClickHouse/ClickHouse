@@ -82,6 +82,11 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<FakeDiskTransaction>(*this);
 }
 
+ObjectStoragePtr DiskObjectStorage::getObjectStorage()
+{
+    return object_storage;
+}
+
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
