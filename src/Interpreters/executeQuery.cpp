@@ -549,15 +549,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query)
         {
             if (insert_query->table_id)
-            {
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
-            }
             else if (auto table = insert_query->getTable(); !table.empty())
-            {
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "2) database: {}", insert_query->table_id.getDatabaseName());
-            }
         }
 
         if (insert_query && insert_query->select)
@@ -588,10 +582,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
 
+        bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        const bool async_insert = queue
-            && insert_query && !insert_query->select
-            && insert_query->hasInlinedData() && settings.async_insert;
+
+        if (insert_query && settings.async_insert)
+        {
+            String reason;
+
+            if (!queue)
+                reason = "asynchronous insert queue is not configured";
+            else if (insert_query->select)
+                reason = "insert query has select";
+            else if (!insert_query->hasInlinedData())
+                reason = "insert query doesn't have inlined data";
+            else
+                async_insert = true;
+
+            if (!async_insert)
+            {
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"),
+                    "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            }
+        }
 
         if (async_insert)
         {

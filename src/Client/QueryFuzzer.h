@@ -8,6 +8,7 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Common/randomSeed.h>
+#include "Parsers/IAST_fwd.h"
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 
@@ -72,6 +73,7 @@ struct QueryFuzzer
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
+    ASTPtr getRandomExpressionList();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);

@@ -109,6 +109,18 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
 {
 }
 
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
+: Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , tcp_server(tcp_server_)
+    , log(&Poco::Logger::get("TCPHandler"))
+    , forwarded_for(stack_data.forwarded_for)
+    , certificate(stack_data.certificate)
+    , default_database(stack_data.default_database)
+    , server_display_name(std::move(server_display_name_))
+{
+}
+
 TCPHandler::~TCPHandler()
 {
     try
@@ -1060,7 +1072,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 {
     auto interface = is_interserver_mode ? ClientInfo::Interface::TCP_INTERSERVER : ClientInfo::Interface::TCP;
 
-    auto res = std::make_unique<Session>(server.context(), interface, socket().secure());
+    auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
 
     auto & client_info = res->getClientInfo();
     client_info.forwarded_for = forwarded_for;
@@ -1087,6 +1099,7 @@ void TCPHandler::receiveHello()
     UInt64 packet_type = 0;
     String user;
     String password;
+    String default_db;
 
     readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
@@ -1108,7 +1121,9 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_database, *in);
+    readStringBinary(default_db, *in);
+    if (!default_db.empty())
+        default_database = default_db;
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
