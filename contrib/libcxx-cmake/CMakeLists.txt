@@ -25,6 +25,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/ios.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.instantiations.cpp"
 "${LIBCXX_SOURCE_DIR}/src/iostream.cpp"
+"${LIBCXX_SOURCE_DIR}/src/legacy_debug_handler.cpp"
 "${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
 "${LIBCXX_SOURCE_DIR}/src/locale.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory.cpp"
@@ -49,6 +50,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/valarray.cpp"
 "${LIBCXX_SOURCE_DIR}/src/variant.cpp"
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
+"${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
 
 add_library(cxx ${SRCS})
