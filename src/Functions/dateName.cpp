@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
@@ -32,6 +33,11 @@ template <typename DataType> struct DataTypeToTimeTypeMap {};
 template <> struct DataTypeToTimeTypeMap<DataTypeDate>
 {
     using TimeType = UInt16;
+};
+
+template <> struct DataTypeToTimeTypeMap<DataTypeDate32>
+{
+    using TimeType = Int32;
 };
 
 template <> struct DataTypeToTimeTypeMap<DataTypeDateTime>
@@ -83,7 +89,7 @@ public:
 
         WhichDataType first_argument_type(arguments[1].type);
 
-        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDateTime64()))
+        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
@@ -109,6 +115,7 @@ public:
 
         if (!((res = executeType<DataTypeDate>(arguments, result_type))
             || (res = executeType<DataTypeDateTime>(arguments, result_type))
+            || (res = executeType<DataTypeDate32>(arguments, result_type))
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
