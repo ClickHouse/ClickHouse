@@ -63,7 +63,7 @@ class ZooKeeperWithFaultInjection
             fault_policy = std::make_unique<RandomFaultInjection>(fault_injection_probability, fault_injection_seed);
 
         if (unlikely(logger))
-            LOG_TRACE(logger, "KeeperAccess created: name={} seed={} fault_probability={}", name, seed, fault_injection_probability);
+            LOG_TRACE(logger, "ZooKeeperWithFailtInjection created: name={} seed={} fault_probability={}", name, seed, fault_injection_probability);
     }
 
 public:
@@ -97,7 +97,7 @@ public:
         if (unlikely(logger))
             LOG_TRACE(
                 logger,
-                "KeeperAccess report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
+                "ZooKeeperWithFailtInjection report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
                 name,
                 seed,
                 calls_total,
@@ -209,7 +209,7 @@ public:
                     {
                         keeper->remove(result_path);
                         if (unlikely(logger))
-                            LOG_TRACE(logger, "KeeperAccess cleanup: seed={} func={} path={}", seed, "create", result_path);
+                            LOG_TRACE(logger, "ZooKeeperWithFailtInjection cleanup: seed={} func={} path={}", seed, "create", result_path);
                     }
                 }
                 catch (const zkutil::KeeperException & e)
@@ -217,7 +217,7 @@ public:
                     if (unlikely(logger))
                         LOG_TRACE(
                             logger,
-                            "KeeperAccess cleanup FAILED: seed={} func={} path={} code={} message={} ",
+                            "ZooKeeperWithFailtInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
                             seed,
                             "create",
                             result_path,
@@ -321,7 +321,7 @@ private:
             ++calls_without_fault_injection;
 
             if (unlikely(logger))
-                LOG_TRACE(logger, "KeeperAccess call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
+                LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
 
             return res;
         }
@@ -330,7 +330,7 @@ private:
             if (unlikely(logger))
                 LOG_TRACE(
                     logger,
-                    "KeeperAccess call FAILED: seed={} func={} path={} code={} message={} ",
+                    "ZooKeeperWithFailtInjection call FAILED: seed={} func={} path={} code={} message={} ",
                     seed,
                     func_name,
                     path,

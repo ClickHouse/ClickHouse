@@ -58,7 +58,7 @@ public:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "KeeperRetries: {}/{}: succeeded after: iterations={} total_retries={}",
+                    "ZooKeeperRetriesControl: {}/{}: succeeded after: iterations={} total_retries={}",
                     retries_info.name,
                     name,
                     iteration_count,
@@ -134,7 +134,7 @@ public:
     {
         if (retries_info.logger)
             LOG_TRACE(
-                retries_info.logger, "KeeperRetires: {}/{}: setUserError: error={} message={}", retries_info.name, name, code, message);
+                retries_info.logger, "ZooKeeperRetriesControl: {}/{}: setUserError: error={} message={}", retries_info.name, name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -156,7 +156,7 @@ public:
     {
         if (retries_info.logger)
             LOG_TRACE(
-                retries_info.logger, "KeeperRetires: {}/{}: setKeeperError: error={} message={}", retries_info.name, name, code, message);
+                retries_info.logger, "ZooKeeperRetriesControl: {}/{}: setKeeperError: error={} message={}", retries_info.name, name, code, message);
 
         /// if current iteration is already failed, keep initial error
         if (!iteration_succeeded)
@@ -210,7 +210,7 @@ private:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "KeeperRetires: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    "ZooKeeperRetriesControl: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,
                     header,
@@ -224,7 +224,7 @@ private:
             if (retries_info.logger)
                 LOG_DEBUG(
                     retries_info.logger,
-                    "KeeperRetires: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
+                    "ZooKeeperRetriesControl: {}/{}: {}: retry_count={} timeout={}ms error={} message={}",
                     retries_info.name,
                     name,
                     header,
