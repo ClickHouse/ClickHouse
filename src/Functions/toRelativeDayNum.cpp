@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using FunctionToRelativeDayNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeDayNumImpl<false>>;
+using FunctionToRelativeDayNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeDayNumImpl<ResultPrecision::Standard>>;
 
 void registerFunctionToRelativeDayNum(FunctionFactory & factory)
 {

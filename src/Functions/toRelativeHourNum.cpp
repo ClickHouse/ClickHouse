@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl<false>>;
+using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl<ResultPrecision::Standard>>;
 
 void registerFunctionToRelativeHourNum(FunctionFactory & factory)
 {

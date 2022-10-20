@@ -112,21 +112,21 @@ public:
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
-            dispatchForColumns<ToRelativeYearNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "quarter" || unit == "qq" || unit == "q")
-            dispatchForColumns<ToRelativeQuarterNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "month" || unit == "mm" || unit == "m")
-            dispatchForColumns<ToRelativeMonthNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "week" || unit == "wk" || unit == "ww")
-            dispatchForColumns<ToRelativeWeekNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToRelativeDayNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "hour" || unit == "hh" || unit == "h")
-            dispatchForColumns<ToRelativeHourNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
-            dispatchForColumns<ToRelativeMinuteNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "second" || unit == "ss" || unit == "s")
-            dispatchForColumns<ToRelativeSecondNumImpl<true>>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} does not support '{}' unit", getName(), unit);
