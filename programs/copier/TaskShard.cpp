@@ -5,7 +5,7 @@
 namespace DB
 {
 
-TaskShard::TaskShard(TaskTable & parent, const ShardInfo & info_)
+TaskShard::TaskShard(TaskTable & parent, const Cluster::ShardInfo & info_)
     : task_table(parent)
     , info(info_)
 {

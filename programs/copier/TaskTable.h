@@ -1,18 +1,14 @@
 #pragma once
 
 #include "Aliases.h"
-#include "Internals.h"
-#include "ClusterPartition.h"
-
-#include <Core/Defines.h>
-#include <Parsers/ASTFunction.h>
-
-#include <base/map.h>
-#include <boost/algorithm/string/join.hpp>
+#include "TaskShard.h"
 
 
 namespace DB
 {
+
+struct ClusterPartition;
+struct TaskCluster;
 
 struct TaskTable
 {
@@ -137,6 +133,9 @@ struct TaskTable
     template <typename RandomEngine>
     void initShards(RandomEngine &&random_engine);
 };
+
+using TasksTable = std::list<TaskTable>;
+
 
 template<typename RandomEngine>
 inline void TaskTable::initShards(RandomEngine && random_engine)

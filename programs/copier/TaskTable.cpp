@@ -1,5 +1,12 @@
 #include "TaskTable.h"
 
+#include "ClusterPartition.h"
+#include "TaskCluster.h"
+
+#include <Parsers/ASTFunction.h>
+
+#include <boost/algorithm/string/join.hpp>
+
 namespace DB
 {
 namespace ErrorCodes

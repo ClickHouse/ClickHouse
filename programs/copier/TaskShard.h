@@ -3,12 +3,7 @@
 #include "Aliases.h"
 #include "Internals.h"
 #include "ClusterPartition.h"
-
-#include <Core/Defines.h>
-#include <Parsers/ASTFunction.h>
-
-#include <base/map.h>
-#include <boost/algorithm/string/join.hpp>
+#include "ShardPartition.h"
 
 
 namespace DB
@@ -18,11 +13,11 @@ struct TaskTable;
 
 struct TaskShard
 {
-    TaskShard(TaskTable & parent, const ShardInfo & info_);
+    TaskShard(TaskTable & parent, const Cluster::ShardInfo & info_);
 
     TaskTable & task_table;
 
-    ShardInfo info;
+    Cluster::ShardInfo info;
 
     UInt32 numberInCluster() const;
 
@@ -54,5 +49,8 @@ struct TaskShard
     DatabaseAndTableName main_table_split_shard;
     ListOfDatabasesAndTableNames list_of_split_tables_on_shard;
 };
+
+using TaskShardPtr = std::shared_ptr<TaskShard>;
+using TasksShard = std::vector<TaskShardPtr>;
 
 }

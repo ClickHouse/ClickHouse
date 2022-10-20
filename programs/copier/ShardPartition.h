@@ -1,10 +1,15 @@
 #pragma once
 
-#include "Aliases.h"
-#include "TaskShard.h"
+#include "ShardPartitionPiece.h"
+
+#include <base/types.h>
+
+#include <map>
 
 namespace DB
 {
+
+struct TaskShard;
 
 /// Just destination partition of a shard
 /// I don't know what this comment means.
@@ -43,5 +48,7 @@ struct ShardPartition
     TaskShard & task_shard;
     String name;
 };
+
+using TasksPartition = std::map<String, ShardPartition, std::greater<>>;
 
 }
