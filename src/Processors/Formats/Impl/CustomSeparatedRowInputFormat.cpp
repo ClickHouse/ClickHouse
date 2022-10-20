@@ -67,6 +67,19 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     }
 }
 
+void CustomSeparatedRowInputFormat::readPrefix()
+{
+    RowInputFormatWithNamesAndTypes::readPrefix();
+
+    /// Provide better error message for unsupported delimiters
+    for (const auto & column_index : column_mapping->column_indexes_for_input_fields)
+    {
+        if (column_index)
+            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, data_types[*column_index]);
+        else
+            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, nullptr);
+    }
+}
 
 bool CustomSeparatedRowInputFormat::allowSyncAfterError() const
 {
