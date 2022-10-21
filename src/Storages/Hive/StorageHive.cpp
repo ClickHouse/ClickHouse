@@ -809,7 +809,7 @@ Pipe StorageHive::read(
     }
 
     if (num_streams > sources_info->hive_files.size())
-        num_streams = static_cast<unsigned>(sources_info->hive_files.size());
+        num_streams = sources_info->hive_files.size();
 
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)

@@ -724,7 +724,7 @@ void ZooKeeperRequest::createLogElements(LogElements & elems) const
     elem.has_watch = has_watch;
     elem.op_num = static_cast<uint32_t>(getOpNum());
     elem.path = getPath();
-    elem.request_idx = static_cast<uint32_t>(elems.size()) - 1;
+    elem.request_idx = static_cast<uint32_t>(elems.size() - 1);
 }
 
 

@@ -46,7 +46,7 @@ namespace
 
         HashMap<T, T> hash_map;
         for (auto val : index)
-            hash_map.insert({val, static_cast<unsigned>(hash_map.size())});
+            hash_map.insert({val, static_cast<T>(hash_map.size())});
 
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();

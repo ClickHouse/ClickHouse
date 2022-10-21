@@ -31,7 +31,7 @@ struct RowRef
     RowRef() = default;
     RowRef(const Block * block_, size_t row_num_)
         : block(block_)
-        , row_num(static_cast<uint32_t>(row_num_))
+        , row_num(static_cast<SizeT>(row_num_))
     {}
 };
 
