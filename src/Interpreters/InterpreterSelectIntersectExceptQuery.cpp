@@ -191,9 +191,9 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
+void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr context_) const
 {
-    extendQueryLogElemImplImpl(elem, ast, context_);
+    elem.query_kind = "Select";
 
     const auto & access_control = context_->getAccessControl();
 

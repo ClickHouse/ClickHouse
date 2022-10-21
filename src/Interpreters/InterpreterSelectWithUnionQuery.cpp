@@ -386,9 +386,9 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
+void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr context_) const
 {
-    extendQueryLogElemImplImpl(elem, ast, context_);
+    elem.query_kind = "Select";
 
     const auto & access_control = context_->getAccessControl();
 
