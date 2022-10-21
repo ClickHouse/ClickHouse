@@ -8,7 +8,6 @@
 
 #include <type_traits>
 #include <util/crc32c_ppc.h>
-#include "config.h"
 
 
 /** Hash functions that are better than the trivial function std::hash.
@@ -56,7 +55,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
     return _mm_crc32_u64(-1ULL, x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     return __crc32cd(-1U, x);
-#elif defined(ARCH_PPC64LE)
+#elif ((defined(__PPC64__) || defined(__powerpc64__)) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
     return crc32c_ppc(updated_value, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
