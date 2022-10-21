@@ -9,7 +9,7 @@ class BroadCastJoinBuilder
 public:
     static void buildJoinIfNotExist(
         const std::string & key,
-        std::unique_ptr<ReadBufferFromJavaInputStream> read_buffer,
+        jobject input,
         const DB::Names & key_names_,
         DB::ASTTableJoin::Kind kind_,
         DB::ASTTableJoin::Strictness strictness_,
@@ -17,7 +17,7 @@ public:
 
     static void buildJoinIfNotExist(
         const std::string & key,
-        std::unique_ptr<ReadBufferFromJavaInputStream> read_buffer,
+        jobject input,
         const std::string & join_keys,
         const std::string & join_type,
         const std::string & named_struct);

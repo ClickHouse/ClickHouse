@@ -1,6 +1,7 @@
 #include "BroadCastJoinBuilder.h"
 #include <Parser/SerializedPlanParser.h>
 #include <Poco/StringTokenizer.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -10,19 +11,28 @@ namespace ErrorCodes
 }
 }
 
-
-using namespace DB;
-
 namespace local_engine
 {
+using namespace DB;
+
 std::queue<std::string> BroadCastJoinBuilder::storage_join_queue;
 std::unordered_map<std::string, std::shared_ptr<StorageJoinFromReadBuffer>> BroadCastJoinBuilder::storage_join_map;
 std::unordered_map<std::string, std::shared_ptr<std::mutex>> BroadCastJoinBuilder::storage_join_lock;
 std::mutex BroadCastJoinBuilder::join_lock_mutex;
 
+struct StorageJoinContext
+{
+    std::string key;
+    jobject input;
+    DB::Names key_names;
+    DB::ASTTableJoin::Kind kind;
+    DB::ASTTableJoin::Strictness strictness;
+    DB::ColumnsDescription columns;
+};
+
 void BroadCastJoinBuilder::buildJoinIfNotExist(
     const std::string & key,
-    std::unique_ptr<ReadBufferFromJavaInputStream> read_buffer,
+    jobject input,
     const DB::Names & key_names_,
     DB::ASTTableJoin::Kind kind_,
     DB::ASTTableJoin::Strictness strictness_,
@@ -33,28 +43,37 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
         std::lock_guard build_lock(join_lock_mutex);
         if (!storage_join_map.contains(key))
         {
-            // limit memory usage
-            if (storage_join_queue.size() > 10)
+            StorageJoinContext context
             {
-                auto tmp = storage_join_queue.front();
-                storage_join_queue.pop();
-                storage_join_map.erase(tmp);
-            }
-            storage_join_map.emplace(
-                key,
-                std::make_shared<StorageJoinFromReadBuffer>(
-                    std::move(read_buffer),
-                    StorageID("default", key),
-                    key_names_,
+                key, input, key_names_, kind_, strictness_, columns_
+            };
+            // use another thread, exclude broadcast memory allocation from current memory tracker
+            auto func = [context]() -> void
+            {
+                // limit memory usage
+                if (storage_join_queue.size() > 10)
+                {
+                    auto tmp = storage_join_queue.front();
+                    storage_join_queue.pop();
+                    storage_join_map.erase(tmp);
+                }
+                auto storage_join = std::make_shared<StorageJoinFromReadBuffer>(
+                    std::make_unique<ReadBufferFromJavaInputStream>(context.input),
+                    StorageID("default", context.key),
+                    context.key_names,
                     true,
                     SizeLimits(),
-                    kind_,
-                    strictness_,
-                    columns_,
+                    context.kind,
+                    context.strictness,
+                    context.columns,
                     ConstraintsDescription(),
-                    key,
-                    true));
-            storage_join_queue.push(key);
+                    context.key,
+                    true);
+                storage_join_map.emplace(context.key, storage_join);
+                storage_join_queue.push(context.key);
+            };
+            ThreadFromGlobalPool build_thread(std::move(func));
+            build_thread.join();
         }
     }
 }
@@ -69,9 +88,9 @@ std::shared_ptr<StorageJoinFromReadBuffer> BroadCastJoinBuilder::getJoin(const s
         return std::shared_ptr<StorageJoinFromReadBuffer>();
     }
 }
-void BroadCastJoinBuilder::buildJoinIfNotExist(
+ void BroadCastJoinBuilder::buildJoinIfNotExist(
     const std::string & key,
-    std::unique_ptr<ReadBufferFromJavaInputStream> read_buffer,
+    jobject input,
     const std::string & join_keys,
     const std::string & join_type,
     const std::string & named_struct)
@@ -114,7 +133,7 @@ void BroadCastJoinBuilder::buildJoinIfNotExist(
 
     Block header = SerializedPlanParser::parseNameStruct(*substrait_struct);
     ColumnsDescription columns_description(header.getNamesAndTypesList());
-    buildJoinIfNotExist(key, std::move(read_buffer), key_names, kind, strictness, columns_description);
+    buildJoinIfNotExist(key, input, key_names, kind, strictness, columns_description);
 }
 void BroadCastJoinBuilder::clean()
 {

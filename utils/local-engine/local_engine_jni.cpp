@@ -16,11 +16,12 @@
 #include <Poco/StringTokenizer.h>
 #include <Common/ExceptionUtils.h>
 #include <Common/JNIUtils.h>
-#include <Builder/BroadCastJoinBuilder.h>
-#include <base/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryContext.h>
 #include <Poco/Logger.h>
 #include <jni/jni_common.h>
 #include <jni/jni_error.h>
+#include <jni/ReservationListenerWrapper.h>
 #include <Storages/SubstraitSource/ReadBufferBuilder.h>
 
 bool inside_main = true;
@@ -139,6 +140,13 @@ jint JNI_OnLoad(JavaVM * vm, void * /*reserved*/)
     local_engine::SparkRowToCHColumn::spark_row_iterator_nextBatch
         = local_engine::GetMethodID(env, local_engine::SparkRowToCHColumn::spark_row_interator_class, "nextBatch", "()Ljava/nio/ByteBuffer;");
 
+    local_engine::ReservationListenerWrapper::reservation_listener_class
+        = local_engine::CreateGlobalClassReference(env, "Lio/glutenproject/memory/alloc/ReservationListener;");
+    local_engine::ReservationListenerWrapper::reservation_listener_reserve
+        = local_engine::GetMethodID(env, local_engine::ReservationListenerWrapper::reservation_listener_class, "reserve", "(J)V");
+    local_engine::ReservationListenerWrapper::reservation_listener_unreserve
+        = local_engine::GetMethodID(env, local_engine::ReservationListenerWrapper::reservation_listener_class, "unreserve", "(J)V");
+
     local_engine::JNIUtils::vm = vm;
     local_engine::registerReadBufferBuildes(local_engine::ReadBufferBuilderFactory::instance());
     return JNI_VERSION_1_8;
@@ -155,6 +163,7 @@ void JNI_OnUnload(JavaVM * vm, void * /*reserved*/)
     env->DeleteGlobalRef(local_engine::SparkRowToCHColumn::spark_row_interator_class);
     env->DeleteGlobalRef(local_engine::NativeSplitter::iterator_class);
     env->DeleteGlobalRef(local_engine::WriteBufferFromJavaOutputStream::output_stream_class);
+    env->DeleteGlobalRef(local_engine::ReservationListenerWrapper::reservation_listener_class);
     if (local_engine::SerializedPlanParser::global_context)
     {
         local_engine::SerializedPlanParser::global_context->shutdown();
@@ -190,12 +199,11 @@ jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreat
 }
 
 jlong Java_io_glutenproject_vectorized_ExpressionEvaluatorJniWrapper_nativeCreateKernelWithIterator(
-    JNIEnv * env, jobject /*obj*/, jlong, jbyteArray plan, jobjectArray iter_arr)
+    JNIEnv * env, jobject /*obj*/, jlong allocator_id, jbyteArray plan, jobjectArray iter_arr)
 {
     LOCAL_ENGINE_JNI_METHOD_START
-    auto context = Coordination::Context::createCopy(local_engine::SerializedPlanParser::global_context);
-
-    local_engine::SerializedPlanParser parser(context);
+    auto query_context = local_engine::getAllocator(allocator_id)->query_context;
+    local_engine::SerializedPlanParser parser(query_context);
     jsize iter_num = env->GetArrayLength(iter_arr);
     for (jsize i = 0; i < iter_num; i++)
     {
@@ -845,7 +853,6 @@ void Java_io_glutenproject_vectorized_StorageJoinBuilder_nativeBuild(
 {
     LOCAL_ENGINE_JNI_METHOD_START
     auto * input = env->NewGlobalRef(in);
-    auto read_buffer = std::make_unique<local_engine::ReadBufferFromJavaInputStream>(input);
     auto hash_table_id = jstring2string(env, hash_table_id_);
     auto join_key = jstring2string(env, join_key_);
     auto join_type = jstring2string(env, join_type_);
@@ -853,7 +860,7 @@ void Java_io_glutenproject_vectorized_StorageJoinBuilder_nativeBuild(
     jbyte * struct_address = env->GetByteArrayElements(named_struct, nullptr);
     std::string struct_string;
     struct_string.assign(reinterpret_cast<const char *>(struct_address), struct_size);
-    local_engine::BroadCastJoinBuilder::buildJoinIfNotExist(hash_table_id, std::move(read_buffer), join_key, join_type, struct_string);
+    local_engine::BroadCastJoinBuilder::buildJoinIfNotExist(hash_table_id, input, join_key, join_type, struct_string);
     env->ReleaseByteArrayElements(named_struct, struct_address, JNI_ABORT);
     LOCAL_ENGINE_JNI_METHOD_END(env,)
 }
@@ -981,6 +988,33 @@ jlong Java_io_glutenproject_vectorized_SimpleExpressionEval_nativeNext(JNIEnv * 
     LOCAL_ENGINE_JNI_METHOD_START
     local_engine::LocalExecutor * executor = reinterpret_cast<local_engine::LocalExecutor *>(instance);
     return reinterpret_cast<jlong>(executor->nextColumnar());
+    LOCAL_ENGINE_JNI_METHOD_END(env, -1)
+}
+
+jlong Java_io_glutenproject_memory_alloc_NativeMemoryAllocator_getDefaultAllocator(JNIEnv* env, jclass)
+{
+    return -1;
+}
+
+jlong Java_io_glutenproject_memory_alloc_NativeMemoryAllocator_createListenableAllocator(JNIEnv* env, jclass, jobject listener)
+{
+    LOCAL_ENGINE_JNI_METHOD_START
+    auto listener_wrapper = std::make_shared<local_engine::ReservationListenerWrapper>(env->NewGlobalRef(listener));
+    return local_engine::initializeQuery(listener_wrapper);
+    LOCAL_ENGINE_JNI_METHOD_END(env, -1)
+}
+
+void Java_io_glutenproject_memory_alloc_NativeMemoryAllocator_releaseAllocator(JNIEnv* env, jclass, jlong allocator_id)
+{
+    LOCAL_ENGINE_JNI_METHOD_START
+    local_engine::releaseAllocator(allocator_id);
+    LOCAL_ENGINE_JNI_METHOD_END(env,)
+}
+
+jlong Java_io_glutenproject_memory_alloc_NativeMemoryAllocator_bytesAllocated(JNIEnv* env, jclass, jlong allocator_id)
+{
+    LOCAL_ENGINE_JNI_METHOD_START
+    return local_engine::allocatorMemoryUsage(allocator_id);
     LOCAL_ENGINE_JNI_METHOD_END(env, -1)
 }
 
