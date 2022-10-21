@@ -789,7 +789,7 @@ void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 &
         auto size = data.size();
 
         for (size_t i = 0; i < size; ++i)
-            hash_data[i] = intHashCRC32(dict_hash_data[data[i]], hash_data[i]);
+            hash_data[i] = static_cast<UInt32>(intHashCRC32(dict_hash_data[data[i]], hash_data[i]));
     };
 
     callForType(std::move(update_weak_hash), size_of_type);
