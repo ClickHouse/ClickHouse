@@ -113,8 +113,6 @@ public:
 
     void setKeeper(zk::Ptr const & keeper_) { keeper = keeper_; }
     bool isNull() const { return keeper.get() == nullptr; }
-    /// todo: remove it, currently it's just for workarounds
-    zk::Ptr getKeeper() const { return keeper; }
 
     ///
     /// mirror ZooKeeper interface
