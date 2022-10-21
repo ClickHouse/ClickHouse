@@ -10,6 +10,7 @@ import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
 import ActionsMenu from '@site/docs/en/_snippets/_service_actions_menu.md';
 import SQLConsoleDetail from '@site/docs/en/_snippets/_launch_sql_console.md';
+import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
@@ -223,6 +224,29 @@ WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
+
+## Review of the schema
+
+This dataset primarily provides the location (Longitude and Latitude) and radio types at mobile cellular towers worldwide. The column descriptions can be found in the [community forum](https://community.opencellid.org/t/documenting-the-columns-in-the-downloadable-cells-database-csv/186).  The columns used in the visualizations that will be built are described below
+
+Here is a description of the columns taken from the OpenCellID forum:
+
+| Column       | Description                                            |
+|--------------|--------------------------------------------------------|
+| radio        | Technology generation: CDMA, GSM, UMTS, 5G NR          |
+| mcc          | Mobile Country Code: `204` is The Netherlands          |
+| lon          | Longitude: With Latitude, approximate tower location   |
+| lat          | Latitude: With Longitude, approximate tower location   |
+
+:::tip mcc
+To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code), and use the first three digits in the `MCC / MNC` column.
+:::
+
+## Build visualizations with Apache Superset
+
+Superset is easy to run from Docker.  If you already have Superset running, all you need to do is add ClickHouse Connect with `pip install clickhouse-connect`.  If you need to install Superset open the **Launch Apache Superset in Docker** directly below.
+
+<SupersetDocker />
 
 The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
