@@ -19,7 +19,6 @@
             {host}
             {port}
             {user}
-            {database}
             {display_name}
         Terminal colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
         See also: https://wiki.hackzine.org/development/misc/readline-color-prompt.html

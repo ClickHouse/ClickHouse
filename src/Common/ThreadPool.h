@@ -178,11 +178,7 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT(
-            {
-                state->finished = true;
-                state->event.set();
-            });
+            SCOPE_EXIT(state->event.set());
 
             state->thread_id = std::this_thread::get_id();
 
@@ -217,17 +213,6 @@ public:
 
     ~ThreadFromGlobalPoolImpl()
     {
-        /// The problem is that the our ThreadFromGlobalPool can be actually finished
-        /// before we try to join the thread or check whether it is joinable or not.
-        /// In some places we have code like:
-        ///     if (thread->joinable())
-        ///         thread->join();
-        /// Where join() won't be executed in case when we call it
-        /// from the same std::thread and it will end to std::abort().
-        /// So we just do nothing in this case
-        if (state->finished)
-            return;
-
         if (initialized())
             abort();
     }
@@ -267,9 +252,6 @@ protected:
 
         /// The state used in this object and inside the thread job.
         Poco::Event event;
-
-        /// To allow joining to the same std::thread after finishing
-        std::atomic<bool> finished{false};
     };
     std::shared_ptr<State> state;
 
