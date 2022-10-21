@@ -61,25 +61,30 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
+                getName(), arguments.size());
 
         if (!isString(arguments[0]))
-            throw Exception("First argument for function " + getName() + " (unit) must be String",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} (unit) must be String",
+                getName());
 
-        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName());
 
-        if (!isDate(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
-            throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isDate(arguments[2]) && !isDate32(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Third argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName()
+                );
 
         if (arguments.size() == 4 && !isString(arguments[3]))
-            throw Exception("Fourth argument for function " + getName() + " (timezone) must be String",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Fourth argument for function {} (timezone) must be String",
+                getName());
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -91,7 +96,9 @@ public:
     {
         const auto * unit_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!unit_column)
-            throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "First argument for function {} must be constant String",
+                getName());
 
         String unit = Poco::toLower(unit_column->getValue<String>());
 
@@ -105,23 +112,24 @@ public:
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
-            dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "quarter" || unit == "qq" || unit == "q")
-            dispatchForColumns<ToRelativeQuarterNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "month" || unit == "mm" || unit == "m")
-            dispatchForColumns<ToRelativeMonthNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "week" || unit == "wk" || unit == "ww")
-            dispatchForColumns<ToRelativeWeekNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "hour" || unit == "hh" || unit == "h")
-            dispatchForColumns<ToRelativeHourNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
-            dispatchForColumns<ToRelativeMinuteNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "second" || unit == "ss" || unit == "s")
-            dispatchForColumns<ToRelativeSecondNumImpl>(x, y, timezone_x, timezone_y, res->getData());
+            dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
         else
-            throw Exception("Function " + getName() + " does not support '" + unit + "' unit", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} does not support '{}' unit", getName(), unit);
 
         return res;
     }
@@ -137,16 +145,22 @@ private:
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnInt32>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_32_s, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
         else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnInt32>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for first argument of function " + getName() + ", must be Date, DateTime or DateTime64", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                getName());
     }
 
     template <typename Transform, typename LeftColumnType>
@@ -159,16 +173,22 @@ private:
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+            vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
             vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
             vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnInt32>(&y))
+            vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
             vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                getName());
     }
 
     template <typename Transform, typename T1>
@@ -181,10 +201,14 @@ private:
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
             constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+            constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
         else
-            throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                getName());
     }
 
     template <typename Transform, typename LeftColumnType, typename RightColumnType>
