@@ -1,13 +1,13 @@
 #include <Client/ClientBase.h>
 
 #include <iostream>
-#include <iomanip>
 #include <filesystem>
 #include <map>
 #include <unordered_map>
 
+#include "config.h"
+
 #include <Common/DateLUT.h>
-#include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
 #include <base/argsToConfig.h>
 #include <base/LineReader.h>
@@ -17,20 +17,19 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
+
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/Config/configReadClient.h>
 #include <Common/NetException.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -68,9 +67,9 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1496,6 +1495,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             if (!old_settings)
                 old_settings.emplace(global_context->getSettingsRef());
             global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            global_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -1541,6 +1541,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 else
                     global_context->applySettingChange(change);
             }
+            global_context->resetSettingsToDefaultValue(set_query->default_settings);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -1921,7 +1922,7 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::prompt() const
 {
-    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    return prompt_by_server_display_name;
 }
 
 

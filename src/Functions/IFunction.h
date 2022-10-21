@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <memory>
 

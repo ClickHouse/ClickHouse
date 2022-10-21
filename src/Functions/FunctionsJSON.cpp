@@ -46,7 +46,7 @@
 #include <Interpreters/castColumn.h>
 
 
-#include "config_functions.h"
+#include "config.h"
 
 
 namespace DB

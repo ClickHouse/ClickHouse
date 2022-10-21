@@ -1,5 +1,5 @@
 #pragma once
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>

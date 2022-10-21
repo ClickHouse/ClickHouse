@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>

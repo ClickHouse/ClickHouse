@@ -123,7 +123,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
     else
     {
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     try

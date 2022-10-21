@@ -2273,7 +2273,7 @@ struct ToNumberMonotonicity
             }
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 };
 

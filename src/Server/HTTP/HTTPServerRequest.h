@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPRequest.h>
-#include <Common/config.h>
+#include "config.h"
 
 #include <Poco/Net/HTTPServerSession.h>
 

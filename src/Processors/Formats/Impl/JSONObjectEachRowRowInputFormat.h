@@ -27,8 +27,10 @@ public:
 private:
     void readPrefix() override;
     void readSuffix() override {}
-    void readRowStart() override;
+    void readRowStart(MutableColumns & columns) override;
     bool checkEndOfData(bool is_first_row) override;
+
+    std::optional<size_t> field_index_for_object_name;
 };
 
 
@@ -43,5 +45,7 @@ private:
 
     bool first_row = true;
 };
+
+std::optional<size_t> getColumnIndexForJSONObjectEachRowObjectName(const Block & header, const FormatSettings & settings);
 
 }

@@ -164,7 +164,7 @@ inline Int64 getMaxValueForByteSize(Int8 byte_size)
         default:
             assert(false && "only 1, 2, 4 and 8 data sizes are supported");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 struct WriteSpec

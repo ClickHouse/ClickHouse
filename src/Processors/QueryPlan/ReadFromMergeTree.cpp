@@ -639,7 +639,7 @@ static void addMergingFinal(
                             sort_description, max_block_size, merging_params.graphite_params, now);
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     };
 
     pipe.addTransform(get_merging_processor());
@@ -1240,7 +1240,7 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "Skip";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 static const char * readTypeToString(ReadFromMergeTree::ReadType type)
@@ -1255,7 +1255,7 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
             return "InReverseOrder";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
