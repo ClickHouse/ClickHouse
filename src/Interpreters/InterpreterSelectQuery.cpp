@@ -1874,17 +1874,14 @@ const std::vector<RowPolicyPtr> & InterpreterSelectQuery::getUsedRowPolicies() c
     return row_policy_filter.policies;
 }
 
-void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr context_) const
+void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     elem.query_kind = "Select";
-
-    const auto & access_control = context_->getAccessControl();
 
     for (const auto & row_policy : row_policy_filter.policies)
     {
         auto name = row_policy->getFullName().toString();
-        std::optional<UUID> id = access_control.find<RowPolicy>(name);
-        elem.used_row_policies.emplace(std::move(name), std::move(*id));
+        elem.used_row_policies.emplace(std::move(name));
     }
 }
 

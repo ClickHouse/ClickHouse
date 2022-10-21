@@ -123,8 +123,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
-        {"used_row_policies.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"used_row_policies.uuid", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUUID>())},
+        {"used_row_policies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
 
         {"transaction_id", getTransactionIDDataType()},
     };
@@ -244,7 +243,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_row_policies_uuids = typeid_cast<ColumnUUID &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
@@ -267,24 +265,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
-
-        {
-            size_t size = 0;
-            Array uuid_array;
-            uuid_array.reserve(used_row_policies.size());
-
-            for (const auto & [name, uuid] : used_row_policies)
-            {
-                column_row_policies_names.getData().insert(name);
-                uuid_array.emplace_back(uuid);
-                ++size;
-            }
-
-            auto & column_row_policies_names_offsets = column_row_policies_names.getOffsets();
-            column_row_policies_names_offsets.push_back(column_row_policies_names_offsets.back() + size);
-
-            column_row_policies_uuids.insert(uuid_array);
-        }
+        fill_column(used_row_policies, column_row_policies_names);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
