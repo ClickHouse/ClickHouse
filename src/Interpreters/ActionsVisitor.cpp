@@ -537,7 +537,8 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_)
+    bool build_expression_with_window_functions_,
+    bool is_create_parameterized_view_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -551,6 +552,7 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
+    , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -767,7 +769,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     /// so these cannot be evaluated. But if its a parameterized view with sub part ast which does not contain query parameters
     /// then it can be evaluated
     /// Eg : CREATE VIEW v1 AS SELECT * FROM t1 WHERE Column1={c1:UInt64} AND Column2=3; - Column2=3 should get NameAndTypePair
-    if (!data.only_consts && (data.getContext()->isCreateParameterizedView() && analyzeReceiveQueryParams(ast).empty()))
+    if (!data.only_consts && (data.is_create_parameterized_view && analyzeReceiveQueryParams(ast).empty()))
     {
         throw Exception(
             "Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
