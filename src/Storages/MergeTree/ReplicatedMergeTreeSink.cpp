@@ -586,7 +586,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     part->name);
         }
 
-        storage.lockSharedData(*part, false, {});
+        storage.lockSharedData(*part, zookeeper, false, {});
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -651,13 +651,13 @@ void ReplicatedMergeTreeSink::commitPart(
             }
             else if (multi_code == Coordination::Error::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
             {
-                storage.unlockSharedData(*part);
+                storage.unlockSharedData(*part, zookeeper);
                 transaction.rollback();
                 throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
             }
             else
             {
-                storage.unlockSharedData(*part);
+                storage.unlockSharedData(*part, zookeeper);
                 /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
                 transaction.rollback();
                 throw Exception(
@@ -671,7 +671,7 @@ void ReplicatedMergeTreeSink::commitPart(
         }
         else
         {
-            storage.unlockSharedData(*part);
+            storage.unlockSharedData(*part, zookeeper);
             transaction.rollback();
             throw Exception(
                 ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
