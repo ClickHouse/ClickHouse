@@ -129,7 +129,6 @@ if __name__ == "__main__":
         "clickhouse-server.log.err": os.path.join(workspace_path, "clickhouse-server"),
         "stderr.log": os.path.join(workspace_path, "stderr.log"),
         "stdout.log": os.path.join(workspace_path, "stdout.log"),
-        "test_results.tsv": os.path.join(workspace_path, "test_results.tsv"),
     }
 
     s3_helper = S3Helper()
@@ -152,10 +151,10 @@ if __name__ == "__main__":
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
-            test_result = []
+            test_results = []
             for line in summary_f:
                 l = line.split("\t")
-                test_result.append((l[0], l[1]))
+                test_results.append((l[0], l[1]))
 
         with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
@@ -164,6 +163,20 @@ if __name__ == "__main__":
     except:
         status = "failure"
         description = "Task failed: $?=" + str(retcode)
+
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        paths,
+        check_name,
+        False,
+    )
+
+    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
+
+    print(f"::notice:: {check_name} Report url: {report_url}")
 
     ch_helper = ClickHouseHelper()
 
