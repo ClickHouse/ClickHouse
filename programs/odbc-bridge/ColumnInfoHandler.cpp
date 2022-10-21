@@ -186,7 +186,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         WriteBufferFromHTTPServerResponse out(
             response,
             request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
-            static_cast<unsigned>(keep_alive_timeout));
+            keep_alive_timeout);
         try
         {
             writeStringBinary(columns.toString(), out);
