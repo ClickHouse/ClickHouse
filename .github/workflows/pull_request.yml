@@ -3612,6 +3612,7 @@ jobs:
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
       - SQLancerTestRelease
+      - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository

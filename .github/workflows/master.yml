@@ -3089,6 +3089,7 @@ jobs:
       - UnitTestsReleaseClang
       - SharedBuildSmokeTest
       - SQLancerTestRelease
+      - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
