@@ -358,6 +358,9 @@ CI_CONFIG = {
         "SQLancer (release)": {
             "required_build": "package_release",
         },
+        "SQLancer (debug)": {
+            "required_build": "package_debug",
+        },
     },
 }  # type: dict
 
