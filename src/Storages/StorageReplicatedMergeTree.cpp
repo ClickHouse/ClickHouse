@@ -7735,7 +7735,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(zkutil::ZooKeeperPtr zookeeper_ptr
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
-        const String & replica_name_, std::string disk_type, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
+        const String & replica_name_, const std::string & disk_type, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
@@ -7956,7 +7956,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 
 
 Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
-    const MergeTreeSettings & settings, std::string disk_type, const String & table_uuid,
+    const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
@@ -7964,11 +7964,11 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     String zero_copy = fmt::format("zero_copy_{}", disk_type);
 
     String new_path = fs::path(settings.remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy / table_uuid / part_name;
-    res.push_back(new_path);
+    res.push_back(std::move(new_path));
     if (settings.remote_fs_zero_copy_path_compatible_mode && !zookeeper_path_old.empty())
     { /// Compatibility mode for cluster with old and new versions
         String old_path = fs::path(zookeeper_path_old) / zero_copy / "shared" / part_name;
-        res.push_back(old_path);
+        res.push_back(std::move(old_path));
     }
 
     return res;
