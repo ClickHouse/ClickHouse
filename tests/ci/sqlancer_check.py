@@ -184,7 +184,7 @@ if __name__ == "__main__":
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
-        test_result,
+        test_results,
         status,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
