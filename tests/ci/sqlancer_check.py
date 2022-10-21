@@ -21,6 +21,7 @@ from build_download_helper import get_build_name_for_check, read_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from upload_result_helper import upload_results
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 
@@ -141,6 +142,8 @@ if __name__ == "__main__":
 
     report_url = GITHUB_RUN_URL
 
+    status = "succeess"
+    test_results = []
     # Try to get status message saved by the SQLancer
     try:
         with open(
@@ -151,7 +154,6 @@ if __name__ == "__main__":
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
-            test_results = []
             for line in summary_f:
                 l = line.split("\t")
                 test_results.append((l[0], l[1]))
