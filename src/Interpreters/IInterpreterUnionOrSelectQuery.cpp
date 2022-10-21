@@ -16,12 +16,7 @@
 namespace DB
 {
 
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
-{
-    extendQueryLogElemImplImpl(elem, ast, context_);
-}
-
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImplImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
+void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     elem.query_kind = "Select";
 }
