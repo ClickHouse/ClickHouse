@@ -20,6 +20,7 @@ namespace DB::ErrorCodes
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
