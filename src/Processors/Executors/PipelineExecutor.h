@@ -22,6 +22,7 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
+
 /// Executes query pipeline.
 class PipelineExecutor
 {
