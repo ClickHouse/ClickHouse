@@ -337,11 +337,15 @@ namespace DB
 
         if constexpr (is_signed_v<DayT> && std::numeric_limits<DayT>::lowest() < -678941)
             if (modified_julian_day < -678941)
-                modified_julian_day = -678941;
+                throw Exception(
+                    ErrorCodes::CANNOT_FORMAT_DATETIME,
+                    "Value cannot be represented as date because it's out of range");
 
         if constexpr (std::numeric_limits<DayT>::max() > 2973119)
             if (modified_julian_day > 2973119)
-                modified_julian_day = 2973119;
+                throw Exception(
+                    ErrorCodes::CANNOT_FORMAT_DATETIME,
+                    "Value cannot be represented as date because it's out of range");
 
         const auto a         = modified_julian_day + 678575;
         const auto quad_cent = gd::div(a, 146097);
