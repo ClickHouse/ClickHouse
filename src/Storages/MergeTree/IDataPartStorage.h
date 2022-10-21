@@ -129,7 +129,7 @@ public:
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
-    virtual std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const = 0;
+    virtual std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for im-memory parts.
     /// TODO: remove it.
