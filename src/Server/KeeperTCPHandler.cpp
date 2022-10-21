@@ -325,6 +325,7 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
+        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
