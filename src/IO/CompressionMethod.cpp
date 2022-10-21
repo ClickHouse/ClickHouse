@@ -16,7 +16,7 @@
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -52,7 +52,7 @@ std::string toContentEncodingName(CompressionMethod method)
         case CompressionMethod::None:
             return "";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
