@@ -41,6 +41,8 @@ namespace DB
         }
     }
 
+    std::mutex CaresPTRResolver::mutex;
+
     CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token) : channel(nullptr)
     {
         /*
@@ -74,6 +76,8 @@ namespace DB
 
     std::unordered_set<std::string> CaresPTRResolver::resolve(const std::string & ip)
     {
+        std::lock_guard guard(mutex);
+
         std::unordered_set<std::string> ptr_records;
 
         resolve(ip, ptr_records);
@@ -84,6 +88,8 @@ namespace DB
 
     std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
     {
+        std::lock_guard guard(mutex);
+
         std::unordered_set<std::string> ptr_records;
 
         resolve_v6(ip, ptr_records);
