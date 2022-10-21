@@ -20,7 +20,6 @@ namespace DB::ErrorCodes
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -39,7 +38,7 @@ std::pair<int, int> determineBinaryStartIndexWithIncrement(const ptrdiff_t num_b
     else if (representation == Representation::LittleEndian)
         return {num_bytes - 1, -1};
 
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented yet", magic_enum::enum_name(representation));
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(representation));
 }
 
 void formatHex(const std::span<const UInt8> src, UInt8 * dst, const Representation representation)
@@ -72,7 +71,7 @@ public:
         : first_half_binary_representation(variant == Variant::Microsoft ? Representation::LittleEndian : Representation::BigEndian)
     {
         if (variant != Variant::Default && variant != Variant::Microsoft)
-            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "{} is not implemented yet", magic_enum::enum_name(variant));
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "{} is not handled yet", magic_enum::enum_name(variant));
     }
 
     void deserialize(const UInt8 * src16, UInt8 * dst36) const
@@ -114,10 +113,11 @@ void checkArgumentCount(const DB::DataTypes & arguments, const std::string_view 
 
 void checkFormatArgument(const DB::DataTypes & arguments, const std::string_view function_name)
 {
-    if (const auto argument_count = std::ssize(arguments); argument_count > 1 && !isNumber(arguments[1]))
+    if (const auto argument_count = std::ssize(arguments);
+        argument_count > 1 && !DB::WhichDataType(arguments[1]).isInt8() && !DB::WhichDataType(arguments[1]).isUInt8())
         throw DB::Exception(
             DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of second argument of function {}, expected integral type",
+            "Illegal type {} of second argument of function {}, expected Int8 or UInt8 type",
             arguments[1]->getName(),
             function_name);
 }
@@ -127,7 +127,7 @@ UUIDSerializer::Variant parseVariant(const DB::ColumnsWithTypeAndName & argument
     if (arguments.size() < 2)
         return UUIDSerializer::Variant::Default;
 
-    const auto representation = arguments[1].column->getInt(0);
+    const auto representation = static_cast<magic_enum::underlying_type_t<UUIDSerializer::Variant>>(arguments[1].column->getInt(0));
     const auto as_enum = magic_enum::enum_cast<UUIDSerializer::Variant>(representation);
     if (!as_enum)
         throw DB::Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected UUID variant, got {}", representation);
