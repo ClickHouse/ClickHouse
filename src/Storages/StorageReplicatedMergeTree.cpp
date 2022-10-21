@@ -179,6 +179,7 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
+const String StorageReplicatedMergeTree::default_zookeeper_name = "default";
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
@@ -8361,7 +8362,7 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
     if (disk->supportZeroCopyReplication())
     {
         String table_id = getTableSharedID();
-        return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext(), current_zookeeper);
+        return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), current_zookeeper);
     }
 
     disk->removeRecursive(path);
@@ -8371,7 +8372,7 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper)
+    const String & detached_replica_name, const String & detached_zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper)
 {
     bool keep_shared = false;
 

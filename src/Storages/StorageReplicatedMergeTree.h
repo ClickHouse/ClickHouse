@@ -320,13 +320,13 @@ public:
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
-    static String getDefaultZooKeeperName() { return default_zookeeper_name; }
+    static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper);
+        const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
 private:
@@ -381,7 +381,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    static constexpr auto default_zookeeper_name = "default";
+    static const String default_zookeeper_name;
     const String zookeeper_name;
     const String zookeeper_path;
     const String replica_name;
