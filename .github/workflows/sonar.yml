@@ -39,7 +39,7 @@ jobs:
       - name: Set Up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -yq git cmake ninja-build
+          sudo apt-get install -yq git cmake ccache ninja-build
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
       - name: Run build-wrapper
         run: |
