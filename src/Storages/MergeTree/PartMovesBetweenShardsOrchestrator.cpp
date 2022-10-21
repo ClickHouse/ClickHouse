@@ -455,7 +455,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                 /// Allocating block number in other replicas zookeeper path
                 /// TODO Maybe we can do better.
-                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, std::make_shared<ZooKeeperWithFaultInjection>(zk), attach_log_entry_barrier_path, entry.to_shard);
+                auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zk, attach_log_entry_barrier_path, entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData log_entry;
 

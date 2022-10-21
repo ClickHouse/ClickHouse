@@ -727,6 +727,9 @@ private:
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
+        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
+        const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         const String & zookeeper_block_id_path = "",
