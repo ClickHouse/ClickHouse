@@ -8,7 +8,7 @@ on:
 jobs:
   sonar_cloud:
     name: Sonar Cloud
-    runs-on: [self-hosted, i-dont-know]
+    runs-on: [self-hosted, builder]
     env:
       SONAR_SCANNER_VERSION: 4.7.0.2747
       SONAR_SERVER_URL: "https://sonarcloud.io"
