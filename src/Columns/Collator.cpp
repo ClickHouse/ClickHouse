@@ -1,6 +1,6 @@
 #include <Columns/Collator.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_ICU
 #    include <unicode/locid.h>

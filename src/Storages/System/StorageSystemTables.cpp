@@ -24,11 +24,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
-
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -303,15 +298,13 @@ protected:
                         // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
                     }
-                    try
+
+                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+                    if (lock == nullptr)
                     {
-                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                            continue;
-                        throw;
+                        // Table was dropped while acquiring the lock, skipping table
+                        continue;
                     }
                 }
 

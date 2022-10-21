@@ -66,10 +66,10 @@ public:
          */
         DOWNLOADING,
         /**
-         * Space reservation for a file segment is incremental, i.e. downaloder reads buffer_size bytes
+         * Space reservation for a file segment is incremental, i.e. downloader reads buffer_size bytes
          * from remote fs -> tries to reserve buffer_size bytes to put them to cache -> writes to cache
          * on successful reservation and stops cache write otherwise. Those, who waited for the same file
-         * file segment, will read downloaded part from cache and remaining part directly from remote fs.
+         * segment, will read downloaded part from cache and remaining part directly from remote fs.
          */
         PARTIALLY_DOWNLOADED_NO_CONTINUATION,
         /**

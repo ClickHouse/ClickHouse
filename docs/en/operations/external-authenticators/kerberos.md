@@ -2,6 +2,9 @@
 slug: /en/operations/external-authenticators/kerberos
 ---
 # Kerberos
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+
+<SelfManaged />
 
 Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol.
 

@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -274,12 +275,21 @@ void DataPartStorageOnDisk::remove(
             disk->moveDirectory(from, to);
             onRename(root_path, part_dir_without_slash);
         }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                return;
+            }
+            throw;
+        }
         catch (const fs::filesystem_error & e)
         {
             if (e.code() == std::errc::no_such_file_or_directory)
             {
                 LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
-                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
+                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
                 return;
             }
             throw;
@@ -396,13 +406,17 @@ void DataPartStorageOnDisk::clearDirectory(
     }
 }
 
-std::string DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const
+std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
 {
+    assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
         full_relative_path /= "detached";
+
+    std::optional<String> original_checksums_content;
+    std::optional<Strings> original_files_list;
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
@@ -411,10 +425,67 @@ std::string DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
 
+        if (broken && looksLikeBrokenDetachedPartHasTheSameContent(res, original_checksums_content, original_files_list))
+        {
+            LOG_WARNING(log, "Directory {} (to detach to) already exists, "
+                        "but its content looks similar to content of the broken part which we are going to detach. "
+                        "Assuming it was already cloned to detached, will not do it again to avoid redundant copies of broken part.", res);
+            return {};
+        }
+
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
 
     return res;
+}
+
+bool DataPartStorageOnDisk::looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path,
+                                                                         std::optional<String> & original_checksums_content,
+                                                                         std::optional<Strings> & original_files_list) const
+{
+    /// We cannot know for sure that content of detached part is the same,
+    /// but in most cases it's enough to compare checksums.txt and list of files.
+
+    if (!exists("checksums.txt"))
+        return false;
+
+    auto detached_full_path = fs::path(root_path) / "detached" / detached_part_path;
+    auto disk = volume->getDisk();
+    if (!disk->exists(detached_full_path / "checksums.txt"))
+        return false;
+
+    if (!original_checksums_content)
+    {
+        auto in = disk->readFile(detached_full_path / "checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        original_checksums_content.emplace();
+        readStringUntilEOF(*original_checksums_content, *in);
+    }
+
+    if (original_checksums_content->empty())
+        return false;
+
+    auto part_full_path = fs::path(root_path) / part_dir;
+    String detached_checksums_content;
+    {
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
+        readStringUntilEOF(detached_checksums_content, *in);
+    }
+
+    if (original_checksums_content != detached_checksums_content)
+        return false;
+
+    if (!original_files_list)
+    {
+        original_files_list.emplace();
+        disk->listFiles(part_full_path, *original_files_list);
+        std::sort(original_files_list->begin(), original_files_list->end());
+    }
+
+    Strings detached_files_list;
+    disk->listFiles(detached_full_path, detached_files_list);
+    std::sort(detached_files_list.begin(), detached_files_list.end());
+
+    return original_files_list == detached_files_list;
 }
 
 void DataPartStorageBuilderOnDisk::setRelativePath(const std::string & path)
@@ -732,12 +803,14 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
     const std::string & dir_path,
     bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    bool copy_instead_of_hardlink) const
+    bool copy_instead_of_hardlink,
+    const NameSet & files_to_copy_instead_of_hardlinks) const
+
 {
     auto disk = volume->getDisk();
     disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
