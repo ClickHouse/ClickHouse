@@ -175,7 +175,7 @@ protected:
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false, bool is_create_parameterized_view = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the

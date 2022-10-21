@@ -2014,7 +2014,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
 
         auto syntax_result
-            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, storage_snapshot);
+            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, storage_snapshot, options.is_create_parameterized_view);
         alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
 
         /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
