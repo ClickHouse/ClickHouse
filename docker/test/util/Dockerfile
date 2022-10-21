@@ -5,6 +5,7 @@ FROM ubuntu:20.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
+# 15.0.2
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=15
 
 RUN apt-get update \
@@ -58,6 +59,9 @@ RUN apt-get update \
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 # for external_symbolizer_path
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
+# FIXME: workaround for "The imported target "merge-fdata" references the file" error
+# https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
+RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG CCACHE_VERSION=4.6.1
 RUN mkdir /tmp/ccache \
