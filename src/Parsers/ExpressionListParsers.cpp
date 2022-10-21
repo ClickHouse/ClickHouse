@@ -613,13 +613,17 @@ public:
     ///
     bool mergeElement(bool push_to_elements = true)
     {
+        parsed_alias = false;
+
         Operator cur_op;
         while (popOperator(cur_op))
         {
             ASTPtr function;
 
-            // Special case of ternary operator
-            if (cur_op.type == OperatorType::StartIf)
+            // We should not meet the starting part of the operator while finishing an element
+            if (cur_op.type == OperatorType::StartIf ||
+                cur_op.type == OperatorType::StartBetween ||
+                cur_op.type == OperatorType::StartNotBetween)
                 return false;
 
             if (cur_op.type == OperatorType::FinishIf)
@@ -628,10 +632,6 @@ public:
                 if (!popOperator(tmp) || tmp.type != OperatorType::StartIf)
                     return false;
             }
-
-            // Special case of a BETWEEN b AND c operator
-            if (cur_op.type == OperatorType::StartBetween || cur_op.type == OperatorType::StartNotBetween)
-                return false;
 
             if (cur_op.type == OperatorType::FinishBetween)
             {
@@ -728,6 +728,9 @@ public:
     ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
     int between_counter = 0;
 
+    /// Flag we set when we parsed alias to avoid parsing next element as alias
+    bool parsed_alias = false;
+
     bool allow_alias = true;
     bool allow_alias_without_as_keyword = true;
 
@@ -777,7 +780,6 @@ public:
     }
 };
 
-
 /// Basic layer for a function with certain separator and end tokens:
 ///  1. If we parse a separator we should merge current operands and operators
 ///     into one element and push in to 'elements' vector.
@@ -787,6 +789,9 @@ template <TokenType separator, TokenType end>
 class BaseLayer : public Layer
 {
 public:
+    explicit BaseLayer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = false) :
+        Layer(allow_alias_, allow_alias_without_as_keyword_) {}
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         if (ParserToken(separator).ignore(pos, expected))
@@ -810,7 +815,7 @@ public:
     }
 };
 
-
+/// Layer for regular and aggregate functions without syntax sugar
 class FunctionLayer : public Layer
 {
 public:
@@ -1091,6 +1096,8 @@ public:
 class CastLayer : public Layer
 {
 public:
+    CastLayer() : Layer(true, true) {}
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// CAST(x [AS alias1], T [AS alias2]) or CAST(x [AS alias1] AS T)
@@ -1189,6 +1196,8 @@ public:
 class ExtractLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
+    ExtractLayer() : BaseLayer(true, true) {}
+
     bool getResult(ASTPtr & node) override
     {
         if (state == 2)
@@ -1258,6 +1267,8 @@ private:
 class SubstringLayer : public Layer
 {
 public:
+    SubstringLayer() : Layer(true, true) {}
+
     bool getResult(ASTPtr & node) override
     {
         node = makeASTFunction("substring", std::move(elements));
@@ -1318,6 +1329,8 @@ public:
 class PositionLayer : public Layer
 {
 public:
+    PositionLayer() : Layer(true, true) {}
+
     bool getResult(ASTPtr & node) override
     {
         if (state == 2)
@@ -1383,10 +1396,11 @@ public:
     }
 };
 
-
 class ExistsLayer : public Layer
 {
 public:
+    ExistsLayer() : Layer(true, true) {}
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
         ASTPtr node;
@@ -1411,9 +1425,8 @@ public:
 class TrimLayer : public Layer
 {
 public:
-    TrimLayer(bool trim_left_, bool trim_right_) : trim_left(trim_left_), trim_right(trim_right_)
-    {
-    }
+    TrimLayer(bool trim_left_, bool trim_right_)
+        : Layer(true, true), trim_left(trim_left_), trim_right(trim_right_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1571,13 +1584,11 @@ private:
     String function_name;
 };
 
-
 class DateAddLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    explicit DateAddLayer(const char * function_name_) : function_name(function_name_)
-    {
-    }
+    explicit DateAddLayer(const char * function_name_)
+        : BaseLayer(true, true), function_name(function_name_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1628,10 +1639,11 @@ private:
     bool parsed_interval_kind = false;
 };
 
-
 class DateDiffLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
+    DateDiffLayer() : BaseLayer(true, true) {}
+
     bool getResult(ASTPtr & node) override
     {
         if (parsed_interval_kind)
@@ -1681,10 +1693,11 @@ private:
     bool parsed_interval_kind = false;
 };
 
-
 class IntervalLayer : public Layer
 {
 public:
+    IntervalLayer() : Layer(true, true) {}
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// INTERVAL 1 HOUR or INTERVAL expr HOUR
@@ -1759,86 +1772,11 @@ private:
     IntervalKind interval_kind;
 };
 
-/// Layer for table function 'view' and 'viewIfPermitted'
-class ViewLayer : public Layer
-{
-public:
-    explicit ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        if (if_permitted)
-            node = makeASTFunction("viewIfPermitted", std::move(elements));
-        else
-            node = makeASTFunction("view", std::move(elements));
-
-        return true;
-    }
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
-    {
-        /// view(SELECT ...)
-        /// viewIfPermitted(SELECT ... ELSE func(...))
-        ///
-        /// 0. Parse the SELECT query and if 'if_permitted' parse 'ELSE' keyword (-> 1) else (finished)
-        /// 1. Parse closing token
-
-        if (state == 0)
-        {
-            ASTPtr query;
-
-            bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-            if (!ParserSelectWithUnionQuery().parse(pos, query, expected))
-                return false;
-
-            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-            {
-                // It's an subquery. Bail out.
-                return false;
-            }
-
-            pushResult(query);
-
-            if (!if_permitted)
-            {
-                if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                    return false;
-
-                finished = true;
-                return true;
-            }
-
-            if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
-                return false;
-
-            state = 1;
-            return true;
-        }
-
-        if (state == 1)
-        {
-            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            {
-                if (!mergeElement())
-                    return false;
-
-                finished = true;
-            }
-        }
-
-        return true;
-    }
-
-private:
-    bool if_permitted;
-};
-
-
 class CaseLayer : public Layer
 {
 public:
+    CaseLayer() : Layer(true, true) {}
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// CASE [x] WHEN expr THEN expr [WHEN expr THEN expr [...]] [ELSE expr] END
@@ -1925,6 +1863,82 @@ public:
 
 private:
     bool has_case_expr;
+};
+
+/// Layer for table function 'view' and 'viewIfPermitted'
+class ViewLayer : public Layer
+{
+public:
+    explicit ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
+
+    bool getResult(ASTPtr & node) override
+    {
+        if (if_permitted)
+            node = makeASTFunction("viewIfPermitted", std::move(elements));
+        else
+            node = makeASTFunction("view", std::move(elements));
+
+        return true;
+    }
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        /// view(SELECT ...)
+        /// viewIfPermitted(SELECT ... ELSE func(...))
+        ///
+        /// 0. Parse the SELECT query and if 'if_permitted' parse 'ELSE' keyword (-> 1) else (finished)
+        /// 1. Parse closing token
+
+        if (state == 0)
+        {
+            ASTPtr query;
+
+            bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+            if (!ParserSelectWithUnionQuery().parse(pos, query, expected))
+                return false;
+
+            auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+            if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+            {
+                // It's an subquery. Bail out.
+                return false;
+            }
+
+            pushResult(query);
+
+            if (!if_permitted)
+            {
+                if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    return false;
+
+                finished = true;
+                return true;
+            }
+
+            if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
+                return false;
+
+            state = 1;
+            return true;
+        }
+
+        if (state == 1)
+        {
+            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+private:
+    bool if_permitted;
 };
 
 
@@ -2428,11 +2442,15 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (cur_op == operators_table.end())
     {
+        ParserAlias alias_parser(layers.back()->allow_alias_without_as_keyword);
         auto old_pos = pos;
-        if (layers.back()->allow_alias && ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
+        if (!layers.back()->parsed_alias && layers.back()->allow_alias && alias_parser.parse(pos, tmp, expected))
         {
             if (layers.back()->insertAlias(tmp))
+            {
+                layers.back()->parsed_alias = true;
                 return Action::OPERATOR;
+            }
         }
         pos = old_pos;
         return Action::NONE;
