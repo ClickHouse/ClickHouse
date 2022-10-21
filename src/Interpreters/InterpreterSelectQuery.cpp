@@ -496,7 +496,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
 
-    if (!query.final() && storage && storage->forceQueryWithFinal())
+    if (!query.final() && storage && storage->forceQueryWithFinal() && !context->getSettingsRef().ignore_force_select_final)
     {
         query.setFinal();
     }
