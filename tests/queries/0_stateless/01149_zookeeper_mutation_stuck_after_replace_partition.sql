@@ -1,4 +1,7 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-random-detach
+-- Tag no-random-detach: "The local set of parts of table
+-- doesn't look like the set of parts in ZooKeeper"
+-- after DROP PARTITION and restart https://github.com/ClickHouse/ClickHouse/issues/37664
 
 set send_logs_level='error';
 drop table if exists mt;
