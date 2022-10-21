@@ -2,6 +2,7 @@
 
 #include <span>
 #include <poll.h>
+#include <mutex>
 #include "DNSPTRResolver.h"
 
 using ares_channel = struct ares_channeldata *;
@@ -46,6 +47,8 @@ namespace DB
         void process_readable_sockets(std::span<pollfd> readable_sockets);
 
         ares_channel channel;
+
+        static std::mutex mutex;
     };
 }
 
