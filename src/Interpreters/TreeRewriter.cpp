@@ -818,7 +818,7 @@ std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressionsFromFunctionArgs
                     into.children.pop_back();
                 }
                 into.children.push_back(child);
-                pushed_children = pushed_children - child_pushed_children + 1;
+                pushed_children++;
             }
             else
             {
