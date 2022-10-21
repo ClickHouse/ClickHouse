@@ -32,7 +32,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -542,22 +542,7 @@ void HTTPHandler::processQuery(
     CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
-    {
-        /// If client supports brotli - it's preferred.
-        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-        /// NOTE parsing of the list of methods is slightly incorrect.
-
-        if (std::string::npos != http_response_compression_methods.find("br"))
-            http_response_compression_method = CompressionMethod::Brotli;
-        else if (std::string::npos != http_response_compression_methods.find("gzip"))
-            http_response_compression_method = CompressionMethod::Gzip;
-        else if (std::string::npos != http_response_compression_methods.find("deflate"))
-            http_response_compression_method = CompressionMethod::Zlib;
-        else if (std::string::npos != http_response_compression_methods.find("xz"))
-            http_response_compression_method = CompressionMethod::Xz;
-        else if (std::string::npos != http_response_compression_methods.find("zstd"))
-            http_response_compression_method = CompressionMethod::Zstd;
-    }
+        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
@@ -893,8 +878,7 @@ try
     }
     else
     {
-        assert(false);
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     used_output.finalize();

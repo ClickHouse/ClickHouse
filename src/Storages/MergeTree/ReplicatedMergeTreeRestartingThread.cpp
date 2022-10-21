@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr auto retry_period_ms = 10 * 1000;
+    constexpr auto retry_period_ms = 1000;
 }
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -123,7 +123,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
     else
     {
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     try
