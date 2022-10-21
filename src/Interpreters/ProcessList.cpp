@@ -344,6 +344,7 @@ QueryStatus::QueryStatus(
     , client_info(client_info_)
     , thread_group(std::move(thread_group_))
     , priority_handle(std::move(priority_handle_))
+    , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
 {
@@ -360,8 +361,8 @@ QueryStatus::~QueryStatus()
     {
         if (user_process_list)
             user_process_list->user_overcommit_tracker.onQueryStop(memory_tracker);
-        if (auto shared_context = getContext())
-            shared_context->getGlobalOvercommitTracker()->onQueryStop(memory_tracker);
+        if (global_overcommit_tracker)
+            global_overcommit_tracker->onQueryStop(memory_tracker);
     }
 }
 

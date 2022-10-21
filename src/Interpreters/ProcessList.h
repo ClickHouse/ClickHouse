@@ -133,6 +133,8 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    OvercommitTracker * global_overcommit_tracker = nullptr;
+
     IAST::QueryKind query_kind;
 
     /// This field is unused in this class, but it
