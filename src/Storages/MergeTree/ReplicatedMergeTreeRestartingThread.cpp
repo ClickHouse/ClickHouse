@@ -27,8 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int REPLICA_STATUS_CHANGED;
-
 }
 
 /// Used to check whether it's us who set node `is_active`, or not.
