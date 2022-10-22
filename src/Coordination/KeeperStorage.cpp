@@ -1601,6 +1601,9 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor
 {
+    using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
+    std::optional<OperationType> operation_type;
+
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         for (const auto & concrete_request : concrete_requests)
@@ -1616,28 +1619,55 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
 
+        const auto check_operation_type = [&](OperationType type)
+        {
+            if (operation_type.has_value() && *operation_type != type)
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal mixing of read and write operations in multi request");
+            operation_type = type;
+        };
+
         for (const auto & sub_request : request.requests)
         {
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Remove:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Set:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Check:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Get:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageGetRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Exists:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageExistsRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::List:
+                case Coordination::OpNum::FilteredList:
+                case Coordination::OpNum::SimpleList:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageListRequestProcessor>(sub_zk_request));
                     break;
                 default:
                     throw DB::Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
             }
         }
+
+        assert(request.requests.empty() || operation_type.has_value());
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1652,7 +1682,8 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
             if (!new_deltas.empty())
             {
-                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation))
+                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation);
+                    error && *operation_type == OperationType::Write)
                 {
                     storage.uncommitted_state.rollback(zxid);
                     response_errors.push_back(error->error);
@@ -1699,8 +1730,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->process(storage, zxid);
-            response.responses[i] = cur_response;
+            response.responses[i] = concrete_requests[i]->process(storage, zxid);
             storage.uncommitted_state.commit(zxid);
         }
 
@@ -1715,26 +1745,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->processLocal(storage, zxid);
-
-            response.responses[i] = cur_response;
-            if (cur_response->error != Coordination::Error::ZOK)
-            {
-                for (size_t j = 0; j <= i; ++j)
-                {
-                    auto response_error = response.responses[j]->error;
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = response_error;
-                }
-
-                for (size_t j = i + 1; j < response.responses.size(); ++j)
-                {
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
-                }
-
-                return response_ptr;
-            }
+            response.responses[i] = concrete_requests[i]->processLocal(storage, zxid);
         }
 
         response.error = Coordination::Error::ZOK;
@@ -1881,6 +1892,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::FilteredList, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
 }

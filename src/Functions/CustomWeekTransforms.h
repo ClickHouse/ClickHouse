@@ -62,10 +62,7 @@ struct ToStartOfWeekImpl
 
     static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfWeek(DayNum(std::min(Int32(time_zone.toDayNum(t)), Int32(DATE_LUT_MAX_DAY_NUM))), week_mode);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
     static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -73,20 +70,17 @@ struct ToStartOfWeekImpl
     }
     static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfWeek(DayNum(std::min(d, Int32(DATE_LUT_MAX_DAY_NUM))), week_mode);
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
-    static inline Int64 execute_extended_result(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
-    static inline Int32 execute_extended_result(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
@@ -139,7 +133,7 @@ struct WeekTransformer
 
         for (size_t i = 0; i < size; ++i)
             if constexpr (is_extended_result)
-                vec_to[i] = transform.execute_extended_result(vec_from[i], week_mode, time_zone);
+                vec_to[i] = transform.executeExtendedResult(vec_from[i], week_mode, time_zone);
             else
                 vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
     }
@@ -174,10 +168,9 @@ struct CustomWeekTransformImpl
         }
         else
         {
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
-                    + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Transform::name);
         }
     }
 };

@@ -373,7 +373,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 LOG_ERROR(log, fmt::runtime(message));
 
                 /// Delete part locally.
-                storage.forgetPartAndMoveToDetached(part, "broken");
+                storage.outdateBrokenPartAndCloneToDetached(part, "broken");
 
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
@@ -390,7 +390,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
             LOG_ERROR(log, fmt::runtime(message));
-            storage.forgetPartAndMoveToDetached(part, "unexpected");
+            storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
             return {part_name, false, message};
         }
         else

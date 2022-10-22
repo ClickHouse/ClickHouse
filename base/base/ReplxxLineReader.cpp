@@ -23,7 +23,7 @@ namespace
 {
 
 /// Trim ending whitespace inplace
-void trim(String & s)
+void rightTrim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
@@ -441,7 +441,7 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 
-    trim(input);
+    rightTrim(input);
     return INPUT_LINE;
 }
 
@@ -512,6 +512,9 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     /// NOTE: You can use one of the following to configure the behaviour additionally:
     /// - SKIM_DEFAULT_OPTIONS
     /// - FZF_DEFAULT_OPTS
+    ///
+    /// And also note, that fzf and skim is 95% compatible (at least option
+    /// that is used here)
     std::string fuzzy_finder_command = fmt::format(
         "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
         fuzzy_finder, history_file.getPath(), output_file.getPath());
@@ -521,7 +524,8 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     {
         if (executeCommand(argv) == 0)
         {
-            const std::string & new_query = readFile(output_file.getPath());
+            std::string new_query = readFile(output_file.getPath());
+            rightTrim(new_query);
             rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
         }
     }
