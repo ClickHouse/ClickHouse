@@ -399,7 +399,12 @@ private:
             keeper.reset();
 
             if constexpr (std::is_same_v<Coordination::Error, Result>)
+            {
+                if (Coordination::isHardwareError(e.code))
+                    throw;
+
                 return e.code;
+            }
             else
                 throw;
         }
