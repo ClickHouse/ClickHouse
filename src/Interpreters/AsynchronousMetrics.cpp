@@ -713,9 +713,10 @@ void AsynchronousMetrics::update(TimePoint update_time)
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
                 LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
+                    ReadableSize(free_memory_in_allocator_arenas),
                     ReadableSize(rss),
                     ReadableSize(difference));
 
