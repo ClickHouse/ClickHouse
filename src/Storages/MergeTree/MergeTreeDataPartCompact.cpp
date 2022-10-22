@@ -22,7 +22,7 @@ namespace ErrorCodes
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Compact, parent_part_)
 {
@@ -32,7 +32,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_)
     : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Compact, parent_part_)
 {
@@ -58,13 +58,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
-    DataPartStorageBuilderPtr data_part_storage_builder,
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & computed_index_granularity) const
+    const MergeTreeIndexGranularity & computed_index_granularity)
 {
     NamesAndTypesList ordered_columns_list;
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
@@ -75,7 +74,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        shared_from_this(), std::move(data_part_storage_builder), ordered_columns_list, metadata_snapshot,
+        shared_from_this(), ordered_columns_list, metadata_snapshot,
         indices_to_recalc, getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }

@@ -101,7 +101,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & out_checksums) const
+    const MergeTreeData & data, const MutableDataPartStoragePtr & part_storage, Checksums & out_checksums) const
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -109,20 +109,20 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
 
-    return store(minmax_column_names, minmax_column_types, data_part_storage_builder, out_checksums);
+    return store(minmax_column_names, minmax_column_types, part_storage, out_checksums);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     const Names & column_names,
     const DataTypes & data_types,
-    const DataPartStorageBuilderPtr & data_part_storage_builder,
+    const MutableDataPartStoragePtr & part_storage,
     Checksums & out_checksums) const
 {
     if (!initialized)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Attempt to store uninitialized MinMax index for part {}. This is a bug",
-            data_part_storage_builder->getFullPath());
+            part_storage->getFullPath());
 
     WrittenFiles written_files;
 
@@ -131,7 +131,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
         auto serialization = data_types.at(i)->getDefaultSerialization();
 
-        auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+        auto out = part_storage->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
@@ -301,7 +301,7 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
-    const DataPartStoragePtr & data_part_storage_,
+    const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_)
     : storage(storage_)
@@ -315,6 +315,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 {
     if (parent_part)
         state = MergeTreeDataPartState::Active;
+
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -328,7 +329,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
     const MergeTreePartInfo & info_,
-    const DataPartStoragePtr & data_part_storage_,
+    const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_)
     : storage(storage_)
@@ -1365,7 +1366,7 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
     return data_part_storage->shallParticipateInMerges(*storage_policy);
 }
 
-void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const
+void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
 try
 {
     assertOnDisk();
@@ -1384,14 +1385,12 @@ try
 
     metadata_manager->deleteAll(true);
     metadata_manager->assertAllDeleted(true);
-    builder->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
     data_part_storage->onRename(to.parent_path(), to.filename());
     metadata_manager->updateAll(true);
 
     for (const auto & [p_name, part] : projection_parts)
-    {
         part->data_part_storage = data_part_storage->getProjection(p_name + ".proj");
-    }
 }
 catch (...)
 {
@@ -1507,11 +1506,11 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
     return {};
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
+void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
     assert(path_to_detach);
-    renameTo(path_to_detach.value(), true, builder);
+    renameTo(path_to_detach.value(), true);
     part_is_probably_removed_from_disk = true;
 }
 
@@ -1539,7 +1538,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
         {});
 }
 
-DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
+MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
 {
     assertOnDisk();
 
@@ -1549,7 +1548,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), disk, storage.log);
+    return data_part_storage->clonePart(path_to_clone, data_part_storage->getPartDirectory(), disk, storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

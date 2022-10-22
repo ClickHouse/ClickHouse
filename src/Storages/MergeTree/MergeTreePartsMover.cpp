@@ -209,8 +209,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto disk = moving_part.reserved_space->getDisk();
     LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->data_part_storage->getDiskName(), disk->getName());
 
-    DataPartStoragePtr cloned_part_storage;
-
+    MutableDataPartStoragePtr cloned_part_storage;
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
@@ -225,12 +224,16 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
 
         disk->createDirectories(path_to_clone);
 
-        cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        bool is_fetched = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
 
-        if (!cloned_part_storage)
+        if (!is_fetched)
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->data_part_storage->clone(path_to_clone, part->data_part_storage->getPartDirectory(), disk, log);
+            cloned_part_storage = part->data_part_storage->clonePart(path_to_clone, part->data_part_storage->getPartDirectory(), disk, log);
+        }
+        else
+        {
+            cloned_part_storage = part->data_part_storage->clone();
         }
     }
     else
@@ -238,14 +241,13 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
     }
 
-    MergeTreeData::MutableDataPartPtr cloned_part = data->createPart(part->name, cloned_part_storage);
+    auto cloned_part = data->createPart(part->name, cloned_part_storage);
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->data_part_storage->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
     cloned_part->loadVersionMetadata();
     cloned_part->modification_time = cloned_part->data_part_storage->getLastModified().epochTime();
     return cloned_part;
-
 }
 
 
@@ -263,11 +265,8 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
         return;
     }
 
-    auto builder = cloned_part->data_part_storage->getBuilder();
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    cloned_part->renameTo(active_part->name, false, builder);
-
-    builder->commit();
+    cloned_part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);

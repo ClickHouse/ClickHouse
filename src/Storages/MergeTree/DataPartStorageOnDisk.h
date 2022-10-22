@@ -15,6 +15,7 @@ class DataPartStorageOnDisk final : public IDataPartStorage
 {
 public:
     DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    std::shared_ptr<IDataPartStorage> clone() const override;
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -22,6 +23,7 @@ public:
     std::string getFullRootPath() const override;
 
     DataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartStoragePtr getProjection(const std::string & name) override;
 
     bool exists() const override;
     bool exists(const std::string & name) const override;
@@ -75,8 +77,8 @@ public:
 
     DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
 
-    ReservationPtr reserve(UInt64 bytes) const override;
-    ReservationPtr tryReserve(UInt64 bytes) const override;
+    ReservationPtr reserve(UInt64 bytes) override;
+    ReservationPtr tryReserve(UInt64 bytes) override;
     size_t getVolumeIndex(const IStoragePolicy &) const override;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const override;
@@ -100,7 +102,7 @@ public:
         bool make_temporary_hard_links,
         TemporaryFilesOnDisks * temp_dirs) const override;
 
-    DataPartStoragePtr freeze(
+    MutableDataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
         bool make_source_readonly,
@@ -108,7 +110,7 @@ public:
         bool copy_instead_of_hardlink,
         const NameSet & files_to_copy_instead_of_hardlinks) const override;
 
-    DataPartStoragePtr clone(
+    MutableDataPartStoragePtr clonePart(
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
@@ -116,39 +118,8 @@ public:
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
-    DataPartStorageBuilderPtr getBuilder() const override;
-private:
-    VolumePtr volume;
-    std::string root_path;
-    std::string part_dir;
-
-    void clearDirectory(
-        const std::string & dir,
-        bool can_remove_shared_data,
-        const NameSet & names_not_to_remove,
-        const MergeTreeDataPartChecksums & checksums,
-        const std::unordered_set<String> & skip_directories,
-        bool is_temp,
-        MergeTreeDataPartState state,
-        Poco::Logger * log,
-        bool is_projection) const;
-};
-
-class DataPartStorageBuilderOnDisk final : public IDataPartStorageBuilder
-{
-public:
-    DataPartStorageBuilderOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_);
-
-    void setRelativePath(const std::string & path) override;
-
-    bool exists() const override;
-
     void createDirectories() override;
     void createProjection(const std::string & name) override;
-
-    std::string getPartDirectory() const override { return part_dir; }
-    std::string getFullPath() const override;
-    std::string getRelativePath() const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
@@ -162,13 +133,7 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard() const override;
 
-    void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) const override;
-
-    ReservationPtr reserve(UInt64 bytes) override;
-
-    DataPartStorageBuilderPtr getProjection(const std::string & name) const override;
-
-    DataPartStoragePtr getStorage() const override;
+    void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
     void rename(
         const std::string & new_root_path,
@@ -177,13 +142,29 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) override;
 
-    void commit() override;
+    void beginTransaction() override;
+    void commitTransaction() override;
+    bool hasActiveTransaction() const override { return transaction != nullptr; }
 
 private:
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;
     DiskTransactionPtr transaction;
+
+    template <typename Op>
+    void executeOperation(Op && op);
+
+    void clearDirectory(
+        const std::string & dir,
+        bool can_remove_shared_data,
+        const NameSet & names_not_to_remove,
+        const MergeTreeDataPartChecksums & checksums,
+        const std::unordered_set<String> & skip_directories,
+        bool is_temp,
+        MergeTreeDataPartState state,
+        Poco::Logger * log,
+        bool is_projection) const;
 };
 
 }

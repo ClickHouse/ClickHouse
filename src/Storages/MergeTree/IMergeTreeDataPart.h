@@ -67,19 +67,18 @@ public:
 
     using uint128 = IPartMetadataManager::uint128;
 
-
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -94,13 +93,12 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const = 0;
+        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -202,7 +200,7 @@ public:
 
     /// This is an object which encapsulates all the operations with disk.
     /// Contains a path to stored data.
-    DataPartStoragePtr data_part_storage;
+    MutableDataPartStoragePtr data_part_storage;
 
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -289,8 +287,8 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const MutableDataPartStoragePtr & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const MutableDataPartStoragePtr & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -321,17 +319,17 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const;
+    void renameToDetached(const String & prefix) const;
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    DataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///

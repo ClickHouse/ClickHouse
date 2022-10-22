@@ -160,7 +160,7 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+            added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }
 
