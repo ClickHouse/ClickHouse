@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <memory>
 #include <optional>
 
 namespace DB
@@ -18,6 +19,7 @@ struct CanRemoveDescription
     NameSet files_not_to_remove;
 
 };
+
 using CanRemoveCallback = std::function<CanRemoveDescription()>;
 
 class IDataPartStorageIterator
@@ -61,16 +63,14 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
-class IDataPartStorageBuilder;
-using DataPartStorageBuilderPtr = std::shared_ptr<IDataPartStorageBuilder>;
-
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contains read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
-class IDataPartStorage
+class IDataPartStorage : public boost::noncopyable
 {
 public:
     virtual ~IDataPartStorage() = default;
+    virtual std::shared_ptr<IDataPartStorage> clone() const = 0;
 
     /// Methods to get path components of a data part.
     virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
@@ -81,7 +81,8 @@ public:
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
+    virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) = 0;
 
     /// Part directory exists.
     virtual bool exists() const = 0;
@@ -155,8 +156,8 @@ public:
 
     /// Reserve space on the same disk.
     /// Probably we should try to remove it later.
-    virtual ReservationPtr reserve(UInt64 /*bytes*/) const { return nullptr; }
-    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const { return nullptr; }
+    virtual ReservationPtr reserve(UInt64 /*bytes*/) { return nullptr; }
+    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) { return nullptr; }
     virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
 
     /// Some methods which change data part internals possibly after creation.
@@ -205,7 +206,7 @@ public:
         const NameSet & files_to_copy_instead_of_hardlinks) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
-    virtual std::shared_ptr<IDataPartStorage> clone(
+    virtual std::shared_ptr<IDataPartStorage> clonePart(
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
@@ -214,29 +215,6 @@ public:
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
     virtual void changeRootPath(const std::string & from_root, const std::string & to_root) = 0;
-
-    /// Leak of abstraction as well. We should use builder as one-time object which allow
-    /// us to build parts, while storage should be read-only method to access part properties
-    /// related to disk. However our code is really tricky and sometimes we need ad-hoc builders.
-    virtual DataPartStorageBuilderPtr getBuilder() const = 0;
-};
-
-using DataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
-
-/// This interface is needed to write data part.
-class IDataPartStorageBuilder
-{
-public:
-    virtual ~IDataPartStorageBuilder() = default;
-
-    /// Reset part directory, used for im-memory parts
-    virtual void setRelativePath(const std::string & path) = 0;
-
-    virtual std::string getPartDirectory() const = 0;
-    virtual std::string getFullPath() const = 0;
-    virtual std::string getRelativePath() const = 0;
-
-    virtual bool exists() const = 0;
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
@@ -250,13 +228,7 @@ public:
 
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
-    virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) const = 0;
-
-    virtual ReservationPtr reserve(UInt64 /*bytes*/) { return nullptr; }
-
-    virtual std::shared_ptr<IDataPartStorageBuilder> getProjection(const std::string & name) const = 0;
-
-    virtual DataPartStoragePtr getStorage() const = 0;
+    virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).
@@ -271,7 +243,12 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 
-    virtual void commit() = 0;
+    virtual void beginTransaction() = 0;
+    virtual void commitTransaction() = 0;
+    virtual bool hasActiveTransaction() const = 0;
 };
+
+using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
+using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 
 }
