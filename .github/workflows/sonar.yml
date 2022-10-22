@@ -5,6 +5,9 @@ on:
       - master
   pull_request:
     types: [opened, synchronize, reopened]
+env:
+  CC: clang-15
+  CXX: clang++-15
 jobs:
   sonar_cloud:
     name: Sonar Cloud
@@ -45,7 +48,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 ..
+          cmake ..
           ninja
           cd ..
           build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/
