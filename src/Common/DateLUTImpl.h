@@ -381,9 +381,9 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i - lut[i].day_of_month + lut[i].days_in_month].date;
+            return lut_saturated[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
         else
-            return lut[i - lut[i].day_of_month + lut[i].days_in_month].date;
+            return lut[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
     }
 
     template <typename DateOrTime>
@@ -391,9 +391,9 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return toDayNum(LUTIndexWithSaturation(i - lut[i].day_of_month + lut[i].days_in_month));
+            return toDayNum(LUTIndexWithSaturation(i + (lut[i].days_in_month - lut[i].day_of_month)));
         else
-            return toDayNum(LUTIndex(i - lut[i].day_of_month + lut[i].days_in_month));
+            return toDayNum(LUTIndex(i + (lut[i].days_in_month - lut[i].day_of_month)));
     }
 
     /// Round down to start of quarter.
@@ -641,7 +641,7 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + 8 - toDayOfWeek(i)) / 7;
+        return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -650,7 +650,7 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         /// That's effectively the year of thursday of current week.
-        return toYear(toLUTIndex(i + 4 - toDayOfWeek(i)));
+        return toYear(toLUTIndex(i + (4 - toDayOfWeek(i))));
     }
 
     /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.
@@ -666,8 +666,8 @@ public:
         auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
 
         return LUTIndex{first_day_of_week_of_year <= 4
-            ? first_day_of_year + 1 - first_day_of_week_of_year
-            : first_day_of_year + 8 - first_day_of_week_of_year};
+            ? first_day_of_year + (1 - first_day_of_week_of_year)
+            : first_day_of_year + (8 - first_day_of_week_of_year)};
     }
 
     template <typename DateOrTime>
@@ -793,7 +793,7 @@ public:
         const LUTIndex i = LUTIndex(v);
 
         // Checking the week across the year
-        yw.first = toYear(i + 7 - toDayOfWeek(i + offset_day));
+        yw.first = toYear(i + (7 - toDayOfWeek(i + offset_day)));
 
         auto first_day = makeLUTIndex(yw.first, 1, 1);
         auto this_day = i;

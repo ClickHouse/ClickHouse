@@ -37,7 +37,7 @@ void callWithType(TypeIndex type, F && f)
     DISPATCH(DateTime64)
 #undef DISPATCH
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename TKey, ASOFJoinInequality inequality>

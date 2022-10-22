@@ -384,7 +384,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

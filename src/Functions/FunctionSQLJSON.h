@@ -22,7 +22,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
 
-#include "config_functions.h"
+#include "config.h"
 
 namespace DB
 {

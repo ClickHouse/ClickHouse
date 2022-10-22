@@ -390,7 +390,7 @@ namespace
             case CALL_WITH_STREAM_IO: return "ExecuteQueryWithStreamIO()";
             case CALL_MAX: break;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     bool isInputStreaming(CallType call_type)
@@ -550,7 +550,7 @@ namespace
             case CALL_WITH_STREAM_IO: return std::make_unique<Responder<CALL_WITH_STREAM_IO>>();
             case CALL_MAX: break;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
 

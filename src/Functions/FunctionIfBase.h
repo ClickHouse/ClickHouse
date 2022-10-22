@@ -3,7 +3,7 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/Native.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 namespace DB
 {

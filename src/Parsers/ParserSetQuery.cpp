@@ -118,6 +118,40 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     return true;
 }
 
+bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, String & default_settings, IParser::Pos & pos, Expected & expected)
+{
+    ParserCompoundIdentifier name_p;
+    ParserLiteralOrMap value_p;
+    ParserToken s_eq(TokenType::Equals);
+
+    ASTPtr name;
+    ASTPtr value;
+    bool is_default = false;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!s_eq.ignore(pos, expected))
+        return false;
+
+    if (ParserKeyword("TRUE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
+    else if (ParserKeyword("FALSE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
+    else if (ParserKeyword("DEFAULT").ignore(pos, expected))
+        is_default = true;
+    else if (!value_p.parse(pos, value, expected))
+        return false;
+
+    tryGetIdentifierNameInto(name, change.name);
+    if (is_default)
+        default_settings = change.name;
+    else
+        change.value = value->as<ASTLiteral &>().value;
+
+    return true;
+}
+
 
 bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -137,20 +171,24 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     SettingsChanges changes;
     NameToNameMap query_parameters;
+    std::vector<String> default_settings;
 
     while (true)
     {
-        if ((!changes.empty() || !query_parameters.empty()) && !s_comma.ignore(pos))
+        if ((!changes.empty() || !query_parameters.empty() || !default_settings.empty()) && !s_comma.ignore(pos))
             break;
 
         /// Either a setting or a parameter for prepared statement (if name starts with QUERY_PARAMETER_NAME_PREFIX)
         SettingChange current;
+        String name_of_default_setting;
 
-        if (!parseNameValuePair(current, pos, expected))
+        if (!parseNameValuePairWithDefault(current, name_of_default_setting, pos, expected))
             return false;
 
         if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
             query_parameters.emplace(convertToQueryParameter(std::move(current)));
+        else if (!name_of_default_setting.empty())
+            default_settings.emplace_back(std::move(name_of_default_setting));
         else
             changes.push_back(std::move(current));
     }
@@ -161,6 +199,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_standalone = !parse_only_internals;
     query->changes = std::move(changes);
     query->query_parameters = std::move(query_parameters);
+    query->default_settings = std::move(default_settings);
 
     return true;
 }

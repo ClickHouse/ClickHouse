@@ -495,6 +495,14 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
+option(ENABLE_EXTERNAL_OPENSSL "This option is insecure and not recommended for any occasions. If it is enabled, it allows building with alternative OpenSSL library. By default, ClickHouse is using BoringSSL, which is better. Do not use this option." OFF)
+
+if (ENABLE_EXTERNAL_OPENSSL)
+    message (STATUS "Build and uses OpenSSL library instead of BoringSSL. This is strongly discouraged. Your build of ClickHouse will be unsupported.")
+    set(ENABLE_SSL 1)
+    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
+endif ()
+
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
     set (CLICKHOUSE_ETC_DIR "/etc")
@@ -567,8 +575,8 @@ function (add_native_target)
     set_property (GLOBAL APPEND PROPERTY NATIVE_BUILD_TARGETS ${ARGV})
 endfunction (add_native_target)
 
-set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
-include_directories(${ConfigIncludePath})
+set(CONFIG_INCLUDE_PATH ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)

@@ -510,7 +510,7 @@ private:
                 return execute<FromDataType, DataTypeDate, IntervalKind::Year>(from, time_column, num_units, result_type, time_zone, scale);
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <typename FromDataType, typename ToDataType, IntervalKind::Kind unit, typename ColumnType>
