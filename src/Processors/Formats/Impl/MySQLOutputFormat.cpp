@@ -74,7 +74,7 @@ void MySQLOutputFormat::finalizeImpl()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;
-    if (QueryStatus * process_list_elem = getContext()->getProcessListElement())
+    if (QueryStatusPtr process_list_elem = getContext()->getProcessListElement())
     {
         CurrentThread::finalizePerformanceCounters();
         QueryStatusInfo info = process_list_elem->getInfo();
