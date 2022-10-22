@@ -1379,7 +1379,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     const auto & settings = getContext()->getSettingsRef();
 
-    TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
+    TreeRewriterResult result(source_columns, storage, storage_snapshot, true, false);
 
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext());
 
