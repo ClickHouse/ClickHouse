@@ -1,3 +1,4 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/42460
 DROP TABLE IF EXISTS bloom_filter_nullable_index__fuzz_0;
 CREATE TABLE bloom_filter_nullable_index__fuzz_0
 (
