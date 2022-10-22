@@ -1463,10 +1463,8 @@ void Context::setCurrentQueryId(const String & query_id)
 
 void Context::killCurrentQuery()
 {
-    if (process_list_elem)
-    {
-        process_list_elem->cancelQuery(true);
-    }
+    if (auto elem = process_list_elem.lock())
+        elem->cancelQuery(true);
 }
 
 String Context::getDefaultFormat() const
@@ -1707,15 +1705,15 @@ ProgressCallback Context::getProgressCallback() const
 }
 
 
-void Context::setProcessListElement(ProcessList::Element * elem)
+void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
 }
 
-ProcessList::Element * Context::getProcessListElement() const
+QueryStatusPtr Context::getProcessListElement() const
 {
-    return process_list_elem;
+    return process_list_elem.lock();
 }
 
 
