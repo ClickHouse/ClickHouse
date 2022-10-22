@@ -297,6 +297,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
+    counting->setProgressCallback(context_ptr->getProgressCallback());
     out.addSource(std::move(counting));
 
     return out;

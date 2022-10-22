@@ -86,19 +86,6 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool isTemporary() const { return is_temporary; }
-    bool isPeriodicallyRefreshed() const { return is_periodically_refreshed; }
-
-    Seconds getTimeout() const { return temporary_live_view_timeout; }
-    Seconds getPeriodicRefresh() const { return periodic_live_view_refresh; }
-
-    /// Check if we have any readers
-    /// must be called with mutex locked
-    bool hasUsers()
-    {
-        return blocks_ptr.use_count() > 1;
-    }
-
     /// Check we have any active readers
     /// must be called with mutex locked
     bool hasActiveUsers()
@@ -200,10 +187,7 @@ private:
 
     Poco::Logger * log;
 
-    bool is_temporary = false;
     bool is_periodically_refreshed = false;
-
-    Seconds temporary_live_view_timeout;
     Seconds periodic_live_view_refresh;
 
     /// Mutex to protect access to sample block and inner_blocks_query

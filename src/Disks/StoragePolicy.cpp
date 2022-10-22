@@ -5,6 +5,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
 #include <set>
@@ -212,17 +213,15 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 
 ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
-    LOG_TRACE(log, "Reserving bytes {} from volume index {}, total volumes {}", bytes, min_volume_index, volumes.size());
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
         auto reservation = volume->reserve(bytes);
         if (reservation)
-        {
-            LOG_TRACE(log, "Successfully reserved {} bytes on volume index {}", bytes, i);
             return reservation;
-        }
     }
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+
     return {};
 }
 
