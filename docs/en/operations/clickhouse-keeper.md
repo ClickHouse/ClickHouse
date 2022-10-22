@@ -309,10 +309,16 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-- `csnp`: Schedule a snapshot creation task. Return `"Snapshot creation scheduled."` if successfully scheduled or Fail to scheduled snapshot creation.` if failed.
+- `csnp`: Schedule a snapshot creation task. Return `Snapshot creation scheduled.` if successfully scheduled or `Fail to scheduled snapshot creation.` if failed.
 
 ```
 Snapshot creation scheduled.
+```
+
+- `snpd`: Whether the last successfully scheduled snapshot creation is done. Return `Yes` if true or `No` if false.
+
+```
+Yes
 ```
 
 ## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}

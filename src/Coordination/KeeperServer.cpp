@@ -114,6 +114,7 @@ KeeperServer::KeeperServer(
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::make_shared<KeeperContext>()}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
+    , last_manual_snapshot_log_idx(0)
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
@@ -908,7 +909,20 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 bool KeeperServer::createSnapshot()
 {
-    return raft_instance->create_snapshot();
+    std::lock_guard lock(snapshot_mutex);
+    if (raft_instance->create_snapshot())
+    {
+        last_manual_snapshot_log_idx = raft_instance->get_last_snapshot_idx();
+        LOG_INFO(log, "Successfully schedule a keeper snapshot creation task at log index {}", last_manual_snapshot_log_idx);
+        return true;
+    }
+    return false;
+}
+
+bool KeeperServer::snapshotDone()
+{
+    std::lock_guard lock(snapshot_mutex);
+    return last_manual_snapshot_log_idx != 0 && last_manual_snapshot_log_idx == raft_instance->get_last_snapshot_idx();
 }
 
 }

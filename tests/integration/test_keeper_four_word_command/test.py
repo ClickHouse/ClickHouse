@@ -598,7 +598,7 @@ def test_cmd_wchp(started_cluster):
         destroy_zk_client(zk)
 
 
-def test_cmd_csnp(started_cluster):
+def test_cmd_snapshot(started_cluster):
     zk = None
     try:
         wait_nodes()
@@ -607,7 +607,10 @@ def test_cmd_csnp(started_cluster):
 
         zk = get_fake_zk(node1.name, timeout=30.0)
 
-        data = send_4lw_cmd(cmd="csnp")
-        assert data == "Snapshot creation scheduled."
+        create = send_4lw_cmd(cmd="csnp")
+        assert create == "Snapshot creation scheduled."
+
+        check = send_4lw_cmd(cmd="snpd")
+        assert (check == "Yes" or check == "No")
     finally:
         destroy_zk_client(zk)

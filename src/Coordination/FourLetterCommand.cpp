@@ -477,7 +477,12 @@ String ApiVersionCommand::run()
 
 String CreateSnapshotCommand::run()
 {
-    return keeper_dispatcher.createSnapshot() ? "Snapshot creation scheduled." : "Fail to scheduled snapshot creation.";
+    return keeper_dispatcher.createSnapshot() ? "Snapshot creation scheduled." : "Fail to scheduled snapshot creation task.";
+}
+
+String CheckSnapshotDoneCommand::run()
+{
+    return keeper_dispatcher.snapshotDone() ? "Snapshot creation done." : "Fail to scheduled snapshot creation task.";
 }
 
 }

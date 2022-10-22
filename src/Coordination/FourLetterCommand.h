@@ -340,4 +340,18 @@ struct CreateSnapshotCommand : public IFourLetterCommand
     String run() override;
     ~CreateSnapshotCommand() override = default;
 };
+
+/// Check whether last manual snapshot done
+struct CheckSnapshotDoneCommand : public IFourLetterCommand
+{
+    explicit CheckSnapshotDoneCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "snpd"; }
+    String run() override;
+    ~CheckSnapshotDoneCommand() override = default;
+};
+
 }

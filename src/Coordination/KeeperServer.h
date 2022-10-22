@@ -66,6 +66,10 @@ private:
 
     const bool create_snapshot_on_exit;
 
+    /// Used to check whether the previous manually created snapshot complete.
+    uint64_t last_manual_snapshot_log_idx;
+    std::mutex snapshot_mutex;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
@@ -133,6 +137,8 @@ public:
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 
     bool createSnapshot();
+
+    bool snapshotDone();
 };
 
 }
