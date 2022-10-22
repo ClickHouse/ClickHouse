@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS bloom_filter_nullable_index__fuzz_1;
 CREATE TABLE bloom_filter_nullable_index__fuzz_1
 (
     `order_key` UInt64,
-    `str` Nullable(String),
+    `str` String,
     INDEX idx str TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY order_key SETTINGS index_granularity = 6;
