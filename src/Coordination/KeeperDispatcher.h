@@ -209,6 +209,12 @@ public:
     {
         return server->createSnapshot();
     }
+
+    /// Whether the last manually created snapshot is done
+    bool snapshotDone()
+    {
+        return server->snapshotDone();
+    }
 };
 
 }
