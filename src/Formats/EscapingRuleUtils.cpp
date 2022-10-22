@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -873,6 +874,21 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     }
 
     return result;
+}
+
+
+void checkSupportedDelimiterAfterField(FormatSettings::EscapingRule escaping_rule, const String & delimiter, const DataTypePtr & type)
+{
+    if (escaping_rule != FormatSettings::EscapingRule::Escaped)
+        return;
+
+    bool is_supported_delimiter_after_string = !delimiter.empty() && (delimiter.front() == '\t' || delimiter.front() == '\n');
+    if (is_supported_delimiter_after_string)
+        return;
+
+    /// Nullptr means that field is skipped and it's equivalent to String
+    if (!type || isString(removeNullable(removeLowCardinality(type))))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after String field to start with '\\t' or '\\n'");
 }
 
 }
