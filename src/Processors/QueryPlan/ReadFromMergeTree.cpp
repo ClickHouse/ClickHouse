@@ -173,6 +173,9 @@ Pipe ReadFromMergeTree::readFromPool(
         total_rows += part.getRowsCount();
     }
 
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
+
     const auto & settings = context->getSettingsRef();
     const auto & client_info = context->getClientInfo();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
@@ -246,10 +249,24 @@ ProcessorPtr ReadFromMergeTree::createSource(
         };
     }
 
-    return std::make_shared<TSource>(
+    auto total_rows = part.getRowsCount();
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
+
+    auto source = std::make_shared<TSource>(
             data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
             actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block, std::move(extension));
+
+    /// Actually it means that parallel reading from replicas enabled
+    /// and we have to collaborate with initiator.
+    /// In this case we won't set approximate rows, because it will be accounted multiple times.
+    /// Also do not count amount of read rows if we read in order of sorting key,
+    /// because we don't know actual amount of read rows in case when limit is set.
+    if (!extension.has_value() && !reader_settings.read_in_order)
+        source -> addTotalRowsApprox(total_rows);
+
+    return source;
 }
 
 Pipe ReadFromMergeTree::readInOrder(
