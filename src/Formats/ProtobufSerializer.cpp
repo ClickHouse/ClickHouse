@@ -3535,7 +3535,7 @@ namespace
             }
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 }
 

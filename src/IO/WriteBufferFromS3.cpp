@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
@@ -74,7 +74,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::ReadWriteSettings & s3_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ThreadPoolCallbackRunner<void> schedule_,
+    ScheduleFunc schedule_,
     const WriteSettings & write_settings_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -292,7 +292,7 @@ void WriteBufferFromS3::writePart()
                 }
 
                 task_finish_notify();
-            }, 0);
+            });
         }
         catch (...)
         {
@@ -442,7 +442,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 }
 
                 task_notify_finish();
-            }, 0);
+            });
         }
         catch (...)
         {

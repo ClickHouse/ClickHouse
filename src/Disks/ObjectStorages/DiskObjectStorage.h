@@ -166,8 +166,6 @@ public:
 
     UInt64 getRevision() const override;
 
-    ObjectStoragePtr getObjectStorage() override;
-
     DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;

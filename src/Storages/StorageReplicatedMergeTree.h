@@ -29,7 +29,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
-#include <Common/EventNotifier.h>
 #include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
@@ -280,7 +279,7 @@ public:
     /// Return false if data is still used by another node
     static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         std::string disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
+        const String & zookeeper_path_old);
 
     /// Fetch part only if some replica has it on shared storage like S3
     DataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -454,7 +453,6 @@ private:
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
-    EventNotifier::HandlerPtr session_expired_callback_handler;
 
     /// A thread that attaches the table using ZooKeeper
     std::optional<ReplicatedMergeTreeAttachThread> attach_thread;

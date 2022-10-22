@@ -927,11 +927,7 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-        {
-            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
-            /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
-        }
+            command = fmt::format("clickhouse su '{}' {}", user, command);
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);

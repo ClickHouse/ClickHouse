@@ -29,7 +29,6 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -688,7 +687,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     /// The size without taking into account the row in which data is written for the calculation of TOTALS.
@@ -705,7 +704,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     const char * getMethodName() const
@@ -721,7 +720,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     bool isTwoLevel() const
@@ -737,7 +736,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -926,7 +925,7 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
 
-        TemporaryDataOnDiskScopePtr tmp_data_scope;
+        VolumePtr tmp_volume;
 
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
@@ -971,7 +970,7 @@ public:
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            TemporaryDataOnDiskScopePtr tmp_data_scope_,
+            VolumePtr tmp_volume_,
             size_t max_threads_,
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
@@ -991,7 +990,7 @@ public:
             , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
             , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
             , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-            , tmp_data_scope(std::move(tmp_data_scope_))
+            , tmp_volume(tmp_volume_)
             , max_threads(max_threads_)
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
@@ -1072,9 +1071,25 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
+    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
 
-    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
+    bool hasTemporaryFiles() const { return !temporary_files.empty(); }
+
+    struct TemporaryFiles
+    {
+        std::vector<TemporaryFileOnDiskHolder> files;
+        size_t sum_size_uncompressed = 0;
+        size_t sum_size_compressed = 0;
+        mutable std::mutex mutex;
+
+        bool empty() const
+        {
+            std::lock_guard lock(mutex);
+            return files.empty();
+        }
+    };
+
+    const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -1133,7 +1148,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// For external aggregation.
-    TemporaryDataOnDiskPtr tmp_data;
+    mutable TemporaryFiles temporary_files;
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -1236,7 +1251,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryFileStream & out) const;
+        NativeWriter & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>

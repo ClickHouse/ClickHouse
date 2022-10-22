@@ -10,6 +10,8 @@
 namespace DB
 {
 
+namespace ANN = ApproximateNearestNeighbour;
+
 // auxiliary namespace for working with spotify-annoy library
 // mainly for serialization and deserialization of the index
 namespace ApproximateNearestNeighbour
@@ -31,7 +33,7 @@ namespace ApproximateNearestNeighbour
 
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = ApproximateNearestNeighbour::AnnoyIndex<>;
+    using AnnoyIndex = ANN::AnnoyIndex<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
@@ -55,7 +57,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = ApproximateNearestNeighbour::AnnoyIndex<>;
+    using AnnoyIndex = ANN::AnnoyIndex<>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t number_of_trees);
@@ -72,7 +74,7 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionAnnoy final : public ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionAnnoy final : public ANN::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionAnnoy(
@@ -89,14 +91,18 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
-    ApproximateNearestNeighbour::ANNCondition condition;
+    ANN::ANNCondition condition;
 };
 
 
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_);
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_)
+        : IMergeTreeIndex(index_)
+        , number_of_trees(number_of_trees_)
+    {}
+
     ~MergeTreeIndexAnnoy() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;

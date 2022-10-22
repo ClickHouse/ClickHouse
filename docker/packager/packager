@@ -128,7 +128,6 @@ def parse_env_variables(
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
-    ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
     AMD64_SSE2_SUFFIX = "-amd64sse2"
@@ -141,7 +140,6 @@ def parse_env_variables(
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
-    is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
@@ -179,13 +177,6 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
         )
-        result.append("DEB_ARCH=arm64")
-    elif is_cross_arm_v80compat:
-        cc = compiler[: -len(ARM_V80COMPAT_SUFFIX)]
-        cmake_flags.append(
-            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
-        )
-        cmake_flags.append("-DNO_ARMV81_OR_HIGHER=1")
         result.append("DEB_ARCH=arm64")
     elif is_cross_freebsd:
         cc = compiler[: -len(FREEBSD_SUFFIX)]
@@ -352,7 +343,6 @@ if __name__ == "__main__":
             "clang-15-darwin",
             "clang-15-darwin-aarch64",
             "clang-15-aarch64",
-            "clang-15-aarch64-v80compat",
             "clang-15-ppc64le",
             "clang-15-amd64sse2",
             "clang-15-freebsd",

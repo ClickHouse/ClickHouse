@@ -1325,7 +1325,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res -= shards[i].weight;
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

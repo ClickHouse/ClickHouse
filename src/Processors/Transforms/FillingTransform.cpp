@@ -45,7 +45,7 @@ static FillColumnDescription::StepFunction getStepFunction(
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)

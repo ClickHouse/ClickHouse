@@ -10,7 +10,7 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
-#include "config.h"
+#include "config_core.h"
 
 
 namespace DB

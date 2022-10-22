@@ -819,18 +819,10 @@ struct StorageDistributedDirectoryMonitor::Batch
             }
             else
             {
-                std::vector<std::string> files;
+                std::vector<std::string> files(file_index_to_path.size());
                 for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
-                {
-                    if (file_info.index() > 8)
-                    {
-                        files.push_back("...");
-                        break;
-                    }
-
-                    files.push_back(file_info.value().second);
-                }
-                e.addMessage(fmt::format("While sending batch, nums: {}, files: {}", file_index_to_path.size(), fmt::join(files, "\n")));
+                    files[file_info.index()] = file_info.value().second;
+                e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
             }

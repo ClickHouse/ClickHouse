@@ -41,7 +41,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
-    chassert(future_parts.empty());
+    assert(future_parts.empty());
     current_parts.clear();
     virtual_parts.clear();
     queue.clear();
@@ -62,7 +62,6 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
 
 void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
-    clear();
     std::lock_guard lock(state_mutex);
 
     LOG_TRACE(log, "Initializing parts in queue");
@@ -154,19 +153,17 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         ::sort(children.begin(), children.end());
 
-        auto children_num = children.size();
-        std::vector<std::string> paths;
-        paths.reserve(children_num);
+        zkutil::AsyncResponses<Coordination::GetResponse> futures;
+        futures.reserve(children.size());
 
         for (const String & child : children)
-            paths.emplace_back(fs::path(queue_path) / child);
+            futures.emplace_back(child, zookeeper->asyncGet(fs::path(queue_path) / child));
 
-        auto results = zookeeper->get(paths);
-        for (size_t i = 0; i < children_num; ++i)
+        for (auto & future : futures)
         {
-            auto res = results[i];
+            Coordination::GetResponse res = future.second.get();
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
-            entry->znode_name = children[i];
+            entry->znode_name = future.first;
 
             std::lock_guard lock(state_mutex);
 
@@ -644,11 +641,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             LOG_DEBUG(log, "Pulling {} entries to queue: {} - {}", (end - begin), *begin, *last);
 
-            Strings get_paths;
-            get_paths.reserve(end - begin);
+            zkutil::AsyncResponses<Coordination::GetResponse> futures;
+            futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
+                futures.emplace_back(*it, zookeeper->asyncGet(fs::path(zookeeper_path) / "log" / *it));
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -658,11 +655,9 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             std::optional<time_t> min_unprocessed_insert_time_changed;
 
-            auto get_results = zookeeper->get(get_paths);
-            auto get_num = get_results.size();
-            for (size_t i = 0; i < get_num; ++i)
+            for (auto & future : futures)
             {
-                auto res = get_results[i];
+                Coordination::GetResponse res = future.second.get();
 
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
@@ -1982,12 +1977,9 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-        std::vector<std::string> paths;
-        paths.reserve(partitions.size());
+        std::vector<std::future<Coordination::ListResponse>> lock_futures;
         for (const String & partition : partitions)
-            paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
-
-        auto locks_children = zookeeper->getChildren(paths);
+            lock_futures.push_back(zookeeper->asyncGetChildren(fs::path(queue.zookeeper_path) / "block_numbers" / partition));
 
         struct BlockInfoInZooKeeper
         {
@@ -2000,7 +1992,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         std::vector<BlockInfoInZooKeeper> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
-            Strings partition_block_numbers = locks_children[i].names;
+            Strings partition_block_numbers = lock_futures[i].get().names;
             for (const String & entry : partition_block_numbers)
             {
                 /// TODO: cache block numbers that are abandoned.

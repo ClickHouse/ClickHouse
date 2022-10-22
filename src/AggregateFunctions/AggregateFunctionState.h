@@ -111,11 +111,6 @@ public:
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
     }
 
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
-    {
-        assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
-    }
-
     /// Aggregate function or aggregate function state.
     bool isState() const override { return true; }
 

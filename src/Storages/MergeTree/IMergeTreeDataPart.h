@@ -347,7 +347,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -485,7 +485,7 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
+    String getRelativePathForDetachedPart(const String & prefix) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of

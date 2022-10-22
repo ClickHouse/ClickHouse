@@ -24,7 +24,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
-    ParserKeyword s_caches("FILESYSTEM CACHES");
+    ParserKeyword s_caches("CACHES");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");

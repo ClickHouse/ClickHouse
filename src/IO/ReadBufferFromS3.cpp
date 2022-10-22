@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include "IO/S3Common.h"
 
 #if USE_AWS_S3

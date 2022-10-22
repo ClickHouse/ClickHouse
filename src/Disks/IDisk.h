@@ -74,10 +74,6 @@ public:
     /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
 
-    /// Whether this is a disk or a volume.
-    virtual bool isDisk() const { return false; }
-    virtual bool isVolume() const { return false; }
-
     virtual ~Space() = default;
 };
 
@@ -111,9 +107,6 @@ public:
         : executor(executor_)
     {
     }
-
-    /// This is a disk.
-    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
@@ -181,7 +174,11 @@ public:
     virtual void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir);
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
-    virtual void copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path);
+    virtual void copyFile( /// NOLINT
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const WriteSettings & settings = {});
 
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
@@ -365,14 +362,6 @@ public:
     virtual void syncRevision(UInt64) {}
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
-
-    virtual ObjectStoragePtr getObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
-    }
 
     /// Create disk object storage according to disk type.
     /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),

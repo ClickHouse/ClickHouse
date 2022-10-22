@@ -157,6 +157,7 @@ function run_cmake
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
         "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"

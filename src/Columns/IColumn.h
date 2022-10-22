@@ -7,7 +7,7 @@
 #include <base/StringRef.h>
 #include <Core/Types.h>
 
-#include "config.h"
+#include "config_core.h"
 
 
 class SipHash;

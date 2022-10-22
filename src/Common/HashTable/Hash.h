@@ -119,7 +119,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
                 __builtin_memcpy(&value, pos, 7);
                 break;
             default:
-                UNREACHABLE();
+                __builtin_unreachable();
         }
 
         reinterpret_cast<unsigned char *>(&value)[7] = size;
@@ -194,7 +194,8 @@ inline size_t DefaultHash64(T key)
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
-    UNREACHABLE();
+    assert(false);
+    __builtin_unreachable();
 }
 
 template <typename T>
@@ -453,7 +454,8 @@ struct IntHash32
             return intHash32<salt>(u.out);
         }
 
-        UNREACHABLE();
+        assert(false);
+        __builtin_unreachable();
     }
 };
 

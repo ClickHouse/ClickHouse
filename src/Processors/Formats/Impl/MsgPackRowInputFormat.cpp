@@ -512,7 +512,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()

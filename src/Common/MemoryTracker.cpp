@@ -12,7 +12,7 @@
 #include <Common/OvercommitTracker.h>
 #include <Common/logger_useful.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>

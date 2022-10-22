@@ -9,7 +9,7 @@
 
 #include <Poco/Version.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
