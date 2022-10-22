@@ -180,7 +180,9 @@ public:
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        return access<Coordination::Error, false>(
+        constexpr auto no_throw = true;
+        constexpr auto inject_failure_before_op = false;
+        return access<Coordination::Error, no_throw, inject_failure_before_op>(
             "tryMultiNoThrow",
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMultiNoThrow(requests, responses); },
@@ -330,7 +332,12 @@ private:
         }
     }
 
-    template <typename Result, bool inject_failure_before_op = true, int inject_failure_after_op = true, typename FaultCleanup>
+    template <
+        typename Result,
+        bool no_throw_access = false,
+        bool inject_failure_before_op = true,
+        int inject_failure_after_op = true,
+        typename FaultCleanup>
     Result access(const char * func_name, const std::string & path, auto && operation, FaultCleanup fault_after_op_cleanup)
     {
         try
@@ -398,8 +405,15 @@ private:
 
             keeper.reset();
 
+            /// for try*NoThrow() methods
+            if constexpr (no_throw_access)
+                return e.code;
+
             if constexpr (std::is_same_v<Coordination::Error, Result>)
             {
+                /// try*() methods throws at least on hardware error and return only on logical errors
+                /// todo: the methods return only on subset of logical errors, and throw on another errors
+                ///       to mimic the methods exacly - we need to specify errors on which to return for each such method
                 if (Coordination::isHardwareError(e.code))
                     throw;
 
