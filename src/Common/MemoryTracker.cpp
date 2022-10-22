@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include "config.h"
@@ -86,6 +87,8 @@ inline std::string_view toDescription(OvercommitResult result)
 namespace ProfileEvents
 {
     extern const Event QueryMemoryLimitExceeded;
+    extern const Event MemoryAllocatorPurge;
+    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
 using namespace std::chrono_literals;
@@ -229,7 +232,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         {
             if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas) > 0)
             {
+                Stopwatch watch;
                 mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+                ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
             }
         }
 
