@@ -438,7 +438,7 @@ void MemoryTracker::reset()
 
 void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
 {
-    Int64 new_amount = rss_; // - free_memory_in_allocator_arenas_;
+    Int64 new_amount = rss_;
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
     free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
 
