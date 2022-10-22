@@ -155,7 +155,7 @@ void ColumnGathererTransform::onFinish()
     double seconds = static_cast<double>(elapsed_ns) / 1000000000ULL;
     const auto & column_name = getOutputPort().getHeader().getByPosition(0).name;
 
-    if (!seconds)
+    if (seconds == 0.0)
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
             column_name, static_cast<double>(merged_bytes) / merged_rows);
     else

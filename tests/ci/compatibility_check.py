@@ -99,6 +99,7 @@ def get_run_commands(
     return [
         f"readelf -s {build_path}/usr/bin/clickhouse | grep '@GLIBC_' > {result_folder}/glibc.log",
         f"readelf -s {build_path}/usr/bin/clickhouse-odbc-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
+        f"readelf -s {build_path}/usr/bin/clickhouse-library-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
         f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
         f"--volume={build_path}/etc/clickhouse-server:/config "
         f"--volume={server_log_folder}:/var/log/clickhouse-server {image_ubuntu} > {result_folder}/ubuntu:12.04",

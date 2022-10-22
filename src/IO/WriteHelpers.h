@@ -372,7 +372,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite);
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
 
     if (need_quote)
         writeChar('"', ostr);

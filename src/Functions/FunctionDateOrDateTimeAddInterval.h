@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -671,9 +672,13 @@ public:
         using ResultDataType = TransformResultDataType<FromDataType>;
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
+        {
             return std::make_shared<DataTypeDate>();
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
+        {
             return std::make_shared<DataTypeDate32>();
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
@@ -712,13 +717,8 @@ public:
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
             }
         }
-        else
-        {
-            static_assert("Failed to resolve return type.");
-        }
 
-        //to make PVS and GCC happy.
-        return nullptr;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -757,4 +757,3 @@ public:
 };
 
 }
-

@@ -100,7 +100,7 @@ public:
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
             UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-            UInt64 microseconds = seconds * count * 1e6;
+            UInt64 microseconds = static_cast<UInt64>(seconds * count * 1e6);
             sleepForMicroseconds(microseconds);
             ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
             ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);

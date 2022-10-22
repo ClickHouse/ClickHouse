@@ -24,7 +24,10 @@ if (COMPILER_CLANG)
     no_warning(c++98-compat-pedantic)
     no_warning(c++98-compat)
     no_warning(c++20-compat) # Use constinit in C++20 without warnings
-    no_warning(conversion)
+    no_warning(sign-conversion)
+    no_warning(implicit-int-conversion)
+    no_warning(implicit-int-float-conversion)
+    no_warning(shorten-64-to-32)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
     no_warning(disabled-macro-expansion)
     no_warning(documentation-unknown-command)

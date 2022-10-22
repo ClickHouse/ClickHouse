@@ -34,6 +34,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -72,6 +73,7 @@
 #include <memory>
 #include <random>
 
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace ProfileEvents
 {
@@ -107,12 +109,22 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
-static String prepareQueryForLogging(const String & query, ContextPtr context)
+/// Makes a version of a query without sensitive information (e.g. passwords) for logging.
+/// The parameter `parsed query` can be nullptr if the query cannot be parsed.
+static String prepareQueryForLogging(const String & query, const ASTPtr & parsed_query, ContextPtr context)
 {
     String res = query;
 
-    // wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log
+    // Wiping a password or hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    if (parsed_query && canContainPassword(*parsed_query))
+    {
+        ASTPtr ast_for_logging = parsed_query->clone();
+        wipePasswordFromQuery(ast_for_logging);
+        res = serializeAST(*ast_for_logging);
+    }
+
+    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log.
     if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
@@ -220,17 +232,6 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             comment,
             toOneLineQuery(elem.query),
             elem.stack_trace);
-}
-
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
 static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
@@ -367,8 +368,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     // example, the query is from an initiator that is running an old version of clickhouse.
     if (!internal && client_info.initial_query_start_time == 0)
     {
-        client_info.initial_query_start_time = time_in_seconds(current_time);
-        client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
+        client_info.initial_query_start_time = timeInSeconds(current_time);
+        client_info.initial_query_start_time_microseconds = timeInMicroseconds(current_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -376,23 +377,77 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr ast;
-    const char * query_end;
-
     size_t max_query_size = settings.max_query_size;
     /// Don't limit the size of internal queries or distributed subquery.
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
 
-    String query_database;
-    String query_table;
+    ASTPtr ast;
+    String query;
+    String query_for_logging;
+
+    /// Parse the query from string.
     try
     {
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+        if (settings.dialect == Dialect::kusto && !internal)
+        {
+            ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
-        /// TODO: parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+        else
+        {
+            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
 
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+
+        const char * query_end = end;
+        if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            query_end = insert_query->data;
+
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        if (context->hasQueryParameters())
+        {
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            visitor.visit(ast);
+            query = serializeAST(*ast);
+        }
+        else
+        {
+            /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+            query.assign(begin, query_end);
+        }
+
+        /// Wipe any sensitive information (e.g. passwords) from the query.
+        /// MUST go before any modification (except for prepared statements,
+        /// since it substitute parameters and without them query does not contain
+        /// parameters), to keep query as-is in query_log and server log.
+        query_for_logging = prepareQueryForLogging(query, ast, context);
+    }
+    catch (...)
+    {
+        /// Anyway log the query.
+        if (query.empty())
+            query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+        query_for_logging = prepareQueryForLogging(query, ast, context);
+
+        logQuery(query_for_logging, context, internal, stage);
+
+        if (!internal)
+            onExceptionBeforeStart(query_for_logging, context, timeInMicroseconds(current_time), ast, query_span);
+        throw;
+    }
+
+    BlockIO res;
+    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
+    String query_database;
+    String query_table;
+
+    try
+    {
         if (auto txn = context->getCurrentTransaction())
         {
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
@@ -418,80 +473,34 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-        }
 
-        if (auto * create_query = ast->as<ASTCreateQuery>())
-        {
-            if (create_query->select)
+            if (const auto * create_query = ast->as<ASTCreateQuery>())
             {
-                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
+                if (create_query->select)
+                {
+                    applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
+                }
             }
         }
-
-        auto * insert_query = ast->as<ASTInsertQuery>();
-
-        if (insert_query && insert_query->settings_ast)
-            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
-
-        if (insert_query)
+        else if (auto * insert_query = ast->as<ASTInsertQuery>())
         {
-            if (insert_query->data)
-                query_end = insert_query->data;
-            else
-                query_end = end;
-
+            if (insert_query->settings_ast)
+                InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
             insert_query->tail = istr;
         }
-        else
+
+        setQuerySpecificSettings(ast, context);
+
+        /// There is an option of probabilistic logging of queries.
+        /// If it is used - do the random sampling and "collapse" the settings.
+        /// It allows to consistently log queries with all the subqueries in distributed query processing
+        /// (subqueries on remote nodes will receive these "collapsed" settings)
+        if (!internal && settings.log_queries && settings.log_queries_probability < 1.0)
         {
-            query_end = end;
-        }
-    }
-    catch (...)
-    {
-        /// Anyway log the query.
-        String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+            std::bernoulli_distribution should_write_log{settings.log_queries_probability};
 
-        auto query_for_logging = prepareQueryForLogging(query, context);
-        logQuery(query_for_logging, context, internal, stage);
-
-        if (!internal)
-        {
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
-        }
-
-        throw;
-    }
-
-    setQuerySpecificSettings(ast, context);
-
-    /// There is an option of probabilistic logging of queries.
-    /// If it is used - do the random sampling and "collapse" the settings.
-    /// It allows to consistently log queries with all the subqueries in distributed query processing
-    /// (subqueries on remote nodes will receive these "collapsed" settings)
-    if (!internal && settings.log_queries && settings.log_queries_probability < 1.0)
-    {
-        std::bernoulli_distribution should_write_log{settings.log_queries_probability};
-
-        context->setSetting("log_queries", should_write_log(thread_local_rng));
-        context->setSetting("log_queries_probability", 1.0);
-    }
-
-    /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-    String query(begin, query_end);
-    BlockIO res;
-
-    String query_for_logging;
-    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
-
-    try
-    {
-        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (context->hasQueryParameters())
-        {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
-            visitor.visit(ast);
-            query = serializeAST(*ast);
+            context->setSetting("log_queries", should_write_log(thread_local_rng));
+            context->setSetting("log_queries_probability", 1.0);
         }
 
         if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -500,10 +509,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query_table = query_with_table_output->getTable();
         }
 
-        /// MUST go before any modification (except for prepared statements,
-        /// since it substitute parameters and without them query does not contain
-        /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal, stage);
 
         /// Propagate WITH statement to children ASTSelect.
@@ -577,10 +582,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
 
+        bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        const bool async_insert = queue
-            && insert_query && !insert_query->select
-            && insert_query->hasInlinedData() && settings.async_insert;
+
+        if (insert_query && settings.async_insert)
+        {
+            String reason;
+
+            if (!queue)
+                reason = "asynchronous insert queue is not configured";
+            else if (insert_query->select)
+                reason = "insert query has select";
+            else if (!insert_query->hasInlinedData())
+                reason = "insert query doesn't have inlined data";
+            else
+                async_insert = true;
+
+            if (!async_insert)
+            {
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"),
+                    "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            }
+        }
 
         if (async_insert)
         {
@@ -720,10 +743,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.type = QueryLogElementType::QUERY_START; //-V1048
 
-            elem.event_time = time_in_seconds(current_time);
-            elem.event_time_microseconds = time_in_microseconds(current_time);
-            elem.query_start_time = time_in_seconds(current_time);
-            elem.query_start_time_microseconds = time_in_microseconds(current_time);
+            elem.event_time = timeInSeconds(current_time);
+            elem.event_time_microseconds = timeInMicroseconds(current_time);
+            elem.query_start_time = timeInSeconds(current_time);
+            elem.query_start_time_microseconds = timeInMicroseconds(current_time);
 
             elem.current_database = context->getCurrentDatabase();
             elem.query = query_for_logging;
@@ -774,7 +797,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Common code for finish and exception callbacks
             auto status_info_to_query_log = [](QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr) mutable
             {
-                DB::UInt64 query_time = info.elapsed_seconds * 1000000;
+                UInt64 query_time = static_cast<UInt64>(info.elapsed_seconds * 1000000);
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
                 if (query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
                 {
@@ -789,7 +812,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, query_time);
                 }
 
-                element.query_duration_ms = info.elapsed_seconds * 1000;
+                element.query_duration_ms = static_cast<UInt64>(info.elapsed_seconds * 1000);
 
                 element.read_rows = info.read_rows;
                 element.read_bytes = info.read_bytes;
@@ -838,101 +861,117 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
-                if (!process_list_elem)
-                    return;
-
-                /// Update performance counters before logging to query_log
-                CurrentThread::finalizePerformanceCounters();
-
-                QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
-
-                double elapsed_seconds = info.elapsed_seconds;
-
-                elem.type = QueryLogElementType::QUERY_FINISH;
-
-                // construct event_time and event_time_microseconds using the same time point
-                // so that the two times will always be equal up to a precision of a second.
-                const auto finish_time = std::chrono::system_clock::now();
-                elem.event_time = time_in_seconds(finish_time);
-                elem.event_time_microseconds = time_in_microseconds(finish_time);
-                status_info_to_query_log(elem, info, ast, context);
-
-                if (pulling_pipeline)
+                if (process_list_elem)
                 {
-                    query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
-                }
-                else /// will be used only for ordinary INSERT queries
-                {
-                    auto progress_out = process_list_elem->getProgressOut();
-                    elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_bytes;
-                }
+                    /// Update performance counters before logging to query_log
+                    CurrentThread::finalizePerformanceCounters();
 
-                auto progress_callback = context->getProgressCallback();
-                if (progress_callback)
-                {
-                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
-                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-                    progress_callback(p);
-                }
+                    QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
 
-                if (elem.read_rows != 0)
-                {
-                    LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                        elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
-                        static_cast<size_t>(elem.read_rows / elapsed_seconds),
-                        ReadableSize(elem.read_bytes / elapsed_seconds));
-                }
+                    double elapsed_seconds = info.elapsed_seconds;
 
-                if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
-                {
-                    if (auto query_log = context->getQueryLog())
-                        query_log->add(elem);
-                }
-                if (log_processors_profiles)
-                {
-                    if (auto processors_profile_log = context->getProcessorsProfileLog())
+                    elem.type = QueryLogElementType::QUERY_FINISH;
+
+                    // construct event_time and event_time_microseconds using the same time point
+                    // so that the two times will always be equal up to a precision of a second.
+                    const auto finish_time = std::chrono::system_clock::now();
+                    elem.event_time = timeInSeconds(finish_time);
+                    elem.event_time_microseconds = timeInMicroseconds(finish_time);
+                    status_info_to_query_log(elem, info, ast, context);
+
+                    if (pulling_pipeline)
                     {
-                        ProcessorProfileLogElement processor_elem;
-                        processor_elem.event_time = time_in_seconds(finish_time);
-                        processor_elem.event_time_microseconds = time_in_microseconds(finish_time);
-                        processor_elem.query_id = elem.client_info.current_query_id;
+                        query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
+                    }
+                    else /// will be used only for ordinary INSERT queries
+                    {
+                        auto progress_out = process_list_elem->getProgressOut();
+                        elem.result_rows = progress_out.written_rows;
+                        elem.result_bytes = progress_out.written_bytes;
+                    }
 
-                        auto get_proc_id = [](const IProcessor & proc) -> UInt64
-                        {
-                            return reinterpret_cast<std::uintptr_t>(&proc);
-                        };
+                    auto progress_callback = context->getProgressCallback();
+                    if (progress_callback)
+                    {
+                        Progress p;
+                        p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                        progress_callback(p);
+                    }
 
-                        for (const auto & processor : query_pipeline.getProcessors())
+                    if (elem.read_rows != 0)
+                    {
+                        LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                            elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
+                            static_cast<size_t>(elem.read_rows / elapsed_seconds),
+                            ReadableSize(elem.read_bytes / elapsed_seconds));
+                    }
+
+                    if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
+                    {
+                        if (auto query_log = context->getQueryLog())
+                            query_log->add(elem);
+                    }
+                    if (log_processors_profiles)
+                    {
+                        if (auto processors_profile_log = context->getProcessorsProfileLog())
                         {
-                            std::vector<UInt64> parents;
-                            for (const auto & port : processor->getOutputs())
+                            ProcessorProfileLogElement processor_elem;
+                            processor_elem.event_time = timeInSeconds(finish_time);
+                            processor_elem.event_time_microseconds = timeInMicroseconds(finish_time);
+                            processor_elem.query_id = elem.client_info.current_query_id;
+
+                            auto get_proc_id = [](const IProcessor & proc) -> UInt64
                             {
-                                if (!port.isConnected())
-                                    continue;
-                                const IProcessor & next = port.getInputPort().getProcessor();
-                                parents.push_back(get_proc_id(next));
+                                return reinterpret_cast<std::uintptr_t>(&proc);
+                            };
+
+                            for (const auto & processor : query_pipeline.getProcessors())
+                            {
+                                std::vector<UInt64> parents;
+                                for (const auto & port : processor->getOutputs())
+                                {
+                                    if (!port.isConnected())
+                                        continue;
+                                    const IProcessor & next = port.getInputPort().getProcessor();
+                                    parents.push_back(get_proc_id(next));
+                                }
+
+                                processor_elem.id = get_proc_id(*processor);
+                                processor_elem.parent_ids = std::move(parents);
+
+                                processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                                processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
+                                processor_elem.processor_name = processor->getName();
+
+                                processor_elem.elapsed_us = processor->getElapsedUs();
+                                processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
+                                processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
+                                auto stats = processor->getProcessorDataStats();
+                                processor_elem.input_rows = stats.input_rows;
+                                processor_elem.input_bytes = stats.input_bytes;
+                                processor_elem.output_rows = stats.output_rows;
+                                processor_elem.output_bytes = stats.output_bytes;
+
+                                processors_profile_log->add(processor_elem);
                             }
+                        }
+                    }
 
-                            processor_elem.id = get_proc_id(*processor);
-                            processor_elem.parent_ids = std::move(parents);
-
-                            processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
-                            processor_elem.plan_group = processor->getQueryPlanStepGroup();
-
-                            processor_elem.processor_name = processor->getName();
-
-                            processor_elem.elapsed_us = processor->getElapsedUs();
-                            processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
-                            processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
-
-                            auto stats = processor->getProcessorDataStats();
-                            processor_elem.input_rows = stats.input_rows;
-                            processor_elem.input_bytes = stats.input_bytes;
-                            processor_elem.output_rows = stats.output_rows;
-                            processor_elem.output_bytes = stats.output_bytes;
-
-                            processors_profile_log->add(processor_elem);
+                    if (implicit_txn_control)
+                    {
+                        try
+                        {
+                            implicit_txn_control->executeCommit(context->getSessionContext());
+                            implicit_txn_control.reset();
+                        }
+                        catch (const Exception &)
+                        {
+                            /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
+                            /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
+                            implicit_txn_control.reset();
+                            throw;
                         }
                     }
                 }
@@ -945,26 +984,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     query_span->addAttributeIfNotEmpty("clickhouse.tracestate", OpenTelemetry::CurrentContext().tracestate);
                     query_span->addAttributeIfNotZero("clickhouse.read_rows", elem.read_rows);
                     query_span->addAttributeIfNotZero("clickhouse.read_bytes", elem.read_bytes);
-                    query_span->addAttributeIfNotZero("clickhouse.written_rows", info.written_rows);
+                    query_span->addAttributeIfNotZero("clickhouse.written_rows", elem.written_rows);
                     query_span->addAttributeIfNotZero("clickhouse.written_bytes", elem.written_bytes);
                     query_span->addAttributeIfNotZero("clickhouse.memory_usage", elem.memory_usage);
                     query_span->finish();
-                }
-
-                if (implicit_txn_control)
-                {
-                    try
-                    {
-                        implicit_txn_control->executeCommit(context->getSessionContext());
-                        implicit_txn_control.reset();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
-                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
-                        implicit_txn_control.reset();
-                        throw;
-                    }
                 }
             };
 
@@ -996,8 +1019,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 // to ensure that both the times will be equal up to the precision of a second.
                 const auto time_now = std::chrono::system_clock::now();
 
-                elem.event_time = time_in_seconds(time_now);
-                elem.event_time_microseconds = time_in_microseconds(time_now);
+                elem.event_time = timeInSeconds(time_now);
+                elem.event_time_microseconds = timeInMicroseconds(time_now);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
@@ -1062,12 +1085,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         if (!internal)
-        {
-            if (query_for_logging.empty())
-                query_for_logging = prepareQueryForLogging(query, context);
-
-            onExceptionBeforeStart(query_for_logging, context, time_in_microseconds(current_time), ast, query_span);
-        }
+            onExceptionBeforeStart(query_for_logging, context, timeInMicroseconds(current_time), ast, query_span);
 
         throw;
     }

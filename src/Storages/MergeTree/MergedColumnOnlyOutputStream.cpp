@@ -30,8 +30,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         global_settings,
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */false);
+        index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        /* rewrite_primary_key = */ false);
 
     writer = data_part->getWriter(
         data_part_storage_builder,

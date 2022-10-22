@@ -23,6 +23,7 @@
 
 #include <shared_mutex>
 
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -158,7 +159,7 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
+    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -346,7 +347,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
+    std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -484,7 +485,7 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    String getRelativePathForDetachedPart(const String & prefix) const;
+    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of
@@ -500,6 +501,7 @@ protected:
 
     void initializePartMetadataManager();
 
+    void initializeIndexGranularityInfo();
 
 private:
     /// In compact parts order of columns is necessary
@@ -582,5 +584,8 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
+inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+bool isCompressedFromIndexExtension(const String & index_extension);
 
 }

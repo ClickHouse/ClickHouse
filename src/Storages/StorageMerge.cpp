@@ -357,7 +357,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
         = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
-    size_t num_streams = requested_num_streams * num_streams_multiplier;
+    size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
     InputOrderInfoPtr input_sorting_info;

@@ -35,11 +35,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+
+#include "config_version.h"
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -179,8 +180,6 @@ namespace
     void loadFromConfig(cppkafka::Configuration & conf, const Poco::Util::AbstractConfiguration & config, const std::string & path)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
-        std::vector<char> errstr(512);
-
         config.keys(path, keys);
 
         for (const auto & key : keys)

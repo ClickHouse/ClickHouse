@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include "IO/S3Common.h"
 
 #if USE_AWS_S3
@@ -24,6 +24,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
+    extern const Event S3GetObject;
+    extern const Event DiskS3GetObject;
 }
 
 namespace DB
@@ -131,18 +133,18 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
-            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
             {
                 /// It doesn't make sense to retry Access Denied or No Such Key
                 if (!s3_exception->isRetryableError())
                 {
-                    tryLogCurrentException(log, fmt::format("while reading key: {}, from bucket: {}", key, bucket));
+                    s3_exception->addMessage("while reading key: {}, from bucket: {}", key, bucket);
                     throw;
                 }
             }
@@ -248,7 +250,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id, true, read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
@@ -314,6 +316,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             version_id.empty() ? "Latest" : version_id,
             offset);
     }
+
+    ProfileEvents::increment(ProfileEvents::S3GetObject);
+    if (read_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 

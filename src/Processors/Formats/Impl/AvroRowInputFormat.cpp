@@ -137,13 +137,13 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
             break;
         case TypeIndex::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Decimal32>(value));
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Decimal64>(value));
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<DateTime64>(value));
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);

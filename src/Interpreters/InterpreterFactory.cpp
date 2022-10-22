@@ -296,7 +296,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else if (query->as<ASTCreateFunctionQuery>())
     {
-        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
     }
     else if (query->as<ASTDropFunctionQuery>())
     {

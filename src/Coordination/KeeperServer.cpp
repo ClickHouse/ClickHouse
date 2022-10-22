@@ -1,13 +1,14 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <chrono>
 #include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -105,7 +106,8 @@ KeeperServer::KeeperServer(
     const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_)
+    SnapshotsQueue & snapshots_queue_,
+    KeeperSnapshotManagerS3 & snapshot_manager_s3)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -125,6 +127,7 @@ KeeperServer::KeeperServer(
         configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
+        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
@@ -520,7 +523,7 @@ bool KeeperServer::isFollower() const
 
 bool KeeperServer::isLeaderAlive() const
 {
-    return raft_instance->is_leader_alive();
+    return raft_instance && raft_instance->is_leader_alive();
 }
 
 /// TODO test whether taking failed peer in count
@@ -705,7 +708,7 @@ void KeeperServer::waitInit()
 
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
-        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
+        LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
