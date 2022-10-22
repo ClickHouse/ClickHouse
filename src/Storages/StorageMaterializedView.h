@@ -31,12 +31,18 @@ public:
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         auto target_table = getTargetTable();
         auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
         return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
+    }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override
+    {
+        return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;

@@ -189,8 +189,11 @@ public:
     class ExecutorObject
     {
     public:
+        template <typename ArgColumn>
         static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
         {
+            static_assert(std::is_same_v<ArgColumn, ColumnObject> || std::is_same_v<ArgColumn, ColumnTuple>);
+
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
 
@@ -199,15 +202,15 @@ public:
                     "Function {} requires at least one argument", Name::name);
 
             const auto & first_column = arguments[0];
-            if (!isObject(first_column.type))
+            if (!isObject(first_column.type) && !isTuple(first_column.type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first argument of function {} should be an Object, illegal type: {}",
+                    "The first argument of function {} should be an Object or Tuple, illegal type: {}",
                     Name::name, first_column.type->getName());
 
             const auto & arg_json = first_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_object
-                = typeid_cast<const ColumnObject *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
+                = typeid_cast<const ArgColumn *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
 
             if (!col_json_object)
                 throw Exception{ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}", arg_json->getName()};
@@ -216,7 +219,19 @@ public:
 
             size_t num_index_arguments = impl.getNumberOfIndexArguments(arguments);
             std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
-            auto [column_tuple, type_tuple] = unflattenObjectToTuple(*col_json_object);
+
+            ColumnPtr column_tuple;
+            DataTypePtr type_tuple;
+
+            if constexpr (std::is_same_v<ArgColumn, ColumnObject>)
+            {
+                std::tie(column_tuple, type_tuple) = unflattenObjectToTuple(*col_json_object);
+            }
+            else
+            {
+                column_tuple = col_json_object->getPtr();
+                type_tuple = first_column.type;
+            }
 
             constexpr bool has_member_prepare = requires
             {
@@ -496,63 +511,14 @@ private:
             --max_size;
         return max_size;
     }
-
 };
 
 
-template <typename Name, template<typename> typename Impl>
-class ExecutableFunctionJSONString : public IExecutableFunction, WithContext
+template <typename Name, typename Derived>
+class ExecutableFunctionJSONBase : public IExecutableFunction, WithContext
 {
 public:
-    explicit ExecutableFunctionJSONString(const NullPresence & null_presence_, bool allow_simdjson_, const DataTypePtr & json_return_type_)
-        : null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_)
-    {
-    }
-
-    String getName() const override { return Name::name; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        if (null_presence.has_null_constant)
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
-        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
-    }
-
-private:
-
-    ColumnPtr
-    chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-    {
-#if USE_SIMDJSON
-        if (allow_simdjson)
-            return FunctionJSONHelpers::ExecutorString<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
-#endif
-
-#if USE_RAPIDJSON
-        return FunctionJSONHelpers::ExecutorString<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count);
-#else
-        return FunctionJSONHelpers::ExecutorString<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
-#endif
-    }
-
-    NullPresence null_presence;
-    bool allow_simdjson;
-    DataTypePtr json_return_type;
-};
-
-template <typename Name, template<typename> typename Impl>
-class ExecutableFunctionJSONObject : public IExecutableFunction, WithContext
-{
-
-public:
-    explicit ExecutableFunctionJSONObject(const NullPresence & null_presence_, const DataTypePtr & json_return_type_)
+    ExecutableFunctionJSONBase(const NullPresence & null_presence_, const DataTypePtr & json_return_type_)
         : null_presence(null_presence_), json_return_type(json_return_type_)
     {
     }
@@ -566,9 +532,66 @@ public:
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        assert(!arguments.empty());
         auto temp_arguments = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+        auto temporary_result = Derived::run(temp_arguments, json_return_type, input_rows_count);
+        if (null_presence.has_nullable)
+            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+        return temporary_result;
+    }
 
+private:
+    NullPresence null_presence;
+    DataTypePtr json_return_type;
+};
+
+template <typename Name, template<typename> typename Impl, bool allow_simdjson>
+class ExecutableFunctionJSONString : public ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONString<Name, Impl, allow_simdjson>>
+{
+public:
+    using Base = ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONString>;
+
+    ExecutableFunctionJSONString(const NullPresence & null_presence_, const DataTypePtr & json_return_type_)
+        : Base(null_presence_, json_return_type_)
+    {
+    }
+
+    static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, size_t input_rows_count)
+    {
+        return chooseAndRunJSONParser(arguments, json_return_type, input_rows_count);
+    }
+
+private:
+    static ColumnPtr chooseAndRunJSONParser(const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, size_t input_rows_count)
+    {
+#if USE_SIMDJSON
+        if constexpr (allow_simdjson)
+            return FunctionJSONHelpers::ExecutorString<Name, Impl, SimdJSONParser>::run(arguments, json_return_type, input_rows_count);
+#endif
+
+#if USE_RAPIDJSON
+        return FunctionJSONHelpers::ExecutorString<Name, Impl, RapidJSONParser>::run(arguments, json_return_type, input_rows_count);
+#else
+        return FunctionJSONHelpers::ExecutorString<Name, Impl, DummyJSONParser>::run(arguments, json_return_type, input_rows_count);
+#endif
+    }
+};
+
+template <typename Name, template<typename> typename Impl>
+class ExecutableFunctionJSONObject : public ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONObject<Name, Impl>>
+{
+public:
+    using Base = ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONObject>;
+
+    ExecutableFunctionJSONObject(const NullPresence & null_presence_, const DataTypePtr & json_return_type_)
+        : Base(null_presence_, json_return_type_)
+    {
+    }
+
+    static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, size_t input_rows_count)
+    {
+        assert(!arguments.empty());
+
+        auto temp_arguments = arguments;
         const auto & type_object = assert_cast<const DataTypeObject &>(*temp_arguments[0].type);
         const auto & arg_object = temp_arguments[0].column;
         const auto * column_const = typeid_cast<const ColumnConst *>(arg_object.get());
@@ -592,15 +615,27 @@ public:
                 temp_arguments[0].column = ColumnConst::create(temp_arguments[0].column, column_const->size());
         }
 
-        auto temporary_result = FunctionJSONHelpers::ExecutorObject<Name, Impl>::run(temp_arguments, json_return_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
+        using Executor = FunctionJSONHelpers::ExecutorObject<Name, Impl>;
+        return Executor::template run<ColumnObject>(temp_arguments, json_return_type, input_rows_count);
+    }
+};
+
+template <typename Name, template<typename> typename Impl>
+class ExecutableFunctionJSONTuple : public ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONTuple<Name, Impl>>
+{
+public:
+    using Base = ExecutableFunctionJSONBase<Name, ExecutableFunctionJSONTuple>;
+
+    ExecutableFunctionJSONTuple(const NullPresence & null_presence_, const DataTypePtr & json_return_type_)
+        : Base(null_presence_, json_return_type_)
+    {
     }
 
-private:
-    NullPresence null_presence;
-    DataTypePtr json_return_type;
+    static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, size_t input_rows_count)
+    {
+        using Executor = FunctionJSONHelpers::ExecutorObject<Name, Impl>;
+        return Executor::template run<ColumnTuple>(arguments, json_return_type, input_rows_count);
+    }
 };
 
 
@@ -648,7 +683,10 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSONString<Name, Impl>>(this->null_presence, this->allow_simdjson, this->json_return_type);
+        if (this->allow_simdjson)
+            return std::make_unique<ExecutableFunctionJSONString<Name, Impl, true>>(this->null_presence, this->json_return_type);
+
+        return std::make_unique<ExecutableFunctionJSONString<Name, Impl, false>>(this->null_presence, this->json_return_type);
     }
 
 private:
@@ -668,6 +706,22 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionJSONObject<Name, Impl>>(this->null_presence, this->json_return_type);
+    }
+};
+
+template <typename Name, template<typename> typename Impl>
+class FunctionBaseFunctionJSONTuple : public FunctionBaseFunctionJSON<Name>
+{
+public:
+    template <typename... Args>
+    explicit FunctionBaseFunctionJSONTuple(Args &&... args)
+        : FunctionBaseFunctionJSON<Name>{std::forward<Args>(args)...}
+    {
+    }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+    {
+        return std::make_unique<ExecutableFunctionJSONTuple<Name, Impl>>(this->null_presence, this->json_return_type);
     }
 };
 
@@ -726,10 +780,12 @@ public:
 
         bool is_string = isString(first_type_base);
         bool is_object = isObject(first_type_base);
+        bool is_tuple = isTuple(first_type_base);
+        bool is_nothing = isNothing(first_type_base);
 
-        if (!is_string && !is_object && !isNothing(first_type_base))
+        if (!is_string && !is_object && !is_tuple && !is_nothing)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} should be a string containing JSON or Object, illegal type: {}",
+                "The first argument of function {} should be a string containing JSON or Object or Tuple, illegal type: {}",
                 Name::name, first_column.type->getName());
 
         auto json_return_type = Impl<ObjectIterator>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
@@ -753,11 +809,14 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
 
-        if (is_string)
+        if (is_string || is_nothing)
             return std::make_unique<FunctionBaseFunctionJSONString<Name, Impl>>(
                 getContext()->getSettingsRef().allow_simdjson, null_presence, argument_types, return_type, json_return_type);
-        else
+        else if (is_object)
             return std::make_unique<FunctionBaseFunctionJSONObject<Name, Impl>>(
+                null_presence, argument_types, return_type, json_return_type);
+        else
+            return std::make_unique<FunctionBaseFunctionJSONTuple<Name, Impl>>(
                 null_presence, argument_types, return_type, json_return_type);
     }
 };

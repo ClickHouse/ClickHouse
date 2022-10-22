@@ -720,7 +720,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+        Block as_select_sample = InterpreterSelectWithUnionQuery(
+            create.select->clone(), getContext(),
+            SelectQueryOptions().analyze().setWithoutExtendedObject()).getSampleBlock();
+
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
@@ -1167,7 +1170,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         ))
         {
             Block input_block = InterpreterSelectWithUnionQuery(
-                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
+                create.select->clone(), getContext(),
+                SelectQueryOptions().analyze().setWithoutExtendedObject()).getSampleBlock();
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
 

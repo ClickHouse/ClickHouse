@@ -1,0 +1,12 @@
+MATERIALIZED
+{"id":"1","id_alias":"1","url":"google.com/mail","url_alias":"google.com/mail","json":{"id":1,"obj":{"domain":"google.com","path":"mail","user_id":0}}}
+{"id":"2","id_alias":"2","url":"clickhouse.com/","url_alias":"clickhouse.com/","json":{"id":2,"obj":{"domain":"clickhouse.com","path":"","user_id":3222}}}
+MATERIALIZED VIEW
+CREATE MATERIALIZED VIEW default.mv_json_extract\n(\n    `json` Object(\'json\'),\n    `id` UInt64,\n    `url` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192 AS\nSELECT\n    json,\n    JSONExtractUInt(json, \'id\') AS id,\n    concat(JSONExtractString(json, \'obj\', \'domain\'), \'/\', JSONExtractString(json, \'obj\', \'path\')) AS url\nFROM default.t_json_extract
+{"json":{"id":1,"obj":{"domain":"google.com","path":"mail","user_id":0}}}
+{"json":{"id":2,"obj":{"domain":"clickhouse.com","path":"","user_id":3222}}}
+{"id":"1","url":"google.com/mail","json":{"id":1,"obj":{"domain":"google.com","path":"mail","user_id":0}}}
+{"id":"2","url":"clickhouse.com/","json":{"id":2,"obj":{"domain":"clickhouse.com","path":"","user_id":3222}}}
+ENGINE = Null
+{"id":"1","url":"google.com/mail","json":{"id":1,"obj":{"domain":"google.com","path":"mail","user_id":0}}}
+{"id":"2","url":"clickhouse.com/","json":{"id":2,"obj":{"domain":"clickhouse.com","path":"","user_id":3222}}}

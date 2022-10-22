@@ -936,23 +936,25 @@ TreeRewriterResult::TreeRewriterResult(
     const NamesAndTypesList & source_columns_,
     ConstStoragePtr storage_,
     const StorageSnapshotPtr & storage_snapshot_,
+    bool extend_objects,
     bool add_special)
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , source_columns(source_columns_)
 {
-    collectSourceColumns(add_special);
+    collectSourceColumns(extend_objects, add_special);
     is_remote_storage = storage && storage->isRemote();
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
 /// Special columns are non physical columns, for example ALIAS
-void TreeRewriterResult::collectSourceColumns(bool add_special)
+void TreeRewriterResult::collectSourceColumns(bool extend_objects, bool add_special)
 {
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
-        options.withExtendedObjects();
+        if (extend_objects)
+            options.withExtendedObjects();
         if (storage->supportsSubcolumns())
             options.withSubcolumns();
 

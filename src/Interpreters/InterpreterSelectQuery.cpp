@@ -117,6 +117,7 @@ FilterDAGInfoPtr generateFilterActions(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryOptions & options,
     Names & prerequisite_columns)
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
@@ -154,7 +155,7 @@ FilterDAGInfoPtr generateFilterActions(
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot, !options.without_extended_objects));
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
     filter_info->actions = analyzer.simpleSelectActions();
 
@@ -504,7 +505,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
-            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
+            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot, !options.without_extended_objects),
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -615,7 +616,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (row_policy_filter)
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, options, required_columns);
 
                 query_info.filter_asts.push_back(row_policy_filter);
             }
@@ -623,7 +624,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (query_info.additional_filter_ast)
             {
                 additional_filter_info = generateFilterActions(
-                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, options, required_columns);
 
                 additional_filter_info->do_remove_column = true;
 
