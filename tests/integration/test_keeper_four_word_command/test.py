@@ -611,6 +611,6 @@ def test_cmd_snapshot(started_cluster):
         assert create == "Snapshot creation scheduled."
 
         check = send_4lw_cmd(cmd="snpd")
-        assert (check == "Yes" or check == "No")
+        assert check == "Yes" or check == "No"
     finally:
         destroy_zk_client(zk)
