@@ -452,6 +452,11 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
+            /// This branch exists only for compatibility.
+            /// It's not possible to have a function in a dictionary definition since 22.10,
+            /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
+            /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
+            assert(!Context::getGlobalContextInstance()->isServerCompletelyStarted());
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});

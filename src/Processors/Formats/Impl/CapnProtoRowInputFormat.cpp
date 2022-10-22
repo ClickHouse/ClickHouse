@@ -132,7 +132,7 @@ static void insertFloat(IColumn & column, const DataTypePtr & column_type, Float
     switch (column_type->getTypeId())
     {
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(value);
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
             break;
         case TypeIndex::Float64:
             assert_cast<ColumnFloat64 &>(column).insertValue(value);

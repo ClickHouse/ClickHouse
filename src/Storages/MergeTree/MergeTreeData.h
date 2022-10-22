@@ -151,6 +151,7 @@ public:
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
     constexpr static auto DETACHED_DIR_NAME = "detached";
+    constexpr static auto MOVING_DIR_NAME = "moving";
 
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
@@ -519,8 +520,12 @@ public:
     size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
-    size_t getMaxPartsCountForPartitionWithState(DataPartState state) const;
-    size_t getMaxPartsCountForPartition() const;
+
+    /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
+    /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
+    std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const;
+    std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
+
     size_t getMaxInactivePartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
@@ -595,7 +600,12 @@ public:
     /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
     //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+    /// NOTE: This method is safe to use only for parts which nobody else holds (like on server start or for parts which was not committed).
+    /// For active parts it's unsafe because this method modifies fields of part (rename) while some other thread can try to read it.
+    void forcefullyMovePartToDetachedAndRemoveFromMemory(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
+
+    /// Outdate broken part, set remove time to zero (remove as fast as possible) and make clone in detached directory.
+    void outdateBrokenPartAndCloneToDetached(const DataPartPtr & part, const String & prefix);
 
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
@@ -784,7 +794,7 @@ public:
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
-        bool copy_instead_of_hardlink);
+        bool copy_instead_of_hardlink, const NameSet & files_to_copy_instead_of_hardlinks);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -866,9 +876,12 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
-    /// Returns destination disk or volume for the TTL rule according to current storage policy
-    /// 'is_insert' - is TTL move performed on new data part insert.
-    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl, bool is_insert = false) const;
+
+    /// Returns destination disk or volume for the TTL rule according to current storage policy.
+    SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
+
+    /// Whether INSERT of a data part which is already expired should move it immediately to a volume/disk declared in move rule.
+    bool shouldPerformTTLMoveOnInsert(const SpacePtr & move_destination) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
@@ -1033,6 +1046,8 @@ protected:
 
     /// True if at least one part was created/removed with transaction.
     mutable std::atomic_bool transactions_enabled = false;
+
+    std::atomic_bool data_parts_loading_finished = false;
 
     /// Work with data parts
 

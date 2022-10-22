@@ -29,13 +29,6 @@
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
 
 
-#if defined(__PPC__)
-#if !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-#endif
-
-
 /// Flags for toYearWeek() function.
 enum class WeekModeFlag : UInt8
 {
@@ -251,7 +244,7 @@ private:
 
     static inline LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<UInt32>(d + daynum_offset_epoch));
+        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch));
     }
 
     inline LUTIndex toLUTIndex(Time t) const
@@ -388,9 +381,9 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return lut_saturated[i - lut[i].day_of_month + lut[i].days_in_month].date;
+            return lut_saturated[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
         else
-            return lut[i - lut[i].day_of_month + lut[i].days_in_month].date;
+            return lut[i + (lut[i].days_in_month - lut[i].day_of_month)].date;
     }
 
     template <typename DateOrTime>
@@ -398,9 +391,9 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return toDayNum(LUTIndexWithSaturation(i - lut[i].day_of_month + lut[i].days_in_month));
+            return toDayNum(LUTIndexWithSaturation(i + (lut[i].days_in_month - lut[i].day_of_month)));
         else
-            return toDayNum(LUTIndex(i - lut[i].day_of_month + lut[i].days_in_month));
+            return toDayNum(LUTIndex(i + (lut[i].days_in_month - lut[i].day_of_month)));
     }
 
     /// Round down to start of quarter.
@@ -648,7 +641,7 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + 8 - toDayOfWeek(i)) / 7;
+        return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -657,7 +650,7 @@ public:
     {
         const LUTIndex i = toLUTIndex(v);
         /// That's effectively the year of thursday of current week.
-        return toYear(toLUTIndex(i + 4 - toDayOfWeek(i)));
+        return toYear(toLUTIndex(i + (4 - toDayOfWeek(i))));
     }
 
     /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.
@@ -673,8 +666,8 @@ public:
         auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
 
         return LUTIndex{first_day_of_week_of_year <= 4
-            ? first_day_of_year + 1 - first_day_of_week_of_year
-            : first_day_of_year + 8 - first_day_of_week_of_year};
+            ? first_day_of_year + (1 - first_day_of_week_of_year)
+            : first_day_of_year + (8 - first_day_of_week_of_year)};
     }
 
     template <typename DateOrTime>
@@ -800,7 +793,7 @@ public:
         const LUTIndex i = LUTIndex(v);
 
         // Checking the week across the year
-        yw.first = toYear(i + 7 - toDayOfWeek(i + offset_day));
+        yw.first = toYear(i + (7 - toDayOfWeek(i + offset_day)));
 
         auto first_day = makeLUTIndex(yw.first, 1, 1);
         auto this_day = i;
@@ -900,6 +893,19 @@ public:
     inline Time toRelativeHourNum(DateOrTime v) const
     {
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
+    }
+
+    /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
+    /// It’s needed for correct work of dateDiff function.
+    inline Time toStableRelativeHourNum(Time t) const
+    {
+        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+    }
+
+    template <typename DateOrTime>
+    inline Time toStableRelativeHourNum(DateOrTime v) const
+    {
+        return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
     inline Time toRelativeMinuteNum(Time t) const /// NOLINT
@@ -1037,7 +1043,7 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        UInt64 divisor = 60 * minutes;
+        Int64 divisor = 60 * minutes;
         if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             if (likely(t >= 0))
@@ -1445,9 +1451,3 @@ public:
         return s;
     }
 };
-
-#if defined(__PPC__)
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#endif

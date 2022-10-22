@@ -12,8 +12,8 @@
 namespace DB
 {
 
-/// Common base class for XDBC and Library bridge helpers.
-/// Contains helper methods to check/start bridge sync.
+/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
+/// Contains helper methods to check/start bridge sync
 class IBridgeHelper: protected WithContext
 {
 

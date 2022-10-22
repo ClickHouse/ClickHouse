@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -120,8 +120,15 @@ namespace
 
     std::pair<String, String> getPathFromUriAndUriWithoutPath(const String & uri)
     {
-        const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-        return {uri.substr(begin_of_path), uri.substr(0, begin_of_path)};
+        auto pos = uri.find("//");
+        if (pos != std::string::npos && pos + 2 < uri.length())
+        {
+            pos = uri.find('/', pos + 2);
+            if (pos != std::string::npos)
+                return {uri.substr(pos), uri.substr(0, pos)};
+        }
+
+        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
@@ -255,7 +262,7 @@ private:
 class HDFSSource::URISIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
+    explicit Impl(const std::vector<String> & uris_, ContextPtr context)
     {
         auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
         HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
@@ -293,7 +300,7 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_, ContextPtr context)
+HDFSSource::URISIterator::URISIterator(const std::vector<String> & uris_, ContextPtr context)
     : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
 {
 }

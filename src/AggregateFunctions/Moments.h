@@ -4,7 +4,9 @@
 #include <IO/ReadHelpers.h>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
+#include <numeric>
 
 
 namespace DB
@@ -13,6 +15,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -473,6 +476,129 @@ struct ZTestMoments
         Float64 ci_high = (mean_x - mean_y) + z * se;
 
         return {ci_low, ci_high};
+    }
+};
+
+template <typename T>
+struct AnalysisOfVarianceMoments
+{
+    /// Sums of values within a group
+    std::vector<T> xs1{};
+    /// Sums of squared values within a group
+    std::vector<T> xs2{};
+    /// Sizes of each group. Total number of observations is just a sum of all these values
+    std::vector<size_t> ns{};
+
+    void resizeIfNeeded(size_t possible_size)
+    {
+        if (xs1.size() >= possible_size)
+            return;
+
+        xs1.resize(possible_size, 0.0);
+        xs2.resize(possible_size, 0.0);
+        ns.resize(possible_size, 0);
+    }
+
+    void add(T value, size_t group)
+    {
+        resizeIfNeeded(group + 1);
+        xs1[group] += value;
+        xs2[group] += value * value;
+        ns[group] += 1;
+    }
+
+    void merge(const AnalysisOfVarianceMoments & rhs)
+    {
+        resizeIfNeeded(rhs.xs1.size());
+        for (size_t i = 0; i < rhs.xs1.size(); ++i)
+        {
+            xs1[i] += rhs.xs1[i];
+            xs2[i] += rhs.xs2[i];
+            ns[i] += rhs.ns[i];
+        }
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writeVectorBinary(xs1, buf);
+        writeVectorBinary(xs2, buf);
+        writeVectorBinary(ns, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readVectorBinary(xs1, buf);
+        readVectorBinary(xs2, buf);
+        readVectorBinary(ns, buf);
+    }
+
+    Float64 getMeanAll() const
+    {
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+        if (n == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
+
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
+    }
+
+    Float64 getMeanGroup(size_t group) const
+    {
+        if (ns[group] == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
+
+        return xs1[group] / ns[group];
+    }
+
+    Float64 getBetweenGroupsVariation() const
+    {
+        Float64 res = 0;
+        auto mean = getMeanAll();
+
+        for (size_t i = 0; i < xs1.size(); ++i)
+        {
+            auto group_mean = getMeanGroup(i);
+            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+        }
+        return res;
+    }
+
+    Float64 getWithinGroupsVariation() const
+    {
+        Float64 res = 0;
+        for (size_t i = 0; i < xs1.size(); ++i)
+        {
+            auto group_mean = getMeanGroup(i);
+            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+        }
+        return res;
+    }
+
+    Float64 getFStatistic() const
+    {
+        const auto k = xs1.size();
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+
+        if (k == 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There should be more than one group to calculate f-statistics");
+
+        if (k == n)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
+
+        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
+    }
+
+    Float64 getPValue(Float64 f_statistic) const
+    {
+        const auto k = xs1.size();
+        const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
+
+        if (k == 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There should be more than one group to calculate f-statistics");
+
+        if (k == n)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
+
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
     }
 };
 

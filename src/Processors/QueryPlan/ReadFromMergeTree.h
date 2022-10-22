@@ -151,8 +151,7 @@ public:
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
 
-    void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
-    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
+    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
 private:
     int getSortDirection() const

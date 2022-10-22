@@ -192,6 +192,7 @@ caseWithExpr
 caseWithExpression
 caseWithoutExpr
 caseWithoutExpression
+catboostEvaluate
 cbrt
 ceil
 char
@@ -475,7 +476,6 @@ min2
 minSampleSizeContinous
 minSampleSizeConversion
 minus
-modelEvaluate
 modulo
 moduloLegacy
 moduloOrZero
@@ -908,6 +908,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart

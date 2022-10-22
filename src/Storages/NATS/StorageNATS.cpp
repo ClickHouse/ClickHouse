@@ -92,10 +92,24 @@ StorageNATS::StorageNATS(
 
     try
     {
-        connection = std::make_shared<NATSConnectionManager>(configuration, log);
-        if (!connection->connect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}. Nats last error: {}",
-                            connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+        size_t num_tries = nats_settings->nats_startup_connect_tries;
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            connection = std::make_shared<NATSConnectionManager>(configuration, log);
+
+            if (connection->connect())
+                break;
+
+            if (i == num_tries - 1)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_CONNECT_NATS,
+                    "Cannot connect to {}. Nats last error: {}",
+                    connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+            }
+
+            LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
+        }
     }
     catch (...)
     {

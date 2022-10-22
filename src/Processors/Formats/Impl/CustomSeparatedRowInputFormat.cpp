@@ -67,6 +67,19 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     }
 }
 
+void CustomSeparatedRowInputFormat::readPrefix()
+{
+    RowInputFormatWithNamesAndTypes::readPrefix();
+
+    /// Provide better error message for unsupported delimiters
+    for (const auto & column_index : column_mapping->column_indexes_for_input_fields)
+    {
+        if (column_index)
+            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, data_types[*column_index]);
+        else
+            checkSupportedDelimiterAfterField(format_settings.custom.escaping_rule, format_settings.custom.field_delimiter, nullptr);
+    }
+}
 
 bool CustomSeparatedRowInputFormat::allowSyncAfterError() const
 {
@@ -353,19 +366,24 @@ void registerCustomSeparatedSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<CustomSeparatedSchemaReader>(buf, with_names, with_types, ignore_spaces, settings);
             });
-            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+            if (!with_types)
             {
-                String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
-                return result + fmt::format(
-                        ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
-                        " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
-                        settings.custom.result_before_delimiter,
-                        settings.custom.row_before_delimiter,
-                        settings.custom.field_delimiter,
-                        settings.custom.row_after_delimiter,
-                        settings.custom.row_between_delimiter,
-                        settings.custom.result_after_delimiter);
-            });
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+                {
+                    String result = getAdditionalFormatInfoByEscapingRule(settings, settings.custom.escaping_rule);
+                    if (!with_names)
+                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                    return result + fmt::format(
+                            ", result_before_delimiter={}, row_before_delimiter={}, field_delimiter={},"
+                            " row_after_delimiter={}, row_between_delimiter={}, result_after_delimiter={}",
+                            settings.custom.result_before_delimiter,
+                            settings.custom.row_before_delimiter,
+                            settings.custom.field_delimiter,
+                            settings.custom.row_after_delimiter,
+                            settings.custom.row_between_delimiter,
+                            settings.custom.result_after_delimiter);
+                });
+            }
         };
 
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);

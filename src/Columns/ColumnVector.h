@@ -10,7 +10,7 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -301,7 +301,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(x.get<T>());
+        data.push_back(static_cast<T>(x.get<T>()));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
