@@ -538,12 +538,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                                               TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
 
             TypeIndex max_int = TypeIndex::Nothing;
-            for (size_t i = 0; i < int_ids.size(); ++i)
+            for (auto int_id : int_ids)
             {
-                size_t num = type_ids.count(int_ids[i]);
+                size_t num = type_ids.count(int_id);
                 num_supported += num;
                 if (num)
-                    max_int = int_ids[i];
+                    max_int = int_id;
             }
 
             if (num_supported != type_ids.size())
