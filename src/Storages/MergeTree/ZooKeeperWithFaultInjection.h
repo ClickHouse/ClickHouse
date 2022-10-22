@@ -413,7 +413,7 @@ private:
             {
                 /// try*() methods throws at least on hardware error and return only on logical errors
                 /// todo: the methods return only on subset of logical errors, and throw on another errors
-                ///       to mimic the methods exacly - we need to specify errors on which to return for each such method
+                ///       to mimic the methods exactly - we need to specify errors on which to return for each such method
                 if (Coordination::isHardwareError(e.code))
                     throw;
 
