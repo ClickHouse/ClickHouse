@@ -117,7 +117,7 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    S3Settings::AuthSettings auth_settings;
+    S3::AuthSettings auth_settings;
     S3Settings::ReadWriteSettings rw_settings;
 };
 
