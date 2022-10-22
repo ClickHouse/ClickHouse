@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {

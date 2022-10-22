@@ -30,7 +30,8 @@ public:
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-        res->children.push_back(children[0]->clone());
+        if (!children.empty())
+            res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }
@@ -115,7 +116,7 @@ private:
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 };
 

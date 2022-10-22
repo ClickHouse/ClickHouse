@@ -214,7 +214,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     seen_columns.assign(num_columns, false);
 
     nested_prefix_length = 0;
-    readRowStart();
+    readRowStart(columns);
     readJSONObject(columns);
 
     const auto & header = getPort().getHeader();

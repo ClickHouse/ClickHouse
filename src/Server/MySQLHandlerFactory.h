@@ -5,7 +5,7 @@
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <openssl/rsa.h>

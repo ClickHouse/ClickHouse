@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include <Common/ProfileEvents.h>
 #include "IO/ParallelReadBuffer.h"
 #include "IO/IOThreadPool.h"

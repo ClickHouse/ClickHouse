@@ -85,33 +85,30 @@ protected:
         if (arguments.size() == 1)
         {
             if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
-                        + ". Should be Date, Date32, DateTime or DateTime64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                    arguments[0].type->getName(), getName());
         }
         else if (arguments.size() == 2)
         {
             if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
-                        + ". Should be Date, Date32, DateTime or DateTime64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                    arguments[0].type->getName(), getName());
             if (!isString(arguments[1].type))
-                throw Exception(
-                    "Function " + getName() + " supports 1 or 2 arguments. The optional 2nd argument must be "
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} supports 1 or 2 arguments. The optional 2nd argument must be "
                     "a constant string with a timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
-                throw Exception(
-                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime or DateTime64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    getName());
+            if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} is allowed only when the 1st argument has the type DateTime or DateTime64",
+                    getName());
         }
         else
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 1 or 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                getName(), arguments.size());
     }
 };
 
