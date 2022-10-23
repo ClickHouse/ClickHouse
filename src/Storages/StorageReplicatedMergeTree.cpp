@@ -179,6 +179,7 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
+const String StorageReplicatedMergeTree::default_zookeeper_name = "default";
 
 void StorageReplicatedMergeTree::setZooKeeper()
 {
@@ -4369,7 +4370,7 @@ void StorageReplicatedMergeTree::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t num_streams)
 {
     /// If true, then we will ask initiator if we can read chosen ranges
     const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
@@ -5583,7 +5584,8 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.queue = queue.getStatus();
     res.absolute_delay = getAbsoluteDelay(); /// NOTE: may be slightly inconsistent with queue status.
 
-    res.parts_to_check = part_check_thread.size();
+    /// NOTE: consider convert to UInt64
+    res.parts_to_check = static_cast<UInt32>(part_check_thread.size());
 
     res.zookeeper_path = zookeeper_path;
     res.replica_name = replica_name;
@@ -7798,7 +7800,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const String & part_name,
-        const String & replica_name_, std::string disk_type, const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const MergeTreeSettings & settings,
+        const String & replica_name_, const std::string & disk_type, const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
@@ -8020,7 +8022,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 
 
 Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
-    const MergeTreeSettings & settings, std::string disk_type, const String & table_uuid,
+    const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
@@ -8028,11 +8030,11 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     String zero_copy = fmt::format("zero_copy_{}", disk_type);
 
     String new_path = fs::path(settings.remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy / table_uuid / part_name;
-    res.push_back(new_path);
+    res.push_back(std::move(new_path));
     if (settings.remote_fs_zero_copy_path_compatible_mode && !zookeeper_path_old.empty())
     { /// Compatibility mode for cluster with old and new versions
         String old_path = fs::path(zookeeper_path_old) / zero_copy / "shared" / part_name;
-        res.push_back(old_path);
+        res.push_back(std::move(old_path));
     }
 
     return res;
@@ -8425,7 +8427,7 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
     if (disk->supportZeroCopyReplication())
     {
         String table_id = getTableSharedID();
-        return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path, getContext(), current_zookeeper);
+        return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), current_zookeeper);
     }
 
     disk->removeRecursive(path);
@@ -8435,7 +8437,7 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String &, const String & detached_replica_name, const String & detached_zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper)
+    const String & detached_replica_name, const String & detached_zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper)
 {
     bool keep_shared = false;
 
