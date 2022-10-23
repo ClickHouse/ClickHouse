@@ -1487,7 +1487,9 @@ void ClientBase::cancelQuery()
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
 
-    std::cout << "Cancelling query." << std::endl;
+    if (is_interactive)
+        std::cout << "Cancelling query." << std::endl;
+
     cancelled = true;
 }
 
