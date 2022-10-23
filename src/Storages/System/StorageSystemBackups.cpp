@@ -19,6 +19,8 @@ NamesAndTypesList StorageSystemBackups::getNamesAndTypes()
         {"name", std::make_shared<DataTypeString>()},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues())},
         {"num_files", std::make_shared<DataTypeUInt64>()},
+        {"num_processed_files", std::make_shared<DataTypeUInt64>()},
+        {"processed_files_size", std::make_shared<DataTypeUInt64>()},
         {"uncompressed_size", std::make_shared<DataTypeUInt64>()},
         {"compressed_size", std::make_shared<DataTypeUInt64>()},
         {"error", std::make_shared<DataTypeString>()},
@@ -36,6 +38,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
     auto & column_num_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
+    auto & column_num_processed_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
+    auto & column_processed_files_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_uncompressed_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_compressed_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -48,6 +52,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_name.insertData(info.name.data(), info.name.size());
         column_status.insertValue(static_cast<Int8>(info.status));
         column_num_files.insertValue(info.num_files);
+        column_num_processed_files.insertValue(info.num_processed_files);
+        column_processed_files_size.insertValue(info.processed_files_size);
         column_uncompressed_size.insertValue(info.uncompressed_size);
         column_compressed_size.insertValue(info.compressed_size);
         column_error.insertData(info.error_message.data(), info.error_message.size());
