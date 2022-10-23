@@ -59,7 +59,7 @@ public:
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
-        const IMergeTreeDataPart * parent_part_,
+        IMergeTreeDataPart * parent_part_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,

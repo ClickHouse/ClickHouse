@@ -114,8 +114,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
-    if (!data_part->data_part_storage->exists())
-        data_part->data_part_storage->createDirectories();
+    if (!data_part->getDataPartStorage().exists())
+        data_part->getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
@@ -176,7 +176,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
-        index_file_stream = data_part->data_part_storage->writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+        index_file_stream = data_part->getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
@@ -202,7 +202,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
-                        data_part->data_part_storage,
+                        data_part->getDataPartStoragePtr(),
                         stream_name, index_helper->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,

@@ -147,12 +147,12 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-        if (part->data_part_storage->isStoredOnRemoteDisk())
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
         {
             UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
             if (revision)
-                part->data_part_storage->syncRevision(revision);
-            revision = part->data_part_storage->getRevision();
+                part->getDataPartStorage().syncRevision(revision);
+            revision = part->getDataPartStorage().getRevision();
             if (revision)
                 response.addCookie({"disk_revision", toString(revision)});
         }
@@ -184,8 +184,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
-            auto disk_type = part->data_part_storage->getDiskType();
-            if (part->data_part_storage->supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
+            auto disk_type = part->getDataPartStorage().getDiskType();
+            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
@@ -307,12 +307,12 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     {
         String file_name = it.first;
 
-        UInt64 size = part->data_part_storage->getFileSize(file_name);
+        UInt64 size = part->getDataPartStorage().getFileSize(file_name);
 
         writeStringBinary(it.first, out);
         writeBinary(size, out);
 
-        auto file_in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
+        auto file_in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
@@ -323,7 +323,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception(
                 ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                 "Unexpected size of file {}, expected {} got {}",
-                std::string(fs::path(part->data_part_storage->getRelativePath()) / file_name),
+                std::string(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
                 hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
@@ -342,9 +342,9 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     bool send_part_id,
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections)
 {
-    const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(part->data_part_storage.get());
+    const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(&part->getDataPartStorage());
     if (!data_part_storage_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->data_part_storage->getDiskName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->getDataPartStorage().getDiskName());
 
     if (!data_part_storage_on_disk->supportZeroCopyReplication())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", data_part_storage_on_disk->getDiskName());
@@ -365,7 +365,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     std::vector<std::string> paths;
     paths.reserve(checksums.files.size());
     for (const auto & it : checksums.files)
-        paths.push_back(fs::path(part->data_part_storage->getRelativePath()) / it.first);
+        paths.push_back(fs::path(part->getDataPartStorage().getRelativePath()) / it.first);
 
     /// Serialized metadatadatas with zero ref counts.
     auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
@@ -399,7 +399,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
     for (const auto & it : checksums.files)
     {
         const String & file_name = it.first;
-        String file_path_prefix = fs::path(part->data_part_storage->getRelativePath()) / file_name;
+        String file_path_prefix = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
 
         /// Just some additional checks
         String metadata_file_path = fs::path(data_part_storage_on_disk->getDiskPath()) / file_path_prefix;

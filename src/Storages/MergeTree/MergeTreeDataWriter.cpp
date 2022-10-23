@@ -405,9 +405,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->data_part_storage->getFullPath();
+        String full_path = new_data_part->getDataPartStorage().getFullPath();
 
-        if (new_data_part->data_part_storage->exists())
+        if (new_data_part->getDataPartStorage().exists())
         {
             LOG_WARNING(log, "Removing old temporary directory {}", full_path);
             data_part_storage->removeRecursive();
@@ -493,7 +493,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
 
-    auto projection_part_storage = parent_part->data_part_storage->getProjection(relative_path);
+    auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path);
     auto new_data_part = data.createPart(
         part_name,
         part_type,
@@ -600,7 +600,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
         /// Size of part would not be greater than block.bytes() + epsilon
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->data_part_storage);
+        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
         part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
     }
 
@@ -637,7 +637,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
         /// Size of part would not be greater than block.bytes() + epsilon
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->data_part_storage);
+        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
         part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
     }
 

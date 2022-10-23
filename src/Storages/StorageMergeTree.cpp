@@ -378,7 +378,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->data_part_storage);
+    {
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->getDataPartStorage());
+    }
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -386,7 +388,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
-            max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
+            max_volume_index = std::max(max_volume_index, part_ptr->getDataPartStorage().getVolumeIndex(*storage.getStoragePolicy()));
         }
 
         reserved_space = storage.balancedReservation(
@@ -1474,7 +1476,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
+            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -1739,14 +1741,14 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = "checksums.txt";
         String tmp_checksums_path = "checksums.txt.tmp";
-        if (part->isStoredOnDisk() && !part->data_part_storage->exists(checksums_path))
+        if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
 
-                part->data_part_storage->writeChecksums(part->checksums, local_context->getWriteSettings());
+                part->getDataPartStorage().writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");

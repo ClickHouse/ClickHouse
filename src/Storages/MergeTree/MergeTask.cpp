@@ -130,7 +130,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     if (global_ctx->parent_part)
     {
-        data_part_storage = global_ctx->parent_part->data_part_storage->getProjection(local_tmp_part_basename);
+        data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename);
     }
     else
     {

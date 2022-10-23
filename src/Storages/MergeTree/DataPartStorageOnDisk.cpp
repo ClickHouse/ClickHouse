@@ -30,11 +30,6 @@ DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root
 {
 }
 
-std::shared_ptr<IDataPartStorage> DataPartStorageOnDisk::clone() const
-{
-    return std::make_shared<DataPartStorageOnDisk>(volume, root_path, part_dir);
-}
-
 std::string DataPartStorageOnDisk::getFullPath() const
 {
     return fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "";
@@ -55,12 +50,7 @@ std::string DataPartStorageOnDisk::getFullRootPath() const
     return fs::path(volume->getDisk()->getPath()) / root_path / "";
 }
 
-DataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name) const
-{
-    return std::make_shared<DataPartStorageOnDisk>(volume, std::string(fs::path(root_path) / part_dir), name);
-}
-
-MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name)
+MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name) const
 {
     return std::make_shared<DataPartStorageOnDisk>(volume, std::string(fs::path(root_path) / part_dir), name);
 }
@@ -279,7 +269,7 @@ void DataPartStorageOnDisk::remove(
         try
         {
             disk->moveDirectory(from, to);
-            onRename(root_path, part_dir_without_slash);
+            part_dir = part_dir_without_slash;
         }
         catch (const Exception & e)
         {
@@ -524,7 +514,7 @@ bool DataPartStorageOnDisk::isBroken() const
     return volume->getDisk()->isBroken();
 }
 
-void DataPartStorageOnDisk::syncRevision(UInt64 revision)
+void DataPartStorageOnDisk::syncRevision(UInt64 revision) const
 {
     volume->getDisk()->syncRevision(revision);
 }
@@ -549,7 +539,7 @@ DataPartStorageOnDisk::DisksSet::const_iterator DataPartStorageOnDisk::isStoredO
     return disks.find(volume->getDisk());
 }
 
-ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes)
+ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes) const
 {
     auto res = volume->reserve(bytes);
     if (!res)
@@ -558,7 +548,7 @@ ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes)
     return res;
 }
 
-ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes)
+ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes) const
 {
     return volume->reserve(bytes);
 }
@@ -843,12 +833,6 @@ MutableDataPartStoragePtr DataPartStorageOnDisk::clonePart(
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     return std::make_shared<DataPartStorageOnDisk>(single_disk_volume, to, dir_path);
-}
-
-void DataPartStorageOnDisk::onRename(const std::string & new_root_path, const std::string & new_part_dir)
-{
-    part_dir = new_part_dir;
-    root_path = new_root_path;
 }
 
 void DataPartStorageOnDisk::rename(
