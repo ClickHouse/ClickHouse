@@ -558,154 +558,6 @@ size_t DataPartStorageOnDisk::getVolumeIndex(const IStoragePolicy & storage_poli
     return storage_policy.getVolumeIndexByDisk(volume->getDisk());
 }
 
-void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
-{
-    std::string path = fs::path(root_path) / part_dir / "checksums.txt";
-
-    try
-    {
-        {
-            auto out = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
-            checksums.write(*out);
-        }
-
-        volume->getDisk()->moveFile(path + ".tmp", path);
-    }
-    catch (...)
-    {
-        try
-        {
-            if (volume->getDisk()->exists(path + ".tmp"))
-                volume->getDisk()->removeFile(path + ".tmp");
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DataPartStorageOnDisk");
-        }
-
-        throw;
-    }
-}
-
-void DataPartStorageOnDisk::writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const
-{
-    std::string path = fs::path(root_path) / part_dir / "columns.txt";
-
-    try
-    {
-        auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
-        columns.writeText(*buf);
-        buf->finalize();
-
-        volume->getDisk()->moveFile(path + ".tmp", path);
-    }
-    catch (...)
-    {
-        try
-        {
-            if (volume->getDisk()->exists(path + ".tmp"))
-                volume->getDisk()->removeFile(path + ".tmp");
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DataPartStorageOnDisk");
-        }
-
-        throw;
-    }
-}
-
-void DataPartStorageOnDisk::writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const
-{
-    std::string path = fs::path(root_path) / part_dir / "txn_version.txt";
-    try
-    {
-        {
-            /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
-            /// so we create empty file at first (expecting that createFile throws if file already exists)
-            /// and then overwrite it.
-            volume->getDisk()->createFile(path + ".tmp");
-            auto buf = volume->getDisk()->writeFile(path + ".tmp", 256);
-            version.write(*buf);
-            buf->finalize();
-            buf->sync();
-        }
-
-        SyncGuardPtr sync_guard;
-        if (fsync_part_dir)
-            sync_guard = volume->getDisk()->getDirectorySyncGuard(getRelativePath());
-        volume->getDisk()->replaceFile(path + ".tmp", path);
-
-    }
-    catch (...)
-    {
-        try
-        {
-            if (volume->getDisk()->exists(path + ".tmp"))
-                volume->getDisk()->removeFile(path + ".tmp");
-        }
-        catch (...)
-        {
-            tryLogCurrentException("DataPartStorageOnDisk");
-        }
-
-        throw;
-    }
-}
-
-void DataPartStorageOnDisk::appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const
-{
-    /// Small enough appends to file are usually atomic,
-    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
-    /// We don't need to do fsync when writing CSN, because in case of hard restart
-    /// we will be able to restore CSN from transaction log in Keeper.
-
-    std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
-    DiskPtr disk = volume->getDisk();
-    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
-}
-
-void DataPartStorageOnDisk::appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const
-{
-    String version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
-    DiskPtr disk = volume->getDisk();
-    auto out = disk->writeFile(version_file_name, 256, WriteMode::Append);
-    version.writeRemovalTID(*out, clear);
-    out->finalize();
-
-    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
-        out->sync();
-}
-
-void DataPartStorageOnDisk::writeDeleteOnDestroyMarker(Poco::Logger * log) const
-{
-    String marker_path = fs::path(root_path) / part_dir / "delete-on-destroy.txt";
-    auto disk = volume->getDisk();
-    try
-    {
-        volume->getDisk()->createFile(marker_path);
-    }
-    catch (Poco::Exception & e)
-    {
-        LOG_ERROR(log, "{} (while creating DeleteOnDestroy marker: {})", e.what(), backQuote(fullPath(disk, marker_path)));
-    }
-}
-
-void DataPartStorageOnDisk::removeDeleteOnDestroyMarker() const
-{
-    std::string delete_on_destroy_file_name = fs::path(root_path) / part_dir / "delete-on-destroy.txt";
-    volume->getDisk()->removeFileIfExists(delete_on_destroy_file_name);
-}
-
-void DataPartStorageOnDisk::removeVersionMetadata() const
-{
-    std::string version_file_name = fs::path(root_path) / part_dir / "txn_version.txt";
-    volume->getDisk()->removeFileIfExists(version_file_name);
-}
-
 String DataPartStorageOnDisk::getUniqueId() const
 {
     auto disk = volume->getDisk();
@@ -933,6 +785,34 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
         return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings, /* autocommit = */ false);
 
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeTransactionFile(WriteMode mode) const
+{
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / "txn_version.txt", 256, mode);
+}
+
+void DataPartStorageOnDisk::createFile(const String & name)
+{
+    executeOperation([&](auto & disk) { disk.createFile(fs::path(root_path) / part_dir / name); });
+}
+
+void DataPartStorageOnDisk::moveFile(const String & from_name, const String & to_name)
+{
+    executeOperation([&](auto & disk)
+    {
+        auto relative_path = fs::path(root_path) / part_dir;
+        disk.moveFile(relative_path / from_name, relative_path / to_name);
+    });
+}
+
+void DataPartStorageOnDisk::replaceFile(const String & from_name, const String & to_name)
+{
+    executeOperation([&](auto & disk)
+    {
+        auto relative_path = fs::path(root_path) / part_dir;
+        disk.replaceFile(relative_path / from_name, relative_path / to_name);
+    });
 }
 
 void DataPartStorageOnDisk::removeFile(const String & name)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IO/WriteSettings.h"
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
@@ -439,6 +440,12 @@ public:
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
+    void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
+
+    void writeDeleteOnDestroyMarker();
+    void removeDeleteOnDestroyMarker();
+    void removeVersionMetadata();
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -559,6 +566,12 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
+
+    void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
+    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
+
+    template <typename Writer>
+    void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
 

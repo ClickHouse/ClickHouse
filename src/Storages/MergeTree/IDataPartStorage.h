@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Disks/WriteMode.h>
 #include <boost/core/noncopyable.hpp>
 #include <memory>
 #include <optional>
@@ -142,6 +143,7 @@ public:
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
+
     /// TODO: remove or at least remove const.
     virtual void syncRevision(UInt64 revision) const = 0;
     virtual UInt64 getRevision() const = 0;
@@ -159,17 +161,6 @@ public:
     virtual ReservationPtr reserve(UInt64 /*bytes*/) const  { return nullptr; }
     virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const  { return nullptr; }
     virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
-
-    /// Some methods which change data part internals possibly after creation.
-    /// Probably we should try to remove it later.
-    virtual void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const = 0;
-    virtual void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const = 0;
-    virtual void writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const = 0;
-    virtual void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const = 0;
-    virtual void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const = 0;
-    virtual void writeDeleteOnDestroyMarker(Poco::Logger * log) const = 0;
-    virtual void removeDeleteOnDestroyMarker() const = 0;
-    virtual void removeVersionMetadata() const = 0;
 
     /// A leak of abstraction.
     /// Return some uniq string for file.
@@ -219,7 +210,16 @@ public:
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, const WriteSettings & settings) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        const WriteSettings & settings) = 0;
+
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
+
+    virtual void createFile(const String & name) = 0;
+    virtual void moveFile(const String & from_name, const String & to_name) = 0;
+    virtual void replaceFile(const String & from_name, const String & to_name) = 0;
 
     virtual void removeFile(const String & name) = 0;
     virtual void removeFileIfExists(const String & name) = 0;
