@@ -415,7 +415,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
 
     try
@@ -433,7 +433,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     output_format->flush();
 
     /// Restore progress bar after data block.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
@@ -445,7 +445,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
-    if (need_render_progress)
+    if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
@@ -989,14 +989,14 @@ void ClientBase::onProgress(const Progress & value)
     if (output_format)
         output_format->onProgress(value);
 
-    if (need_render_progress)
+    if (need_render_progress && tty_buf)
         progress_indication.writeProgress(*tty_buf);
 }
 
 
 void ClientBase::onEndOfStream()
 {
-    if (need_render_progress)
+    if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
@@ -1048,7 +1048,7 @@ void ClientBase::onProfileEvents(Block & block)
         }
         progress_indication.updateThreadEventData(thread_times);
 
-        if (need_render_progress)
+        if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
 
         if (profile_events.print)
@@ -1056,7 +1056,7 @@ void ClientBase::onProfileEvents(Block & block)
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 initLogsOutputStream();
-                if (need_render_progress)
+                if (need_render_progress && tty_buf)
                     progress_indication.clearProgressOutput(*tty_buf);
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
@@ -1231,7 +1231,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
-        progress_indication.setFileProgressCallback(global_context, *tty_buf);
+        if (tty_buf)
+            progress_indication.setFileProgressCallback(global_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1483,7 +1484,7 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
-    if (need_render_progress)
+    if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
 
     std::cout << "Cancelling query." << std::endl;
@@ -1606,7 +1607,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (profile_events.last_block)
     {
         initLogsOutputStream();
-        if (need_render_progress)
+        if (need_render_progress && tty_buf)
             progress_indication.clearProgressOutput(*tty_buf);
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
