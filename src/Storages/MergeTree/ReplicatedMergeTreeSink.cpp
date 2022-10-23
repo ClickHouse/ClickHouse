@@ -586,7 +586,21 @@ void ReplicatedMergeTreeSink::commitPart(
                     part->name);
         }
 
-        storage.lockSharedData(*part, zookeeper, false, {});
+        try
+        {
+            storage.lockSharedData(*part, zookeeper, false, {});
+        }
+        catch (const Exception &)
+        {
+            /// todo: add 'rename back to temp state' func
+            transaction.rollbackPartsToTemporaryState();
+
+            part->is_temp = true;
+            part->renameTo(temporary_part_relative_path, false, builder);
+            builder->commit();
+
+            throw;
+        }
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
