@@ -133,17 +133,17 @@ namespace
     {
         static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
         }
 
         static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
         }
 
         static UInt32 execute(UInt32 t, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
         }
 
         static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
@@ -517,6 +517,7 @@ private:
     ColumnPtr execute(const FromDataType &, const ColumnType & time_column_type, Int64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
     {
         using ToColumnType = typename ToDataType::ColumnType;
+        using ToFieldType = typename ToDataType::FieldType;
 
         const auto & time_data = time_column_type.getData();
         size_t size = time_data.size();
@@ -529,7 +530,8 @@ private:
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         for (size_t i = 0; i != size; ++i)
-            result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier);
+            result_data[i] = static_cast<ToFieldType>(
+                Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
 
         return result_col;
     }

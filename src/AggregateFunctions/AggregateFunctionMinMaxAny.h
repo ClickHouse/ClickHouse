@@ -540,7 +540,7 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        Int32 value_size = value.size;
+        Int32 value_size = static_cast<Int32>(value.size);
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
@@ -555,7 +555,7 @@ public:
             if (capacity < value_size)
             {
                 /// Don't free large_data here.
-                capacity = roundUpToPowerOfTwoOrZero(value_size);
+                capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(value_size));
                 large_data = arena->alloc(capacity);
             }
 
