@@ -78,15 +78,6 @@ public:
     ReservationPtr tryReserve(UInt64 bytes) const override;
     size_t getVolumeIndex(const IStoragePolicy &) const override;
 
-    void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const override;
-    void writeColumns(const NamesAndTypesList & columns, const WriteSettings & settings) const override;
-    void writeVersionMetadata(const VersionMetadata & version, bool fsync_part_dir) const override;
-    void appendCSNToVersionMetadata(const VersionMetadata & version, VersionMetadata::WhichCSN which_csn) const override;
-    void appendRemovalTIDToVersionMetadata(const VersionMetadata & version, bool clear) const override;
-    void writeDeleteOnDestroyMarker(Poco::Logger * log) const override;
-    void removeDeleteOnDestroyMarker() const override;
-    void removeVersionMetadata() const override;
-
     String getUniqueId() const override;
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
@@ -122,6 +113,12 @@ public:
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const override;
+
+    void createFile(const String & name) override;
+    void moveFile(const String & from_name, const String & to_name) override;
+    void replaceFile(const String & from_name, const String & to_name) override;
 
     void removeFile(const String & name) override;
     void removeFileIfExists(const String & name) override;

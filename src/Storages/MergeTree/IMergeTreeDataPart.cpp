@@ -854,6 +854,120 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
 }
 
+template <typename Writer>
+void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer)
+{
+    auto & data_part_storage = getDataPartStorage();
+    auto tmp_filename = filename + ".tmp";
+
+    try
+    {
+        {
+            auto out = data_part_storage.writeFile(tmp_filename, 4096, settings);
+            writer(*out);
+            out->finalize();
+        }
+
+        data_part_storage.moveFile(tmp_filename, filename);
+    }
+    catch (...)
+    {
+        try
+        {
+            if (data_part_storage.exists(tmp_filename))
+                data_part_storage.removeFile(tmp_filename);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DataPartStorageOnDisk");
+        }
+
+        throw;
+    }
+}
+
+void IMergeTreeDataPart::writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings)
+{
+    writeMetadata("checksums.txt", settings, [&checksums_](auto & buffer)
+    {
+        checksums_.write(buffer);
+    });
+}
+
+void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings)
+{
+    writeMetadata("columns.txt", settings, [&columns_](auto & buffer)
+    {
+        columns_.writeText(buffer);
+    });
+}
+
+void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const
+{
+    auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
+    static constexpr auto filename = "txn_version.txt";
+    static constexpr auto tmp_filename = "txn_version.txt.tmp";
+
+    try
+    {
+        {
+            /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
+            /// so we create empty file at first (expecting that createFile throws if file already exists)
+            /// and then overwrite it.
+            data_part_storage.createFile(tmp_filename);
+            auto write_settings = storage.getContext()->getWriteSettings();
+            auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
+            version_.write(*buf);
+            buf->finalize();
+            buf->sync();
+        }
+
+        SyncGuardPtr sync_guard;
+        if (fsync_part_dir)
+            sync_guard = data_part_storage.getDirectorySyncGuard();
+        data_part_storage.replaceFile(tmp_filename, filename);
+    }
+    catch (...)
+    {
+        try
+        {
+            if (data_part_storage.exists(tmp_filename))
+                data_part_storage.removeFile(tmp_filename);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DataPartStorageOnDisk");
+        }
+
+        throw;
+    }
+}
+
+void IMergeTreeDataPart::writeDeleteOnDestroyMarker()
+{
+    static constexpr auto marker_path = "delete-on-destroy.txt";
+
+    try
+    {
+        getDataPartStorage().createFile(marker_path);
+    }
+    catch (Poco::Exception & e)
+    {
+        LOG_ERROR(storage.log, "{} (while creating DeleteOnDestroy marker: {})",
+            e.what(), (fs::path(getDataPartStorage().getFullPath()) / marker_path).string());
+    }
+}
+
+void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
+{
+    getDataPartStorage().removeFileIfExists("delete-on-destroy.txt");
+}
+
+void IMergeTreeDataPart::removeVersionMetadata()
+{
+    getDataPartStorage().removeFileIfExists("txn_version.txt");
+}
+
 void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
 {
     files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
@@ -980,7 +1094,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
         checksums = checkDataPart(shared_from_this(), false);
-        getDataPartStorage().writeChecksums(checksums, {});
+        writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
     }
@@ -993,8 +1107,6 @@ void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 
 void IMergeTreeDataPart::loadRowsCount()
 {
-    //String path = fs::path(getRelativePath()) / "count.txt";
-
     auto read_rows_count = [&]()
     {
         auto buf = metadata_manager->read("count.txt");
@@ -1186,7 +1298,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        getDataPartStorage().writeColumns(loaded_columns, {});
+        writeColumns(loaded_columns, {});
     }
     else
     {
@@ -1245,7 +1357,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",
                         storage.getStorageID().getNameForLogs(), name);
 
-    getDataPartStorage().writeVersionMetadata(version, storage.getSettings()->fsync_part_directory);
+    writeVersionMetadata(version, storage.getSettings()->fsync_part_directory);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
@@ -1257,7 +1369,14 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
     chassert(isStoredOnDisk());
 
-    getDataPartStorage().appendCSNToVersionMetadata(version, which_csn);
+    /// Small enough appends to file are usually atomic,
+    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
+    /// We don't need to do fsync when writing CSN, because in case of hard restart
+    /// we will be able to restore CSN from transaction log in Keeper.
+
+    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+    version.writeCSN(*out, which_csn);
+    out->finalize();
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
@@ -1280,7 +1399,13 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     else
         LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
 
-    getDataPartStorage().appendRemovalTIDToVersionMetadata(version, clear);
+    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
+    version.writeRemovalTID(*out, clear);
+    out->finalize();
+
+    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
+    if (!clear)
+        out->sync();
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const

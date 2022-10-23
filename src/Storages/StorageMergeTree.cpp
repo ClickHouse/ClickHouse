@@ -1,4 +1,5 @@
 #include "StorageMergeTree.h"
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 #include <optional>
 
@@ -1739,8 +1740,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     for (auto & part : data_parts)
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = "checksums.txt";
-        String tmp_checksums_path = "checksums.txt.tmp";
+        static constexpr auto checksums_path = "checksums.txt";
         if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
         {
             try
@@ -1748,7 +1748,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
 
-                part->getDataPartStorage().writeChecksums(part->checksums, local_context->getWriteSettings());
+                auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
+                part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");

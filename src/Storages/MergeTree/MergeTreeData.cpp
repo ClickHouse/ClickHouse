@@ -1685,7 +1685,8 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::preparePartForRemoval(const DataPartPtr & part)
 {
-    if (part->getState() != DataPartState::Deleting)
+    auto state = part->getState();
+    if (state != DataPartState::Deleting && state != DataPartState::DeleteOnDestroy)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot remove part {}, because it has state: {}", part->name, magic_enum::enum_name(part->getState()));
 
@@ -3666,7 +3667,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// All other locks are taken in StorageReplicatedMergeTree
             lockSharedData(*part_copy);
 
-            original_active_part->getDataPartStorage().writeDeleteOnDestroyMarker(log);
+            preparePartForRemoval(original_active_part)->writeDeleteOnDestroyMarker();
             return;
         }
     }
@@ -3801,8 +3802,8 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
-    part->getDataPartStorage().removeDeleteOnDestroyMarker();
-    part->getDataPartStorage().removeVersionMetadata();
+    part->removeDeleteOnDestroyMarker();
+    part->removeVersionMetadata();
 }
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
