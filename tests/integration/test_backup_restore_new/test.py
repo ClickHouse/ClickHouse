@@ -192,6 +192,101 @@ def test_incremental_backup():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_increment_backup_without_changes():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+    create_and_fill_table(n=1)
+
+    system_backup_qry = "SELECT status, num_files, num_processed_files, processed_files_size, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id_backup}'"
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == TSV([["1", "0"]])
+
+    # prepare first backup without base_backup
+    (id_backup, status) = instance.query(
+        f"BACKUP TABLE test.table TO {backup_name}"
+    ).split("\t")
+
+    (
+        backup_status,
+        num_files,
+        num_processed_files,
+        processed_files_size,
+        uncompressed_size,
+        compressed_size,
+        error,
+    ) = (
+        instance.query(system_backup_qry.format(id_backup=id_backup))
+        .strip("\n")
+        .split("\t")
+    )
+
+    assert backup_status == "BACKUP_CREATED"
+    assert num_files == "11"
+    assert int(uncompressed_size) > 0
+    assert int(compressed_size) > 0
+    assert error == ""
+
+    # create second backup without changes based on the first one
+    (id_backup_wo_changes, status_backup_wo_changes) = instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    ).split("\t")
+
+    (
+        backup_status_wo_changes,
+        num_files_backup_wo_changes,
+        num_processed_files_backup_wo_changes,
+        processed_files_size_backup_wo_changes,
+        uncompressed_size_backup_wo_changes,
+        compressed_size_backup_wo_changes,
+        error_snd,
+    ) = (
+        instance.query(system_backup_qry.format(id_backup=id_backup_wo_changes))
+        .strip("\n")
+        .split("\t")
+    )
+
+    assert backup_status_wo_changes == "BACKUP_CREATED"
+    assert num_files_backup_wo_changes == "1"
+    assert num_processed_files_backup_wo_changes == "11"
+    assert int(processed_files_size_backup_wo_changes) > 0
+    assert int(uncompressed_size_backup_wo_changes) > 0
+    assert int(compressed_size_backup_wo_changes) > 0
+    assert error_snd == ""
+
+    # restore the second backup
+    # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
+    (id_restore, status_restore) = instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+    ).split("\t")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
+        [["1", "0"]]
+    )
+
+    (
+        restore_status,
+        restore_num_files,
+        restore_num_processed_files,
+        restore_processed_files_size,
+        restore_uncompressed_size,
+        restore_compressed_size,
+        restore_error,
+    ) = (
+        instance.query(system_backup_qry.format(id_backup=id_restore))
+        .strip("\n")
+        .split("\t")
+    )
+
+    assert restore_status == "RESTORED"
+    assert int(restore_num_files) == 1
+    assert int(restore_num_processed_files) == int(
+        num_processed_files_backup_wo_changes
+    )
+    assert int(restore_uncompressed_size) > 0
+    assert int(restore_compressed_size) > 0
+    assert restore_error == ""
+
+
 def test_incremental_backup_overflow():
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
@@ -1089,9 +1184,18 @@ def test_system_backups():
 
     id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 
-    [name, status, num_files, uncompressed_size, compressed_size, error] = (
+    [
+        name,
+        status,
+        num_files,
+        num_processed_files,
+        processed_files_size,
+        uncompressed_size,
+        compressed_size,
+        error,
+    ] = (
         instance.query(
-            f"SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
+            f"SELECT name, status, num_files, num_processed_files, processed_files_size, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
         )
         .strip("\n")
         .split("\t")
@@ -1101,9 +1205,13 @@ def test_system_backups():
     num_files = int(num_files)
     compressed_size = int(compressed_size)
     uncompressed_size = int(uncompressed_size)
+    num_processed_files = int(num_processed_files)
+    processed_files_size = int(processed_files_size)
     assert name == escaped_backup_name
     assert status == "BACKUP_CREATED"
     assert num_files > 1
+    assert num_processed_files > 1
+    assert processed_files_size > 1
     assert uncompressed_size > 1
     assert compressed_size == uncompressed_size
     assert error == ""
@@ -1115,9 +1223,17 @@ def test_system_backups():
     )
 
     escaped_backup_name = backup_name.replace("'", "\\'")
-    [status, num_files, uncompressed_size, compressed_size, error] = (
+    [
+        status,
+        num_files,
+        num_processed_files,
+        processed_files_size,
+        uncompressed_size,
+        compressed_size,
+        error,
+    ] = (
         instance.query(
-            f"SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
+            f"SELECT status, num_files,  num_processed_files, processed_files_size, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
         )
         .strip("\n")
         .split("\t")
@@ -1126,10 +1242,14 @@ def test_system_backups():
     num_files = int(num_files)
     compressed_size = int(compressed_size)
     uncompressed_size = int(uncompressed_size)
+    num_processed_files = int(num_processed_files)
+    processed_files_size = int(processed_files_size)
     assert status == "BACKUP_FAILED"
     assert num_files == 0
     assert uncompressed_size == 0
     assert compressed_size == 0
+    assert num_processed_files == 0
+    assert processed_files_size == 0
     assert expected_error in error
 
 
