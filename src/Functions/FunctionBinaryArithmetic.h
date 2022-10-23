@@ -898,10 +898,10 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
-        new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+        if (WhichDataType(new_arguments[1].type).isInterval())
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
