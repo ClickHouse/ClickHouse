@@ -325,7 +325,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
+    String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.

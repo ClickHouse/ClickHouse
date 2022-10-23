@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <boost/core/noncopyable.hpp>
 #include <memory>
 #include <optional>
 
@@ -70,7 +71,6 @@ class IDataPartStorage : public boost::noncopyable
 {
 public:
     virtual ~IDataPartStorage() = default;
-    virtual std::shared_ptr<IDataPartStorage> clone() const = 0;
 
     /// Methods to get path components of a data part.
     virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
@@ -81,8 +81,7 @@ public:
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
-    virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) = 0;
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
     virtual bool exists() const = 0;
@@ -132,10 +131,9 @@ public:
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
-    /// Reset part directory, used for im-memory parts.
+    /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
     virtual void setRelativePath(const std::string & path) = 0;
-    virtual void onRename(const std::string & new_root_path, const std::string & new_part_dir) = 0;
 
     /// Some methods from IDisk. Needed to avoid getting internal IDisk interface.
     virtual std::string getDiskName() const = 0;
@@ -144,7 +142,8 @@ public:
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
-    virtual void syncRevision(UInt64 revision) = 0;
+    /// TODO: remove or at least remove const.
+    virtual void syncRevision(UInt64 revision) const = 0;
     virtual UInt64 getRevision() const = 0;
     virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const = 0;
     /// Get a path for internal disk if relevant. It is used mainly for logging.
@@ -156,8 +155,9 @@ public:
 
     /// Reserve space on the same disk.
     /// Probably we should try to remove it later.
-    virtual ReservationPtr reserve(UInt64 /*bytes*/) { return nullptr; }
-    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) { return nullptr; }
+    /// TODO: remove constness
+    virtual ReservationPtr reserve(UInt64 /*bytes*/) const  { return nullptr; }
+    virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const  { return nullptr; }
     virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
 
     /// Some methods which change data part internals possibly after creation.
@@ -234,8 +234,6 @@ public:
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
-    ///
-    /// To notify storage also call onRename for it with first two args
     virtual void rename(
         const std::string & new_root_path,
         const std::string & new_part_dir,
@@ -250,5 +248,23 @@ public:
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
+
+class DataPartStorageHolder : public boost::noncopyable
+{
+public:
+    explicit DataPartStorageHolder(MutableDataPartStoragePtr storage_)
+        : storage(std::move(storage_))
+    {
+    }
+
+    IDataPartStorage & getDataPartStorage() { return *storage; }
+    const IDataPartStorage & getDataPartStorage() const { return *storage; }
+
+    MutableDataPartStoragePtr getDataPartStoragePtr() { return storage; }
+    DataPartStoragePtr getDataPartStoragePtr() const { return storage; }
+
+private:
+    MutableDataPartStoragePtr storage;
+};
 
 }

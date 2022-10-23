@@ -626,7 +626,7 @@ void finalizeMutatedPart(
 {
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
-        auto out = new_data_part->data_part_storage->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
@@ -636,7 +636,7 @@ void finalizeMutatedPart(
     if (execute_ttl_type != ExecuteTTLType::NONE)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = new_data_part->data_part_storage->writeFile("ttl.txt", 4096, context->getWriteSettings());
+        auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -645,7 +645,7 @@ void finalizeMutatedPart(
 
     if (!new_data_part->getSerializationInfos().empty())
     {
-        auto out = new_data_part->data_part_storage->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
@@ -654,18 +654,18 @@ void finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = new_data_part->data_part_storage->writeFile("checksums.txt", 4096, context->getWriteSettings());
+        auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
     {
-        auto out = new_data_part->data_part_storage->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
     } /// close fd
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = new_data_part->data_part_storage->writeFile("columns.txt", 4096, context->getWriteSettings());
+        auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, context->getWriteSettings());
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 
@@ -1141,7 +1141,7 @@ private:
 
     void prepare()
     {
-        ctx->new_data_part->data_part_storage->createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1271,7 +1271,7 @@ private:
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
-        ctx->new_data_part->data_part_storage->createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
@@ -1282,7 +1282,7 @@ private:
 
         NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
-        for (auto it = ctx->source_part->data_part_storage->iterate(); it->isValid(); it->next())
+        for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
@@ -1308,17 +1308,17 @@ private:
 
             if (it->isFile())
             {
-                ctx->new_data_part->data_part_storage->createHardLinkFrom(
-                    *ctx->source_part->data_part_storage, it->name(), destination);
+                ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
+                    ctx->source_part->getDataPartStorage(), it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                ctx->new_data_part->data_part_storage->createProjection(destination);
+                ctx->new_data_part->getDataPartStorage().createProjection(destination);
 
-                auto projection_data_part_storage_src = ctx->source_part->data_part_storage->getProjection(destination);
-                auto projection_data_part_storage_dst = ctx->new_data_part->data_part_storage->getProjection(destination);
+                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
+                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {

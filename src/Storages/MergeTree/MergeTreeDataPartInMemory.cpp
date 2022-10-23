@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <DataTypes/NestedUtils.h>
+#include <Disks/createVolume.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -71,12 +72,18 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
 
 MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const
 {
-    auto current_full_path = data_part_storage->getFullPath();
-    auto new_data_part_storage = data_part_storage->clone();
+    auto reservation = storage.reserveSpace(block.bytes(), getDataPartStorage());
+    VolumePtr volume = storage.getStoragePolicy()->getVolume(0);
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    new_data_part_storage->setRelativePath(new_relative_path);
+    auto new_data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        data_part_volume,
+        storage.getRelativeDataPath(),
+        new_relative_path);
+
     new_data_part_storage->beginTransaction();
 
+    auto current_full_path = getDataPartStorage().getFullPath();
     auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
     auto new_data_part = storage.createPart(name, new_type, info, new_data_part_storage);
 
@@ -148,12 +155,9 @@ void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const
     flushToDisk(detached_path, metadata_snapshot);
 }
 
-void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */) const
+void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */)
 {
-    data_part_storage->setRelativePath(new_relative_path);
-
-    if (data_part_storage)
-        data_part_storage->setRelativePath(new_relative_path);
+    getDataPartStorage().setRelativePath(new_relative_path);
 }
 
 void MergeTreeDataPartInMemory::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const

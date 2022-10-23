@@ -46,7 +46,7 @@ class UncompressedCache;
 class MergeTreeTransaction;
 
 /// Description of the data part.
-class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
+class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
@@ -150,7 +150,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove();
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -197,10 +197,6 @@ public:
     /// The intention is to use it for identifying cases where the same part is
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
-
-    /// This is an object which encapsulates all the operations with disk.
-    /// Contains a path to stored data.
-    MutableDataPartStoragePtr data_part_storage;
 
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -287,8 +283,8 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const MutableDataPartStoragePtr & part_storage, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const MutableDataPartStoragePtr & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -319,11 +315,11 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix) const;
+    void renameToDetached(const String & prefix);
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
@@ -583,7 +579,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 }

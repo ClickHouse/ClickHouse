@@ -15,15 +15,13 @@ class DataPartStorageOnDisk final : public IDataPartStorage
 {
 public:
     DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_);
-    std::shared_ptr<IDataPartStorage> clone() const override;
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
     std::string getPartDirectory() const override { return part_dir; }
     std::string getFullRootPath() const override;
 
-    DataPartStoragePtr getProjection(const std::string & name) const override;
-    MutableDataPartStoragePtr getProjection(const std::string & name) override;
+    MutableDataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
     bool exists(const std::string & name) const override;
@@ -62,7 +60,6 @@ public:
                                                       std::optional<Strings> & original_files_list) const;
 
     void setRelativePath(const std::string & path) override;
-    void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
 
     std::string getDiskName() const override;
     std::string getDiskType() const override;
@@ -70,15 +67,15 @@ public:
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
-    void syncRevision(UInt64 revision) override;
+    void syncRevision(UInt64 revision) const override;
     UInt64 getRevision() const override;
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
     std::string getDiskPath() const override;
 
     DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
 
-    ReservationPtr reserve(UInt64 bytes) override;
-    ReservationPtr tryReserve(UInt64 bytes) override;
+    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr tryReserve(UInt64 bytes) const override;
     size_t getVolumeIndex(const IStoragePolicy &) const override;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const override;

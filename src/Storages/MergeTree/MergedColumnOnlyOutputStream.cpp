@@ -79,7 +79,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     for (const String & removed_file : removed_files)
     {
-        new_part->data_part_storage->removeFileIfExists(removed_file);
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
 
         if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);

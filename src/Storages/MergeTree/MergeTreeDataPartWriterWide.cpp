@@ -116,7 +116,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
-            data_part->data_part_storage,
+            data_part->getDataPartStoragePtr(),
             stream_name, DATA_FILE_EXTENSION,
             stream_name, marks_file_extension,
             compression_codec,
@@ -421,17 +421,17 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     String bin_path = escaped_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
-    if (!data_part->data_part_storage->exists(mrk_path))
+    if (!data_part->getDataPartStorage().exists(mrk_path))
         return;
 
-    auto mrk_file_in = data_part->data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    auto mrk_file_in = data_part->getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);
     std::unique_ptr<ReadBuffer> mrk_in;
     if (data_part->index_granularity_info.mark_type.compressed)
         mrk_in = std::make_unique<CompressedReadBufferFromFile>(std::move(mrk_file_in));
     else
         mrk_in = std::move(mrk_file_in);
 
-    DB::CompressedReadBufferFromFile bin_in(data_part->data_part_storage->readFile(bin_path, {}, std::nullopt, std::nullopt));
+    DB::CompressedReadBufferFromFile bin_in(data_part->getDataPartStorage().readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
@@ -482,7 +482,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for part {} for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
-                data_part->data_part_storage->getFullPath(), mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
+                data_part->getDataPartStorage().getFullPath(), mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
 
         auto column = type->createColumn();
 

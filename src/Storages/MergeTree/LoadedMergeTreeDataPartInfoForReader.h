@@ -23,7 +23,7 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
-    DataPartStoragePtr getDataPartStorage() const override { return data_part->data_part_storage; }
+    DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 

@@ -12,7 +12,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part->data_part_storage)
+    , data_part_storage(data_part->getDataPartStoragePtr())
     , reset_columns(reset_columns_)
 {
     if (reset_columns)

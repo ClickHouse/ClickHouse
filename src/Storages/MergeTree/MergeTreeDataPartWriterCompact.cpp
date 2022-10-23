@@ -21,13 +21,13 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
-    , plain_file(data_part_->data_part_storage->writeFile(
+    , plain_file(data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
             settings_.query_write_settings))
     , plain_hashing(*plain_file)
 {
-    marks_file = data_part_->data_part_storage->writeFile(
+    marks_file = data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
             settings_.query_write_settings);

@@ -214,6 +214,7 @@ public:
     };
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
+    using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
     using DataPartsLock = std::unique_lock<std::mutex>;
@@ -275,8 +276,8 @@ public:
 
         MergeTreeData & data;
         MergeTreeTransaction * txn;
-        DataParts precommitted_parts;
-        DataParts locked_parts;
+        MutableDataParts precommitted_parts;
+        MutableDataParts locked_parts;
         bool has_in_memory_parts = false;
 
         void clear();
@@ -413,8 +414,8 @@ public:
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
-    static ReservationPtr tryReserveSpace(UInt64 expected_size, const MutableDataPartStoragePtr & data_part_storage);
-    static ReservationPtr reserveSpace(UInt64 expected_size, const MutableDataPartStoragePtr & data_part_storage);
+    static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
+    static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
     static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
 
@@ -974,7 +975,7 @@ public:
 
     /// Fetch part only if some replica has it on shared storage like S3
     /// Overridden in StorageReplicatedMergeTree
-    virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return false; }
+    virtual MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return nullptr; }
 
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
@@ -1259,7 +1260,6 @@ protected:
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
-
     /// Checking that candidate part doesn't break invariants: correct partition and doesn't exist already
     void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
@@ -1328,8 +1328,8 @@ private:
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
     void loadDataPartsFromDisk(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
+        MutableDataPartsVector & broken_parts_to_detach,
+        MutableDataPartsVector & duplicate_parts_to_remove,
         ThreadPool & pool,
         size_t num_parts,
         std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
@@ -1337,8 +1337,7 @@ private:
         const MergeTreeSettingsPtr & settings);
 
     void loadDataPartsFromWAL(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
+        MutableDataPartsVector & duplicate_parts_to_remove,
         MutableDataPartsVector & parts_from_wal);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
@@ -1349,6 +1348,8 @@ private:
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
     /// Otherwise, in non-parallel case will break and return.
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
+
+    static MutableDataPartPtr preparePartForRemoval(const DataPartPtr & part);
 
     TemporaryParts temporary_parts;
 };
