@@ -149,7 +149,7 @@ TEST_P(DecimalUtilsSplitAndCombineForDateTime64Test, getFractionalPartDateTime64
 namespace std // NOLINT(cert-dcl58-cpp)
 {
 
-std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param)
+std::ostream & operator << (std::ostream & ostr, const DecimalUtilsSplitAndCombineTestParam & param) // NOLINT(cert-dcl58-cpp)
 {
     return ostr << param.description;
 }
