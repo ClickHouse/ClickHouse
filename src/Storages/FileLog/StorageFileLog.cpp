@@ -315,7 +315,7 @@ Pipe StorageFileLog::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
-    unsigned /* num_streams */)
+    size_t /* num_streams */)
 {
     /// If there are MVs depended on this table, we just forbid reading
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)

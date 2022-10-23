@@ -84,7 +84,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = hashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }

@@ -249,7 +249,7 @@ void StorageMerge::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.

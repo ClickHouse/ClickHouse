@@ -104,19 +104,19 @@ struct ToStartOfDayImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(static_cast<time_t>(t.whole));
+        return static_cast<UInt32>(time_zone.toDate(static_cast<time_t>(t.whole)));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(t);
+        return static_cast<UInt32>(time_zone.toDate(t));
     }
     static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(ExtendedDayNum(d));
+        return static_cast<UInt32>(time_zone.toDate(ExtendedDayNum(d)));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(DayNum(d));
+        return static_cast<UInt32>(time_zone.toDate(DayNum(d)));
     }
     static inline DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -297,11 +297,11 @@ struct ToTimeImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toTime(t.whole) + 86400;
+        return static_cast<UInt32>(time_zone.toTime(t.whole) + 86400);
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toTime(t) + 86400;
+        return static_cast<UInt32>(time_zone.toTime(t) + 86400);
     }
     static inline UInt32 execute(Int32, const DateLUTImpl &)
     {
@@ -321,7 +321,7 @@ struct ToStartOfMinuteImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfMinute(t.whole);
+        return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -519,7 +519,7 @@ struct ToStartOfFiveMinutesImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinutes(t.whole);
+        return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -551,7 +551,7 @@ struct ToStartOfTenMinutesImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfTenMinutes(t.whole);
+        return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -583,7 +583,7 @@ struct ToStartOfFifteenMinutesImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFifteenMinutes(t.whole);
+        return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -616,7 +616,7 @@ struct TimeSlotImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        return t.whole / 1800 * 1800;
+        return static_cast<UInt32>(t.whole / 1800 * 1800);
     }
 
     static inline UInt32 execute(UInt32 t, const DateLUTImpl &)
@@ -655,7 +655,7 @@ struct ToStartOfHourImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfHour(t.whole);
+        return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
     }
 
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
@@ -1190,9 +1190,9 @@ struct ToRelativeHourNumImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toStableRelativeHourNum(static_cast<time_t>(t));
+            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(static_cast<time_t>(t)));
         else
-            return time_zone.toRelativeHourNum(static_cast<time_t>(t));
+            return static_cast<UInt32>(time_zone.toRelativeHourNum(static_cast<time_t>(t)));
     }
     static inline auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -1204,9 +1204,9 @@ struct ToRelativeHourNumImpl
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toStableRelativeHourNum(DayNum(d));
+            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(DayNum(d)));
         else
-            return time_zone.toRelativeHourNum(DayNum(d));
+            return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
     }
 
     using FactorTransform = ZeroTransform;
@@ -1226,7 +1226,7 @@ struct ToRelativeMinuteNumImpl
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMinuteNum(static_cast<time_t>(t));
+        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(static_cast<time_t>(t)));
     }
     static inline auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -1237,7 +1237,7 @@ struct ToRelativeMinuteNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMinuteNum(DayNum(d));
+        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
     }
 
     using FactorTransform = ZeroTransform;
@@ -1265,7 +1265,7 @@ struct ToRelativeSecondNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(DayNum(d));
+        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
 
     using FactorTransform = ZeroTransform;
@@ -1350,14 +1350,17 @@ struct Transformer
     template <typename FromTypeVector, typename ToTypeVector>
     static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
     {
+        using ValueType = typename ToTypeVector::value_type;
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
+        {
             if constexpr (is_extended_result)
-                vec_to[i] = transform.executeExtendedResult(vec_from[i], time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], time_zone));
             else
-                vec_to[i] = transform.execute(vec_from[i], time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.execute(vec_from[i], time_zone));
+        }
     }
 };
 
