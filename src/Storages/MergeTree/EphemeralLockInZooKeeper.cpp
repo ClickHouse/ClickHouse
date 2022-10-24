@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
+#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
 
 
 namespace DB
@@ -12,17 +13,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_)
-    : zookeeper(&zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & holder_path_)
+    : zookeeper(zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
 {
     /// Write the path to the secondary node in the main node.
     path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
     if (path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("EphemeralLockInZooKeeper"),
+        "Path created: path={} path_prefix={} holder_path={}",
+        path,
+        path_prefix,
+        holder_path);
 }
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path)
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path)
 {
     /// The /abandonable_lock- name is for backward compatibility.
     String holder_path_prefix = temp_path + "/abandonable_lock-";
@@ -31,7 +39,7 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     /// Let's create an secondary ephemeral node.
     if (deduplication_path.empty())
     {
-        holder_path = zookeeper_.create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
+        holder_path = zookeeper_->create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
     }
     else
     {
@@ -41,11 +49,15 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
         ops.emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
-        Coordination::Error e = zookeeper_.tryMulti(ops, responses);
+        Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e != Coordination::Error::ZOK)
         {
-            if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            if (!responses.empty() && responses.front()->error == Coordination::Error::ZNODEEXISTS)
             {
+                LOG_DEBUG(
+                    &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                    "Deduplication path already exists: deduplication_path={}",
+                    deduplication_path);
                 return {};
             }
             else
@@ -85,9 +97,31 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
     {
         unlock();
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+            LOG_DEBUG(
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
+                "ZooKeeper communication error during unlock: code={} message='{}'",
+                e.code,
+                e.message());
+        else if (e.code == Coordination::Error::ZNONODE)
+            /// To avoid additional round-trip for unlocking,
+            /// ephemeral node can be deleted explicitly as part of another multi op request to ZK
+            /// and marked as such via assumeUnlocked() if we got successful response.
+            /// But it's possible that the multi op request can be executed on server side, and client will not get response due to network issue.
+            /// In such case, assumeUnlocked() will not be called, so we'll get ZNONODE error here since the noded is already deleted
+            LOG_DEBUG(
+                &Poco::Logger::get("EphemeralLockInZooKeeper"),
+                "ZooKeeper node was already deleted: code={} message={}",
+                e.code,
+                e.message());
+        else
+            tryLogCurrentException("EphemeralLockInZooKeeper");
+    }
     catch (...)
     {
-        tryLogCurrentException("~EphemeralLockInZooKeeper");
+        tryLogCurrentException("EphemeralLockInZooKeeper");
     }
 }
 
