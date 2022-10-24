@@ -1,8 +1,12 @@
 #include "SparkRowToCHColumn.h"
+#include <memory>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include "Common/Exception.h"
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -142,16 +146,30 @@ void local_engine::SparkRowToCHColumn::appendSparkRowToCHColumn(SparkRowToCHColu
     SparkRowReader row_reader(helper.header->columns());
     row_reader.pointTo(address, size);
     writeRowToColumns(*helper.cols, *helper.typePtrs, row_reader);
+    helper.rows += 1;
 }
 
 Block * local_engine::SparkRowToCHColumn::getWrittenBlock(SparkRowToCHColumnHelper & helper)
 {
     auto * block = new Block();
-    for (size_t column_i = 0, columns = helper.cols->size(); column_i < columns; ++column_i)
+    if (!helper.cols->empty())
     {
-        const ColumnWithTypeAndName & header_column = helper.header->getByPosition(column_i);
-        ColumnWithTypeAndName column(std::move(helper.cols->operator[](column_i)), header_column.type, header_column.name);
-        block->insert(column);
+        for (size_t column_i = 0, columns = helper.cols->size(); column_i < columns; ++column_i)
+        {
+            const ColumnWithTypeAndName & header_column = helper.header->getByPosition(column_i);
+            ColumnWithTypeAndName column(std::move(helper.cols->operator[](column_i)), header_column.type, header_column.name);
+            block->insert(column);
+        }
+    }
+    else
+    {
+        // In some cases, there is no required columns in spark plan, E.g. count(*).
+        // In these cases, the rows is the only needed information, so we try to create
+        // a block with a const column which will not be really used any where.
+        auto uint8_ty = std::make_shared<DB::DataTypeUInt8>();
+        auto col = uint8_ty->createColumnConst(helper.rows, 0);
+        ColumnWithTypeAndName named_col(col, uint8_ty, "__anonymous_col__");
+        block->insert(named_col);
     }
     return block;
 }

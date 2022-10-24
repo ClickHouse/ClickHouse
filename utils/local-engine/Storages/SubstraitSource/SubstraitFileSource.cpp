@@ -66,7 +66,7 @@ SubstraitFileSource::SubstraitFileSource(DB::ContextPtr context_, const DB::Bloc
 
 DB::Chunk SubstraitFileSource::generate()
 {
-    while(current_file_index < files.size())
+    while(true)
     {
         if (!tryPrepareReader())
         {
@@ -81,6 +81,7 @@ DB::Chunk SubstraitFileSource::generate()
         /// try to read from next file
         file_reader.reset();
     }
+    return {};
 }
 
 bool SubstraitFileSource::tryPrepareReader()
