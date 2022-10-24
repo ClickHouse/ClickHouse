@@ -464,7 +464,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<AccessControl> delete_access_control;
 
         /// Delete DDLWorker before zookeeper.
-        /// Cause it can call Context::getZooKeeper and ressurect it.
+        /// Cause it can call Context::getZooKeeper and resurrect it.
 
         {
             auto lock = std::lock_guard(mutex);
