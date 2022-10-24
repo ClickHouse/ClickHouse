@@ -62,7 +62,7 @@ public:
 
                 setKeeperError(e.code, e.message());
             }
-            catch(...)
+            catch (...)
             {
                 iteration_cleanup();
                 throw;
