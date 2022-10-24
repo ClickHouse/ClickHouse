@@ -18,6 +18,12 @@ void IObjectStorage::listPrefix(const std::string &, RelativePathsWithSize &) co
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listPrefix() is not supported");
 }
+void IObjectStorage::listPrefixInPath(const std::string &,
+    RelativePathsWithSize &,
+    std::vector<std::string> &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listPrefixInPath() is not supported");
+}
 
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
