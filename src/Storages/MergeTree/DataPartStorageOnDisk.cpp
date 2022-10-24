@@ -705,7 +705,7 @@ void DataPartStorageOnDisk::changeRootPath(const std::string & from_root, const 
         --prefix_size;
 
     if (prefix_size > root_path.size()
-        || std::string_view(from_root).substr(0, prefix_size) !=  std::string_view(root_path).substr(0, prefix_size))
+        || std::string_view(from_root).substr(0, prefix_size) != std::string_view(root_path).substr(0, prefix_size))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot change part root to {} because it is not a prefix of current root {}",

@@ -1562,6 +1562,7 @@ try
         relative_path = parent_part->getDataPartStorage().getRelativePath();
     }
 
+    auto old_projection_root_path = getDataPartStorage().getRelativePath();
     auto to = fs::path(relative_path) / new_relative_path;
 
     metadata_manager->deleteAll(true);
@@ -1569,7 +1570,6 @@ try
     getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
     metadata_manager->updateAll(true);
 
-    auto old_projection_root_path = getDataPartStorage().getRelativePath();
     auto new_projection_root_path = to.string();
 
     for (const auto & [_, part] : projection_parts)
