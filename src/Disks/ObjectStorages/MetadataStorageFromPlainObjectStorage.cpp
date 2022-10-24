@@ -65,7 +65,8 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
 
 Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std::string &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastModified is not implemented for MetadataStorageFromPlainObjectStorage");
+    /// NOTE: This is required for MergeTree
+    return {};
 }
 
 struct stat MetadataStorageFromPlainObjectStorage::stat(const std::string &) const
