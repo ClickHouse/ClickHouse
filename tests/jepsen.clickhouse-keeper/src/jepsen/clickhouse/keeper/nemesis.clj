@@ -5,21 +5,22 @@
     [nemesis :as nemesis]
     [control :as c]
     [generator :as gen]]
-   [jepsen.clickhouse.keeper.constants :refer :all]
+   [jepsen.clickhouse.constants :refer :all]
+   [jepsen.clickhouse.utils :as chu]
    [jepsen.clickhouse.keeper.utils :refer :all]))
 
 (defn random-node-killer-nemesis
   []
   (nemesis/node-start-stopper
    rand-nth
-   (fn start [test node] (kill-clickhouse! node test))
+   (fn start [test node] (chu/kill-clickhouse! node test))
    (fn stop [test node] (start-clickhouse! node test))))
 
 (defn all-nodes-killer-nemesis
   []
   (nemesis/node-start-stopper
    identity
-   (fn start [test node] (kill-clickhouse! node test))
+   (fn start [test node] (chu/kill-clickhouse! node test))
    (fn stop [test node] (start-clickhouse! node test))))
 
 (defn random-node-hammer-time-nemesis
@@ -62,7 +63,7 @@
               (c/on-nodes test nodes
                           (fn [test node]
                             (c/su
-                             (kill-clickhouse! node test)
+                             (chu/kill-clickhouse! node test)
                              (corruption-op path)
                              (start-clickhouse! node test))))
               (assoc op :type :info, :value :corrupted))

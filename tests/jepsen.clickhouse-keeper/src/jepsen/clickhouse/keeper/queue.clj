@@ -8,6 +8,7 @@
    [knossos.model :as model]
    [jepsen.checker.timeline :as timeline]
    [jepsen.clickhouse.keeper.utils :refer :all]
+   [jepsen.clickhouse.utils :as chu]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
@@ -24,7 +25,7 @@
      :nodename node))
 
   (setup! [this test]
-    (exec-with-retries 30 (fn []
+    (chu/exec-with-retries 30 (fn []
       (zk-create-if-not-exists conn root-path ""))))
 
   (invoke! [this test op]
@@ -43,7 +44,7 @@
         (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :drain
       ; drain via delete is to long, just list all nodes
-      (exec-with-retries 30 (fn []
+      (chu/exec-with-retries 30 (fn []
                               (zk-sync conn)
                               (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn root-path))))))))
 

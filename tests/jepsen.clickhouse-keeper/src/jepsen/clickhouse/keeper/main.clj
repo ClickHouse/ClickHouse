@@ -11,7 +11,8 @@
             [jepsen.clickhouse.keeper.queue :as queue]
             [jepsen.clickhouse.keeper.counter :as counter]
             [jepsen.clickhouse.keeper.bench :as bench]
-            [jepsen.clickhouse.keeper.constants :refer :all]
+            [jepsen.clickhouse.constants :refer :all]
+            [jepsen.clickhouse.utils :as chu]
             [clojure.string :as str]
             [jepsen
              [checker :as checker]
@@ -69,7 +70,7 @@
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--ops-per-key NUM" "Maximum number of operations on any given key."
     :default  100
-    :parse-fn parse-long
+    :parse-fn chu/parse-long
     :validate [pos? "Must be a positive integer."]]
    [nil, "--lightweight-run" "Subset of workloads/nemesises which is simple to validate"]
    [nil, "--reuse-binary" "Use already downloaded binary if it exists, don't remove it on shutdown"]
