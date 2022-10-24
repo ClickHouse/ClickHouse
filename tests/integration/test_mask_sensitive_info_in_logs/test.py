@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -80,6 +80,8 @@ def test_create_alter_user():
         ],
     )
 
+    node.query("DROP USER u1, u2")
+
 
 def test_create_table():
     table_engines = [
@@ -111,7 +113,7 @@ def test_create_table():
     )
 
     for i in range(0, len(table_engines)):
-        node.query(f"DROP TABLE IF EXISTS table{i}")
+        node.query(f"DROP TABLE table{i}")
 
 
 def test_create_database():
@@ -203,7 +205,7 @@ def test_table_functions():
     )
 
     for i in range(0, len(table_functions)):
-        node.query(f"DROP TABLE IF EXISTS tablefunc{i}")
+        node.query(f"DROP TABLE tablefunc{i}")
 
 
 def test_encryption_functions():
@@ -250,7 +252,7 @@ def test_create_dictionary():
         must_not_contain=["qwe128"],
     )
 
-    node.query("DROP DICTIONARY IF EXISTS dict1")
+    node.query("DROP DICTIONARY dict1")
 
 
 def test_backup_to_s3():
@@ -276,3 +278,17 @@ def test_backup_to_s3():
 
     node.query("DROP TABLE IF EXISTS temptbl")
     node.query("DROP TABLE IF EXISTS temptbl2")
+
+
+def test_on_cluster():
+    node.query("CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe130')")
+
+    check_logs(
+        must_contain=[
+            "CREATE TABLE table_oncl ON CLUSTER test_shard_localhost (`x` int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+            "CREATE TABLE default.table_oncl",
+        ],
+        must_not_contain=["qwe130"],
+    )
+
+    node.query(f"DROP TABLE table_oncl")
