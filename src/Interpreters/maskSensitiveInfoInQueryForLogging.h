@@ -11,4 +11,7 @@ namespace DB
 /// The parameter `parsed query` is allowed to be nullptr if the query cannot be parsed.
 String maskSensitiveInfoInQueryForLogging(const String & query, const ASTPtr & parsed_query, const ContextPtr & context);
 
+/// Makes a version of backup name without sensitive information (e.g. passwords) for logging.
+String maskSensitiveInfoInBackupNameForLogging(const String & backup_name, const ASTPtr & ast, const ContextPtr & context);
+
 }
