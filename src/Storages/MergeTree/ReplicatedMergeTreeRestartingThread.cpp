@@ -53,8 +53,9 @@ void ReplicatedMergeTreeRestartingThread::run()
         return;
 
     /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
-    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 1000 ms
-    const size_t immediately_ms = static_cast<size_t>(std::min(1000u, 100 * (consecutive_check_failures + 1)));
+    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
+    const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
+    const size_t next_failure_retry_ms = static_cast<size_t>(std::min(10000u, backoff_ms));
 
     try
     {
@@ -67,12 +68,12 @@ void ReplicatedMergeTreeRestartingThread::run()
         else
         {
             consecutive_check_failures++;
-            task->scheduleAfter(immediately_ms);
+            task->scheduleAfter(next_failure_retry_ms);
         }
     }
     catch (...)
     {
-        task->scheduleAfter(immediately_ms);
+        task->scheduleAfter(next_failure_retry_ms);
 
         /// We couldn't activate table let's set it into readonly mode if necessary
         /// We do this after scheduling the task in case it throws
@@ -339,6 +340,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
     storage.partial_shutdown_event.set();
     storage.replica_is_active_node = nullptr;
 
+    LOG_TRACE(log, "Waiting for threads to finish");
     storage.merge_selecting_task->deactivate();
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
@@ -354,6 +356,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
         storage.background_operations_assignee.finish();
     }
+
+    LOG_TRACE(log, "Threads finished");
 }
 
 
