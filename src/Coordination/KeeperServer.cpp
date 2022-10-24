@@ -907,23 +907,25 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     return result;
 }
 
-bool KeeperServer::createSnapshot()
+uint64_t KeeperServer::createSnapshot()
 {
-    std::lock_guard lock(snapshot_mutex);
     uint64_t log_idx = raft_instance->create_snapshot();
     if (log_idx != 0)
-    {
-        last_manual_snapshot_log_idx = log_idx;
-        LOG_INFO(log, "Successfully schedule a keeper snapshot creation task at log index {}", log_idx);
-        return true;
-    }
-    return false;
+        LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
+    else
+        LOG_WARNING(log, "Fail to scheduled snapshot creation task.");
+    return log_idx;
 }
 
-bool KeeperServer::snapshotDone()
+KeeperLogInfo KeeperServer::getKeeperLogInfo()
 {
-    std::lock_guard lock(snapshot_mutex);
-    return last_manual_snapshot_log_idx != 0 && last_manual_snapshot_log_idx == raft_instance->get_last_snapshot_idx();
+    KeeperLogInfo log_info;
+    log_info.last_log_idx = raft_instance->get_last_log_idx();
+    log_info.last_log_term = raft_instance->get_last_log_term();
+    log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
+    log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
+    log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    return log_info;
 }
 
 }

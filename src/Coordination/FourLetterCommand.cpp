@@ -139,6 +139,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
         factory.registerCommand(create_snapshot_command);
 
+        FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
+        factory.registerCommand(log_info_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -477,12 +480,22 @@ String ApiVersionCommand::run()
 
 String CreateSnapshotCommand::run()
 {
-    return keeper_dispatcher.createSnapshot() ? "Snapshot creation scheduled." : "Fail to scheduled snapshot creation task.";
+    auto log_index = keeper_dispatcher.createSnapshot();
+    return log_index > 0 ? "Snapshot creation scheduled with last committed log index " + std::to_string(log_index) + "."
+                         : "Fail to scheduled snapshot creation task.";
 }
 
-String CheckSnapshotDoneCommand::run()
+String LogInfoCommand::run()
 {
-    return keeper_dispatcher.snapshotDone() ? "Snapshot creation done." : "Fail to scheduled snapshot creation task.";
+    KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
+    StringBuffer ret;
+    print(ret, "last_log_idx", log_info.last_log_idx);
+    print(ret, "last_log_term", log_info.last_log_term);
+    print(ret, "last_committed_log_idx", log_info.last_committed_log_idx);
+    print(ret, "leader_committed_log_idx", log_info.leader_committed_log_idx);
+    print(ret, "target_committed_log_idx", log_info.target_committed_log_idx);
+    print(ret, "last_snapshot_idx", log_info.last_snapshot_idx);
+    return ret.str();
 }
 
 }
