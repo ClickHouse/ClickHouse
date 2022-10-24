@@ -463,6 +463,18 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
+        /// Delete DDLWorker before zookeeper.
+        /// Cause it can call Context::getZooKeeper and ressurect it.
+
+        {
+            auto lock = std::lock_guard(mutex);
+            delete_ddl_worker = std::move(ddl_worker);
+        }
+
+        /// DDLWorker should be deleted without lock, cause its internal thread can
+        /// take it as well, which will cause deadlock.
+        delete_ddl_worker.reset();
+
         {
             auto lock = std::lock_guard(mutex);
 
@@ -499,7 +511,6 @@ struct ContextSharedPart : boost::noncopyable
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_ddl_worker = std::move(ddl_worker);
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -528,7 +539,6 @@ struct ContextSharedPart : boost::noncopyable
         delete_schedule_pool.reset();
         delete_distributed_schedule_pool.reset();
         delete_message_broker_schedule_pool.reset();
-        delete_ddl_worker.reset();
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
