@@ -145,6 +145,9 @@ private:
     std::string root_path;
     std::string part_dir;
     DiskTransactionPtr transaction;
+    bool has_shared_transaction = false;
+
+    DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
 
     template <typename Op>
     void executeOperation(Op && op);
