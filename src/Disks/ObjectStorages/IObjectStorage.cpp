@@ -14,6 +14,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IObjectStorage::listPrefix(const std::string &, RelativePathsWithSize &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listPrefix() is not supported");
+}
+
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
     auto context = Context::getGlobalContextInstance();
