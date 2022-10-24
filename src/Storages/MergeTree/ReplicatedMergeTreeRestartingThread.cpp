@@ -55,7 +55,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
     /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
     const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
-    const size_t next_failure_retry_ms = static_cast<size_t>(std::min(10000u, backoff_ms));
+    const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
     try
     {
@@ -73,6 +73,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     }
     catch (...)
     {
+        consecutive_check_failures++;
         task->scheduleAfter(next_failure_retry_ms);
 
         /// We couldn't activate table let's set it into readonly mode if necessary
