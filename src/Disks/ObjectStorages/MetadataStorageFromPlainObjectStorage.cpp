@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -63,23 +62,6 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
     return !children.empty();
 }
 
-Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std::string &) const
-{
-    /// NOTE: This is required for MergeTree
-    return {};
-}
-
-struct stat MetadataStorageFromPlainObjectStorage::stat(const std::string &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "stat is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-time_t MetadataStorageFromPlainObjectStorage::getLastChanged(const std::string &) const
-{
-    /// NOTE: by analogy with MetadataStorageFromStaticFilesWebServer::getLastChanged()
-    return {};
-}
-
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     RelativePathsWithSize children;
@@ -113,16 +95,6 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
 }
 
-std::string MetadataStorageFromPlainObjectStorage::readFileToString(const std::string &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readFileToString is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-std::unordered_map<String, String> MetadataStorageFromPlainObjectStorage::getSerializedMetadata(const std::vector<String> &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSerializedMetadata is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
 StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std::string & path) const
 {
     std::string blob_name = object_storage->generateBlobNameForPath(path);
@@ -131,24 +103,9 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     return {std::move(object)};
 }
 
-uint32_t MetadataStorageFromPlainObjectStorage::getHardlinkCount(const std::string &) const
-{
-    return 1;
-}
-
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
 {
     return metadata_storage;
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::writeStringToFile(const std::string &, const std::string & /* data */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "writeStringToFile is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::setLastModified(const std::string &, const Poco::Timestamp &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setLastModified is not implemented for MetadataStorageFromPlainObjectStorage");
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
@@ -157,73 +114,19 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
     metadata_storage.object_storage->removeObject(object);
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeRecursive is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string &)
 {
     /// Noop. It is an Object Storage not a filesystem.
 }
-
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string &)
 {
     /// Noop. It is an Object Storage not a filesystem.
 }
-
-void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeDirectory is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & /* path_from */, const std::string & /* path_to */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "moveFile is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & /* path_from */, const std::string & /* path_to */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "moveDirectory is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & /* path_from */, const std::string & /* path_to */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "replaceFile is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::chmod(const String &, mode_t)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "chmod is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::setReadOnly(const std::string &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadOnly is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & /* path_from */, const std::string & /* path_to */)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createHardLink is not implemented for MetadataStorageFromPlainObjectStorage");
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string &)
-{
-    /// Noop, no separate metadata.
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
-    const std::string &, const std::string & /* blob_name */, uint64_t /* size_in_bytes */)
-{
-    /// Noop, no separate metadata.
-}
-
 void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
     const std::string &, const std::string & /* blob_name */, uint64_t /* size_in_bytes */)
 {
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
-
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
 {
     /// Noop, no separate metadata.
