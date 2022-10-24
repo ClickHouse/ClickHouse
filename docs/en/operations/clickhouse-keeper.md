@@ -309,16 +309,21 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-- `csnp`: Schedule a snapshot creation task. Return `Snapshot creation scheduled.` if successfully scheduled or `Fail to scheduled snapshot creation.` if failed.
+- `csnp`: Schedule a snapshot creation task. Return `Snapshot creation scheduled with last committed log index xxx.` if successfully scheduled or `Fail to scheduled snapshot creation task.` if failed.
 
 ```
-Snapshot creation scheduled.
+Snapshot creation scheduled with last committed log index 100.
 ```
 
-- `snpd`: Whether the last successfully scheduled snapshot creation is done. Return `Yes` if true or `No` if false.
+- `lgif`: Keeper log information. `last_log_idx` : my last log index in log store; `last_log_term` : my last log term; `last_committed_log_idx` : my last committed log index in state machine; `leader_committed_log_idx` : leader's committed log index from my perspective; `target_committed_log_idx` : target log index should be committed to; `last_snapshot_idx` : the largest committed log index in last snapshot.
 
 ```
-Yes
+last_log_idx : 101
+last_log_term : 1
+last_committed_log_idx : 100
+leader_committed_log_idx : 101
+target_committed_log_idx : 101
+last_snapshot_idx : 50
 ```
 
 ## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}

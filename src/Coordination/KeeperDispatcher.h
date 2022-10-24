@@ -204,16 +204,16 @@ public:
         keeper_stats.reset();
     }
 
-    /// Create snapshot manually
-    bool createSnapshot()
+    /// Create snapshot manually, return the last committed log index in the snapshot
+    uint64_t createSnapshot()
     {
         return server->createSnapshot();
     }
 
     /// Whether the last manually created snapshot is done
-    bool snapshotDone()
+    KeeperLogInfo getKeeperLogInfo()
     {
-        return server->snapshotDone();
+        return server->getKeeperLogInfo();
     }
 };
 

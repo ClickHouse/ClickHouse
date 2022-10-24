@@ -341,17 +341,24 @@ struct CreateSnapshotCommand : public IFourLetterCommand
     ~CreateSnapshotCommand() override = default;
 };
 
-/// Check whether last manual snapshot done
-struct CheckSnapshotDoneCommand : public IFourLetterCommand
+/** Raft log information:
+ *     last_log_idx : 101
+ *     last_log_term : 1
+ *     last_committed_idx : 100
+ *     leader_committed_log_idx : 101
+ *     target_committed_log_idx : 101
+ *     last_snapshot_idx : 50
+ */
+struct LogInfoCommand : public IFourLetterCommand
 {
-    explicit CheckSnapshotDoneCommand(KeeperDispatcher & keeper_dispatcher_)
+    explicit LogInfoCommand(KeeperDispatcher & keeper_dispatcher_)
         : IFourLetterCommand(keeper_dispatcher_)
     {
     }
 
-    String name() override { return "snpd"; }
+    String name() override { return "lgif"; }
     String run() override;
-    ~CheckSnapshotDoneCommand() override = default;
+    ~LogInfoCommand() override = default;
 };
 
 }
