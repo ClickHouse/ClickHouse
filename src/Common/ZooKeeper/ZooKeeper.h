@@ -45,7 +45,7 @@ struct ShuffleHost
 {
     String host;
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {

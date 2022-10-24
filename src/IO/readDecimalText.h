@@ -106,7 +106,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                         exponent -= places;
 
                     // TODO: accurate shift10 for big integers
-                    x *= intExp10OfSize<T>(places);
+                    x *= intExp10OfSize<typename T::NativeType>(places);
                     places = 0;
 
                     x += (byte - '0');
