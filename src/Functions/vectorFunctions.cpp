@@ -434,7 +434,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+        if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of function {}. Should be a date or a date with time",
                     arguments[0].type->getName(), getName()};
@@ -545,7 +545,7 @@ public:
         if (!isInterval(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of second argument of function {}, must be Interval",
-                arguments[0]->getName(), getName());
+                arguments[1]->getName(), getName());
 
         DataTypes types;
 
@@ -559,7 +559,7 @@ public:
                 if (!isInterval(type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of Tuple element of first argument of function {}, must be Interval",
-                        types.back()->getName(), getName());
+                        type->getName(), getName());
 
             types = cur_types;
         }
@@ -582,7 +582,7 @@ public:
         if (!isInterval(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of second argument of function {}, must be Interval",
-                arguments[0].type->getName(), getName());
+                arguments[1].type->getName(), getName());
 
         Columns tuple_columns;
 
