@@ -1719,12 +1719,6 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     /// Please don't use "zero-copy replication" (a non-production feature) in production.
     /// It is not ready for production usage. Don't use it.
 
-    const auto time_now = std::chrono::system_clock::now();
-    auto now = std::chrono::system_clock::to_time_t(time_now);
-    const bool verbose_skip_part = (time_now - last_report_grab_old_parts) >= std::chrono::seconds(5);
-    if (verbose_skip_part)
-        last_report_grab_old_parts = time_now;
-
     bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
 
     if (need_remove_parts_in_order)
@@ -1756,6 +1750,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
         return false;
     };
 
+    auto time_now = time(nullptr);
+
     {
         auto parts_lock = lockParts();
 
@@ -1768,9 +1764,6 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             if (!part->version.canBeRemoved())
             {
                 skipped_parts.push_back(part->info);
-                if (verbose_skip_part)
-                    LOG_TRACE(log, "Preserve old part {} by version.canBeRemoved",
-                              part->getNameWithState());
                 continue;
             }
 
@@ -1778,14 +1771,11 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             if (!part.unique())
             {
                 skipped_parts.push_back(part->info);
-                if (verbose_skip_part)
-                    LOG_TRACE(log, "Preserve old part {} by shared pointer with use count is {}",
-                              part->getNameWithState(), part.use_count());
                 continue;
             }
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
-            if ((part_remove_time < now && now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds() && !has_skipped_mutation_parent(part))
+            if ((part_remove_time < time_now && time_now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds() && !has_skipped_mutation_parent(part))
                 || force
                 || isInMemoryPart(part)     /// Remove in-memory parts immediately to not store excessive data in RAM
                 || (part->version.creation_csn == Tx::RolledBackCSN && getSettings()->remove_rolled_back_parts_immediately))
@@ -1795,9 +1785,6 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             else
             {
                 skipped_parts.push_back(part->info);
-                if (verbose_skip_part)
-                    LOG_TRACE(log, "Preserve old part {} by part_remove_time and version.creation_csn, part_remove_time is {}, creation ssn is {}",
-                              part->getNameWithState(), part_remove_time, part->version.creation_csn);
                 continue;
             }
         }
