@@ -106,6 +106,9 @@ public:
         const WriteSettings & write_settings = {}) override;
 
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void listPrefixInPath(const std::string & path,
+        RelativePathsWithSize & children,
+        std::vector<std::string> & common_prefixes) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
