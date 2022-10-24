@@ -5,6 +5,7 @@
                [independent :as independent]
                [generator :as gen]]
               [jepsen.checker.timeline :as timeline]
+              [jepsen.clickhouse.utils :as chu]
               [knossos.model :as model]
               [jepsen.clickhouse.keeper.utils :refer :all]
               [zookeeper :as zk])
@@ -27,7 +28,7 @@
           zk-k (zk-path k)]
       (case (:f op)
         :read (try
-                (assoc op :type :ok, :value (independent/tuple k (parse-long (:data (zk-get-str conn zk-k)))))
+                (assoc op :type :ok, :value (independent/tuple k (chu/parse-long (:data (zk-get-str conn zk-k)))))
                 (catch Exception _ (assoc op :type :fail, :error :connect-error)))
         :write (try
                  (do (zk-set conn zk-k v)

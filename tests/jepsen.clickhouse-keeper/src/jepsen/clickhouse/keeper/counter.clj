@@ -6,6 +6,7 @@
     [client :as client]
     [generator :as gen]]
    [jepsen.clickhouse.keeper.utils :refer :all]
+   [jepsen.clickhouse.utils :as chu]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
@@ -22,12 +23,12 @@
      :nodename node))
 
   (setup! [this test]
-    (exec-with-retries 30 (fn []
+    (chu/exec-with-retries 30 (fn []
       (zk-create-if-not-exists conn root-path ""))))
 
   (invoke! [this test op]
     (case (:f op)
-      :read (exec-with-retries 30 (fn []
+      :read (chu/exec-with-retries 30 (fn []
                                     (assoc op
                                            :type :ok
                                            :value (count (zk-list conn root-path)))))

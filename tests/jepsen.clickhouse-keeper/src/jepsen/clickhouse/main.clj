@@ -98,8 +98,9 @@
             [jepsen.clickhouse.server.main]))
 
 (defn -main
-  [product & args]
-  (case product
-   "keeper" (apply jepsen.clickhouse.keeper.main/main args)
-   "server" (apply jepsen.clickhouse.server.main/main args)
-   (throw (Exception. (str "Unknown option specified: " product)))))
+  [f & args]
+  (cond
+   (= f "keeper") (apply jepsen.clickhouse.keeper.main/main args)
+   (= f "server") (apply jepsen.clickhouse.server.main/main args)
+   (some #(= f %) ["test" "test-all"]) (apply jepsen.clickhouse.keeper.main/main f args) ;; backwards compatibility
+   :unknown (throw (Exception. (str "Unknown option specified: " f)))))
