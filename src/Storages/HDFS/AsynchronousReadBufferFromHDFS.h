@@ -52,7 +52,7 @@ private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
     IAsynchronousReader & reader;
-    Int32 priority;
+    size_t priority;
     std::shared_ptr<ReadBufferFromHDFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
     Memory<> prefetch_buffer;

@@ -37,7 +37,7 @@ namespace
         UInt32 next()
         {
             current = current * a + c;
-            return current >> 16;
+            return static_cast<UInt32>(current >> 16);
         }
     };
 

@@ -305,7 +305,7 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        fillUploadRequest(task.req, tags.size() + 1);
+        fillUploadRequest(task.req, static_cast<int>(tags.size() + 1));
         processUploadRequest(task);
         tags.push_back(task.tag);
     }
@@ -362,7 +362,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(i + 1));
+        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(static_cast<int>(i + 1)));
     }
 
     req.SetMultipartUpload(multipart_upload);
