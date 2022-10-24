@@ -140,9 +140,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             local_single_disk_volume,
             global_ctx->data->relative_data_path,
             local_tmp_part_basename);
-    }
 
-    data_part_storage->beginTransaction();
+        data_part_storage->beginTransaction();
+    }
 
     if (data_part_storage->exists())
         throw Exception("Directory " + data_part_storage->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
