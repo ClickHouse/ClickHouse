@@ -79,7 +79,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<UTCTimestampOverloadResolver>(); }
