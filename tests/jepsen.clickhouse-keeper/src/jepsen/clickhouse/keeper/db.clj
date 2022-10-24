@@ -1,11 +1,11 @@
-(ns jepsen.clickhouse-keeper.db
+(ns jepsen.clickhouse.keeper.db
   (:require [clojure.tools.logging :refer :all]
             [jepsen
              [control :as c]
              [db :as db]
              [util :as util :refer [meh]]]
-            [jepsen.clickhouse-keeper.constants :refer :all]
-            [jepsen.clickhouse-keeper.utils :refer :all]
+            [jepsen.clickhouse.keeper.constants :refer :all]
+            [jepsen.clickhouse.keeper.utils :refer :all]
             [clojure.java.io :as io]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]))
@@ -30,7 +30,7 @@
                  [dest]))
   nil)
 
-(ns jepsen.clickhouse-keeper.db)
+(ns jepsen.clickhouse.keeper.db)
 
 (defn get-clickhouse-url
   [url]

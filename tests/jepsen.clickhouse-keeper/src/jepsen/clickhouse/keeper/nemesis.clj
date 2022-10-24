@@ -1,12 +1,12 @@
-(ns jepsen.clickhouse-keeper.nemesis
+(ns jepsen.clickhouse.keeper.nemesis
   (:require
    [clojure.tools.logging :refer :all]
    [jepsen
     [nemesis :as nemesis]
     [control :as c]
     [generator :as gen]]
-   [jepsen.clickhouse-keeper.constants :refer :all]
-   [jepsen.clickhouse-keeper.utils :refer :all]))
+   [jepsen.clickhouse.keeper.constants :refer :all]
+   [jepsen.clickhouse.keeper.utils :refer :all]))
 
 (defn random-node-killer-nemesis
   []

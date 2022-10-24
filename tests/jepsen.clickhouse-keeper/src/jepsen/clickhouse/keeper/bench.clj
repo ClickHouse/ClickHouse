@@ -1,4 +1,4 @@
-(ns jepsen.clickhouse-keeper.bench
+(ns jepsen.clickhouse.keeper.bench
   (:require [clojure.tools.logging :refer :all]
             [jepsen
              [client :as client]])
