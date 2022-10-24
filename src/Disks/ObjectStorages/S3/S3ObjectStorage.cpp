@@ -28,7 +28,7 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/getRandomASCIIString.h>
-
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
@@ -274,6 +274,49 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
 
         for (const auto & object : objects)
             children.emplace_back(object.GetKey(), object.GetSize());
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+    } while (outcome.GetResult().GetIsTruncated());
+}
+
+void S3ObjectStorage::listPrefixInPath(const std::string & path,
+    RelativePathsWithSize & children,
+    std::vector<std::string> & common_prefixes) const
+{
+    auto settings_ptr = s3_settings.get();
+    auto client_ptr = client.get();
+
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(bucket);
+    request.SetPrefix(path);
+    request.SetMaxKeys(settings_ptr->list_object_keys_size);
+    request.SetDelimiter("/");
+
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+    do
+    {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+        outcome = client_ptr->ListObjectsV2(request);
+        throwIfError(outcome);
+
+        auto result = outcome.GetResult();
+        auto result_objects = result.GetContents();
+        auto result_common_prefixes = result.GetCommonPrefixes();
+
+        if (result_objects.empty() && result_common_prefixes.empty())
+            break;
+
+        for (const auto & object : result_objects)
+            children.emplace_back(object.GetKey(), object.GetSize());
+
+        for (const auto & common_prefix : result_common_prefixes)
+        {
+            std::string subfolder = common_prefix.GetPrefix();
+            /// Make it compatible with std::filesystem::path::filename()
+            trimRight(subfolder, '/');
+            common_prefixes.emplace_back(subfolder);
+        }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     } while (outcome.GetResult().GetIsTruncated());
