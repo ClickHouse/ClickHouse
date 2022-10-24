@@ -1,4 +1,3 @@
-#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/IVolume.h>
@@ -31,6 +30,16 @@ DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root
 {
 }
 
+DataPartStorageOnDisk::DataPartStorageOnDisk(
+    VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
+    : volume(std::move(volume_))
+    , root_path(std::move(root_path_))
+    , part_dir(std::move(part_dir_))
+    , transaction(std::move(transaction_))
+    , has_shared_transaction(transaction != nullptr)
+{
+}
+
 std::string DataPartStorageOnDisk::getFullPath() const
 {
     return fs::path(volume->getDisk()->getPath()) / root_path / part_dir / "";
@@ -53,7 +62,7 @@ std::string DataPartStorageOnDisk::getFullRootPath() const
 
 MutableDataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name)
 {
-    return std::make_shared<DataPartStorageOnDisk>(volume, std::string(fs::path(root_path) / part_dir), name);
+    return std::shared_ptr<DataPartStorageOnDisk>(new DataPartStorageOnDisk(volume, std::string(fs::path(root_path) / part_dir), name, transaction));
 }
 
 DataPartStoragePtr DataPartStorageOnDisk::getProjection(const std::string & name) const
@@ -821,6 +830,9 @@ void DataPartStorageOnDisk::commitTransaction()
 {
     if (!transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no uncommitted transaction");
+
+    if (has_shared_transaction)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
     transaction->commit();
     transaction.reset();
