@@ -76,20 +76,20 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
     RelativePathsWithSize children;
-    object_storage->listPrefix(getAbsolutePath(path), children);
+    std::vector<std::string> common_prefixes;
+    object_storage->listPrefixInPath(getAbsolutePath(path), children, common_prefixes);
 
     std::vector<std::string> result;
     for (const auto & path_size : children)
-    {
         result.push_back(path_size.relative_path);
-    }
+    for (const auto & common_prefix : common_prefixes)
+        result.push_back(common_prefix);
     return result;
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
 {
-    /// NOTE: this is not required for BACKUP/RESTORE, but this is a first step
-    /// towards MergeTree on plain S3.
+    /// Required for MergeTree
     auto paths = listDirectory(path);
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
