@@ -904,9 +904,9 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
 
 void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const
 {
-    auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
     static constexpr auto filename = "txn_version.txt";
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
+    auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
 
     try
     {
@@ -1408,10 +1408,65 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
         out->sync();
 }
 
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
+{
+    size_t file_size = part_storage.getFileSize(filename);
+    return part_storage.readFile(filename, ReadSettings().adjustBufferSize(file_size), file_size, file_size);
+}
+
 void IMergeTreeDataPart::loadVersionMetadata() const
 try
 {
-    getDataPartStorage().loadVersionMetadata(version, storage.log);
+    static constexpr auto version_file_name = "txn_version.txt";
+    static constexpr auto tmp_version_file_name = "txn_version.txt.tmp";
+    auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
+
+    auto remove_tmp_file = [&]()
+    {
+        auto last_modified = data_part_storage.getLastModified();
+        auto buf = openForReading(data_part_storage, tmp_version_file_name);
+
+        String content;
+        readStringUntilEOF(content, *buf);
+        LOG_WARNING(storage.log, "Found file {} that was last modified on {}, has size {} and the following content: {}",
+                    tmp_version_file_name, last_modified.epochTime(), content.size(), content);
+        data_part_storage.removeFile(tmp_version_file_name);
+    };
+
+    if (data_part_storage.exists(version_file_name))
+    {
+        auto buf = openForReading(data_part_storage, version_file_name);
+        version.read(*buf);
+        if (data_part_storage.exists(tmp_version_file_name))
+            remove_tmp_file();
+        return;
+    }
+
+    /// Four (?) cases are possible:
+    /// 1. Part was created without transactions.
+    /// 2. Version metadata file was not renamed from *.tmp on part creation.
+    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
+    /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
+
+    if (!data_part_storage.exists(tmp_version_file_name))
+    {
+        /// Case 1.
+        /// We do not have version metadata and transactions history for old parts,
+        /// so let's consider that such parts were created by some ancient transaction
+        /// and were committed with some prehistoric CSN.
+        /// NOTE It might be Case 3, but version metadata file is written on part creation before other files,
+        /// so it's not Case 3 if part is not broken.
+        version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        version.creation_csn = Tx::PrehistoricCSN;
+        return;
+    }
+
+    /// Case 2.
+    /// Content of *.tmp file may be broken, just use fake TID.
+    /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
+    version.setCreationTID(Tx::DummyTID, nullptr);
+    version.creation_csn = Tx::RolledBackCSN;
+    remove_tmp_file();
 }
 catch (Exception & e)
 {
