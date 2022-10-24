@@ -100,7 +100,7 @@ Only allow clients connecting to a secure server with an invalid certificate onl
 
 * Choose correct aggregation method for `LowCardinality` with big integer types. [#42342](https://github.com/ClickHouse/ClickHouse/pull/42342) ([Duc Canh Le](https://github.com/canhld94)).
 * Several fixes for `web` disk. [#41652](https://github.com/ClickHouse/ClickHouse/pull/41652) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Fixes issue when docker run will fail if `https_port` is not present in config. [#41693](https://github.com/ClickHouse/ClickHouse/pull/41693) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* Fixes an issue that causes docker run to fail if `https_port` is not present in config. [#41693](https://github.com/ClickHouse/ClickHouse/pull/41693) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * Mutations were not cancelled properly on server shutdown or `SYSTEM STOP MERGES` query and cancellation might take long time, it's fixed. [#41699](https://github.com/ClickHouse/ClickHouse/pull/41699) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * Fix wrong result of queries with `ORDER BY` or `GROUP BY` by columns from prefix of sorting key, wrapped into monotonic functions, with enable "read in order" optimization (settings `optimize_read_in_order` and `optimize_aggregation_in_order`). [#41701](https://github.com/ClickHouse/ClickHouse/pull/41701) ([Anton Popov](https://github.com/CurtizJ)).
 * Fix possible crash in `SELECT` from `Merge` table with enabled `optimize_monotonous_functions_in_order_by` setting. Fixes [#41269](https://github.com/ClickHouse/ClickHouse/issues/41269). [#41740](https://github.com/ClickHouse/ClickHouse/pull/41740) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
