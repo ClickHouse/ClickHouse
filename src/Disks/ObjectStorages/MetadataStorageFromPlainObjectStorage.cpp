@@ -46,7 +46,7 @@ bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) con
 bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
 {
     /// NOTE: This check is inaccurate and has excessive API calls
-    return !isDirectory(path) && exists(path);
+    return exists(path) && !isDirectory(path);
 }
 
 bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
