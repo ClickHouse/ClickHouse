@@ -68,12 +68,17 @@ public:
     /// List on prefix, return children (relative paths) with their sizes.
     /// So it should return all "objects" with their sizes.
     ///
-    /// For example if you do this over filesystem, you should skip folders and return files only.
+    /// For example if you do this over filesystem, you should skip folders and
+    /// return files only, so something like on local filesystem:
+    ///
+    ///     find . -type f
     ///
     /// NOTE: It makes sense only for real object storages (S3, Azure), since
-    /// this is used for restoring metadata (see "send_metadata" and
-    /// DiskObjectStorage::restoreMetadataIfNeeded()).
-    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
+    /// it is used only for one of the following:
+    /// - send_metadata (to restore metadata)
+    ///   - see DiskObjectStorage::restoreMetadataIfNeeded()
+    /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
+    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
