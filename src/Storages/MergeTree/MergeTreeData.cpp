@@ -2172,7 +2172,12 @@ void MergeTreeData::dropAllData()
 
     auto lock = lockParts();
 
-    DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
+    DataPartsVector all_parts;
+    for (auto it = data_parts_by_info.begin(); it != data_parts_by_info.end(); ++it)
+    {
+        modifyPartState(it, DataPartState::Deleting);
+        all_parts.push_back(*it);
+    }
 
     {
         std::lock_guard wal_lock(write_ahead_log_mutex);
@@ -2184,7 +2189,6 @@ void MergeTreeData::dropAllData()
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
     if (!getStorageID().hasUUID())
         getContext()->dropCaches();
-
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     NameSet part_names_failed;
