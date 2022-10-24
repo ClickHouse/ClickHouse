@@ -297,8 +297,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
     }
 
-    size_t previous_scope_node_actions_stack_index = actions_stack.size() - 1;
-
     auto lambda_actions_dag = std::make_shared<ActionsDAG>();
     actions_stack.emplace_back(lambda_actions_dag, node);
 
@@ -313,16 +311,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG::NodeRawConstPtrs lambda_children;
     Names required_column_names = lambda_actions->getRequiredColumns();
 
+    if (level == actions_stack.size() - 1)
+        --level;
+
     const auto & lambda_argument_names = lambda_node.getArgumentNames();
 
     for (const auto & required_column_name : required_column_names)
     {
-        auto it = std::find_if(
-            lambda_argument_names.begin(), lambda_argument_names.end(), [&](auto & value) { return value == required_column_name; });
+        auto it = std::find(lambda_argument_names.begin(), lambda_argument_names.end(), required_column_name);
 
         if (it == lambda_argument_names.end())
         {
-            lambda_children.push_back(actions_stack[previous_scope_node_actions_stack_index].getNodeOrThrow(required_column_name));
+            lambda_children.push_back(actions_stack[level].getNodeOrThrow(required_column_name));
             captured_column_names.push_back(required_column_name);
         }
     }
@@ -331,9 +331,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
         lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
-
-    if (level == actions_stack.size())
-        --level;
 
     actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), std::move(function_capture));
 

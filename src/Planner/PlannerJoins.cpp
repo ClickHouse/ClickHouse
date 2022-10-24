@@ -424,6 +424,7 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                         left_key_node->result_type->getName(),
                         right_key_node->result_name,
                         right_key_node->result_type->getName());
+                    throw;
                 }
 
                 auto cast_type_name = common_type->getName();

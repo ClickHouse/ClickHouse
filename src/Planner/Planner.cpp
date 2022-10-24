@@ -267,7 +267,7 @@ void Planner::buildQueryPlanIfNeeded()
         if (union_mode == SelectUnionMode::UNION_DEFAULT ||
             union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
             union_mode == SelectUnionMode::INTERSECT_DEFAULT)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION mode must be initialized");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode must be initialized");
 
         size_t queries_size = union_query_tree->getQueries().getNodes().size();
 

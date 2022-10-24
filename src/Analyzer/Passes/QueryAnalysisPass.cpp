@@ -3696,12 +3696,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto & function_argument = function_arguments[function_argument_index];
 
         ColumnWithTypeAndName argument_column;
+        bool argument_is_lambda = false;
 
         /** If function argument is lambda, save lambda argument index and initialize argument type as DataTypeFunction
           * where function argument types are initialized with empty array of lambda arguments size.
           */
         if (const auto * lambda_node = function_argument->as<const LambdaNode>())
         {
+            argument_is_lambda = true;
             size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
@@ -3724,7 +3726,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_node.getFunctionName(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        if (const auto constant_value = function_argument->getConstantValueOrNull())
+        const auto constant_value = function_argument->getConstantValueOrNull();
+        if (!argument_is_lambda && constant_value)
         {
             argument_column.column = constant_value->getType()->createColumnConst(1, constant_value->getValue());
             argument_column.type = constant_value->getType();
