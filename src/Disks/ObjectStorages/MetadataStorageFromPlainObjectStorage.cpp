@@ -58,8 +58,9 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
     /// NOTE: This check is far from ideal, since it work only if the directory
     /// really has files, and has excessive API calls
     RelativePathsWithSize children;
-    object_storage->listPrefix(directory, children);
-    return !children.empty();
+    std::vector<std::string> common_prefixes;
+    object_storage->listPrefixInPath(directory, children, common_prefixes);
+    return !children.empty() || !common_prefixes.empty();
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
