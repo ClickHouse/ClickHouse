@@ -323,7 +323,7 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d));
     }
@@ -333,7 +333,7 @@ struct ToDateTimeImpl
         return dt;
     }
 
-    static inline UInt32 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
+    static inline Int64 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
     {
         return dt64;
     }
