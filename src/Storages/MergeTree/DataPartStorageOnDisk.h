@@ -21,7 +21,8 @@ public:
     std::string getPartDirectory() const override { return part_dir; }
     std::string getFullRootPath() const override;
 
-    MutableDataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartStoragePtr getProjection(const std::string & name) override;
+    DataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
     bool exists(const std::string & name) const override;
@@ -41,7 +42,6 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const override;
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
     void remove(

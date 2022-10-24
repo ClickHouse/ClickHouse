@@ -134,7 +134,7 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
-        const IMergeTreeDataPart * parent_part{nullptr};
+        IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};

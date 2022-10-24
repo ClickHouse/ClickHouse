@@ -483,7 +483,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeDataPartType part_type,
     const String & relative_path,
     bool is_temp,
-    const IMergeTreeDataPart * parent_part,
+    IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,
@@ -587,7 +587,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    const IMergeTreeDataPart * parent_part)
+    IMergeTreeDataPart * parent_part)
 {
     String part_name = projection.name;
     MergeTreeDataPartType part_type;
@@ -623,7 +623,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    const IMergeTreeDataPart * parent_part,
+    IMergeTreeDataPart * parent_part,
     size_t block_num)
 {
     String part_name = fmt::format("{}_{}", projection.name, block_num);
@@ -658,7 +658,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    const IMergeTreeDataPart * parent_part)
+    IMergeTreeDataPart * parent_part)
 {
     return writeProjectionPartImpl(
         projection.name,

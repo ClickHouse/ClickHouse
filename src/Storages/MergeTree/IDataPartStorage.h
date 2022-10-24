@@ -82,16 +82,19 @@ public:
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) const = 0;
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) = 0;
+    virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
     virtual bool exists() const = 0;
+
     /// File inside part directory exists. Specified path is relative to the part path.
     virtual bool exists(const std::string & name) const = 0;
     virtual bool isDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
+
     /// Iterate part directory. Iteration in subdirectory is not needed yet.
     virtual DataPartStorageIteratorPtr iterate() const = 0;
 
@@ -108,7 +111,6 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const = 0;
     virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
 
     struct ProjectionChecksums
@@ -130,7 +132,8 @@ public:
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
-    virtual std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
+    virtual std::optional<String> getRelativePathForPrefix(
+        Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
