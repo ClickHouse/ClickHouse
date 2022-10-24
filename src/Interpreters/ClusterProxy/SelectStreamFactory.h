@@ -46,7 +46,7 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
-        UInt32 local_delay = 0;
+        time_t local_delay = 0;
     };
 
     using Shards = std::vector<Shard>;
