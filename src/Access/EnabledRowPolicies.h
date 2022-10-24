@@ -18,13 +18,17 @@ namespace DB
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
 
 struct RowPolicyFilter
 {
     ASTPtr expression;
+    std::shared_ptr<const std::pair<String, String>> database_and_table_name;
     std::vector<RowPolicyPtr> policies;
 
-    void optimize();
+    bool empty() const;
 };
 
 
@@ -52,8 +56,8 @@ public:
     /// Returns prepared filter for a specific table and operations.
     /// The function can return nullptr, that means there is no filters applied.
     /// The returned filter can be a combination of the filters defined by multiple row policies.
-    RowPolicyFilter getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
-    RowPolicyFilter getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const RowPolicyFilter & combine_with_filter) const;
+    RowPolicyFilterPtr getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    RowPolicyFilterPtr getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const;
 
 private:
     friend class RowPolicyCache;
@@ -70,19 +74,12 @@ private:
         friend bool operator!=(const MixedFiltersKey & left, const MixedFiltersKey & right) { return left.toTuple() != right.toTuple(); }
     };
 
-    struct MixedFiltersResult
-    {
-        ASTPtr ast;
-        std::shared_ptr<const std::pair<String, String>> database_and_table_name;
-        std::vector<RowPolicyPtr> policies;
-    };
-
     struct Hash
     {
         size_t operator()(const MixedFiltersKey & key) const;
     };
 
-    using MixedFiltersMap = std::unordered_map<MixedFiltersKey, MixedFiltersResult, Hash>;
+    using MixedFiltersMap = std::unordered_map<MixedFiltersKey, RowPolicyFilterPtr, Hash>;
 
     const Params params;
     mutable boost::atomic_shared_ptr<const MixedFiltersMap> mixed_filters;

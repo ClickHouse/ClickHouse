@@ -134,7 +134,7 @@ public:
 
     FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
-    const std::vector<RowPolicyPtr> & getUsedRowPolicies() const;
+    RowPolicyFilterPtr getRowPolicyFilter() const;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
@@ -218,7 +218,7 @@ private:
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
-    RowPolicyFilter row_policy_filter;
+    RowPolicyFilterPtr row_policy_filter;
     FilterDAGInfoPtr filter_info;
 
     /// For additional_filter setting.
