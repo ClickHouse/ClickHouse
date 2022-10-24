@@ -76,7 +76,8 @@ struct stat MetadataStorageFromPlainObjectStorage::stat(const std::string &) con
 
 time_t MetadataStorageFromPlainObjectStorage::getLastChanged(const std::string &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastChanged is not implemented for MetadataStorageFromPlainObjectStorage");
+    /// NOTE: by analogy with MetadataStorageFromStaticFilesWebServer::getLastChanged()
+    return {};
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
