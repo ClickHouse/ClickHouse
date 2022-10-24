@@ -44,19 +44,22 @@ static void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & fr
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        return;
     }
-    std::vector<std::string> files;
-    try
+    else
     {
-        disk->listFiles(from, files);
+        DirectoryIteratorPtr it;
+        try
+        {
+            it = disk->iterateDirectory(from);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        for (; it->isValid(); it->next())
+            calculateTotalSizeOnDiskImpl(disk, fs::path(from) / it->name(), total_size);
     }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-    for (const auto & file : files)
-        calculateTotalSizeOnDiskImpl(disk, fs::path(from) / file, total_size);
 }
 
 static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
