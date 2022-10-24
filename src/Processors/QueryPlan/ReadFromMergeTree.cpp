@@ -853,7 +853,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     ContextPtr context,
-    unsigned num_streams,
+    size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     const MergeTreeData & data,
     const Names & real_column_names,

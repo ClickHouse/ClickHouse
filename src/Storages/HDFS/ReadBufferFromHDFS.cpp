@@ -3,6 +3,7 @@
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Common/Throttler.h>
+#include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -90,7 +91,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             num_bytes_to_read = internal_buffer.size();
         }
 
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), num_bytes_to_read);
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         if (bytes_read < 0)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",

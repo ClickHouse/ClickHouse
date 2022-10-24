@@ -114,7 +114,7 @@ DDLWorker::DDLWorker(
 void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(true);
+    chassert(prev_stop_flag);
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
@@ -498,7 +498,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
 
 void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 {
-    UInt64 id = DDLTaskBase::getLogEntryNumber(entry_name);
+    UInt32 id = DDLTaskBase::getLogEntryNumber(entry_name);
     auto prev_id = max_id.load(std::memory_order_relaxed);
     while (prev_id < id)
     {

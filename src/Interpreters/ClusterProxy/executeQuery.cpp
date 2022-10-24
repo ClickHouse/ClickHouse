@@ -141,7 +141,7 @@ void executeQuery(
     new_context->getClientInfo().distributed_depth += 1;
 
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context->getProcessListElement())
+    if (auto process_list_element = context->getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
@@ -180,7 +180,7 @@ void executeQuery(
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, shards);
+            new_context, plans, remote_shards, static_cast<UInt32>(shards));
     }
 
     if (!remote_shards.empty())
@@ -243,7 +243,7 @@ void executeQueryWithParallelReplicas(
     const Settings & settings = context->getSettingsRef();
 
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context->getProcessListElement())
+    if (auto process_list_element = context->getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
@@ -284,7 +284,8 @@ void executeQueryWithParallelReplicas(
             query_ast_for_shard = query_ast;
 
         auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr, throttler, context, shards, query_info.storage_limits);
+            query_ast_for_shard, main_table, table_func_ptr, throttler, context,
+            static_cast<UInt32>(shards), query_info.storage_limits);
 
         if (!shard_plans.local_plan && !shard_plans.remote_plan)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
