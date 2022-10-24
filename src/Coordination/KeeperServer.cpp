@@ -910,10 +910,11 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 bool KeeperServer::createSnapshot()
 {
     std::lock_guard lock(snapshot_mutex);
-    if (raft_instance->create_snapshot())
+    uint64_t log_idx = raft_instance->create_snapshot();
+    if (log_idx != 0)
     {
-        last_manual_snapshot_log_idx = raft_instance->get_last_snapshot_idx();
-        LOG_INFO(log, "Successfully schedule a keeper snapshot creation task at log index {}", last_manual_snapshot_log_idx);
+        last_manual_snapshot_log_idx = log_idx;
+        LOG_INFO(log, "Successfully schedule a keeper snapshot creation task at log index {}", log_idx);
         return true;
     }
     return false;
