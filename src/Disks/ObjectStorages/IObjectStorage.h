@@ -66,6 +66,13 @@ public:
     virtual bool exists(const StoredObject & object) const = 0;
 
     /// List on prefix, return children (relative paths) with their sizes.
+    /// So it should return all "objects" with their sizes.
+    ///
+    /// For example if you do this over filesystem, you should skip folders and return files only.
+    ///
+    /// NOTE: It makes sense only for real object storages (S3, Azure), since
+    /// this is used for restoring metadata (see "send_metadata" and
+    /// DiskObjectStorage::restoreMetadataIfNeeded()).
     virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
 
     /// Get object metadata if supported. It should be possible to receive
