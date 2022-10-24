@@ -33,7 +33,7 @@ private:
 
     Chunk generate() override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx);
+    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx);
 
     String query_str;
     UInt64 max_block_size;

@@ -184,7 +184,7 @@ namespace
                 break;
             case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
+                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
@@ -282,7 +282,7 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
 
                 assert_cast<ColumnUInt32 &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
+                    static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
                 break;
             }
             case ValueType::vtUUID:

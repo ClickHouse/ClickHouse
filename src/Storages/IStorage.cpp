@@ -108,7 +108,7 @@ Pipe IStorage::watch(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -120,7 +120,7 @@ Pipe IStorage::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -133,7 +133,7 @@ void IStorage::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
