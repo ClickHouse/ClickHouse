@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <future>
 #include <thread>
 #include <utility>
@@ -18,12 +19,13 @@ static std::string clickhouse("clickhouse-server");
 static std::vector<char *> args{clickhouse.data()};
 static std::future<int> main_app;
 
-static char * host = nullptr;
-static int port = 0;
+static std::string s_host("0.0.0.0");
+static char * host = s_host.data();
+static int64_t port = 9000;
 
 using namespace std::chrono_literals;
 
-extern "C" 
+extern "C"
 int LLVMFuzzerInitialize(int * argc, char ***argv)
 {
     for (int i = 1; i < *argc; ++i)
@@ -89,7 +91,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
                 continue;
             if (m.begin()->second & Poco::Net::PollSet::POLL_READ)
             {
-                if (int n = socket.receiveBytes(buf.data(), buf.size()); n == 0)
+                if (int n = socket.receiveBytes(buf.data(), static_cast<int>(buf.size())); n == 0)
                 {
                     socket.close();
                     break;
@@ -100,7 +102,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
             if (sent < size && m.begin()->second & Poco::Net::PollSet::POLL_WRITE)
             {
-                sent += socket.sendBytes(data + sent, size - sent);
+                sent += socket.sendBytes(data + sent, static_cast<int>(size - sent));
                 if (sent == size)
                 {
                     socket.shutdownSend();
