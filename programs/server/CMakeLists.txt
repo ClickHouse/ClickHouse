@@ -38,4 +38,6 @@ clickhouse_embed_binaries(
 )
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)
 
-add_subdirectory(fuzzers)
+if (ENABLE_FUZZING)
+    add_subdirectory(fuzzers)
+endif()
