@@ -1096,7 +1096,7 @@ public:
 class CastLayer : public Layer
 {
 public:
-    CastLayer() : Layer(true, true) {}
+    CastLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1196,7 +1196,7 @@ public:
 class ExtractLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    ExtractLayer() : BaseLayer(true, true) {}
+    ExtractLayer() : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1267,7 +1267,7 @@ private:
 class SubstringLayer : public Layer
 {
 public:
-    SubstringLayer() : Layer(true, true) {}
+    SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1329,7 +1329,7 @@ public:
 class PositionLayer : public Layer
 {
 public:
-    PositionLayer() : Layer(true, true) {}
+    PositionLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1399,7 +1399,7 @@ public:
 class ExistsLayer : public Layer
 {
 public:
-    ExistsLayer() : Layer(true, true) {}
+    ExistsLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
@@ -1426,7 +1426,7 @@ class TrimLayer : public Layer
 {
 public:
     TrimLayer(bool trim_left_, bool trim_right_)
-        : Layer(true, true), trim_left(trim_left_), trim_right(trim_right_) {}
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), trim_left(trim_left_), trim_right(trim_right_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1588,7 +1588,7 @@ class DateAddLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundB
 {
 public:
     explicit DateAddLayer(const char * function_name_)
-        : BaseLayer(true, true), function_name(function_name_) {}
+        : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), function_name(function_name_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1642,7 +1642,7 @@ private:
 class DateDiffLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    DateDiffLayer() : BaseLayer(true, true) {}
+    DateDiffLayer() : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1696,7 +1696,7 @@ private:
 class IntervalLayer : public Layer
 {
 public:
-    IntervalLayer() : Layer(true, true) {}
+    IntervalLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1775,7 +1775,7 @@ private:
 class CaseLayer : public Layer
 {
 public:
-    CaseLayer() : Layer(true, true) {}
+    CaseLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -2444,13 +2444,13 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     {
         ParserAlias alias_parser(layers.back()->allow_alias_without_as_keyword);
         auto old_pos = pos;
-        if (!layers.back()->parsed_alias && layers.back()->allow_alias && alias_parser.parse(pos, tmp, expected))
+        if (layers.back()->allow_alias &&
+            !layers.back()->parsed_alias &&
+            alias_parser.parse(pos, tmp, expected) &&
+            layers.back()->insertAlias(tmp))
         {
-            if (layers.back()->insertAlias(tmp))
-            {
-                layers.back()->parsed_alias = true;
-                return Action::OPERATOR;
-            }
+            layers.back()->parsed_alias = true;
+            return Action::OPERATOR;
         }
         pos = old_pos;
         return Action::NONE;
