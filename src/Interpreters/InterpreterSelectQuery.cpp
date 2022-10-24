@@ -616,13 +616,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter.expression)
+            if (row_policy_filter && !row_policy_filter->empty())
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter.expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
-                query_info.filter_asts.push_back(row_policy_filter.expression);
+                query_info.filter_asts.push_back(row_policy_filter->expression);
             }
 
             if (query_info.additional_filter_ast)
@@ -1869,16 +1869,16 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().number_of_current_replica = replica_num;
 }
 
-const std::vector<RowPolicyPtr> & InterpreterSelectQuery::getUsedRowPolicies() const
+RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
-    return row_policy_filter.policies;
+    return row_policy_filter;
 }
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     elem.query_kind = "Select";
 
-    for (const auto & row_policy : row_policy_filter.policies)
+    for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
         elem.used_row_policies.emplace(std::move(name));

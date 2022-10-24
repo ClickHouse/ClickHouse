@@ -394,11 +394,14 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
     {
         if (auto select_interpreter = dynamic_cast<InterpreterSelectQuery *>(interpreter.get()))
         {
-            auto policies = select_interpreter->getUsedRowPolicies();
-            for (const auto & row_policy : policies)
+            auto filter = select_interpreter->getRowPolicyFilter();
+            if (filter)
             {
-                auto name = row_policy->getFullName().toString();
-                elem.used_row_policies.emplace(std::move(name));
+                for (const auto & row_policy : filter->policies)
+                {
+                    auto name = row_policy->getFullName().toString();
+                    elem.used_row_policies.emplace(std::move(name));
+                }
             }
         }
     }

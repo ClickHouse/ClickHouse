@@ -7,11 +7,10 @@
 namespace DB
 {
 
-void RowPolicyFilter::optimize()
+bool RowPolicyFilter::empty() const
 {
     bool value;
-    if (tryGetLiteralBool(expression.get(), value) && value)
-        expression.reset(); /// The condition is always true, no need to check it.
+    return !expression || (tryGetLiteralBool(expression.get(), value) && value);
 }
 
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
@@ -30,7 +29,7 @@ EnabledRowPolicies::EnabledRowPolicies(const Params & params_) : params(params_)
 EnabledRowPolicies::~EnabledRowPolicies() = default;
 
 
-RowPolicyFilter EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     /// We don't lock `mutex` here.
     auto loaded = mixed_filters.load();
@@ -38,26 +37,36 @@ RowPolicyFilter EnabledRowPolicies::getFilter(const String & database, const Str
     if (it == loaded->end())
         return {};
 
-    RowPolicyFilter filter = {it->second.ast, it->second.policies};
-    filter.optimize();
-
-    return filter;
+    return it->second;
 }
 
-RowPolicyFilter EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const RowPolicyFilter & combine_with_filter) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    RowPolicyFilter filter = getFilter(database, table_name, filter_type);
-    if (filter.expression && combine_with_filter.expression)
+    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    if (filter && combine_with_filter)
     {
-        filter.expression = makeASTForLogicalAnd({filter.expression, combine_with_filter.expression});
-    }
-    else if (!filter.expression)
-    {
-        filter.expression = combine_with_filter.expression;
-    }
+        auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
 
-    std::copy(combine_with_filter.policies.begin(), combine_with_filter.policies.end(), std::back_inserter(filter.policies));
-    filter.optimize();
+        if (filter->empty())
+        {
+            new_filter->expression = combine_with_filter->expression;
+        }
+        else if (combine_with_filter->empty())
+        {
+            new_filter->expression = filter->expression;
+        }
+        else
+        {
+            new_filter->expression = makeASTForLogicalAnd({filter->expression, combine_with_filter->expression});
+        }
+
+        std::copy(combine_with_filter->policies.begin(), combine_with_filter->policies.end(), std::back_inserter(new_filter->policies));
+        filter = new_filter;
+    }
+    else if (!filter)
+    {
+        filter = combine_with_filter;
+    }
 
     return filter;
 }
