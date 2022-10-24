@@ -27,6 +27,13 @@ namespace DB
 
 namespace
 {
+    enum class PasswordWipingMode
+    {
+        Query,
+        BackupName,
+    };
+
+
     template <bool check_only>
     class PasswordWipingVisitor
     {
@@ -38,6 +45,7 @@ namespace
             bool is_create_database_query = false;
             bool is_create_dictionary_query = false;
             ContextPtr context;
+            PasswordWipingMode mode = PasswordWipingMode::Query;
         };
 
         using Visitor = std::conditional_t<
@@ -85,7 +93,10 @@ namespace
             }
             else if (auto * function = ast->as<ASTFunction>())
             {
-                visitFunction(*function, data);
+                if (data.mode == PasswordWipingMode::BackupName)
+                    wipePasswordFromBackupEngineArguments(*function, data);
+                else
+                    visitFunction(*function, data);
             }
         }
 
@@ -525,10 +536,11 @@ namespace
     };
 
     /// Checks the type of a specified AST and returns true if it can contain a password.
-    bool canContainPassword(const IAST & ast)
+    bool canContainPassword(const IAST & ast, PasswordWipingMode mode)
     {
         using WipingVisitor = PasswordWipingVisitor</*check_only= */ true>;
         WipingVisitor::Data data;
+        data.mode = mode;
         WipingVisitor::Visitor visitor{data};
         ASTPtr ast_ptr = std::const_pointer_cast<IAST>(ast.shared_from_this());
         visitor.visit(ast_ptr);
@@ -537,43 +549,56 @@ namespace
 
     /// Removes a password or its hash from a query if it's specified there or replaces it with some placeholder.
     /// This function is used to prepare a query for storing in logs (we don't want logs to contain sensitive information).
-    void wipePasswordFromQuery(ASTPtr ast, const ContextPtr & context)
+    void wipePasswordFromQuery(ASTPtr ast, PasswordWipingMode mode, const ContextPtr & context)
     {
         using WipingVisitor = PasswordWipingVisitor</*check_only= */ false>;
         WipingVisitor::Data data;
         data.context = context;
+        data.mode = mode;
         WipingVisitor::Visitor visitor{data};
         visitor.visit(ast);
+    }
+
+    /// Common utility for masking sensitive information.
+    String maskSensitiveInfoImpl(const String & query, const ASTPtr & parsed_query, PasswordWipingMode mode, const ContextPtr & context)
+    {
+        String res = query;
+
+        // Wiping a password or hash from the query because we don't want it to go to logs.
+        if (parsed_query && canContainPassword(*parsed_query, mode))
+        {
+            ASTPtr ast_without_password = parsed_query->clone();
+            wipePasswordFromQuery(ast_without_password, mode, context);
+            res = serializeAST(*ast_without_password);
+        }
+
+        // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+        // otherwise something like credit card without last digit can go to log.
+        if (auto * masker = SensitiveDataMasker::getInstance())
+        {
+            auto matches = masker->wipeSensitiveData(res);
+            if (matches > 0)
+            {
+                ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
+            }
+        }
+
+        res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
+
+        return res;
     }
 }
 
 
 String maskSensitiveInfoInQueryForLogging(const String & query, const ASTPtr & parsed_query, const ContextPtr & context)
 {
-    String res = query;
+    return maskSensitiveInfoImpl(query, parsed_query, PasswordWipingMode::Query, context);
+}
 
-    // Wiping a password or hash from CREATE/ALTER USER query because we don't want it to go to logs.
-    if (parsed_query && canContainPassword(*parsed_query))
-    {
-        ASTPtr ast_without_password = parsed_query->clone();
-        wipePasswordFromQuery(ast_without_password, context);
-        res = serializeAST(*ast_without_password);
-    }
 
-    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log.
-    if (auto * masker = SensitiveDataMasker::getInstance())
-    {
-        auto matches = masker->wipeSensitiveData(res);
-        if (matches > 0)
-        {
-            ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
-        }
-    }
-
-    res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
-
-    return res;
+String maskSensitiveInfoInBackupNameForLogging(const String & backup_name, const ASTPtr & ast, const ContextPtr & context)
+{
+    return maskSensitiveInfoImpl(backup_name, ast, PasswordWipingMode::BackupName, context);
 }
 
 }
