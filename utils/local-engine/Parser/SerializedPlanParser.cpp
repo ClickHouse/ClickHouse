@@ -1,3 +1,4 @@
+#include <memory>
 #include <base/logger_useful.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -43,7 +44,10 @@
 #include <google/protobuf/util/json_util.h>
 #include <Storages/SubstraitSource/SubstraitFileSource.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include "SerializedPlanParser.h"
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -629,6 +633,11 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
             auto right_plan = parseOp(join.right());
 
             query_plan = parseJoin(join, std::move(left_plan), std::move(right_plan));
+            break;
+        }
+        case substrait::Rel::RelTypeCase::kSort: {
+            const auto & sort_rel = rel.sort();
+            query_plan = parseSort(sort_rel);
             break;
         }
         default:
@@ -1596,6 +1605,58 @@ void SerializedPlanParser::wrapNullable(std::vector<String> columns, ActionsDAGP
     }
 }
 
+DB::QueryPlanPtr SerializedPlanParser::parseSort(const substrait::SortRel & sort_rel)
+{
+    auto query_plan = parseOp(sort_rel.input());
+    auto sort_descr = parseSortDescription(sort_rel);
+    const auto & settings = context->getSettingsRef();
+    auto sorting_step = std::make_unique<DB::SortingStep>(query_plan->getCurrentDataStream(),
+        sort_descr,
+        settings.max_block_size,
+        0, // no limit now
+        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
+        settings.max_bytes_before_remerge_sort,
+        settings.remerge_sort_lowered_memory_bytes_ratio,
+        settings.max_bytes_before_external_sort,
+        context->getTemporaryVolume(),
+        settings.min_free_disk_space_for_temporary_data);
+    sorting_step->setStepDescription("Sorting step");
+    query_plan->addStep(std::move(sorting_step));
+    return std::move(query_plan);
+}
+
+DB::SortDescription SerializedPlanParser::parseSortDescription(const substrait::SortRel & sort_rel)
+{
+    static std::map<int, std::pair<int, int>> direction_map = {
+        {1, {1, -1}},
+        {2, {1, 1}},
+        {3, {-1, 1}},
+        {4, {-1, -1}}
+    };
+
+    DB::SortDescription sort_descr;
+    for (int i = 0, sz = sort_rel.sorts_size(); i < sz; ++i)
+    {
+        const auto & sort_field = sort_rel.sorts(i);
+
+        if (!sort_field.expr().has_selection() ||
+            !sort_field.expr().selection().has_direct_reference() ||
+            !sort_field.expr().selection().direct_reference().has_struct_field())
+        {
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupport sort field");
+        }
+        auto field_pos = sort_field.expr().selection().direct_reference().struct_field().field();
+
+        auto direction_iter = direction_map.find(sort_field.direction());
+        if (direction_iter == direction_map.end())
+        {
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsuppor sort direction: {}", sort_field.direction());
+        }
+
+        sort_descr.emplace_back(field_pos, direction_iter->second.first, direction_iter->second.second);
+    }
+    return sort_descr;
+}
 SharedContextHolder SerializedPlanParser::shared_context;
 
 void LocalExecutor::execute(QueryPlanPtr query_plan)

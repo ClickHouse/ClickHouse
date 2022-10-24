@@ -17,6 +17,7 @@
 #include <arrow/ipc/writer.h>
 #include <substrait/plan.pb.h>
 #include <Common/BlockIterator.h>
+#include "Core/SortDescription.h"
 
 namespace local_engine
 {
@@ -160,6 +161,8 @@ private:
         return Aggregator::Params(header, keys, aggregates, false, settings.max_threads);
     }
 
+    DB::QueryPlanPtr parseSort(const substrait::SortRel & sort_rel);
+    DB::SortDescription parseSortDescription(const substrait::SortRel & sort_rel);
 
     int name_no = 0;
     std::unordered_map<std::string, std::string> function_mapping;
