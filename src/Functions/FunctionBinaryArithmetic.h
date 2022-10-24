@@ -1781,6 +1781,7 @@ public:
             {
                 auto left_type = removeNullable(removeLowCardinality(left.type));
                 auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -1791,7 +1792,7 @@ public:
                     /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
                     /// It was possible to check monotonicity for nullable right type which result to exception.
                     /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
-                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
+                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;
@@ -1822,6 +1823,7 @@ public:
             {
                 auto left_type = removeNullable(removeLowCardinality(left.type));
                 auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -1829,7 +1831,7 @@ public:
                         = {{left_type->createColumnConst(1, point), left_type, left.name},
                            {right_type->createColumnConst(1, (*right.column)[0]), right_type, right.name}};
 
-                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
+                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;
