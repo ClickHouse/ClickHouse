@@ -189,7 +189,7 @@ struct ReplaceRegexpImpl
         /// Cannot perform search for whole columns. Will process each string separately.
         for (size_t i = 0; i < size; ++i)
         {
-            int from = i > 0 ? offsets[i - 1] : 0;
+            size_t from = i > 0 ? offsets[i - 1] : 0;
             re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), offsets[i] - from - 1);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
@@ -220,7 +220,7 @@ struct ReplaceRegexpImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            int from = i * n;
+            size_t from = i * n;
             re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), n);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
