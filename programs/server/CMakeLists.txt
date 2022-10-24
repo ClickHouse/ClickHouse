@@ -37,3 +37,5 @@ clickhouse_embed_binaries(
     RESOURCES config.xml users.xml embedded.xml play.html dashboard.html js/uplot.js
 )
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)
+
+add_subdirectory(fuzzers)
