@@ -1,4 +1,4 @@
-(ns jepsen.clickhouse-keeper.constants)
+(ns jepsen.clickhouse.keeper.constants)
 
 (def common-prefix "/home/robot-clickhouse")
 

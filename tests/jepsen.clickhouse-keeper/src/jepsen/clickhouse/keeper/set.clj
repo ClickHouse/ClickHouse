@@ -1,19 +1,15 @@
-(ns jepsen.clickhouse-keeper.counter
+(ns jepsen.clickhouse.keeper.set
   (:require
    [clojure.tools.logging :refer :all]
    [jepsen
     [checker :as checker]
     [client :as client]
     [generator :as gen]]
-   [jepsen.clickhouse-keeper.utils :refer :all]
+   [jepsen.clickhouse.keeper.utils :refer :all]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
-(def root-path "/counter")
-(defn r   [_ _] {:type :invoke, :f :read})
-(defn add [_ _] {:type :invoke, :f :add, :value (rand-int 5)})
-
-(defrecord CounterClient [conn nodename]
+(defrecord SetClient [k conn nodename]
   client/Client
   (open! [this test node]
     (assoc
@@ -23,18 +19,20 @@
 
   (setup! [this test]
     (exec-with-retries 30 (fn []
-      (zk-create-if-not-exists conn root-path ""))))
+                            (zk-create-if-not-exists conn k "#{}"))))
 
   (invoke! [this test op]
     (case (:f op)
       :read (exec-with-retries 30 (fn []
+                                    (zk-sync conn)
                                     (assoc op
                                            :type :ok
-                                           :value (count (zk-list conn root-path)))))
+                                           :value (read-string (:data (zk-get-str conn k))))))
       :add (try
              (do
-               (zk-multi-create-many-seq-nodes conn (concat-path root-path "seq-") (:value op))
+               (zk-add-to-set conn k (:value op))
                (assoc op :type :ok))
+             (catch KeeperException$BadVersionException _ (assoc op :type :fail, :error :bad-version))
              (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 
   (teardown! [_ test])
@@ -45,11 +43,10 @@
 (defn workload
   "A generator, client, and checker for a set test."
   [opts]
-  {:client    (CounterClient. nil nil)
+  {:client    (SetClient. "/a-set" nil nil)
    :checker   (checker/compose
-                {:counter (checker/counter)
-                 :perf    (checker/perf)})
+                {:set (checker/set)
+                 :perf (checker/perf)})
    :generator (->> (range)
-                   (map (fn [x]
-                          (->> (gen/mix [r add])))))
+                   (map (fn [x] {:type :invoke, :f :add, :value x})))
    :final-generator (gen/once {:type :invoke, :f :read, :value nil})})

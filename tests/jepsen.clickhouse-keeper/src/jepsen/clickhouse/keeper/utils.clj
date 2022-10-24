@@ -1,10 +1,10 @@
-(ns jepsen.clickhouse-keeper.utils
+(ns jepsen.clickhouse.keeper.utils
   (:require [clojure.string :as str]
             [zookeeper.data :as data]
             [zookeeper :as zk]
             [zookeeper.internal :as zi]
             [jepsen.control.util :as cu]
-            [jepsen.clickhouse-keeper.constants :refer :all]
+            [jepsen.clickhouse.keeper.constants :refer :all]
             [jepsen.control :as c]
             [clojure.tools.logging :refer :all]
             [clojure.java.io :as io])
