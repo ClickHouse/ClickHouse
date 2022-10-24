@@ -21,6 +21,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
     if (path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
 
+    /// todo: delete it before merge
     LOG_DEBUG(
         &Poco::Logger::get("EphemeralLockInZooKeeper"),
         "Path created: path={} path_prefix={} holder_path={}",

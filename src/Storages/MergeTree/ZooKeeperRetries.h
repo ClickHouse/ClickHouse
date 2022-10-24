@@ -39,75 +39,33 @@ public:
     {
     }
 
-    bool canTry()
+    void retryLoop(auto && f)
     {
-        ++iteration_count;
-        /// first iteration is ordinary execution, no further checks needed
-        if (0 == iteration_count)
-            return true;
-
-        if (unconditional_retry)
-        {
-            unconditional_retry = false;
-            return true;
-        }
-
-        /// iteration succeeded -> no need to retry
-        if (iteration_succeeded)
-        {
-            if (retries_info.logger)
-                LOG_DEBUG(
-                    retries_info.logger,
-                    "ZooKeeperRetriesControl: {}/{}: succeeded after: iterations={} total_retries={}",
-                    retries_info.name,
-                    name,
-                    iteration_count,
-                    retries_info.retry_count);
-            return false;
-        }
-
-        if (stop_retries)
-        {
-            logLastError("stop retries on request");
-            action_after_last_failed_retry();
-            throwIfError();
-            return false;
-        }
-
-        if (retries_info.retry_count >= retries_info.max_retries)
-        {
-            logLastError("retry limit is reached");
-            action_after_last_failed_retry();
-            throwIfError();
-            return false;
-        }
-
-        /// retries
-        ++retries_info.retry_count;
-        logLastError("will retry due to error");
-        sleepForMilliseconds(retries_info.curr_backoff_ms);
-        retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
-
-        /// reset the flag, it will be set to false in case of error
-        iteration_succeeded = true;
-
-        return true;
+        retryLoop(f, []() {});
     }
 
-    void retryLoop(auto && f)
+    void retryLoop(auto && f, auto && iteration_cleanup)
     {
         while (canTry())
         {
             try
             {
                 f();
+                iteration_cleanup();
             }
             catch (const zkutil::KeeperException & e)
             {
+                iteration_cleanup();
+
                 if (!Coordination::isHardwareError(e.code))
                     throw;
 
                 setKeeperError(e.code, e.message());
+            }
+            catch(...)
+            {
+                iteration_cleanup();
+                throw;
             }
         }
     }
@@ -193,6 +151,61 @@ private:
         int code = ErrorCodes::OK;
         std::string message;
     };
+
+    bool canTry()
+    {
+        ++iteration_count;
+        /// first iteration is ordinary execution, no further checks needed
+        if (0 == iteration_count)
+            return true;
+
+        if (unconditional_retry)
+        {
+            unconditional_retry = false;
+            return true;
+        }
+
+        /// iteration succeeded -> no need to retry
+        if (iteration_succeeded)
+        {
+            if (retries_info.logger)
+                LOG_DEBUG(
+                    retries_info.logger,
+                    "ZooKeeperRetriesControl: {}/{}: succeeded after: iterations={} total_retries={}",
+                    retries_info.name,
+                    name,
+                    iteration_count,
+                    retries_info.retry_count);
+            return false;
+        }
+
+        if (stop_retries)
+        {
+            logLastError("stop retries on request");
+            action_after_last_failed_retry();
+            throwIfError();
+            return false;
+        }
+
+        if (retries_info.retry_count >= retries_info.max_retries)
+        {
+            logLastError("retry limit is reached");
+            action_after_last_failed_retry();
+            throwIfError();
+            return false;
+        }
+
+        /// retries
+        ++retries_info.retry_count;
+        logLastError("will retry due to error");
+        sleepForMilliseconds(retries_info.curr_backoff_ms);
+        retries_info.curr_backoff_ms = std::min(retries_info.curr_backoff_ms * 2, retries_info.max_backoff_ms);
+
+        /// reset the flag, it will be set to false in case of error
+        iteration_succeeded = true;
+
+        return true;
+    }
 
     void throwIfError() const
     {

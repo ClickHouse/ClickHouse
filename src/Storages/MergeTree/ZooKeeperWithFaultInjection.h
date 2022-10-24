@@ -43,6 +43,7 @@ class ZooKeeperWithFaultInjection
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
+    zk::Ptr keeper_prev;
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
@@ -50,6 +51,7 @@ class ZooKeeperWithFaultInjection
     UInt64 calls_without_fault_injection = 0;
     const UInt64 seed = 0;
     const std::function<void()> noop_cleanup = []() {};
+    std::vector<std::string> ephemeral_nodes;
 
     ZooKeeperWithFaultInjection(
         zk::Ptr const & keeper_,
@@ -167,30 +169,48 @@ public:
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        return access<Coordination::Error>(
-            "tryMulti",
+        constexpr auto method = "tryMulti";
+        auto error = access<Coordination::Error>(
+            method,
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMulti(requests, responses); },
             [&](Coordination::Error err)
             {
                 if (err == Coordination::Error::ZOK)
-                    faultInjectionCleanup("tryMulti", requests, responses);
+                    faultInjectionCleanup(method, requests, responses);
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy) && Coordination::Error::ZOK == error)
+        {
+            doForEachEphemeralNode(
+                method, requests, responses, [&](const String & path_created) { ephemeral_nodes.push_back(path_created); });
+        }
+        return error;
     }
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
+        constexpr auto method = "tryMultiNoThrow";
         constexpr auto no_throw = true;
         constexpr auto inject_failure_before_op = false;
-        return access<Coordination::Error, no_throw, inject_failure_before_op>(
-            "tryMultiNoThrow",
+        auto error = access<Coordination::Error, no_throw, inject_failure_before_op>(
+            method,
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMultiNoThrow(requests, responses); },
             [&](Coordination::Error err)
             {
                 if (err == Coordination::Error::ZOK)
-                    faultInjectionCleanup("tryMultiNoThrow", requests, responses);
+                    faultInjectionCleanup(method, requests, responses);
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy) && Coordination::Error::ZOK == error)
+        {
+            doForEachEphemeralNode(
+                method, requests, responses, [&](const String & path_created) { ephemeral_nodes.push_back(path_created); });
+        }
+        return error;
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
@@ -219,7 +239,7 @@ public:
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)
     {
-        return access<std::string>(
+        auto path_created = access<std::string>(
             "create",
             path,
             [&]() { return keeper->create(path, data, mode); },
@@ -247,6 +267,15 @@ public:
                             e.message());
                 }
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy))
+        {
+            if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
+                ephemeral_nodes.push_back(path_created);
+        }
+
+        return path_created;
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -268,6 +297,25 @@ public:
     {
         return access<Coordination::Error>(
             "tryRemove", path, [&]() { return keeper->tryRemove(path, version); }, [&](Coordination::Error) {});
+    }
+
+    void cleanupEphemeralNodes()
+    {
+        for (const auto & path : ephemeral_nodes)
+        {
+            try
+            {
+                if (keeper_prev)
+                    keeper_prev->tryRemove(path);
+            }
+            catch (...)
+            {
+                if (unlikely(logger))
+                    tryLogCurrentException(logger, "Exception during ephemeral nodes clean up");
+            }
+        }
+
+        ephemeral_nodes.clear();
     }
 
 private:
@@ -299,7 +347,8 @@ private:
         }
     }
 
-    void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    void doForEachEphemeralNode(
+        const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses, auto && action)
     {
         if (responses.empty())
             return;
@@ -328,8 +377,13 @@ private:
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Response should be CreateResponse: method={} index={} path={}", method, i, req->path);
 
-            keeper->remove(create_resp->path_created);
+            action(create_resp->path_created);
         }
+    }
+
+    void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    {
+        doForEachEphemeralNode(method, requests, responses, [&](const String & path_created) { keeper->remove(path_created); });
     }
 
     template <
@@ -403,6 +457,8 @@ private:
                     e.code,
                     e.message());
 
+            if (keeper)
+                keeper_prev = keeper;
             keeper.reset();
 
             /// for try*NoThrow() methods
