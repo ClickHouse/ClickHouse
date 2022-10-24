@@ -80,6 +80,18 @@ public:
     /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
     virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const;
 
+    /// List on prefix, but it is limited only to current path, something like
+    /// on local filesystem:
+    ///
+    ///     find . -maxdepth 1
+    ///
+    /// @param path - path to list prefix in
+    /// @param children - list of child nodes (for unix filesystem - files goes here)
+    /// @param common_prefixes - list of common prefixes in this path, (for unix filesystem - subfolders)
+    virtual void listPrefixInPath(const std::string & path,
+        RelativePathsWithSize & children,
+        std::vector<std::string> & common_prefixes) const;
+
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
