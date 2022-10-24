@@ -144,9 +144,9 @@ StoragePtr TemporaryTableHolder::getTable() const
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
-    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
-    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
-    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
+    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
+    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
+    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -1088,23 +1088,8 @@ TableNamesSet DatabaseCatalog::tryRemoveLoadingDependenciesUnlocked(const Qualif
     TableNamesSet & dependent = it->second.dependent_database_objects;
     if (!dependent.empty())
     {
-        if (check_dependencies && !is_drop_database)
-            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            removing_table, fmt::join(dependent, ", "));
-
-        /// For DROP DATABASE we should ignore dependent tables from the same database.
-        /// TODO unload tables in reverse topological order and remove this code
         if (check_dependencies)
-        {
-            TableNames from_other_databases;
-            for (const auto & table : dependent)
-                if (table.database != removing_table.database)
-                    from_other_databases.push_back(table);
-
-            if (!from_other_databases.empty())
-                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                                removing_table, fmt::join(from_other_databases, ", "));
-        }
+            checkTableCanBeRemovedOrRenamedImpl(dependent, removing_table, is_drop_database);
 
         for (const auto & table : dependent)
         {
@@ -1125,7 +1110,7 @@ TableNamesSet DatabaseCatalog::tryRemoveLoadingDependenciesUnlocked(const Qualif
     return dependencies;
 }
 
-void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const
+void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool is_drop_database) const
 {
     QualifiedTableName removing_table = table_id.getQualifiedName();
     std::lock_guard lock{databases_mutex};
@@ -1134,9 +1119,28 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id
         return;
 
     const TableNamesSet & dependent = it->second.dependent_database_objects;
-    if (!dependent.empty())
+    checkTableCanBeRemovedOrRenamedImpl(dependent, removing_table, is_drop_database);
+}
+
+void DatabaseCatalog::checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database)
+{
+    if (!is_drop_database)
+    {
+        if (!dependent.empty())
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
+                            removing_table, fmt::join(dependent, ", "));
+    }
+
+    /// For DROP DATABASE we should ignore dependent tables from the same database.
+    /// TODO unload tables in reverse topological order and remove this code
+    TableNames from_other_databases;
+    for (const auto & table : dependent)
+        if (table.database != removing_table.database)
+            from_other_databases.push_back(table);
+
+    if (!from_other_databases.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            table_id.getNameForLogs(), fmt::join(dependent, ", "));
+                        removing_table, fmt::join(from_other_databases, ", "));
 }
 
 void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies)

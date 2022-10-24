@@ -294,7 +294,7 @@ public:
             else if (unlikely(date_time > 0x0ffffffffll))
                 date_time = 0x0ffffffffll;
 
-            result_data[i] = date_time;
+            result_data[i] = static_cast<UInt32>(date_time);
         }
 
         return res_column;
@@ -365,7 +365,7 @@ public:
             fraction_data = &typeid_cast<const ColumnFloat64 &>(*converted_arguments[6]).getData();
         }
 
-        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, precision);
+        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, static_cast<UInt32>(precision));
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -411,7 +411,10 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, static_cast<Int64>(fraction), precision);
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+                date_time,
+                static_cast<Int64>(fraction),
+                static_cast<UInt32>(precision));
         }
 
         return res_column;
