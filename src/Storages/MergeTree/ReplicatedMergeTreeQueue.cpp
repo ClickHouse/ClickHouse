@@ -41,7 +41,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
-    assert(future_parts.empty());
+    chassert(future_parts.empty());
     current_parts.clear();
     virtual_parts.clear();
     queue.clear();
@@ -62,6 +62,7 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
 
 void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
+    clear();
     std::lock_guard lock(state_mutex);
 
     LOG_TRACE(log, "Initializing parts in queue");
@@ -153,17 +154,19 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         ::sort(children.begin(), children.end());
 
-        zkutil::AsyncResponses<Coordination::GetResponse> futures;
-        futures.reserve(children.size());
+        auto children_num = children.size();
+        std::vector<std::string> paths;
+        paths.reserve(children_num);
 
         for (const String & child : children)
-            futures.emplace_back(child, zookeeper->asyncGet(fs::path(queue_path) / child));
+            paths.emplace_back(fs::path(queue_path) / child);
 
-        for (auto & future : futures)
+        auto results = zookeeper->get(paths);
+        for (size_t i = 0; i < children_num; ++i)
         {
-            Coordination::GetResponse res = future.second.get();
+            auto res = results[i];
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
-            entry->znode_name = future.first;
+            entry->znode_name = children[i];
 
             std::lock_guard lock(state_mutex);
 
@@ -641,11 +644,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             LOG_DEBUG(log, "Pulling {} entries to queue: {} - {}", (end - begin), *begin, *last);
 
-            zkutil::AsyncResponses<Coordination::GetResponse> futures;
-            futures.reserve(end - begin);
+            Strings get_paths;
+            get_paths.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                futures.emplace_back(*it, zookeeper->asyncGet(fs::path(zookeeper_path) / "log" / *it));
+                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -655,9 +658,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             std::optional<time_t> min_unprocessed_insert_time_changed;
 
-            for (auto & future : futures)
+            auto get_results = zookeeper->get(get_paths);
+            auto get_num = get_results.size();
+            for (size_t i = 0; i < get_num; ++i)
             {
-                Coordination::GetResponse res = future.second.get();
+                auto res = get_results[i];
 
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
@@ -1804,9 +1809,9 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     Status res;
 
-    res.future_parts = future_parts.size();
-    res.queue_size = queue.size();
-    res.last_queue_update = last_queue_update;
+    res.future_parts = static_cast<UInt32>(future_parts.size());
+    res.queue_size = static_cast<UInt32>(queue.size());
+    res.last_queue_update = static_cast<UInt32>(last_queue_update);
 
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
@@ -1819,7 +1824,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
     for (const LogEntryPtr & entry : queue)
     {
         if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
-            res.queue_oldest_time = entry->create_time;
+            res.queue_oldest_time = static_cast<UInt32>(entry->create_time);
 
         if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
         {
@@ -1827,7 +1832,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
             {
-                res.inserts_oldest_time = entry->create_time;
+                res.inserts_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_get = entry->new_part_name;
             }
         }
@@ -1838,7 +1843,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
             {
-                res.merges_oldest_time = entry->create_time;
+                res.merges_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_merge_to = entry->new_part_name;
             }
         }
@@ -1849,7 +1854,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
             {
-                res.part_mutations_oldest_time = entry->create_time;
+                res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
         }

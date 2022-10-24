@@ -281,7 +281,7 @@ private:
     bool nextImpl() override
     {
         RawHandle raw_handle = handle.getRawHandle();
-        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), internal_buffer.size());
+        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
 
         if (bytes_read < 0)
             checkResult(bytes_read);

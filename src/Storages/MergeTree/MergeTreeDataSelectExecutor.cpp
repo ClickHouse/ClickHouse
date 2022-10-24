@@ -140,7 +140,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
-    const unsigned num_streams,
+    const size_t num_streams,
     QueryProcessingStage::Enum processed_stage,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     bool enable_parallel_reading) const
@@ -930,7 +930,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         Strings forced_indices;
         {
             Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
-            IParser::Pos pos(tokens, settings.max_parser_depth);
+            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
@@ -1279,7 +1279,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const SelectQueryInfo & query_info,
     const ActionDAGNodes & added_filter_nodes,
     ContextPtr context,
-    unsigned num_streams,
+    size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
@@ -1318,7 +1318,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
-    const unsigned num_streams,
+    const size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading) const
