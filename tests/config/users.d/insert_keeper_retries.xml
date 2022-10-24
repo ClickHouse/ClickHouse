@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+          <insert_keeper_fault_injection_probability>0.01</insert_keeper_fault_injection_probability>
+        </default>
+    </profiles>
+</clickhouse>
