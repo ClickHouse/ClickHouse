@@ -61,4 +61,4 @@ jobs:
             --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" \
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
             --define sonar.projectKey="clickhouse-java" \
-            --define sonar.organizaion="ClickHouse"
+            --define sonar.organization="ClickHouse"
