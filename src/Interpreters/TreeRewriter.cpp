@@ -24,12 +24,13 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
+
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
