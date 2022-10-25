@@ -43,36 +43,15 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-                AggregateFunctionPtr function_, const size_t column_number_,
-                DataTypePtr nested_type_, DataTypePtr real_type_)
-                : function(std::move(function_)), column_number(column_number_)
-                , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
-        {
-            add_function = function->getAddressOfAddFunction();
-            state.reset(function->sizeOfData(), function->alignOfData());
-        }
+            AggregateFunctionPtr function_, const size_t column_number_,
+            DataTypePtr nested_type_, DataTypePtr real_type_);
 
-        void createState()
-        {
-            if (created)
-                return;
-            function->create(state.data());
-            created = true;
-        }
+        void createState();
 
-        void destroyState()
-        {
-            if (!created)
-                return;
-            function->destroy(state.data());
-            created = false;
-        }
+        void destroyState();
 
         /// Explicitly destroy aggregation state if the stream is terminated
-        ~SimpleAggregateDescription()
-        {
-            destroyState();
-        }
+        ~SimpleAggregateDescription();
 
         SimpleAggregateDescription() = default;
         SimpleAggregateDescription(SimpleAggregateDescription &&) = default;

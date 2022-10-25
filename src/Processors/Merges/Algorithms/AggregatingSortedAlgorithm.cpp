@@ -125,6 +125,39 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
 }
 
 
+AggregatingSortedAlgorithm::SimpleAggregateDescription::SimpleAggregateDescription(
+    AggregateFunctionPtr function_, const size_t column_number_,
+    DataTypePtr nested_type_, DataTypePtr real_type_)
+    : function(std::move(function_)), column_number(column_number_)
+    , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
+{
+    add_function = function->getAddressOfAddFunction();
+    state.reset(function->sizeOfData(), function->alignOfData());
+}
+
+void AggregatingSortedAlgorithm::SimpleAggregateDescription::createState()
+{
+    if (created)
+        return;
+    function->create(state.data());
+    created = true;
+}
+
+void AggregatingSortedAlgorithm::SimpleAggregateDescription::destroyState()
+{
+    if (!created)
+        return;
+    function->destroy(state.data());
+    created = false;
+}
+
+/// Explicitly destroy aggregation state if the stream is terminated
+AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescription()
+{
+    destroyState();
+}
+
+
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
     : MergedData(std::move(columns_), false, max_block_size_), def(def_)
