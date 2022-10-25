@@ -81,9 +81,9 @@ Field QueryFuzzer::getRandomField(int type)
     {
         static constexpr UInt64 scales[] = {0, 1, 2, 10};
         return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
-                / sizeof(*bad_int64_values))],
-            scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))]);
+            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values) / sizeof(*bad_int64_values))],
+            static_cast<UInt32>(scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))])
+        );
     }
     default:
         assert(false);
@@ -468,6 +468,16 @@ bool QueryFuzzer::isSuitableForFuzzing(const ASTCreateQuery & create)
     return create.columns_list && create.columns_list->columns;
 }
 
+static String getOriginalTableName(const String & full_name)
+{
+    return full_name.substr(0, full_name.find("__fuzz_"));
+}
+
+static String getFuzzedTableName(const String & original_name, size_t index)
+{
+    return original_name + "__fuzz_" + toString(index);
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -501,10 +511,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     auto full_name = create.getTable();
-    auto original_name = full_name.substr(0, full_name.find("__fuzz_"));
-
+    auto original_name = getOriginalTableName(full_name);
     size_t index = index_of_fuzzed_table[original_name]++;
-    auto new_name = original_name + "__fuzz_" + toString(index);
+    auto new_name = getFuzzedTableName(original_name, index);
 
     create.setTable(new_name);
 
@@ -665,7 +674,8 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (table_id.empty())
         return;
 
-    auto it = original_table_name_to_fuzzed.find(table_id.getTableName());
+    auto original_name = getOriginalTableName(table_id.getTableName());
+    auto it = original_table_name_to_fuzzed.find(original_name);
     if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
     {
         auto new_table_name = it->second.begin();
@@ -728,7 +738,7 @@ ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
     /// Drop all created tables, not only unique ones.
     for (size_t i = 0; i < it->second; ++i)
     {
-        auto fuzzed_name = table_name + "__fuzz_" + toString(i);
+        auto fuzzed_name = getFuzzedTableName(table_name, i);
         auto & query = queries.emplace_back(drop_query.clone());
         query->as<ASTDropQuery>()->setTable(fuzzed_name);
         /// Just in case add IF EXISTS to avoid exceptions.
@@ -749,7 +759,9 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
         if (pos != std::string::npos)
         {
             auto original_name = table_name.substr(0, pos);
-            original_table_name_to_fuzzed[original_name].erase(table_name);
+            auto it = original_table_name_to_fuzzed.find(original_name);
+            if (it != original_table_name_to_fuzzed.end())
+                it->second.erase(table_name);
         }
     };
 

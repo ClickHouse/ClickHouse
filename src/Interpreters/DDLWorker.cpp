@@ -26,6 +26,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/isLocalAddress.h>
+#include <Core/ServerUUID.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
@@ -114,7 +115,7 @@ DDLWorker::DDLWorker(
 void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(true);
+    chassert(prev_stop_flag);
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
@@ -498,7 +499,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
 
 void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 {
-    UInt64 id = DDLTaskBase::getLogEntryNumber(entry_name);
+    UInt32 id = DDLTaskBase::getLogEntryNumber(entry_name);
     auto prev_id = max_id.load(std::memory_order_relaxed);
     while (prev_id < id)
     {
@@ -532,7 +533,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper);
 
     /// Try fast path
-    auto create_active_res = zookeeper->tryCreate(active_node_path, {}, zkutil::CreateMode::Ephemeral);
+    const String canary_value = Field(ServerUUID::get()).dump();
+    auto create_active_res = zookeeper->tryCreate(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
     if (create_active_res != Coordination::Error::ZOK)
     {
         if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
@@ -563,10 +565,10 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zookeeper->waitForEphemeralToDisappearIfAny(active_node_path);
+            zookeeper->handleEphemeralNodeExistence(active_node_path, canary_value);
         }
 
-        zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
+        zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
     }
 
     /// We must hold the lock until task execution status is committed to ZooKeeper,
