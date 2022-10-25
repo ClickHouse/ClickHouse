@@ -44,11 +44,6 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-String LambdaNode::getName() const
-{
-    return "lambda(" + children[arguments_child_index]->getName() + ") -> " + children[expression_child_index]->getName();
-}
-
 bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
