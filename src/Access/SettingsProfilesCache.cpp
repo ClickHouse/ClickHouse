@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_PROFILE;
+    extern const int LOGICAL_ERROR;
 }
 
 SettingsProfilesCache::SettingsProfilesCache(const AccessControl & access_control_)
@@ -151,7 +152,7 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
         if (!info->names_of_profiles.contains(profile_id))
         {
             const auto p = all_profiles.find(profile_id);
-            const auto profile_name = p != all_profiles.end() ? p->second->getName() : "<!!!Profile with no name!!!>";
+            const auto profile_name = p != all_profiles.end() ? p->second->getName() : "<! Profile with no name !>";
 
             throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
