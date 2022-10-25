@@ -1,4 +1,4 @@
-SET use_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 SELECT arrayJoin([1, 2, 3]);
 
