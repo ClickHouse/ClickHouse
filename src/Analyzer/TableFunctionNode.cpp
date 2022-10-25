@@ -50,18 +50,6 @@ const StorageSnapshotPtr & TableFunctionNode::getStorageSnapshot() const
     return storage_snapshot;
 }
 
-String TableFunctionNode::getName() const
-{
-    String name = table_function_name;
-
-    const auto & arguments = getArguments();
-    name += '(';
-    name += arguments.getName();
-    name += ')';
-
-    return name;
-}
-
 void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE_FUNCTION id: " << format_state.getNodeId(this);
