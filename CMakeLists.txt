@@ -191,9 +191,9 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-option(ENABLE_CURL_BUILD "Enable curl, azure, sentry build on by default except MacOS." ON)
+option(ENABLE_CURL_BUILD "Enable curl, sentry build on by default except MacOS." ON)
 if (OS_DARWIN)
-    # Disable the curl, azure, senry build on MacOS
+    # Disable the curl, sentry build on MacOS
     set (ENABLE_CURL_BUILD OFF)
 endif ()
 

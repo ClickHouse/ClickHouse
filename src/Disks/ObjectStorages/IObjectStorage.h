@@ -52,7 +52,7 @@ using FinalizeCallback = std::function<void(size_t bytes_count)>;
 
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
-/// Examples of object storages are S3, Azure Blob Storage, HDFS.
+/// Examples of object storages are S3, HDFS.
 class IObjectStorage
 {
 public:
