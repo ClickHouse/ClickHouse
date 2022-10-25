@@ -117,7 +117,7 @@ namespace
                 data.is_create_dictionary_query = true;
             else if (query.table)
                 data.is_create_table_query = true;
-            else
+            else if (query.database)
                 data.is_create_database_query = true;
         }
 
@@ -304,7 +304,7 @@ namespace
             if (!tryGetNumArguments(function, &num_arguments) || (num_arguments < 3))
                 return;
 
-            auto & arguments = function.arguments->as<ASTExpressionList>()->children;
+            auto & arguments = assert_cast<ASTExpressionList &>(*function.arguments).children;
             size_t arg_num = 1;
 
             /// Skip 1 or 2 arguments with table_function() or db.table or 'db', 'table'.
@@ -355,7 +355,9 @@ namespace
                 return;
 
             wipePasswordFromArgument(function, data, 1);
-            function.arguments->as<ASTExpressionList>()->children.resize(2);
+
+            auto & arguments = assert_cast<ASTExpressionList &>(*function.arguments).children;
+            arguments.resize(2);
         }
 
         static void visitBackupQuery(ASTBackupQuery & query, Data & data)
@@ -368,8 +370,8 @@ namespace
 
             if (query.base_backup_name)
             {
-                if (auto * backup_engine = query.base_backup_name->as<ASTFunction>())
-                    wipePasswordFromBackupEngineArguments(*backup_engine, data);
+                if (auto * base_backup_engine = query.base_backup_name->as<ASTFunction>())
+                    wipePasswordFromBackupEngineArguments(*base_backup_engine, data);
             }
         }
 
@@ -398,9 +400,10 @@ namespace
                 return;
 
             auto & arguments = expr_list->children;
+            if (arg_idx >= arguments.size())
+                return;
 
-            if (arg_idx < arguments.size())
-                arguments[arg_idx] = std::make_shared<ASTLiteral>("[HIDDEN]");
+            arguments[arg_idx] = std::make_shared<ASTLiteral>("[HIDDEN]");
         }
 
         static bool tryGetNumArguments(const ASTFunction & function, size_t * num_arguments)
@@ -412,7 +415,8 @@ namespace
             if (!expr_list)
                 return false;
 
-            *num_arguments = expr_list->children.size();
+            const auto & arguments = expr_list->children;
+            *num_arguments = arguments.size();
             return true;
         }
 
@@ -426,7 +430,6 @@ namespace
                 return false;
 
             const auto & arguments = expr_list->children;
-
             if (arg_idx >= arguments.size())
                 return false;
 
@@ -449,7 +452,6 @@ namespace
                 return false;
 
             const auto & arguments = expr_list->children;
-
             if (arg_idx >= arguments.size())
                 return false;
 
@@ -463,11 +465,11 @@ namespace
                 return false;
             }
 
-            const auto * literal = argument->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::String)
+            const auto & literal = assert_cast<const ASTLiteral &>(*argument);
+            if (literal.value.getType() != Field::Types::String)
                 return false;
 
-            *value = literal->value.safeGet<String>();
+            *value = literal.value.safeGet<String>();
             return true;
         }
 
@@ -482,7 +484,6 @@ namespace
                 return false;
 
             const auto & arguments = expr_list->children;
-
             if (arg_idx >= arguments.size())
                 return false;
 
@@ -496,11 +497,11 @@ namespace
                 return false;
             }
 
-            const auto * literal = argument->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::String)
+            const auto & literal = assert_cast<const ASTLiteral &>(*argument);
+            if (literal.value.getType() != Field::Types::String)
                 return false;
 
-            *value = literal->value.safeGet<String>();
+            *value = literal.value.safeGet<String>();
             return true;
         }
 
@@ -509,14 +510,16 @@ namespace
             if (!dictionary.source || !dictionary.source->elements)
                 return;
 
-            const auto * elements = dictionary.source->elements->as<ASTExpressionList>();
-            if (!elements)
+            const auto * expr_list = dictionary.source->elements->as<ASTExpressionList>();
+            if (!expr_list)
                 return;
+
+            const auto & elements = expr_list->children;
 
             /// We replace password in the dictionary's definition:
             /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password 'qwe123' db 'default' table 'ids')) ->
             /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-            for (const auto & element : elements->children)
+            for (const auto & element : elements)
             {
                 auto * pair = element->as<ASTPair>();
                 if (!pair)
