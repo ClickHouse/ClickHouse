@@ -21,9 +21,7 @@ static MutableColumnPtr createColumn(size_t n)
     auto & values = column->getData();
 
     for (size_t i = 0; i < n; ++i)
-    {
-        values.push_back(i);
-    }
+        values.push_back(static_cast<T>(i));
 
     return column;
 }
