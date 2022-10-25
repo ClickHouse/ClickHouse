@@ -213,7 +213,7 @@ public:
 
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
-    /// can be modifed after part creation.
+    /// can be modified after part creation.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
