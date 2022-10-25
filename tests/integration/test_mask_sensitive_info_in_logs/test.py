@@ -281,7 +281,9 @@ def test_backup_to_s3():
 
 
 def test_on_cluster():
-    node.query("CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe130')")
+    node.query(
+        "CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe130')"
+    )
 
     check_logs(
         must_contain=[
