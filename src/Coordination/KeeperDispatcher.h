@@ -210,7 +210,7 @@ public:
         return server->createSnapshot();
     }
 
-    /// Whether the last manually created snapshot is done
+    /// Get Raft information
     KeeperLogInfo getKeeperLogInfo()
     {
         return server->getKeeperLogInfo();
