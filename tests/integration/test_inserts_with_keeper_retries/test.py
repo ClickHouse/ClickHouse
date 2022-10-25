@@ -44,7 +44,9 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         zk_stopped_event.wait(90)
 
         node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10)")
-        node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)")
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)"
+        )
 
         job.wait()
         p.close()
@@ -80,7 +82,9 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
         disconnect_event.wait(90)
 
         node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10)")
-        node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)")
+        node1.query(
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)"
+        )
 
         job.wait()
         p.close()
