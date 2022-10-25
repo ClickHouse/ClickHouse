@@ -24,6 +24,8 @@ public:
 
     bool compute_after_window_functions = false;
 
+    bool is_lambda_function = false;
+
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
     // take ASTPtr & and modify it. I don't understand how the latter is
