@@ -68,14 +68,14 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
                 output_width = std::max(range_begin_width, range_end_width);
 
             if (leading_zeros)
-                oss_for_replacing << std::setfill('0') << std::setw(output_width);
+                oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
             oss_for_replacing << range_begin;
 
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
                 oss_for_replacing << '|';
                 if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(output_width);
+                    oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
                 oss_for_replacing << i;
             }
         }

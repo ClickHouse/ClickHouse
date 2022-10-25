@@ -653,7 +653,7 @@ void StorageDistributed::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)

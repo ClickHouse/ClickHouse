@@ -241,6 +241,11 @@ DiskObjectStoragePtr DiskDecorator::createDiskObjectStorage()
     return delegate->createDiskObjectStorage();
 }
 
+ObjectStoragePtr DiskDecorator::getObjectStorage()
+{
+    return delegate->getObjectStorage();
+}
+
 DiskPtr DiskDecorator::getNestedDisk() const
 {
     if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate.get()))
