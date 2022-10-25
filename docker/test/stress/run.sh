@@ -13,25 +13,28 @@ sysctl kernel.core_pattern='core.%e.%p-%P'
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
+# Temporarily disable ThreadFuzzer with tsan because of https://github.com/google/sanitizers/issues/1540
+is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
+if [ "$is_tsan_build" -eq "0" ]; then
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+    export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US=100000
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+fi
 
 
 function install_packages()
@@ -44,7 +47,6 @@ function install_packages()
 
 function configure()
 {
-    export ZOOKEEPER_FAULT_INJECTION=1
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
@@ -200,6 +202,7 @@ quit
 
 install_packages package_folder
 
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
@@ -240,10 +243,11 @@ stop
 
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
 # But we still need default disk because some tables loaded only into it
-sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<disk>s3</disk>|<disk>s3</disk><disk>default</disk>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
 mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -266,10 +270,6 @@ start
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
-
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
-echo $previous_release_tag
 
 stop
 
@@ -328,6 +328,10 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
+echo $previous_release_tag
+
 echo "Clone previous release repository"
 git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
@@ -338,6 +342,12 @@ echo $previous_release_tag | download_release_packets && echo -e 'Download scrip
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
+for table in query_log trace_log
+do
+    clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
+done
+
+tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
@@ -366,10 +376,13 @@ else
     install_packages previous_release_package_folder
 
     # Start server from previous release
+    # Previous version may not be ready for fault injections
+    export ZOOKEEPER_FAULT_INJECTION=0
     configure
 
     # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
+    rm -f /etc/clickhouse-server/users.d/marks.xml ||:
 
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
@@ -379,12 +392,23 @@ else
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
 
-    # Install new package before running stress test because we should use new clickhouse-client and new clickhouse-test
-    # But we should leave old binary in /usr/bin/ for gdb (so it will print sane stacktarces)
+    # Install new package before running stress test because we should use new
+    # clickhouse-client and new clickhouse-test.
+    #
+    # But we should leave old binary in /usr/bin/ and debug symbols in
+    # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
+    # will print sane stacktraces and also to avoid possible crashes.
+    #
+    # FIXME: those files can be extracted directly from debian package, but
+    # actually better solution will be to use different PATH instead of playing
+    # games with files from packages.
     mv /usr/bin/clickhouse previous_release_package_folder/
+    mv /usr/lib/debug/usr/bin/clickhouse.debug previous_release_package_folder/
     install_packages package_folder
     mv /usr/bin/clickhouse package_folder/
+    mv /usr/lib/debug/usr/bin/clickhouse.debug package_folder/
     mv previous_release_package_folder/clickhouse /usr/bin/
+    mv previous_release_package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
 
     mkdir tmp_stress_output
 
@@ -400,6 +424,8 @@ else
 
     # Start new server
     mv package_folder/clickhouse /usr/bin/
+    mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
+    export ZOOKEEPER_FAULT_INJECTION=1
     configure
     start 500
     clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
@@ -453,6 +479,8 @@ else
                -e "This engine is deprecated and is not supported in transactions" \
                -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
                -e "The set of parts restored in place of" \
+               -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
+               -e "Code: 269. DB::Exception: Destination table is myself" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -495,6 +523,12 @@ else
 
     # Remove file bc_check_fatal_messages.txt if it's empty
     [ -s /test_output/bc_check_fatal_messages.txt ] || rm /test_output/bc_check_fatal_messages.txt
+
+    tar -chf /test_output/coordination.backward.tar /var/lib/clickhouse/coordination ||:
+    for table in query_log trace_log
+    do
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.backward.tsv.gz ||:
+    done
 fi
 
 dmesg -T > /test_output/dmesg.log
@@ -504,16 +538,7 @@ grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e
     && echo -e 'OOM in dmesg\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
 
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-# Replace the engine with Ordinary to avoid extra symlinks stuff in artifacts.
-# (so that clickhouse-local --path can read it w/o extra care).
-sed -i -e "s/ATTACH DATABASE _ UUID '[^']*'/ATTACH DATABASE system/" -e "s/Atomic/Ordinary/" /var/lib/clickhouse/metadata/system.sql
-for table in query_log trace_log; do
-    sed -i "s/ATTACH TABLE _ UUID '[^']*'/ATTACH TABLE $table/" /var/lib/clickhouse/metadata/system/${table}.sql
-    tar -chf /test_output/${table}_dump.tar /var/lib/clickhouse/metadata/system.sql /var/lib/clickhouse/metadata/system/${table}.sql /var/lib/clickhouse/data/system/${table} ||:
-done
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv

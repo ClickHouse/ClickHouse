@@ -277,7 +277,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
         if (it == constraints.end())
             return Checker(); // Allowed
     }
-    return it->second;
+    return Checker(it->second);
 }
 
 bool SettingsConstraints::Constraint::operator==(const Constraint & other) const

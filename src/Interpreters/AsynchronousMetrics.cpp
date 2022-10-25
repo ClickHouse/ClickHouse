@@ -27,18 +27,11 @@
 #include <chrono>
 
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
-
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
 
 namespace DB
 {
@@ -393,7 +386,7 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
+static Value saveJemallocMetricImpl(AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
@@ -401,22 +394,23 @@ static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
     size_t size = sizeof(value);
     mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
     values[clickhouse_full_name] = value;
+    return value;
 }
 
 template<typename Value>
-static void saveJemallocMetric(AsynchronousMetricValues & values,
+static Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.{}", metric_name),
         fmt::format("jemalloc.{}", metric_name));
 }
 
 template<typename Value>
-static void saveAllArenasMetric(AsynchronousMetricValues & values,
+static Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
 }
@@ -657,10 +651,39 @@ void AsynchronousMetrics::update(TimePoint update_time)
         }
     }
 
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
+#endif
+
+#if USE_JEMALLOC
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
+
+    // Collect the statistics themselves.
+    saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
+    saveJemallocMetric<size_t>(new_values, "metadata");
+    saveJemallocMetric<size_t>(new_values, "metadata_thp");
+    saveJemallocMetric<size_t>(new_values, "resident");
+    saveJemallocMetric<size_t>(new_values, "mapped");
+    saveJemallocMetric<size_t>(new_values, "retained");
+    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveAllArenasMetric<size_t>(new_values, "pactive");
+    [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
+    [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
+    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+#endif
+
     /// Process process memory usage according to OS
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
-        MemoryStatisticsOS::Data data = memory_stat.get();
+        MemoryStatisticsOS::Data & data = memory_statistics_data;
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
@@ -676,9 +699,16 @@ void AsynchronousMetrics::update(TimePoint update_time)
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_amount = data.resident;
+            Int64 rss = data.resident;
+            Int64 free_memory_in_allocator_arenas = 0;
 
-            Int64 difference = new_amount - amount;
+#if USE_JEMALLOC
+            /// This is a memory which is kept by allocator.
+            /// Will subsract it from RSS to decrease memory drift.
+            free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
+#endif
+
+            Int64 difference = rss - free_memory_in_allocator_arenas - amount;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
@@ -686,11 +716,10 @@ void AsynchronousMetrics::update(TimePoint update_time)
                     "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
-                    ReadableSize(new_amount),
+                    ReadableSize(rss),
                     ReadableSize(difference));
 
-            total_memory_tracker.set(new_amount);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
+            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 #endif
@@ -1391,7 +1420,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 {
                     const auto & settings = getContext()->getSettingsRef();
 
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();
@@ -1561,31 +1590,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
 #endif
 
-#if USE_JEMALLOC
-    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
-    // the following calls will return stale values. It increments and returns
-    // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = updateJemallocEpoch();
-    new_values["jemalloc.epoch"] = epoch;
-
-    // Collect the statistics themselves.
-    saveJemallocMetric<size_t>(new_values, "allocated");
-    saveJemallocMetric<size_t>(new_values, "active");
-    saveJemallocMetric<size_t>(new_values, "metadata");
-    saveJemallocMetric<size_t>(new_values, "metadata_thp");
-    saveJemallocMetric<size_t>(new_values, "resident");
-    saveJemallocMetric<size_t>(new_values, "mapped");
-    saveJemallocMetric<size_t>(new_values, "retained");
-    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
-    saveAllArenasMetric<size_t>(new_values, "pactive");
-    saveAllArenasMetric<size_t>(new_values, "pdirty");
-    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
-    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
-    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
-#endif
-
     updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
 
     /// Add more metrics as you wish.
@@ -1665,7 +1669,7 @@ void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, Tim
         LOG_IMPL(log, log_level.first, log_level.second,
                  "Update heavy metrics. "
                  "Update period {} sec. "
-                 "Update heavy metrics period {} sec.  "
+                 "Update heavy metrics period {} sec. "
                  "Heavy metrics calculation elapsed: {} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),

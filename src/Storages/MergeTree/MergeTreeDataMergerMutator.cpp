@@ -98,10 +98,10 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
     if (scheduled_tasks_count <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
-        max_size = interpolateExponential(
+        max_size = static_cast<UInt64>(interpolateExponential(
             data_settings->max_bytes_to_merge_at_min_space_in_pool,
             data_settings->max_bytes_to_merge_at_max_space_in_pool,
-            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge);
+            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge));
 
     return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
@@ -333,6 +333,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         SimpleMergeSelector::Settings merge_settings;
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
+        merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
 
         if (aggressive)
             merge_settings.base = 1;

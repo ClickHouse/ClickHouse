@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <boost/noncopyable.hpp>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+#include <base/getThreadId.h>
 #include <list>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <queue>
 
 
 namespace Poco { class Logger; }
@@ -26,17 +30,25 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
 
-class FileSegment : boost::noncopyable
+struct CreateFileSegmentSettings
+{
+    bool is_persistent = false;
+};
+
+class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
 {
 
 friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
+friend class StorageSystemFilesystemCache;
 
 public:
     using Key = FileCacheKey;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
+    using Downloader = std::string;
+    using DownloaderId = std::string;
 
     enum class State
     {
@@ -54,10 +66,10 @@ public:
          */
         DOWNLOADING,
         /**
-         * Space reservation for a file segment is incremental, i.e. downaloder reads buffer_size bytes
+         * Space reservation for a file segment is incremental, i.e. downloader reads buffer_size bytes
          * from remote fs -> tries to reserve buffer_size bytes to put them to cache -> writes to cache
          * on successful reservation and stops cache write otherwise. Those, who waited for the same file
-         * file segment, will read downloaded part from cache and remaining part directly from remote fs.
+         * segment, will read downloaded part from cache and remaining part directly from remote fs.
          */
         PARTIALLY_DOWNLOADED_NO_CONTINUATION,
         /**
@@ -78,7 +90,7 @@ public:
         const Key & key_,
         FileCache * cache_,
         State download_state_,
-        bool is_persistent_ = false);
+        const CreateFileSegmentSettings & create_settings);
 
     ~FileSegment();
 
@@ -101,6 +113,14 @@ public:
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 
+    static String getCallerId();
+
+    String getInfoForLog() const;
+
+    /**
+     * ========== Methods to get file segment's constant state ==================
+     */
+
     const Range & range() const { return segment_range; }
 
     const Key & key() const { return file_key; }
@@ -109,11 +129,85 @@ public:
 
     bool isPersistent() const { return is_persistent; }
 
+    using UniqueId = std::pair<FileCacheKey, size_t>;
+    UniqueId getUniqueId() const { return std::pair(key(), offset()); }
+
+    String getPathInLocalCache() const;
+
+    /**
+     * ========== Methods for _any_ file segment's owner ========================
+     */
+
+    String getOrSetDownloader();
+
+    bool isDownloader() const;
+
+    DownloaderId getDownloader() const;
+
+    /// Wait for the change of state from DOWNLOADING to any other.
     State wait();
 
-    bool reserve(size_t size);
+    bool isDownloaded() const;
 
-    void write(const char * from, size_t size, size_t offset_);
+    size_t getHitsCount() const { return hits_count; }
+
+    size_t getRefCount() const { return ref_count; }
+
+    void incrementHitsCount() { ++hits_count; }
+
+    size_t getCurrentWriteOffset() const;
+
+    size_t getFirstNonDownloadedOffset() const;
+
+    size_t getDownloadedSize() const;
+
+    /// Now detached status can be used in the following cases:
+    /// 1. there is only 1 remaining file segment holder
+    ///    && it does not need this segment anymore
+    ///    && this file segment was in cache and needs to be removed
+    /// 2. in read_from_cache_if_exists_otherwise_bypass_cache case to create NOOP file segments.
+    /// 3. removeIfExists - method which removes file segments from cache even though
+    ///    it might be used at the moment.
+
+    /// If file segment is detached it means the following:
+    /// 1. It is not present in FileCache, e.g. will not be visible to any cache user apart from
+    /// those who acquired shared pointer to this file segment before it was detached.
+    /// 2. Detached file segment can still be hold by some cache users, but it's state became
+    /// immutable at the point it was detached, any non-const / stateful method will throw an
+    /// exception.
+    void detach(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
+
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
+
+    bool isDetached() const;
+
+    void assertCorrectness() const;
+
+    /**
+     * ========== Methods for _only_ file segment's `writer` ======================
+     */
+
+    void synchronousWrite(const char * from, size_t size, size_t offset);
+
+    /**
+     * ========== Methods for _only_ file segment's `downloader` ==================
+     */
+
+    /// Try to reserve exactly `size` bytes.
+    bool reserve(size_t size_to_reserve);
+
+    /// Write data into reserved space.
+    void write(const char * from, size_t size, size_t offset);
+
+    /// Complete file segment with a certain state.
+    void completeWithState(State state);
+
+    void completeWithoutState();
+
+    /// Complete file segment's part which was last written.
+    void completePartAndResetDownloader();
+
+    void resetDownloader();
 
     RemoteFileReaderPtr getRemoteFileReader();
 
@@ -123,91 +217,53 @@ public:
 
     void resetRemoteFileReader();
 
-    String getOrSetDownloader();
-
-    String getDownloader() const;
-
-    void resetDownloader();
-
-    bool isDownloader() const;
-
-    bool isDownloaded() const;
-
-    static String getCallerId();
-
-    size_t getDownloadOffset() const;
-
-    size_t getDownloadedSize() const;
-
-    size_t getRemainingSizeToDownload() const;
-
-    void completeBatchAndResetDownloader();
-
-    void completeWithState(State state);
-
-    String getInfoForLog() const;
-
-    size_t getHitsCount() const { return hits_count; }
-
-    size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
-
-    void assertCorrectness() const;
-
-    static FileSegmentPtr getSnapshot(
-        const FileSegmentPtr & file_segment,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    void detach(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
-
-    [[noreturn]] void throwIfDetached() const;
-
-    bool isDetached() const;
-
-    String getPathInLocalCache() const;
-
 private:
-    size_t availableSize() const { return reserved_size - downloaded_size; }
+    size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    bool hasFinalizedState() const;
+    String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
-    void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
-    [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    String getDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    void resetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void resetDownloadingStateUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
-    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
+    void setDownloadState(State state);
 
-    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
-    bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
+    void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
 
-    bool isDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
+    bool isDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    bool lastFileSegmentHolder() const;
+    bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
+    void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);
+    [[noreturn]] void throwIfDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+
+    void assertDetachedStatus(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertNotDetached() const;
+    void assertNotDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
+    void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
-    void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
+    void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
 
-    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
+    void completePartAndResetDownloaderUnlocked(std::unique_lock<std::mutex> & segment_lock);
+
+    void wrapWithCacheInfo(Exception & e, const String & message, std::unique_lock<std::mutex> & segment_lock) const;
 
     Range segment_range;
 
     State download_state;
 
-    String downloader_id;
+    /// The one who prepares the download
+    DownloaderId downloader_id;
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
@@ -245,6 +301,7 @@ private:
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     bool is_persistent;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
@@ -266,49 +323,6 @@ struct FileSegmentsHolder : private boost::noncopyable
     }
 
     FileSegments file_segments{};
-};
-
-/**
-  * We want to write eventually some size, which is not known until the very end.
-  * Therefore we allocate file segments lazily. Each file segment is assigned capacity
-  * of max_file_segment_size, but reserved_size remains 0, until call to tryReserve().
-  * Once current file segment is full (reached max_file_segment_size), we allocate a
-  * new file segment. All allocated file segments resize in file segments holder.
-  * If at the end of all writes, the last file segment is not full, then it is resized.
-  */
-class FileSegmentRangeWriter
-{
-public:
-    using OnCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
-
-    FileSegmentRangeWriter(
-        FileCache * cache_,
-        const FileSegment::Key & key_,
-        /// A callback which is called right after each file segment is completed.
-        /// It is used to write into filesystem cache log.
-        OnCompleteFileSegmentCallback && on_complete_file_segment_func_);
-
-    ~FileSegmentRangeWriter();
-
-    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
-
-    void finalize();
-
-private:
-    FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
-    void completeFileSegment(FileSegment & file_segment);
-
-    FileCache * cache;
-    FileSegment::Key key;
-
-    FileSegmentsHolder file_segments_holder;
-    FileSegments::iterator current_file_segment_it;
-
-    size_t current_file_segment_write_offset = 0;
-
-    bool finalized = false;
-
-    OnCompleteFileSegmentCallback on_complete_file_segment_func;
 };
 
 }

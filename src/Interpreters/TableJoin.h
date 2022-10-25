@@ -55,15 +55,26 @@ public:
         ASTPtr on_filter_condition_left;
         ASTPtr on_filter_condition_right;
 
+        std::string analyzer_left_filter_condition_column_name;
+        std::string analyzer_right_filter_condition_column_name;
+
         JoinOnClause() = default;
 
         std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
+
+            if (!analyzer_left_filter_condition_column_name.empty())
+                res.first = analyzer_left_filter_condition_column_name;
+
+            if (!analyzer_right_filter_condition_column_name.empty())
+                res.second = analyzer_right_filter_condition_column_name;
+
             if (on_filter_condition_left)
                 res.first = on_filter_condition_left->getColumnName();
             if (on_filter_condition_right)
                 res.second = on_filter_condition_right->getColumnName();
+
             return res;
         }
 
@@ -111,9 +122,6 @@ private:
       *     to the subquery will be added expression `expr(t2 columns)`.
       * It's possible to use name `expr(t2 columns)`.
       */
-
-    friend class TreeRewriter;
-
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
@@ -123,9 +131,6 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
-
-    /// the limit has no technical reasons, it supposed to improve safety
-    const size_t MAX_DISJUNCTS = 16; /// NOLINT
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -160,6 +165,8 @@ private:
 
     std::string right_storage_name;
 
+    bool is_join_with_constant = false;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -177,6 +184,8 @@ private:
     void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict);
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
+
+    void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
 
 public:
     TableJoin() = default;
@@ -217,8 +226,8 @@ public:
     bool allowParallelHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
-    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
-    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
+    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }
+    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(kind()); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -228,6 +237,9 @@ public:
     bool needStreamWithNonJoinedRows() const;
 
     bool oneDisjunct() const;
+
+    ASTTableJoin & getTableJoin() { return table_join; }
+    const ASTTableJoin & getTableJoin() const { return table_join; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
@@ -266,13 +278,26 @@ public:
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 
-    void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     size_t rightKeyInclusion(const String & name) const;
     NameSet requiredRightKeys() const;
+
+    bool isJoinWithConstant() const
+    {
+        return is_join_with_constant;
+    }
+
+    void setIsJoinWithConstant(bool is_join_with_constant_value)
+    {
+        is_join_with_constant = is_join_with_constant_value;
+    }
 
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
+    void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
+    {
+        columns_added_by_join = columns_added_by_join_value;
+    }
 
     template <typename TColumns>
     void addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, bool correct_nullability);
@@ -294,15 +319,13 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
-
-    Names columnsAddedByJoin() const
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
     {
-        Names res;
-        for (const auto & col : columns_added_by_join)
-            res.push_back(col.name);
-        return res;
+        columns_from_joined_table = std::move(columns_from_joined_table_value);
+        deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
     }
+    const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
+    const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { getOnlyClause().key_names_right = keys; }

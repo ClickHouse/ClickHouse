@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -114,7 +114,7 @@ protected:
         size_t size = 0;
     };
 
-    using Files = std::unordered_map<String, FileData>; /// file path -> file data
+    using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
 
     String url;

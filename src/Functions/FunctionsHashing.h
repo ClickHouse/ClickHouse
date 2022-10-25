@@ -7,11 +7,15 @@
 #include <MurmurHash3.h>
 #include <wyhash.h>
 
-#include "config_functions.h"
-#include "config_core.h"
+#include "config.h"
+
+#if USE_BLAKE3
+#    include <blake3.h>
+#endif
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
@@ -58,6 +62,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -81,6 +86,7 @@ namespace ErrorCodes
   * intHash64: number -> UInt64
   *
   */
+
 
 struct IntHash32Impl
 {
@@ -413,7 +419,6 @@ struct MurmurHash3Impl128
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-/// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
 ///  but obtain the same result as it is done in signed integers with two's complement arithmetic.
 struct JavaHashImpl
@@ -421,7 +426,34 @@ struct JavaHashImpl
     static constexpr auto name = "javaHash";
     using ReturnType = Int32;
 
-    static Int32 apply(const char * data, const size_t size)
+    static ReturnType apply(int64_t x)
+    {
+        return static_cast<ReturnType>(
+            static_cast<uint32_t>(x) ^ static_cast<uint32_t>(static_cast<uint64_t>(x) >> 32));
+    }
+
+    template <class T, typename std::enable_if<std::is_same_v<T, int8_t>
+                                                   || std::is_same_v<T, int16_t>
+                                                   || std::is_same_v<T, int32_t>, T>::type * = nullptr>
+    static ReturnType apply(T x)
+    {
+        return x;
+    }
+
+    template <typename T, typename std::enable_if<!std::is_same_v<T, int8_t>
+                                                      && !std::is_same_v<T, int16_t>
+                                                      && !std::is_same_v<T, int32_t>
+                                                      && !std::is_same_v<T, int64_t>, T>::type * = nullptr>
+    static ReturnType apply(T x)
+    {
+        if (std::is_unsigned_v<T>)
+            throw Exception("Unsigned types are not supported", ErrorCodes::NOT_IMPLEMENTED);
+        const size_t size = sizeof(T);
+        const char * data = reinterpret_cast<const char *>(&x);
+        return apply(data, size);
+    }
+
+    static ReturnType apply(const char * data, const size_t size)
     {
         UInt32 h = 0;
         for (size_t i = 0; i < size; ++i)
@@ -429,7 +461,7 @@ struct JavaHashImpl
         return static_cast<Int32>(h);
     }
 
-    static Int32 combineHashes(Int32, Int32)
+    static ReturnType combineHashes(Int32, Int32)
     {
         throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -586,6 +618,38 @@ struct ImplXxHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
     static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct ImplBLAKE3
+{
+    static constexpr auto name = "BLAKE3";
+    enum { length = 32 };
+
+    #if !USE_BLAKE3
+    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        UNUSED(begin);
+        UNUSED(size);
+        UNUSED(out_char_data);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
+    }
+    #else
+    static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        #if defined(MEMORY_SANITIZER)
+            auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
+            __msan_unpoison(out_char_data, length);
+        #else
+            auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
+        #endif
+        if (err_msg != nullptr)
+        {
+            auto err_st = std::string(err_msg);
+            blake3_free_char_pointer(err_msg);
+            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+    #endif
 };
 
 template <typename Impl>
@@ -824,7 +888,10 @@ private:
                 }
                 else
                 {
-                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                    if (std::is_same_v<Impl, JavaHashImpl>)
+                        h = JavaHashImpl::apply(vec_from[i]);
+                    else
+                        h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
                 }
 
                 if constexpr (first)
@@ -1443,5 +1510,5 @@ using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
-
+using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }

@@ -60,7 +60,7 @@ StorageNATS::StorageNATS(
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
     , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
-    , semaphore(0, num_consumers)
+    , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , is_attach(is_attach_)
 {
@@ -92,10 +92,24 @@ StorageNATS::StorageNATS(
 
     try
     {
-        connection = std::make_shared<NATSConnectionManager>(configuration, log);
-        if (!connection->connect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to {}. Nats last error: {}",
-                            connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+        size_t num_tries = nats_settings->nats_startup_connect_tries;
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            connection = std::make_shared<NATSConnectionManager>(configuration, log);
+
+            if (connection->connect())
+                break;
+
+            if (i == num_tries - 1)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_CONNECT_NATS,
+                    "Cannot connect to {}. Nats last error: {}",
+                    connection->connectionInfoForLog(), nats_GetLastError(nullptr));
+            }
+
+            LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
+        }
     }
     catch (...)
     {
@@ -275,7 +289,7 @@ void StorageNATS::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        unsigned /* num_streams */)
+        size_t /* num_streams */)
 {
     if (!consumers_ready)
         throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);

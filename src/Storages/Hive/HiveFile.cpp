@@ -210,7 +210,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
         {
             size_t pos = it->second;
             /// Attention: column statistics start from 1. 0 has special purpose.
-            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(pos + 1);
+            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(static_cast<unsigned>(pos + 1));
             idx->hyperrectangle[i] = buildRange(col_stats);
         }
         ++i;
@@ -297,7 +297,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     const auto * schema = meta->schema();
     for (size_t pos = 0; pos < num_cols; ++pos)
     {
-        String column{schema->Column(pos)->name()};
+        String column{schema->Column(static_cast<int>(pos))->name()};
         boost::to_lower(column);
         parquet_column_positions[column] = pos;
     }
@@ -306,7 +306,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     split_minmax_idxes.resize(num_row_groups);
     for (size_t i = 0; i < num_row_groups; ++i)
     {
-        auto row_group_meta = meta->RowGroup(i);
+        auto row_group_meta = meta->RowGroup(static_cast<int>(i));
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         split_minmax_idxes[i]->hyperrectangle.resize(num_cols);
 
@@ -321,7 +321,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
                 continue;
 
             size_t pos = mit->second;
-            auto col_chunk = row_group_meta->ColumnChunk(pos);
+            auto col_chunk = row_group_meta->ColumnChunk(static_cast<int>(pos));
             if (!col_chunk->is_stats_set())
                 continue;
 
