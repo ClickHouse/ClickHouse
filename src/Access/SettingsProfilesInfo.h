@@ -26,7 +26,7 @@ struct SettingsProfilesInfo
     /// The order of IDs in this vector corresponds the order of applying of these profiles.
     std::vector<UUID> profiles_with_implicit;
 
-    /// Names of all the profiles in `profiles`.
+    /// Names of all the profiles in `profiles_with_implicit`.
     std::unordered_map<UUID, String> names_of_profiles;
 
     explicit SettingsProfilesInfo(const AccessControl & access_control_) : constraints(access_control_), access_control(access_control_) {}
@@ -36,15 +36,7 @@ struct SettingsProfilesInfo
     friend bool operator ==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs);
     friend bool operator !=(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs) { return !(lhs == rhs); }
 
-    Strings getProfileNames() const
-    {
-        Strings result;
-        result.reserve(profiles.size());
-        for (const auto & profile_id : profiles)
-            result.push_back(names_of_profiles.at(profile_id));
-
-        return result;
-    }
+    Strings getProfileNames() const;
 
 private:
     const AccessControl & access_control;
