@@ -13,7 +13,7 @@ node = cluster.add_instance(
 
 
 @pytest.fixture(scope="module")
-def start_cluster():
+def started_cluster():
     try:
         cluster.start()
 
@@ -42,7 +42,7 @@ def check_expected_part_number(seconds, table_name, expected):
     assert ok
 
 
-def test_without_force_merge_old_parts(start_cluster):
+def test_without_force_merge_old_parts(started_cluster):
     node.query(
         "CREATE TABLE test_without_merge (i Int64) ENGINE = MergeTree ORDER BY i;"
     )
@@ -60,13 +60,18 @@ def test_without_force_merge_old_parts(start_cluster):
     node.query("DROP TABLE test_without_merge;")
 
 
-def test_force_merge_old_parts(start_cluster):
+@pytest.mark.parametrize("partition_only", ["True", "False"])
+def test_force_merge_old_parts(started_cluster, partition_only):
     node.query(
-        "CREATE TABLE test_with_merge (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
+        "CREATE TABLE test_with_merge (i Int64) "
+        "ENGINE = MergeTree "
+        "ORDER BY i "
+        f"SETTINGS min_age_to_force_merge_seconds=5, min_age_to_force_merge_on_partition_only={partition_only};"
     )
     node.query("INSERT INTO test_with_merge SELECT 1")
     node.query("INSERT INTO test_with_merge SELECT 2")
     node.query("INSERT INTO test_with_merge SELECT 3")
+    assert get_part_number("test_with_merge") == TSV("""3\n""")
 
     expected = TSV("""1\n""")
     check_expected_part_number(10, "test_with_merge", expected)
@@ -74,15 +79,20 @@ def test_force_merge_old_parts(start_cluster):
     node.query("DROP TABLE test_with_merge;")
 
 
-def test_force_merge_old_parts_replicated_merge_tree(start_cluster):
+@pytest.mark.parametrize("partition_only", ["True", "False"])
+def test_force_merge_old_parts_replicated_merge_tree(started_cluster, partition_only):
     node.query(
-        "CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') ORDER BY i SETTINGS min_age_to_force_merge_seconds=5;"
+        "CREATE TABLE test_replicated (i Int64) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/testing/test', 'node') "
+        "ORDER BY i "
+        f"SETTINGS min_age_to_force_merge_seconds=5, min_age_to_force_merge_on_partition_only={partition_only};"
     )
     node.query("INSERT INTO test_replicated SELECT 1")
     node.query("INSERT INTO test_replicated SELECT 2")
     node.query("INSERT INTO test_replicated SELECT 3")
+    assert get_part_number("test_replicated") == TSV("""3\n""")
 
     expected = TSV("""1\n""")
     check_expected_part_number(10, "test_replicated", expected)
 
-    node.query("DROP TABLE test_replicated;")
+    node.query("DROP TABLE test_replicated SYNC;")
