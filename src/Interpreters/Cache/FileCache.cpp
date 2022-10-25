@@ -32,6 +32,8 @@ FileCache::FileCache(
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
@@ -185,6 +187,20 @@ FileSegments FileCache::getImpl(
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
 
+    FileSegments result;
+
+    if (enable_bypass_cache_with_threashold && (range.size() > bypass_cache_threashold))
+    {
+        auto file_segment = std::make_shared<FileSegment>(
+            range.left, range.size(), key, this, FileSegment::State::SKIP_CACHE, CreateFileSegmentSettings{});
+        {
+            std::unique_lock segment_lock(file_segment->mutex);
+            file_segment->detachAssumeStateFinalized(segment_lock);
+        }
+        result.emplace_back(file_segment);
+        return result;
+    }
+
     auto it = files.find(key);
     if (it == files.end())
         return {};
@@ -197,7 +213,6 @@ FileSegments FileCache::getImpl(
         return {};
     }
 
-    FileSegments result;
     auto segment_it = file_segments.lower_bound(range.left);
     if (segment_it == file_segments.end())
     {
@@ -392,7 +407,6 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
 #endif
 
     FileSegment::Range range(offset, offset + size - 1);
-
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
 
@@ -404,7 +418,6 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     {
         fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
     }
-
     assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }

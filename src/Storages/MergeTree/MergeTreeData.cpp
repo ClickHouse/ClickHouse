@@ -1699,7 +1699,13 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     if (!lock.try_lock())
         return res;
 
+    /// Concurrent parts removal is disabled for "zero-copy replication" (a non-production feature),
+    /// because parts removal involves hard links and concurrent hard link operations don't work correctly
+    /// in the "zero-copy replication" (because it is a non-production feature).
+    /// Please don't use "zero-copy replication" (a non-production feature) in production.
+    /// It is not ready for production usage. Don't use it.
     bool need_remove_parts_in_order = supportsReplication() && getSettings()->allow_remote_fs_zero_copy_replication;
+
     if (need_remove_parts_in_order)
     {
         bool has_zero_copy_disk = false;
@@ -1914,9 +1920,19 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts, bool
 void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed)
 {
     const auto settings = getSettings();
+    bool has_zero_copy_parts = false;
+    if (supportsReplication() && settings->allow_remote_fs_zero_copy_replication)
+    {
+        has_zero_copy_parts = std::any_of(
+            parts_to_remove.begin(), parts_to_remove.end(),
+            [] (const auto & data_part) { return data_part->isStoredOnRemoteDiskWithZeroCopySupport(); }
+        );
+    }
+
     if (parts_to_remove.size() > 1
         && settings->max_part_removal_threads > 1
-        && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
+        && parts_to_remove.size() > settings->concurrent_part_removal_threshold
+        && !has_zero_copy_parts) /// parts must be removed in order for zero-copy replication
     {
         /// Parallel parts removal.
         size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
@@ -3229,7 +3245,10 @@ void MergeTreeData::outdateBrokenPartAndCloneToDetached(const DataPartPtr & part
         LOG_INFO(log, "Cloning part {} to {}_{} and making it obsolete.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
 
     part_to_detach->makeCloneInDetached(prefix, metadata_snapshot);
-    removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true);
+
+    DataPartsLock lock = lockParts();
+    if (part_to_detach->getState() == DataPartState::Active)
+        removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part_to_detach}, true, &lock);
 }
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool restore_covered)
@@ -5683,6 +5702,11 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return std::nullopt;
+
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
         || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
@@ -6234,7 +6258,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+        src_part_storage = src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
     }
 
     String with_copy;
@@ -6418,7 +6442,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         if (auto part_in_memory = asInMemoryPart(part))
         {
             auto flushed_part_path = part_in_memory->getRelativePathForPrefix("tmp_freeze");
-            data_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+            data_part_storage = part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
         }
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)

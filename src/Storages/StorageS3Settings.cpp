@@ -1,5 +1,7 @@
 #include <Storages/StorageS3Settings.h>
 
+#include <IO/S3Common.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
@@ -9,10 +11,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int INVALID_CONFIG_PARAMETER;
-}
 
 void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings)
 {
@@ -46,41 +44,8 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
         if (config.has(config_elem + "." + key + ".endpoint"))
         {
             auto endpoint = get_string_for_key(key, "endpoint", false);
-            auto access_key_id = get_string_for_key(key, "access_key_id");
-            auto secret_access_key = get_string_for_key(key, "secret_access_key");
-            auto region = get_string_for_key(key, "region");
-            auto server_side_encryption_customer_key_base64 = get_string_for_key(key, "server_side_encryption_customer_key_base64");
 
-            std::optional<bool> use_environment_credentials;
-            if (config.has(config_elem + "." + key + ".use_environment_credentials"))
-                use_environment_credentials = config.getBool(config_elem + "." + key + ".use_environment_credentials");
-
-            std::optional<bool> use_insecure_imds_request;
-            if (config.has(config_elem + "." + key + ".use_insecure_imds_request"))
-                use_insecure_imds_request = config.getBool(config_elem + "." + key + ".use_insecure_imds_request");
-
-            HeaderCollection headers;
-            Poco::Util::AbstractConfiguration::Keys subconfig_keys;
-            config.keys(config_elem + "." + key, subconfig_keys);
-            for (const String & subkey : subconfig_keys)
-            {
-                if (subkey.starts_with("header"))
-                {
-                    auto header_str = config.getString(config_elem + "." + key + "." + subkey);
-                    auto delimiter = header_str.find(':');
-                    if (delimiter == String::npos)
-                        throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
-                    headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
-                }
-            }
-
-            S3Settings::AuthSettings auth_settings{
-                    std::move(access_key_id), std::move(secret_access_key),
-                    std::move(region),
-                    std::move(server_side_encryption_customer_key_base64),
-                    std::move(headers),
-                    use_environment_credentials,
-                    use_insecure_imds_request};
+            auto auth_settings = S3::AuthSettings::loadFromConfig(config_elem + "." + key, config);
 
             S3Settings::ReadWriteSettings rw_settings;
             rw_settings.max_single_read_retries = get_uint_for_key(key, "max_single_read_retries", true, settings.s3_max_single_read_retries);

@@ -393,7 +393,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     /// Keep a copy to the start of the column tokens to use if later if necessary
-    IParser::Pos ti_start(*token_iterator, settings.max_parser_depth);
+    IParser::Pos ti_start(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
     ASTPtr ast;
     bool parsed = parser.parse(*token_iterator, ast, expected);
 
