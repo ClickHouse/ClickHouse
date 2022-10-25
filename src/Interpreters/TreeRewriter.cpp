@@ -1203,7 +1203,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
     TreeRewriterResult && result,
     const SelectQueryOptions & select_options,
-    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+    const TablesWithColumns & tables_with_columns,
     const Names & required_result_columns,
     std::shared_ptr<TableJoin> table_join) const
 {
