@@ -65,7 +65,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
 {
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
-        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
+        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), static_cast<int>(i));
         packet_endpoint->sendPacket(row_packet);
     }
 }

@@ -106,7 +106,7 @@ struct ToValidUTF8Impl
                 /// Sequence was not fully written to this buffer.
                 break;
             }
-            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), static_cast<int>(len)))
             {
                 /// Valid sequence.
                 p += len;

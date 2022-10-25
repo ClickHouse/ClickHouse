@@ -415,8 +415,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true>(
-                        unwrap<op_case, OpCase::LeftConstant>(a, i),
-                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -424,8 +424,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
-                        unwrap<op_case, OpCase::LeftConstant>(a, i),
-                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -436,8 +436,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true, false>(
-                        unwrap<op_case, OpCase::LeftConstant>(a, i),
-                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -445,8 +445,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
-                        unwrap<op_case, OpCase::LeftConstant>(a, i),
-                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -456,12 +456,20 @@ public:
         {
             processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
-                return applyScaledDiv<is_decimal_a>(left, right, scale_a);
+                return applyScaledDiv<is_decimal_a>(
+                    static_cast<NativeResultType>(left), right, scale_a);
             });
             return;
         }
 
-        processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [](const auto & left, const auto & right){ return apply(left, right); });
+        processWithRightNullmapImpl<op_case>(
+            a, b, c, size, right_nullmap,
+            [](const auto & left, const auto & right)
+            {
+                return apply(
+                    static_cast<NativeResultType>(left),
+                    static_cast<NativeResultType>(right));
+            });
     }
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
@@ -899,10 +907,10 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
-        new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+        if (WhichDataType(new_arguments[1].type).isInterval())
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
@@ -995,8 +1003,10 @@ class FunctionBinaryArithmetic : public IFunction
         /// non-vector result
         if (col_left_const && col_right_const)
         {
-            const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
-            const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
+            const NativeResultType const_a = static_cast<NativeResultType>(
+                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+            const NativeResultType const_b = static_cast<NativeResultType>(
+                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
 
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
@@ -1020,14 +1030,16 @@ class FunctionBinaryArithmetic : public IFunction
         }
         else if (col_left_const && col_right)
         {
-            const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
+            const NativeResultType const_a = static_cast<NativeResultType>(
+                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
         }
         else if (col_left && col_right_const)
         {
-            const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
+            const NativeResultType const_b = static_cast<NativeResultType>(
+                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
