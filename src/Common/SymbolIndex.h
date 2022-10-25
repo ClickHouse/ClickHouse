@@ -51,7 +51,7 @@ public:
     std::string_view getResource(String name) const
     {
         if (auto it = data.resources.find(name); it != data.resources.end())
-            return it->second.data;
+            return it->second.data();
         return {};
     }
 
@@ -63,11 +63,18 @@ public:
     {
         /// Symbol can be presented in multiple shared objects,
         /// base_address will be used to compare only symbols from the same SO.
-        ElfW(Addr) base_address;
+        ElfW(Addr) base_address = 0;
         /// Just a human name of the SO.
         std::string_view object_name;
         /// Data blob.
-        std::string_view data;
+        std::string_view start;
+        std::string_view end;
+
+        std::string_view data() const
+        {
+            assert(end.data() >= start.data());
+            return std::string_view{start.data(), static_cast<size_t>(end.data() - start.data())};
+        }
     };
     using Resources = std::unordered_map<std::string_view /* symbol name */, ResourcesBlob>;
 
