@@ -117,7 +117,8 @@ FilterDAGInfoPtr generateFilterActions(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
-    Names & prerequisite_columns)
+    Names & prerequisite_columns,
+    PreparedSetsPtr prepared_sets)
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
@@ -155,7 +156,7 @@ FilterDAGInfoPtr generateFilterActions(
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot, {}, false, {}, prepared_sets);
     filter_info->actions = analyzer.simpleSelectActions();
 
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
@@ -615,7 +616,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (row_policy_filter)
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    prepared_sets);
 
                 query_info.filter_asts.push_back(row_policy_filter);
             }
@@ -623,7 +625,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (query_info.additional_filter_ast)
             {
                 additional_filter_info = generateFilterActions(
-                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    prepared_sets);
 
                 additional_filter_info->do_remove_column = true;
 
