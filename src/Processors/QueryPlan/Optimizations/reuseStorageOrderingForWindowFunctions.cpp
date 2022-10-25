@@ -62,13 +62,17 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    if (!context->getSettings().optimize_read_in_window_order)
+    if (!context->getSettings().optimize_read_in_window_order || context->getSettingsRef().use_analyzer)
     {
         return 0;
     }
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return 0;
 
     ManyExpressionActions order_by_elements_actions;
     const auto & window_desc = window->getWindowDescription();
@@ -91,8 +95,6 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
             window->getWindowDescription().full_sort_description,
             query_info.syntax_analyzer_result);
 
-    read_from_merge_tree->setQueryInfoOrderOptimizer(order_optimizer);
-
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
     UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
@@ -103,7 +105,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        read_from_merge_tree->setQueryInfoInputOrderInfo(order_info);
+        read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 

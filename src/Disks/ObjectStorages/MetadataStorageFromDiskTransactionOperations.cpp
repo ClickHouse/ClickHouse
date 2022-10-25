@@ -324,11 +324,15 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<std::shared_mutex> & 
 
 void UnlinkMetadataFileOperation::undo()
 {
-    if (write_operation)
-        write_operation->undo();
-
+    /// Operations MUST be reverted in the reversed order, so
+    /// when we apply operation #1 (write) and operation #2 (unlink)
+    /// we should revert #2 and only after it #1. Otherwise #1 will overwrite
+    /// file with incorrect data.
     if (unlink_operation)
         unlink_operation->undo();
+
+    if (write_operation)
+        write_operation->undo();
 }
 
 void SetReadonlyFileOperation::execute(std::unique_lock<std::shared_mutex> & metadata_lock)

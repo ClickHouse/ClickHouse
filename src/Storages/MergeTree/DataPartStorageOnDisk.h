@@ -45,15 +45,19 @@ public:
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
     void remove(
-        bool can_remove_shared_data,
-        const NameSet & names_not_to_remove,
+        CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         MergeTreeDataPartState state,
-        Poco::Logger * log) const override;
+        Poco::Logger * log) override;
 
-    std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
+    /// Returns path to place detached part in or nullopt if we don't need to detach part (if it already exists and has the same content)
+    std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const override;
+
+    /// Returns true if detached part already exists and has the same content (compares checksums.txt and the list of files)
+    bool looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path, std::optional<String> & original_checksums_content,
+                                                      std::optional<Strings> & original_files_list) const;
 
     void setRelativePath(const std::string & path) override;
     void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
@@ -101,7 +105,8 @@ public:
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        bool copy_instead_of_hardlink) const override;
+        bool copy_instead_of_hardlink,
+        const NameSet & files_to_copy_instead_of_hardlinks) const override;
 
     DataPartStoragePtr clone(
         const std::string & to,

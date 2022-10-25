@@ -3,6 +3,8 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteSettings.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -43,6 +45,11 @@ struct MergeTreeWriterSettings
         , max_compress_block_size(
               storage_settings->max_compress_block_size ? storage_settings->max_compress_block_size
                                                         : global_settings.max_compress_block_size)
+        , marks_compression_codec(storage_settings->marks_compression_codec)
+        , marks_compress_block_size(storage_settings->marks_compress_block_size)
+        , compress_primary_key(storage_settings->compress_primary_key)
+        , primary_key_compression_codec(storage_settings->primary_key_compression_codec)
+        , primary_key_compress_block_size(storage_settings->primary_key_compress_block_size)
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
@@ -50,8 +57,23 @@ struct MergeTreeWriterSettings
     {
     }
 
+    CompressionCodecPtr getMarksCompressionCodec() const
+    {
+        ParserCodec codec_parser;
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        return CompressionCodecFactory::instance().get(ast, nullptr);
+    }
+
     size_t min_compress_block_size;
     size_t max_compress_block_size;
+
+    String marks_compression_codec;
+    size_t marks_compress_block_size;
+
+    bool compress_primary_key;
+    String primary_key_compression_codec;
+    size_t primary_key_compress_block_size;
+
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool blocks_are_granules_size;

@@ -223,13 +223,6 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
-void MultipleAccessStorage::reload()
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-        storage->reload();
-}
-
 void MultipleAccessStorage::startPeriodicReloading()
 {
     auto storages = getStoragesInternal();
@@ -242,6 +235,13 @@ void MultipleAccessStorage::stopPeriodicReloading()
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
         storage->stopPeriodicReloading();
+}
+
+void MultipleAccessStorage::reload(ReloadMode reload_mode)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->reload(reload_mode);
 }
 
 

@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-s3-storage
+-- Tags: long, no-parallel
 
 drop table if exists t;
 

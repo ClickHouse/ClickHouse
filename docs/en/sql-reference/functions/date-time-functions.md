@@ -268,13 +268,13 @@ Result:
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`.
-Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
-In case argument is out of normal range:
-  * If the argument is smaller than 1970, the result will be calculated from the argument `1970-01-01 (00:00:00)` instead.
-  * If the return type is `DateTime` and the argument is larger than `2106-02-07 08:28:15`, the result will be calculated from the argument `2106-02-07 08:28:15` instead.
-  * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
-  *  If `toLastDayOfMonth` is called with an argument greater then `2149-05-31`, the result will be calculated from the argument `2149-05-31` instead.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
+
+Behavior for
+* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+* `enable_extended_results_for_datetime_functions = 1`:
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
 ## toStartOfYear
@@ -298,23 +298,22 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-## toLastDayOfMonth
+:::note
+The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
+:::
 
-Rounds up a date or date with time to the last day of the month.
-Returns the date.
+If `toLastDayOfMonth` is called with an argument of type `Date` greater then 2149-05-31, the result will be calculated from the argument 2149-05-31 instead.
 
 ## toMonday
 
 Rounds down a date or date with time to the nearest Monday.
-As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` return date `1970-01-01`.
 Returns the date.
 
 ## toStartOfWeek(t\[,mode\])
 
 Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
-As a special case, date arguments `1970-01-01`, `1970-01-02`, `1970-01-03` and `1970-01-04` (and `1970-01-05` if `mode` is `1`) return date `1970-01-01`.
-The `mode` argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
 ## toStartOfDay
 
@@ -640,7 +639,7 @@ Result:
 
 ## date\_diff
 
-Returns the difference between two dates or dates with time values. 
+Returns the difference between two dates or dates with time values.
 The difference is calculated using relative units, e.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
 
 **Syntax**
@@ -665,9 +664,9 @@ Aliases: `dateDiff`, `DATE_DIFF`.
     - `quarter`
     - `year`
 
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 -   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
 
@@ -1059,9 +1058,9 @@ SELECT
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.  
-This is necessary, for example, when searching for pageviews in the corresponding session.  
-Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.  
+For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
+This is necessary, for example, when searching for pageviews in the corresponding session.
+Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
 Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
 
 Example:
@@ -1069,7 +1068,7 @@ Example:
 SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
 SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
 SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
-```
+``` 
 ``` text
 ┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
 │ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
@@ -1157,7 +1156,7 @@ dateName(date_part, date)
 **Arguments**
 
 -   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
--   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `date` — Date. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -1226,6 +1225,8 @@ Result:
 ## FROM\_UNIXTIME
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
+
+Alias: `fromUnixTimestamp`.
 
 **Example:**
 

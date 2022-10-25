@@ -1,6 +1,6 @@
 module github.com/ClickHouse/ClickHouse/programs/diagnostics
 
-go 1.17
+go 1.19
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.0.12

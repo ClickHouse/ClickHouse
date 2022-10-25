@@ -1,6 +1,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -98,19 +99,22 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
     Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
-    std::vector<std::future<Coordination::ExistsResponse>> replicas_status_futures;
-    replicas_status_futures.reserve(replicas.size());
+
+    Strings exists_paths;
     for (const auto & replica : replicas)
         if (replica != storage.replica_name)
-            replicas_status_futures.emplace_back(zookeeper->asyncExists(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
+            exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
 
-    std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
-    std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
+    auto exists_result = zookeeper->exists(exists_paths);
+    auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
 
     size_t active_replicas = 1;     /// Assume current replica is active (will check below)
-    for (auto & status : replicas_status_futures)
-        if (status.get().error == Coordination::Error::ZOK)
+    for (size_t i = 0; i < exists_paths.size(); ++i)
+    {
+        auto status = exists_result[i];
+        if (status.error == Coordination::Error::ZOK)
             ++active_replicas;
+    }
 
     size_t replicas_number = replicas.size();
     size_t quorum_size = getQuorumSize(replicas_number);
@@ -134,8 +138,8 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
-    auto is_active = is_active_future.get();
-    auto host = host_future.get();
+    auto is_active = get_results[0];
+    auto host = get_results[1];
 
     if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);
@@ -161,7 +165,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       */
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
-    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
+    deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
@@ -203,11 +207,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             }
 
             block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
-            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows on {} replicas", block_id, current_block.block.rows(), replicas_num);
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with {} rows on {} replicas", current_block.block.rows(), replicas_num);
+            LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
         }
 
         UInt64 elapsed_ns = watch.elapsed();
@@ -314,7 +318,12 @@ void ReplicatedMergeTreeSink::commitPart(
     DataPartStorageBuilderPtr builder,
     size_t replicas_num)
 {
-    metadata_snapshot->check(part->getColumns());
+    /// It is possible that we alter a part with different types of source columns.
+    /// In this case, if column was not altered, the result type will be different with what we have in metadata.
+    /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
+    ///
+    /// metadata_snapshot->check(part->getColumns());
+
     assertSessionIsNotExpired(zookeeper);
 
     String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
@@ -639,7 +648,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
-    LOG_TRACE(log, "Waiting for quorum '{}' for part {} on {} replicas", quorum_path, part_name, replicas_num);
+    LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
 
     try
     {
@@ -682,6 +691,13 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     }
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
+}
+
+String ReplicatedMergeTreeSink::quorumLogMessage(size_t replicas_num) const
+{
+    if (!isQuorumEnabled())
+        return "";
+    return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(replicas_num), replicas_num);
 }
 
 size_t ReplicatedMergeTreeSink::getQuorumSize(size_t replicas_num) const

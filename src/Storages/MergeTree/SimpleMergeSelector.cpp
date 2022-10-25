@@ -102,6 +102,9 @@ bool allow(
     double max_size_to_lower_base_log,
     const SimpleMergeSelector::Settings & settings)
 {
+    if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+        return true;
+
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale

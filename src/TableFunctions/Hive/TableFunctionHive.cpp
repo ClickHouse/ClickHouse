@@ -61,7 +61,7 @@ namespace DB
         ColumnsDescription /*cached_columns_*/) const
     {
         const Settings & settings = context_->getSettings();
-        ParserLambdaExpression partition_by_parser;
+        ParserExpression partition_by_parser;
         ASTPtr partition_by_ast = parseQuery(
             partition_by_parser,
             "(" + partition_by_def + ")",

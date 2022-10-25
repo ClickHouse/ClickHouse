@@ -59,6 +59,18 @@ MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
     }
 }
 
+
+void MergeTreeWriteAheadLog::dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path)
+{
+    std::vector<std::string> files;
+    disk_to_drop->listFiles(relative_data_path, files);
+    for (const auto & file : files)
+    {
+        if (file.starts_with(WAL_FILE_NAME))
+            disk_to_drop->removeFile(fs::path(relative_data_path) / file);
+    }
+}
+
 void MergeTreeWriteAheadLog::init()
 {
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);

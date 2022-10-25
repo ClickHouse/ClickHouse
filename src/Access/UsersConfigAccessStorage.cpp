@@ -650,13 +650,6 @@ void UsersConfigAccessStorage::load(
         /* already_loaded = */ false);
 }
 
-void UsersConfigAccessStorage::reload()
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->reload();
-}
-
 void UsersConfigAccessStorage::startPeriodicReloading()
 {
     std::lock_guard lock{load_mutex};
@@ -669,6 +662,13 @@ void UsersConfigAccessStorage::stopPeriodicReloading()
     std::lock_guard lock{load_mutex};
     if (config_reloader)
         config_reloader->stop();
+}
+
+void UsersConfigAccessStorage::reload(ReloadMode /* reload_mode */)
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->reload();
 }
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const

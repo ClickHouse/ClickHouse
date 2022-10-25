@@ -549,7 +549,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     container.insert({key, value_to_insert});
                 }
 

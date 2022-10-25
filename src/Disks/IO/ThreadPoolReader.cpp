@@ -108,7 +108,18 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     if (has_pread_nowait_support.load(std::memory_order_relaxed))
     {
+        /// It reports real time spent including the time spent while thread was preempted doing nothing.
+        /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
+        /// (TaskStatsInfoGetter has about 500K RPS).
         Stopwatch watch(CLOCK_MONOTONIC);
+
+        SCOPE_EXIT({
+            watch.stop();
+
+            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+        });
 
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();
@@ -135,11 +146,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             {
                 /// The file has ended.
                 promise.set_value({0, 0});
-
-                watch.stop();
-                ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
-                ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
-
                 return future;
             }
 
@@ -179,18 +185,10 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         if (bytes_read)
         {
-            /// It reports real time spent including the time spent while thread was preempted doing nothing.
-            /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-            /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-            /// (TaskStatsInfoGetter has about 500K RPS).
-            watch.stop();
-
             /// Read successfully from page cache.
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
-            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
             promise.set_value({bytes_read, request.ignore});
             return future;
@@ -200,32 +198,17 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    ThreadGroupStatusPtr running_group;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        running_group = CurrentThread::get().getThreadGroup();
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead");
 
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, fd, running_group, query_context]
+    return schedule([request, fd]() -> Result
     {
-        ThreadStatus thread_status;
-
-        SCOPE_EXIT({
-            if (running_group)
-                thread_status.detachQuery();
-        });
-
-        if (running_group)
-            thread_status.attachQuery(running_group);
-
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
-
-        setThreadName("ThreadPoolRead");
-
         Stopwatch watch(CLOCK_MONOTONIC);
+        SCOPE_EXIT({
+            watch.stop();
+
+            ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
+            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+        });
 
         size_t bytes_read = 0;
         while (!bytes_read)
@@ -254,18 +237,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-        ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
         return Result{ .size = bytes_read, .offset = request.ignore };
-    });
-
-    auto future = task->get_future();
-
-    /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
-    pool.scheduleOrThrow([task]{ (*task)(); }, -request.priority);
-
-    return future;
+    }, request.priority);
 }
 
 }

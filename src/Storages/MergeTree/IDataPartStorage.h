@@ -12,6 +12,13 @@ namespace DB
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
+struct CanRemoveDescription
+{
+    bool can_remove_anything;
+    NameSet files_not_to_remove;
+
+};
+using CanRemoveCallback = std::function<CanRemoveDescription()>;
 
 class IDataPartStorageIterator
 {
@@ -113,17 +120,16 @@ public:
     /// can_remove_shared_data, names_not_to_remove are specific for DiskObjectStorage.
     /// projections, checksums are needed to avoid recursive listing
     virtual void remove(
-        bool can_remove_shared_data,
-        const NameSet & names_not_to_remove,
+        CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
         MergeTreeDataPartState state,
-        Poco::Logger * log) const = 0;
+        Poco::Logger * log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
-    virtual std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const = 0;
+    virtual std::optional<String> getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for im-memory parts.
     /// TODO: remove it.
@@ -186,12 +192,17 @@ public:
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
+    /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
+    /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
+    /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
+    /// zero-copy locks for different parts will be on the same path in zookeeper.
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
         bool make_source_readonly,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        bool copy_instead_of_hardlink) const = 0;
+        bool copy_instead_of_hardlink,
+        const NameSet & files_to_copy_instead_of_hardlinks) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clone(

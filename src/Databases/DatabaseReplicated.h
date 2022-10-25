@@ -46,7 +46,7 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal = false);
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, bool internal) override;
 
     bool hasReplicationThread() const override { return true; }
 
@@ -74,6 +74,8 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
+
+    bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;

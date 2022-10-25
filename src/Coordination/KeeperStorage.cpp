@@ -1,11 +1,11 @@
 #include <iterator>
 #include <variant>
-#include <Coordination/KeeperStorage.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
-#include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
+
+#include <Common/Base64.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -15,8 +15,11 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
+
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperStorage.h>
+
 #include <sstream>
 #include <iomanip>
 #include <mutex>
@@ -35,17 +38,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-String base64Encode(const String & decoded)
-{
-    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ostr.exceptions(std::ios::failbit);
-    Poco::Base64Encoder encoder(ostr);
-    encoder.rdbuf()->setLineLength(0);
-    encoder << decoded;
-    encoder.close();
-    return ostr.str();
-}
 
 String getSHA1(const String & userdata)
 {
@@ -516,7 +508,7 @@ void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.node;
 
     return tryGetNodeFromStorage(path);
@@ -524,7 +516,7 @@ std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::getNode(St
 
 Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) const
 {
-    if (auto node_it = nodes.find(std::string{path}); node_it != nodes.end())
+    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
         return node_it->second.acls;
 
     auto node_it = storage.container.find(path);
@@ -830,7 +822,9 @@ bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session
 void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::string & path)
 {
     auto ephemerals_it = ephemerals.find(session_id);
-    assert(ephemerals_it != ephemerals.end());
+    if (ephemerals_it == ephemerals.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
@@ -928,7 +922,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         stat.version = 0;
         stat.aversion = 0;
         stat.cversion = 0;
-        stat.dataLength = request.data.length();
+        stat.dataLength = static_cast<Int32>(request.data.length());
         stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
 
         new_deltas.emplace_back(
@@ -1228,7 +1222,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                     value.stat.version++;
                     value.stat.mzxid = zxid;
                     value.stat.mtime = time;
-                    value.stat.dataLength = data.length();
+                    value.stat.dataLength = static_cast<Int32>(data.length());
                     value.setData(data);
                 },
                 request.version});
@@ -1607,6 +1601,9 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
 struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor
 {
+    using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
+    std::optional<OperationType> operation_type;
+
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
         for (const auto & concrete_request : concrete_requests)
@@ -1622,28 +1619,55 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
 
+        const auto check_operation_type = [&](OperationType type)
+        {
+            if (operation_type.has_value() && *operation_type != type)
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal mixing of read and write operations in multi request");
+            operation_type = type;
+        };
+
         for (const auto & sub_request : request.requests)
         {
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Remove:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Set:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Check:
+                    check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Get:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageGetRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::Exists:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageExistsRequestProcessor>(sub_zk_request));
+                    break;
+                case Coordination::OpNum::List:
+                case Coordination::OpNum::FilteredList:
+                case Coordination::OpNum::SimpleList:
+                    check_operation_type(OperationType::Read);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageListRequestProcessor>(sub_zk_request));
                     break;
                 default:
                     throw DB::Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
             }
         }
+
+        assert(request.requests.empty() || operation_type.has_value());
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1658,7 +1682,8 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
             if (!new_deltas.empty())
             {
-                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation))
+                if (auto * error = std::get_if<KeeperStorage::ErrorDelta>(&new_deltas.back().operation);
+                    error && *operation_type == OperationType::Write)
                 {
                     storage.uncommitted_state.rollback(zxid);
                     response_errors.push_back(error->error);
@@ -1705,8 +1730,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->process(storage, zxid);
-            response.responses[i] = cur_response;
+            response.responses[i] = concrete_requests[i]->process(storage, zxid);
             storage.uncommitted_state.commit(zxid);
         }
 
@@ -1721,26 +1745,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
 
         for (size_t i = 0; i < concrete_requests.size(); ++i)
         {
-            auto cur_response = concrete_requests[i]->processLocal(storage, zxid);
-
-            response.responses[i] = cur_response;
-            if (cur_response->error != Coordination::Error::ZOK)
-            {
-                for (size_t j = 0; j <= i; ++j)
-                {
-                    auto response_error = response.responses[j]->error;
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = response_error;
-                }
-
-                for (size_t j = i + 1; j < response.responses.size(); ++j)
-                {
-                    response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                    response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
-                }
-
-                return response_ptr;
-            }
+            response.responses[i] = concrete_requests[i]->processLocal(storage, zxid);
         }
 
         response.error = Coordination::Error::ZOK;
@@ -1825,6 +1830,11 @@ void KeeperStorage::finalize()
     session_expiry_queue.clear();
 }
 
+bool KeeperStorage::isFinalized() const
+{
+    return finalized;
+}
+
 
 class KeeperStorageRequestProcessorsFactory final : private boost::noncopyable
 {
@@ -1882,6 +1892,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::FilteredList, KeeperStorageListRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
 }
@@ -1892,7 +1903,7 @@ UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, const std::vec
     if (!keeper_context->digest_enabled)
         return current_digest;
 
-    std::unordered_map<std::string, std::shared_ptr<Node>> updated_nodes;
+    std::unordered_map<std::string_view, std::shared_ptr<Node>> updated_nodes;
 
     for (const auto & delta : new_deltas)
     {

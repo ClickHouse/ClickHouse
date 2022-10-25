@@ -117,7 +117,8 @@ FilterDAGInfoPtr generateFilterActions(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
-    Names & prerequisite_columns)
+    Names & prerequisite_columns,
+    PreparedSetsPtr prepared_sets)
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
@@ -155,7 +156,7 @@ FilterDAGInfoPtr generateFilterActions(
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot, {}, false, {}, prepared_sets);
     filter_info->actions = analyzer.simpleSelectActions();
 
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
@@ -615,7 +616,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (row_policy_filter)
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    prepared_sets);
 
                 query_info.filter_asts.push_back(row_policy_filter);
             }
@@ -623,7 +625,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (query_info.additional_filter_ast)
             {
                 additional_filter_info = generateFilterActions(
-                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    prepared_sets);
 
                 additional_filter_info->do_remove_column = true;
 
@@ -1453,7 +1456,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             settings.max_bytes_before_remerge_sort,
                             settings.remerge_sort_lowered_memory_bytes_ratio,
                             settings.max_bytes_before_external_sort,
-                            this->context->getTemporaryVolume(),
+                            this->context->getTempDataOnDisk(),
                             settings.min_free_disk_space_for_temporary_data,
                             settings.optimize_sorting_by_input_stream_properties);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
@@ -2206,7 +2209,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_remote)
-            max_streams *= settings.max_streams_to_max_threads_ratio;
+            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
@@ -2354,12 +2357,13 @@ static Aggregator::Params getAggregatorParams(
         settings.empty_result_for_aggregation_by_empty_set
             || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
-        context.getTemporaryVolume(),
+        context.getTempDataOnDisk(),
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
         settings.max_block_size,
+        settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         stats_collecting_params
     };
@@ -2615,7 +2619,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 settings.max_bytes_before_remerge_sort,
                 settings.remerge_sort_lowered_memory_bytes_ratio,
                 settings.max_bytes_before_external_sort,
-                context->getTemporaryVolume(),
+                context->getTempDataOnDisk(),
                 settings.min_free_disk_space_for_temporary_data,
                 settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
@@ -2674,7 +2678,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         settings.max_bytes_before_remerge_sort,
         settings.remerge_sort_lowered_memory_bytes_ratio,
         settings.max_bytes_before_external_sort,
-        context->getTemporaryVolume(),
+        context->getTempDataOnDisk(),
         settings.min_free_disk_space_for_temporary_data,
         settings.optimize_sorting_by_input_stream_properties);
 

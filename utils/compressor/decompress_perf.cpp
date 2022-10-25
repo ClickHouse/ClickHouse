@@ -107,8 +107,12 @@ protected:
 
             if (variant == LZ4_REFERENCE)
             {
-                if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
+                if (LZ4_decompress_fast(
+                    compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to,
+                    static_cast<int>(size_decompressed)) < 0)
+                {
                     throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+                }
             }
             else
                 LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
