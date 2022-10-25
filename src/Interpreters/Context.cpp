@@ -2061,7 +2061,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
     else if (shared->zookeeper->expired())
+    {
+        Stopwatch watch;
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
         shared->zookeeper = shared->zookeeper->startNewSession();
+        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+    }
 
     return shared->zookeeper;
 }
