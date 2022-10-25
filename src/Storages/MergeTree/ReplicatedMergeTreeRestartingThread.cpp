@@ -83,7 +83,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     if (first_time)
     {
-        if (storage.is_readonly)
+        if (storage.is_readonly.load(std::memory_order_acquire))
         {
             /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
@@ -104,7 +104,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
 {
-    if (!storage.is_readonly && !storage.getZooKeeper()->expired())
+    if (!storage.is_readonly.load(std::memory_order_acquire) && !storage.getZooKeeper()->expired())
         return true;
 
     if (first_time)
@@ -112,7 +112,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
         LOG_DEBUG(log, "Activating replica.");
         assert(storage.is_readonly);
     }
-    else if (storage.is_readonly)
+    else if (storage.is_readonly.load(std::memory_order_acquire))
     {
         LOG_WARNING(log, "Table was in readonly mode. Will try to activate it.");
     }
@@ -383,7 +383,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
 void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
 {
     bool old_val = false;
-    bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
+    bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true, std::memory_order_acq_rel);
 
     /// Do not increment the metric if replica became readonly due to shutdown.
     if (became_readonly && on_shutdown)
@@ -403,7 +403,7 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
-    if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
+    if (storage.is_readonly.compare_exchange_strong(old_val, false, std::memory_order_acq_rel) && !first_time)
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 }
 

@@ -574,7 +574,8 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
         /// It's ok if replica became readonly due to connection loss after we got current zookeeper (in this case zookeeper must be expired).
         /// And it's ok if replica became readonly after shutdown.
         /// In other cases it's likely that someone called pullLogsToQueue(...) when queue is not initialized yet by RestartingThread.
-        bool not_completely_initialized = storage.is_readonly && !zookeeper->expired() && !storage.shutdown_called;
+        bool not_completely_initialized
+            = storage.is_readonly.load(std::memory_order_acquire) && !zookeeper->expired() && !storage.shutdown_called;
         if (not_completely_initialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to pull logs to queue (reason: {}) on readonly replica {}, it's a bug",
                             reason, storage.getStorageID().getNameForLogs());

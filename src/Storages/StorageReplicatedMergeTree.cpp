@@ -4459,7 +4459,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & se
 
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
-    if (is_readonly)
+    if (is_readonly.load(std::memory_order_acquire))
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
 }
 
@@ -5021,7 +5021,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
 
-    if (!is_readonly)
+    if (!is_readonly.load(std::memory_order_acquire))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
 
 
@@ -5246,7 +5246,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, c
     MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
-    if (!is_readonly)
+    if (!is_readonly.load(std::memory_order_acquire))
     {
         /// We don't do it for readonly tables, because it will be updated on next table startup.
         /// It is also Ok to skip ZK error for the same reason.
@@ -5569,7 +5569,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
     res.is_leader = is_leader;
     res.can_become_leader = storage_settings_ptr->replicated_can_become_leader;
-    res.is_readonly = is_readonly;
+    res.is_readonly = is_readonly.load(std::memory_order_acquire);
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
     res.queue = queue.getStatus();
