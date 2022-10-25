@@ -269,7 +269,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Milliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.", 0) \
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
     \
-    M(Bool, ignore_force_select_final, false, "Ignores the MT force_select_final setting", 0) \
+    M(Bool, ignore_force_select_final, false, "Ignores the mergetree setting force_select_final, allowing to read the raw data (without applying FINAL automatically) is force_select_final is enabled", 0) \
     \
     /** Settings for testing hedged requests */ \
     M(Milliseconds, sleep_in_send_tables_status_ms, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
