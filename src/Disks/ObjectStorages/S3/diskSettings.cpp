@@ -116,7 +116,8 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        context->getRemoteHostFilter(),
+        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ true);
 

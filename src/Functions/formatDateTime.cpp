@@ -499,7 +499,7 @@ public:
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, vec[i], time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(vec[i]), time_zone);
             }
 
             dst_offsets[i] = pos - begin;

@@ -106,7 +106,7 @@ namespace
 
                 for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
                 {
-                    address.replica_index = replica_index;
+                    address.replica_index = static_cast<UInt32>(replica_index);
                     make_connection(address);
                 }
             }

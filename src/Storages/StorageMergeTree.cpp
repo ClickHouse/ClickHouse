@@ -221,7 +221,7 @@ void StorageMergeTree::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     /// If true, then we will ask initiator if we can read chosen ranges
     bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;

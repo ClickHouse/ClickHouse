@@ -84,7 +84,7 @@ public:
         if (isNaN(v))
             return;
 
-        UInt32 hash = intHash64(determinator);
+        UInt32 hash = static_cast<UInt32>(intHash64(determinator));
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
