@@ -24,12 +24,13 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
+
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -610,7 +611,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     }
 }
 
-void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, ASTTableJoin & out_table_join)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, std::shared_ptr<TableJoin> & analyzed_join)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -648,7 +649,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
             throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    out_table_join = table_join;
+    analyzed_join->getTableJoin() = table_join;
 }
 
 /// Evaluate expression and return boolean value if it can be interpreted as bool.
@@ -1235,14 +1236,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (tables_with_columns.size() > 1)
     {
         const auto & right_table = tables_with_columns[1];
-        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
-        cols_from_joined = right_table.columns;
+        auto columns_from_joined_table = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
-        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-
-        result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, right_table.table.getQualifiedNamePrefix());
+        columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -1253,7 +1251,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     NameSet all_source_columns_set = source_columns_set;
     if (table_join)
     {
-        for (const auto & [name, _] : table_join->columns_from_joined_table)
+        for (const auto & [name, _] : table_join->columnsFromJoinedTable())
             all_source_columns_set.insert(name);
     }
 
@@ -1303,7 +1301,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
     setJoinStrictness(
-        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
+        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join);
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)

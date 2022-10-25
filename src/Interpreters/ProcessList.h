@@ -133,6 +133,8 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    OvercommitTracker * global_overcommit_tracker = nullptr;
+
     IAST::QueryKind query_kind;
 
     /// This field is unused in this class, but it
@@ -221,6 +223,8 @@ public:
     [[nodiscard]] bool checkTimeLimitSoft();
 };
 
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 
 /// Information of process list for user.
 struct ProcessListForUserInfo
@@ -241,7 +245,7 @@ struct ProcessListForUser
     ProcessListForUser(ContextPtr global_context, ProcessList * global_process_list);
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
-    using QueryToElement = std::unordered_map<String, QueryStatus *>;
+    using QueryToElement = std::unordered_map<String, QueryStatusPtr>;
     QueryToElement queries;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
@@ -278,7 +282,7 @@ class ProcessList;
 class ProcessListEntry
 {
 private:
-    using Container = std::list<QueryStatus>;
+    using Container = std::list<QueryStatusPtr>;
 
     ProcessList & parent;
     Container::iterator it;
@@ -289,11 +293,8 @@ public:
 
     ~ProcessListEntry();
 
-    QueryStatus * operator->() { return &*it; }
-    const QueryStatus * operator->() const { return &*it; }
-
-    QueryStatus & get() { return *it; }
-    const QueryStatus & get() const { return *it; }
+    QueryStatusPtr getQueryStatus() { return *it; }
+    const QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 
@@ -319,7 +320,7 @@ protected:
 class ProcessList : public ProcessListBase
 {
 public:
-    using Element = QueryStatus;
+    using Element = QueryStatusPtr;
     using Entry = ProcessListEntry;
     using QueryAmount = UInt64;
 
@@ -358,7 +359,7 @@ protected:
     ThrottlerPtr total_network_throttler;
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
-    QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
