@@ -29,8 +29,7 @@ public:
     Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const std::shared_ptr<Throttler> & parent_ = nullptr);
 
-    /// Use `amount` ent, sleeps if required and throws exception on
-    /// limit overflow.
+    /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
     void add(size_t amount);
 
     /// Not thread safe
