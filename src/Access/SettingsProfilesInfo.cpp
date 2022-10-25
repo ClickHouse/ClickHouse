@@ -65,7 +65,7 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
 Strings SettingsProfilesInfo::getProfileNames() const
 {
     // Using profiles_with_implicit instead of profiles,
-    // since former is syncronized with names_of_profiles
+    // since former is synchronized with names_of_profiles
     // see invocations of SettingsProfilesCache::substituteProfiles.
     Strings result;
     result.reserve(profiles_with_implicit.size());
