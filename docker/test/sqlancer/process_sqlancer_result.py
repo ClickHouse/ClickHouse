@@ -11,14 +11,14 @@ def process_result(result_folder):
     summary = []
     paths = []
     tests = [
-        "TLPWhere",
+        "TLPAggregate",
+        "TLPDistinct",
         "TLPGroupBy",
         "TLPHaving",
+        "TLPWhere",
         "TLPWhereGroupBy",
-        "TLPDistinct",
-        "TLPAggregate",
+        "NoREC",
     ]
-
     failed_tests = []
 
     for test in tests:

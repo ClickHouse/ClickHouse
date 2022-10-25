@@ -111,26 +111,28 @@ if __name__ == "__main__":
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
     )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_lower}/"
+
+    tests = [
+        "TLPAggregate",
+        "TLPDistinct",
+        "TLPGroupBy",
+        "TLPHaving",
+        "TLPWhere",
+        "TLPWhereGroupBy",
+        "NoREC",
+    ]
+
     paths = {
         "runlog.log": run_log_path,
-        "TLPWhere": os.path.join(workspace_path, "TLPWhere.log"),
-        "TLPAggregate.err": os.path.join(workspace_path, "TLPAggregate.err"),
-        "TLPAggregate.out": os.path.join(workspace_path, "TLPAggregate.out"),
-        "TLPDistinct.err": os.path.join(workspace_path, "TLPDistinct.err"),
-        "TLPDistinct.out": os.path.join(workspace_path, "TLPDistinct.out"),
-        "TLPGroupBy.err": os.path.join(workspace_path, "TLPGroupBy.err"),
-        "TLPGroupBy.out": os.path.join(workspace_path, "TLPGroupBy.out"),
-        "TLPHaving.err": os.path.join(workspace_path, "TLPHaving.err"),
-        "TLPHaving.out": os.path.join(workspace_path, "TLPHaving.out"),
-        "TLPWhere.err": os.path.join(workspace_path, "TLPWhere.err"),
-        "TLPWhere.out": os.path.join(workspace_path, "TLPWhere.out"),
-        "TLPWhereGroupBy.err": os.path.join(workspace_path, "TLPWhereGroupBy.err"),
-        "TLPWhereGroupBy.out": os.path.join(workspace_path, "TLPWhereGroupBy.out"),
         "clickhouse-server.log": os.path.join(workspace_path, "clickhouse-server"),
-        "clickhouse-server.log.err": os.path.join(workspace_path, "clickhouse-server"),
         "stderr.log": os.path.join(workspace_path, "stderr.log"),
         "stdout.log": os.path.join(workspace_path, "stdout.log"),
     }
+    for t in tests:
+        err_name = f"{t}.err"
+        log_name = f"{t}.err"
+        paths[err_name] = os.path.join(workspace_path, err_name)
+        paths[log_name] = os.path.join(workspace_path, log_name)
 
     s3_helper = S3Helper()
     for f in paths:
