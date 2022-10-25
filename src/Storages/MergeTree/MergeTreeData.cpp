@@ -5059,7 +5059,7 @@ bool MergeTreeData::shouldPerformTTLMoveOnInsert(const SpacePtr & move_destinati
     if (move_destination->isDisk())
     {
         auto disk = std::static_pointer_cast<IDisk>(move_destination);
-        if (auto volume = getStoragePolicy()->tryGetVolumeByDisk(disk))
+        if (auto volume = getStoragePolicy()->tryGetVolumeByDiskName(disk->getName()))
             return volume->perform_ttl_move_on_insert;
     }
     return false;

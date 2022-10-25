@@ -150,28 +150,21 @@ public:
     /// TODO: remove or at least remove const.
     virtual void syncRevision(UInt64 revision) const = 0;
     virtual UInt64 getRevision() const = 0;
+
     virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const = 0;
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;
-
-    /// Check if data part is stored on one of the specified disk in set.
-    using DisksSet = std::unordered_set<DiskPtr>;
-    virtual DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const { return disks.end(); }
 
     /// Reserve space on the same disk.
     /// Probably we should try to remove it later.
     /// TODO: remove constness
     virtual ReservationPtr reserve(UInt64 /*bytes*/) const  { return nullptr; }
     virtual ReservationPtr tryReserve(UInt64 /*bytes*/) const  { return nullptr; }
-    virtual size_t getVolumeIndex(const IStoragePolicy &) const { return 0; }
 
     /// A leak of abstraction.
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
     virtual String getUniqueId() const = 0;
-
-    /// A leak of abstraction
-    virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.

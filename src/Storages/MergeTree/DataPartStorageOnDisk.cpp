@@ -6,7 +6,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
-#include <Disks/IStoragePolicy.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Storages/MergeTree/localBackup.h>
@@ -129,6 +128,7 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
 {
     if (disk->isFile(from))
         return disk->getFileSize(from);
+
     std::vector<std::string> files;
     disk->listFiles(from, files);
     UInt64 res = 0;
@@ -490,11 +490,6 @@ std::string DataPartStorageOnDisk::getDiskPath() const
     return volume->getDisk()->getPath();
 }
 
-DataPartStorageOnDisk::DisksSet::const_iterator DataPartStorageOnDisk::isStoredOnDisk(const DisksSet & disks) const
-{
-    return disks.find(volume->getDisk());
-}
-
 ReservationPtr DataPartStorageOnDisk::reserve(UInt64 bytes) const
 {
     auto res = volume->reserve(bytes);
@@ -509,11 +504,6 @@ ReservationPtr DataPartStorageOnDisk::tryReserve(UInt64 bytes) const
     return volume->reserve(bytes);
 }
 
-size_t DataPartStorageOnDisk::getVolumeIndex(const IStoragePolicy & storage_policy) const
-{
-    return storage_policy.getVolumeIndexByDisk(volume->getDisk());
-}
-
 String DataPartStorageOnDisk::getUniqueId() const
 {
     auto disk = volume->getDisk();
@@ -521,16 +511,6 @@ String DataPartStorageOnDisk::getUniqueId() const
         throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
-}
-
-bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & storage_policy) const
-{
-    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
-    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
-    /// Therefore we shall obtain volume from storage policy.
-    auto volume_ptr = storage_policy.getVolume(storage_policy.getVolumeIndexByDisk(volume->getDisk()));
-
-    return !volume_ptr->areMergesAvoided();
 }
 
 void DataPartStorageOnDisk::backup(
@@ -821,7 +801,8 @@ void DataPartStorageOnDisk::createProjection(const std::string & name)
 void DataPartStorageOnDisk::beginTransaction()
 {
     if (transaction)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncommitted transaction already exists");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Uncommitted {}transaction already exists", has_shared_transaction ? "shared " : "");
 
     transaction = volume->getDisk()->createTransaction();
 }

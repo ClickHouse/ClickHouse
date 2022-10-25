@@ -389,7 +389,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
-            max_volume_index = std::max(max_volume_index, part_ptr->getDataPartStorage().getVolumeIndex(*storage.getStoragePolicy()));
+            auto disk_name = part_ptr->getDataPartStorage().getDiskName();
+            size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
+            max_volume_index = std::max(max_volume_index, volume_index);
         }
 
         reserved_space = storage.balancedReservation(

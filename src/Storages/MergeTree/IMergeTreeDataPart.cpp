@@ -1545,7 +1545,8 @@ void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
-    return getDataPartStorage().shallParticipateInMerges(*storage_policy);
+    auto disk_name = getDataPartStorage().getDiskName();
+    return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists)
