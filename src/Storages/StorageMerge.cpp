@@ -520,6 +520,8 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_select.setFinal();
     }
 
+    modified_select.replaceDatabaseAndTable(database_name, table_name);
+
     auto storage_stage
         = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, storage_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
@@ -545,6 +547,12 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         }
         else
         {
+            {
+                /// Analyze query to check that types are valid (e.g. in PREWHERE).
+                InterpreterSelectQuery interpreter
+                    (modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections());
+            }
+
             storage->read(
                 plan,
                 real_column_names,
@@ -569,8 +577,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     }
     else if (processed_stage > storage_stage)
     {
-        modified_select.replaceDatabaseAndTable(database_name, table_name);
-
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
