@@ -63,6 +63,9 @@ MergeTreeMarksLoader::~MergeTreeMarksLoader()
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
+    std::unique_lock debug_lock(mutex, std::defer_lock);
+    assert(debug_lock.try_lock());
+
     if (!marks)
     {
         Stopwatch watch(CLOCK_MONOTONIC);

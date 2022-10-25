@@ -4,6 +4,7 @@
 #include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
 #include <Common/ThreadPool.h>
+#include <mutex>
 
 
 namespace DB
@@ -49,6 +50,10 @@ private:
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;
+
+    // just for debug
+    // try to check has getMark races or not
+    std::mutex mutex;
 };
 
 }
