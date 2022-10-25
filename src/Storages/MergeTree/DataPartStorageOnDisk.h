@@ -71,16 +71,9 @@ public:
     UInt64 getRevision() const override;
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
     std::string getDiskPath() const override;
-
-    DisksSet::const_iterator isStoredOnDisk(const DisksSet & disks) const override;
-
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
-    size_t getVolumeIndex(const IStoragePolicy &) const override;
-
     String getUniqueId() const override;
-
-    bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
     void backup(
         const MergeTreeDataPartChecksums & checksums,

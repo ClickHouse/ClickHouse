@@ -100,7 +100,6 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 
     std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    std::unordered_set<DiskPtr> need_to_move_disks;
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
@@ -115,10 +114,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
                 if (unreserved_space < required_maximum_available_space && !disk->isBroken())
-                {
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
-                    need_to_move_disks.emplace(disk);
-                }
             }
         }
     }
@@ -140,8 +136,16 @@ bool MergeTreePartsMover::selectPartsForMove(
         auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->ttl_infos.moves_ttl, time_of_move, true);
 
         auto to_insert = need_to_move.end();
-        if (auto disk_it = part->getDataPartStorage().isStoredOnDisk(need_to_move_disks); disk_it != need_to_move_disks.end())
-            to_insert = need_to_move.find(*disk_it);
+        auto part_disk_name = part->getDataPartStorage().getDiskName();
+
+        for (auto it = need_to_move.begin(); it != need_to_move.end(); ++it)
+        {
+            if (it->first->getName() == part_disk_name)
+            {
+                to_insert = it;
+                break;
+            }
+        }
 
         ReservationPtr reservation;
         if (ttl_entry)
@@ -158,9 +162,8 @@ bool MergeTreePartsMover::selectPartsForMove(
             /// In order to not over-move, we need to "release" required space on this disk,
             /// possibly to zero.
             if (to_insert != need_to_move.end())
-            {
                 to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->getBytesOnDisk());
-            }
+
             ++parts_to_move_by_ttl_rules;
             parts_to_move_total_size_bytes += part->getBytesOnDisk();
         }
@@ -173,7 +176,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     for (auto && move : need_to_move)
     {
-        auto min_volume_index = policy->getVolumeIndexByDisk(move.first) + 1;
+        auto min_volume_index = policy->getVolumeIndexByDiskName(move.first->getName()) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
             auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index);

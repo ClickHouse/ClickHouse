@@ -152,6 +152,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
             if (revision)
                 part->getDataPartStorage().syncRevision(revision);
+
             revision = part->getDataPartStorage().getRevision();
             if (revision)
                 response.addCookie({"disk_revision", toString(revision)});

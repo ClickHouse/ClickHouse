@@ -68,7 +68,7 @@ public:
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
+    std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
@@ -84,9 +84,6 @@ public:
     VolumePtr getVolume(size_t index) const override;
 
     VolumePtr tryGetVolumeByName(const String & volume_name) const override;
-
-    /// Finds a volume which contains a specified disk.
-    VolumePtr tryGetVolumeByDisk(const DiskPtr & disk_ptr) const override;
 
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
