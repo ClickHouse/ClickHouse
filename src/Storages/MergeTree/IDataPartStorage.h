@@ -211,6 +211,9 @@ public:
         size_t buf_size,
         const WriteSettings & settings) = 0;
 
+    /// A special const method to write transaction file.
+    /// It's const, because file with transaction metadata
+    /// can be modifed after part creation.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
@@ -237,7 +240,9 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 
+    /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;
+    /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
 };
@@ -245,6 +250,9 @@ public:
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 
+/// A holder that encapsulates data part storage and
+/// gives access to const storage from const methods
+/// and to mutable storage from non-const methods.
 class DataPartStorageHolder : public boost::noncopyable
 {
 public:
