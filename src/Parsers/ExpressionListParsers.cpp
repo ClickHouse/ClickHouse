@@ -786,10 +786,10 @@ public:
 ///  2. If we parse an ending token, we should merge everything as in (1) and
 ///     also set 'finished' flag.
 template <TokenType separator, TokenType end>
-class BaseLayer : public Layer
+class LayerWithSeparator : public Layer
 {
 public:
-    explicit BaseLayer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = false) :
+    explicit LayerWithSeparator(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = false) :
         Layer(allow_alias_, allow_alias_without_as_keyword_) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
@@ -1066,7 +1066,7 @@ private:
 };
 
 /// Layer for array square brackets operator
-class ArrayLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBracket>
+class ArrayLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
     bool getResult(ASTPtr & node) override
@@ -1077,19 +1077,19 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        return BaseLayer::parse(pos, expected, action);
+        return LayerWithSeparator::parse(pos, expected, action);
     }
 };
 
 /// Layer for arrayElement square brackets operator
 ///  This layer does not create a function, it is only needed to parse closing token
 ///  and return only one element.
-class ArrayElementLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBracket>
+class ArrayElementLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        return BaseLayer::parse(pos, expected, action);
+        return LayerWithSeparator::parse(pos, expected, action);
     }
 };
 
@@ -1193,10 +1193,10 @@ public:
     }
 };
 
-class ExtractLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
+class ExtractLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    ExtractLayer() : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+    ExtractLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1242,7 +1242,7 @@ public:
 
         if (state == 1)
         {
-            return BaseLayer::parse(pos, expected, action);
+            return LayerWithSeparator::parse(pos, expected, action);
         }
 
         if (state == 2)
@@ -1584,11 +1584,11 @@ private:
     String function_name;
 };
 
-class DateAddLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
+class DateAddLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
     explicit DateAddLayer(const char * function_name_)
-        : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), function_name(function_name_) {}
+        : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), function_name(function_name_) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1630,7 +1630,7 @@ public:
 
         if (state == 1)
         {
-            return BaseLayer::parse(pos, expected, action);
+            return LayerWithSeparator::parse(pos, expected, action);
         }
 
         return true;
@@ -1642,10 +1642,10 @@ private:
     bool parsed_interval_kind = false;
 };
 
-class DateDiffLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundBracket>
+class DateDiffLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
-    DateDiffLayer() : BaseLayer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+    DateDiffLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool getResult(ASTPtr & node) override
     {
@@ -1685,7 +1685,7 @@ public:
 
         if (state == 1)
         {
-            return BaseLayer::parse(pos, expected, action);
+            return LayerWithSeparator::parse(pos, expected, action);
         }
 
         return true;
