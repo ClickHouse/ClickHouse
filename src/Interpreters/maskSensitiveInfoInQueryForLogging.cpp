@@ -397,7 +397,7 @@ namespace
 
             auto * expr_list = function.arguments->as<ASTExpressionList>();
             if (!expr_list)
-                return;
+                return; /// return because we don't want to validate query here
 
             auto & arguments = expr_list->children;
             if (arg_idx >= arguments.size())
@@ -413,7 +413,7 @@ namespace
 
             auto * expr_list = function.arguments->as<ASTExpressionList>();
             if (!expr_list)
-                return false;
+                return false; /// return false because we don't want to validate query here
 
             const auto & arguments = expr_list->children;
             *num_arguments = arguments.size();
@@ -427,7 +427,7 @@ namespace
 
             const auto * expr_list = function.arguments->as<ASTExpressionList>();
             if (!expr_list)
-                return false;
+                return false; /// return false because we don't want to validate query here
 
             const auto & arguments = expr_list->children;
             if (arg_idx >= arguments.size())
@@ -449,7 +449,7 @@ namespace
 
             const auto * expr_list = function.arguments->as<ASTExpressionList>();
             if (!expr_list)
-                return false;
+                return false; /// return false because we don't want to validate query here
 
             const auto & arguments = expr_list->children;
             if (arg_idx >= arguments.size())
@@ -481,7 +481,7 @@ namespace
 
             const auto * expr_list = function.arguments->as<ASTExpressionList>();
             if (!expr_list)
-                return false;
+                return false; /// return false because we don't want to validate query here
 
             const auto & arguments = expr_list->children;
             if (arg_idx >= arguments.size())
@@ -512,7 +512,7 @@ namespace
 
             const auto * expr_list = dictionary.source->elements->as<ASTExpressionList>();
             if (!expr_list)
-                return;
+                return; /// return because we don't want to validate query here
 
             const auto & elements = expr_list->children;
 
@@ -523,7 +523,7 @@ namespace
             {
                 auto * pair = element->as<ASTPair>();
                 if (!pair)
-                    continue;
+                    continue; /// just skip because we don't want to validate query here
 
                 if (pair->first == "password")
                 {
