@@ -88,7 +88,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # Some vulnerability scanners are arguing about Ubuntu, which is not relevant to ClickHouse at all.
 # ClickHouse does not care when you report false vulnerabilities by running some Docker scanners.
 
-RUN sudo apt remove -y libksba8
+RUN apt-get remove --purge -y libksba8 && apt-get autoremove
 
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
