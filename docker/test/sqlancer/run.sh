@@ -39,12 +39,13 @@ export TIMEOUT=300
 export NUM_QUERIES=1000
 export NUM_THREADS=30
 
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere | tee /workspace/TLPWhere.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhere.err
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPGroupBy | tee /workspace/TLPGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPGroupBy.err
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPHaving | tee /workspace/TLPHaving.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPHaving.err
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere --oracle TLPGroupBy | tee /workspace/TLPWhereGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhereGroupBy.err
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /workspace/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPDistinct.err
-( java -jar target/sqlancer-*.jar --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /workspace/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPAggregate.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere | tee /workspace/TLPWhere.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhere.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPGroupBy | tee /workspace/TLPGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPGroupBy.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPHaving | tee /workspace/TLPHaving.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPHaving.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere --oracle TLPGroupBy | tee /workspace/TLPWhereGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhereGroupBy.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /workspace/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPDistinct.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /workspace/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPAggregate.err
+( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /workspace/NoREC.out )  3>&1 1>&2 2>&3 | tee /workspace/NoREC.err
 
 ls /workspace
 pkill -F /workspace/clickhouse-server.pid
