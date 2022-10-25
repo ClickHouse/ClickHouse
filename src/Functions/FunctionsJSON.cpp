@@ -1303,13 +1303,27 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
     {
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-        traverse(element, buf);
-        buf.finalize();
-        chars.push_back(0);
-        col_str.getOffsets().push_back(chars.size());
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
+            ColumnString::Chars chars;
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            chars.push_back(0);
+            traverse(element, buf);
+            buf.finalize();
+            std::string str = reinterpret_cast<const char *>(chars.data());
+            chars.push_back(0);
+            assert_cast<ColumnLowCardinality &>(dest).insertData(str.data(), str.size());
+        }
+        else
+        {
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            auto & chars = col_str.getChars();
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            traverse(element, buf);
+            buf.finalize();
+            chars.push_back(0);
+            col_str.getOffsets().push_back(chars.size());
+        }
         return true;
     }
 
