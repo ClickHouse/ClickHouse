@@ -171,7 +171,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
@@ -197,7 +197,7 @@ public:
         const S3::URI uri;
         std::shared_ptr<const Aws::S3::S3Client> client;
 
-        S3Settings::AuthSettings auth_settings;
+        S3::AuthSettings auth_settings;
         S3Settings::ReadWriteSettings rw_settings;
 
         /// If s3 configuration was passed from ast, then it is static.
@@ -209,7 +209,7 @@ public:
 
         S3Configuration(
             const String & url_,
-            const S3Settings::AuthSettings & auth_settings_,
+            const S3::AuthSettings & auth_settings_,
             const S3Settings::ReadWriteSettings & rw_settings_,
             const HeaderCollection & headers_from_ast_)
             : uri(S3::URI(url_))

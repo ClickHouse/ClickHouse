@@ -1582,6 +1582,9 @@ public:
     {
         if (parsed_interval_kind)
         {
+            if (elements.size() < 2)
+                return false;
+
             elements[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements[0]);
             node = makeASTFunction(function_name, elements[1], elements[0]);
         }
