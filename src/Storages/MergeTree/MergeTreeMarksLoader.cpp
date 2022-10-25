@@ -90,7 +90,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
 }
 
 
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
+MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl() const
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -144,7 +144,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
+MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks() const
 {
     MarkCache::MappedPtr loaded_marks;
 
@@ -176,7 +176,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
     return loaded_marks;
 }
 
-std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
+std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync() const
 {
     ThreadGroupStatusPtr thread_group;
     if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())

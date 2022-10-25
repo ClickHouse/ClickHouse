@@ -43,9 +43,9 @@ private:
     MarkCache::MappedPtr marks;
     ReadSettings read_settings;
 
-    MarkCache::MappedPtr loadMarks();
-    std::future<MarkCache::MappedPtr> loadMarksAsync();
-    MarkCache::MappedPtr loadMarksImpl();
+    MarkCache::MappedPtr loadMarks() const;
+    std::future<MarkCache::MappedPtr> loadMarksAsync() const;
+    MarkCache::MappedPtr loadMarksImpl() const;
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;
