@@ -214,6 +214,14 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+    /// collect min_age for each partition while iterating parts
+    struct PartitionInfo
+    {
+        time_t min_age{std::numeric_limits<time_t>::max()};
+    };
+
+    std::unordered_map<std::string, PartitionInfo> partitions_info;
+
     size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
@@ -277,6 +285,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
         part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
+        auto & partition_info = partitions_info[partition_id];
+        partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+
         ++parts_selected_precondition;
 
         parts_ranges.back().emplace_back(part_info);
@@ -333,7 +344,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         SimpleMergeSelector::Settings merge_settings;
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
-        merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
+        if (!data_settings->min_age_to_force_merge_on_partition_only)
+            merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
 
         if (aggressive)
             merge_settings.base = 1;
@@ -347,6 +359,19 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         if (parts_to_merge.empty())
         {
+            if (data_settings->min_age_to_force_merge_on_partition_only && data_settings->min_age_to_force_merge_seconds)
+            {
+                auto best_partition_it = std::max_element(
+                    partitions_info.begin(),
+                    partitions_info.end(),
+                    [](const auto & e1, const auto & e2) { return e1.second.min_age > e2.second.min_age; });
+
+                if (best_partition_it != partitions_info.end()
+                    && static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
+                    return selectAllPartsToMergeWithinPartition(
+                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
+            }
+
             if (out_disable_reason)
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
