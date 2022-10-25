@@ -64,6 +64,8 @@ public:
         {
         }
 
+        Pos(TokenIterator token_iterator_, uint32_t max_depth_) : TokenIterator(token_iterator_), max_depth(max_depth_) { }
+
         ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
