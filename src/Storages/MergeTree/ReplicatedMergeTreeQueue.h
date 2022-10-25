@@ -425,6 +425,7 @@ public:
 
     struct Status
     {
+        /// TODO: consider using UInt64 here
         UInt32 future_parts;
         UInt32 queue_size;
         UInt32 inserts_in_queue;

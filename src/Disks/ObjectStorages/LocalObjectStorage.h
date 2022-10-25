@@ -12,6 +12,7 @@ class Logger;
 namespace DB
 {
 
+/// Treat local disk as an object storage (for interface compatibility).
 class LocalObjectStorage : public IObjectStorage
 {
 public:

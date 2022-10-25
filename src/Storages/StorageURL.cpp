@@ -266,6 +266,7 @@ namespace
                 setCredentials(credentials, request_uri);
 
                 const auto settings = context->getSettings();
+                int zstd_window_log_max = static_cast<int>(settings.zstd_window_log_max);
                 try
                 {
                     if (download_threads > 1)
@@ -354,7 +355,7 @@ namespace
                                         threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
                                         download_threads),
                                     compression_method,
-                                    settings.zstd_window_log_max);
+                                    zstd_window_log_max);
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -386,7 +387,7 @@ namespace
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
                             compression_method,
-                        settings.zstd_window_log_max);
+                        zstd_window_log_max);
                 }
                 catch (...)
                 {
@@ -641,7 +642,7 @@ Pipe IStorageURLBase::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
@@ -730,7 +731,7 @@ Pipe StorageURLWithFailover::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     ColumnsDescription columns_description;
     Block block_for_format;
