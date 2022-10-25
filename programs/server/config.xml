@@ -1173,6 +1173,18 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </processors_profile_log>
 
+    <!-- Log of asynchronous inserts. It allows to check status
+         of insert query in fire-and-forget mode.
+    -->
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>event_date</partition_by>
+        <ttl>event_date + INTERVAL 3 DAY</ttl>
+    </asynchronous_insert_log>
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
