@@ -487,6 +487,14 @@ struct Operator
     std::string function_name;
 };
 
+template <typename... Args>
+static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
+{
+    auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
+    ast_function->is_lambda_function = op.type == OperatorType::Lambda;
+    return ast_function;
+}
+
 enum class Checkpoint
 {
     None,
@@ -651,7 +659,7 @@ public:
             }
             else
             {
-                function = makeASTFunction(cur_op.function_name);
+                function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
                     return false;
@@ -2079,6 +2087,7 @@ struct ParserExpressionImpl
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
     ParserColumnsMatcher columns_matcher_parser;
+    ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
     ParserSubquery subquery_parser;
 
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
@@ -2307,7 +2316,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (!layers.back()->popOperand(argument))
                 return Action::NONE;
 
-            function = makeASTFunction(prev_op.function_name, argument, tmp);
+            function = makeASTFunction(prev_op, argument, tmp);
 
             if (!modifyAST(function, subquery_function_type))
                 return Action::NONE;
@@ -2356,7 +2365,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         literal_parser.parse(pos, tmp, expected) ||
         asterisk_parser.parse(pos, tmp, expected) ||
         qualified_asterisk_parser.parse(pos, tmp, expected) ||
-        columns_matcher_parser.parse(pos, tmp, expected))
+        columns_matcher_parser.parse(pos, tmp, expected) ||
+        qualified_columns_matcher_parser.parse(pos, tmp, expected))
     {
         layers.back()->pushOperand(std::move(tmp));
     }
@@ -2491,7 +2501,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         }
         else
         {
-            function = makeASTFunction(prev_op.function_name);
+            function = makeASTFunction(prev_op);
 
             if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
                 return Action::NONE;
