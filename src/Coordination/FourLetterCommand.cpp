@@ -481,20 +481,29 @@ String ApiVersionCommand::run()
 String CreateSnapshotCommand::run()
 {
     auto log_index = keeper_dispatcher.createSnapshot();
-    return log_index > 0 ? "Snapshot creation scheduled with last committed log index " + std::to_string(log_index) + "."
-                         : "Fail to scheduled snapshot creation task.";
+    return log_index > 0 ? std::to_string(log_index) : "Fail to scheduled snapshot creation task.";
 }
 
 String LogInfoCommand::run()
 {
     KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
     StringBuffer ret;
-    print(ret, "last_log_idx", log_info.last_log_idx);
-    print(ret, "last_log_term", log_info.last_log_term);
-    print(ret, "last_committed_log_idx", log_info.last_committed_log_idx);
-    print(ret, "leader_committed_log_idx", log_info.leader_committed_log_idx);
-    print(ret, "target_committed_log_idx", log_info.target_committed_log_idx);
-    print(ret, "last_snapshot_idx", log_info.last_snapshot_idx);
+
+    auto append = [&ret] (String key, uint64_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+    append("first_log_idx", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_idx);
+    append("last_log_idx", log_info.last_log_idx);
+    append("last_log_term", log_info.last_log_term);
+    append("last_committed_log_idx", log_info.last_committed_log_idx);
+    append("leader_committed_log_idx", log_info.leader_committed_log_idx);
+    append("target_committed_log_idx", log_info.target_committed_log_idx);
+    append("last_snapshot_idx", log_info.last_snapshot_idx);
     return ret.str();
 }
 

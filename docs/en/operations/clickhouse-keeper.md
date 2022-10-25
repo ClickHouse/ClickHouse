@@ -309,21 +309,23 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-- `csnp`: Schedule a snapshot creation task. Return `Snapshot creation scheduled with last committed log index xxx.` if successfully scheduled or `Fail to scheduled snapshot creation task.` if failed.
+- `csnp`: Schedule a snapshot creation task. Return the last committed log index of the scheduled snapshot if successfully scheduled or `Fail to scheduled snapshot creation task.` if failed.
 
 ```
-Snapshot creation scheduled with last committed log index 100.
+100
 ```
 
-- `lgif`: Keeper log information. `last_log_idx` : my last log index in log store; `last_log_term` : my last log term; `last_committed_log_idx` : my last committed log index in state machine; `leader_committed_log_idx` : leader's committed log index from my perspective; `target_committed_log_idx` : target log index should be committed to; `last_snapshot_idx` : the largest committed log index in last snapshot.
+- `lgif`: Keeper log information. `first_log_idx` : my first log index in log store; `first_log_term` : my first log term; `last_log_idx` : my last log index in log store; `last_log_term` : my last log term; `last_committed_log_idx` : my last committed log index in state machine; `leader_committed_log_idx` : leader's committed log index from my perspective; `target_committed_log_idx` : target log index should be committed to; `last_snapshot_idx` : the largest committed log index in last snapshot.
 
 ```
-last_log_idx : 101
-last_log_term : 1
-last_committed_log_idx : 100
-leader_committed_log_idx : 101
-target_committed_log_idx : 101
-last_snapshot_idx : 50
+first_log_idx   1
+first_log_term  1
+last_log_idx    101
+last_log_term   1
+last_committed_log_idx  100
+leader_committed_log_idx    101
+target_committed_log_idx    101
+last_snapshot_idx   50
 ```
 
 ## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}

@@ -50,6 +50,12 @@ struct Keeper4LWInfo
 /// Keeper log information for 4lw commands
 struct KeeperLogInfo
 {
+    /// My first log index in log store.
+    uint64_t first_log_idx;
+
+    /// My first log term.
+    uint64_t first_log_term;
+
     /// My last log index in log store.
     uint64_t last_log_idx;
 

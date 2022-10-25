@@ -598,19 +598,46 @@ def test_cmd_wchp(started_cluster):
         destroy_zk_client(zk)
 
 
-def test_cmd_snapshot(started_cluster):
+def test_cmd_csnp(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+        try:
+            int(data)
+            assert True
+        except ValueError:
+            assert False
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_lgif(started_cluster):
     zk = None
     try:
         wait_nodes()
         clear_znodes()
-        reset_node_stats()
 
         zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=100)
 
-        create = send_4lw_cmd(cmd="csnp")
-        assert create == "Snapshot creation scheduled."
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgif")
+        print(data)
+        reader = csv.reader(data.split("\n"), delimiter="\t")
+        result = {}
 
-        check = send_4lw_cmd(cmd="snpd")
-        assert check == "Yes" or check == "No"
+        for row in reader:
+            if len(row) != 0:
+                result[row[0]] = row[1]
+
+        assert int(result["first_log_idx"]) == 1
+        assert int(result["first_log_term"]) == 1
+        assert int(result["last_log_idx"]) >= 1
+        assert int(result["last_log_term"]) == 1
+        assert int(result["last_committed_log_idx"]) >= 1
+        assert int(result["leader_committed_log_idx"]) >= 1
+        assert int(result["target_committed_log_idx"]) >= 1
+        assert int(result["last_snapshot_idx"]) >= 1
     finally:
         destroy_zk_client(zk)
