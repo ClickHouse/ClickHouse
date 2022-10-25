@@ -27,7 +27,8 @@ struct ReplaceStringImpl
         const std::string & needle,
         const std::string & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        bool /*allow_hyperscan*/)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
@@ -103,7 +104,8 @@ struct ReplaceStringImpl
         const std::string & needle,
         const std::string & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        bool /*allow_hyperscan*/)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;

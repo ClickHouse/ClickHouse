@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -17,13 +18,22 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-
 template <typename Impl, typename Name>
 class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringReplace>(); }
+    const bool allow_hyperscan;
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionStringReplace>(settings.allow_hyperscan);
+    }
+
+    explicit FunctionStringReplace(bool allow_hyperscan_)
+        : allow_hyperscan(allow_hyperscan_)
+    {}
 
     String getName() const override { return name; }
 
@@ -84,13 +94,13 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan);
             return col_res;
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan);
             return col_res;
         }
         else

@@ -1,12 +1,16 @@
 #pragma once
 
+#include <base/scope_guard.h>
 #include <base/types.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 
 #include "config.h"
-#include <re2_st/re2.h>
 
+#include <re2_st/re2.h>
+#if USE_VECTORSCAN
+#    include <hs.h>
+#endif
 
 namespace DB
 {
@@ -14,6 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
 }
 
 struct ReplaceRegexpTraits
@@ -46,7 +52,7 @@ struct ReplaceRegexpImpl
     /// E.g. "abc\1de\2fg\1\2" --> inst("abc"), inst(1), inst("de"), inst(2), inst("fg"), inst(1), inst(2)
     using Instructions = std::vector<Instruction>;
 
-    static constexpr int max_captures = 10;
+    static constexpr int max_captures_re2 = 10;
 
     static Instructions createInstructions(std::string_view replacement, int num_captures)
     {
@@ -87,7 +93,7 @@ struct ReplaceRegexpImpl
         return instructions;
     }
 
-    static void processString(
+    static void processStringWithRe2(
         const char * haystack_data,
         size_t haystack_length,
         ColumnString::Chars & res_data,
@@ -97,7 +103,7 @@ struct ReplaceRegexpImpl
         const Instructions & instructions)
     {
         re2_st::StringPiece haystack(haystack_data, haystack_length);
-        re2_st::StringPiece matches[max_captures];
+        re2_st::StringPiece matches[max_captures_re2];
 
         size_t copy_pos = 0;
         size_t match_pos = 0;
@@ -162,13 +168,98 @@ struct ReplaceRegexpImpl
         ++res_offset;
     }
 
+#if USE_VECTORSCAN
+    static void processStringWithVectorscan(
+        const char * haystack_data,
+        size_t haystack_length,
+        ColumnString::Chars & res_data,
+        ColumnString::Offset & res_offset,
+        hs_database_t * db,
+        hs_scratch_t * scratch,
+        const Instructions & instructions)
+    {
+        /// Vectorscan poses two challenges:
+        /// 1. Unlike re2, matches are not guaranteed to be in order. E.g. on_match() may be called
+        ///    sequentially for matches starting at positions 10, 6, 12, 3 etc. Therefore, we cannot
+        ///    assemble the result string on the go as done in processStringWithRe2(). We instead
+        ///    collect all matches in an ordered structure and assemble the result string afterwards.
+        ///    As a sideeffect, replaceRegexpOne() looses its performance advantage over
+        ///    replaceRegexpAll(). For simplicity, replace == ReplaceRegexpTraits::One is disabled.
+        /// 2. While re2 does greedy matching (which it inherited from libpcre), vectorscan reports
+        ///    *all* matches for a given position. So to emulate greedy matching, we retain only the
+        ///    rightmost match for each position.
+        std::map<size_t, size_t> matches; // (from, to)
+
+        auto on_match = [](unsigned int /*id*/,
+                           unsigned long long from, // NOLINT(google-runtime-int)
+                           unsigned long long to, // NOLINT(google-runtime-int)
+                           unsigned int /*flags*/,
+                           void * context_) -> int
+        {
+            std::map<size_t, size_t> * ctx_matches = static_cast<std::map<size_t, size_t> *>(context_);
+
+            auto match = ctx_matches->find(from);
+            if (match == ctx_matches->end())
+                (*ctx_matches)[from] = to;
+            else
+                if (match->second < to)
+                    (*ctx_matches)[from] = to;
+
+            return 0; /// Continue matching
+        };
+
+        hs_error_t err = hs_scan(db, haystack_data, static_cast<unsigned>(haystack_length), 0, scratch, on_match, &matches);
+        if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
+            throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+
+        size_t match_pos = 0;
+        for (auto [from, to] : matches)
+        {
+            /// Copy prefix before current match without modification
+            size_t bytes_to_copy = from - match_pos;
+            res_data.resize(res_data.size() + bytes_to_copy);
+            memcpy(&res_data[res_offset], haystack_data + match_pos, bytes_to_copy);
+            res_offset += bytes_to_copy;
+
+            /// Substitute inside current match using instructions
+            for (const auto & instr : instructions)
+            {
+                std::string_view replacement;
+                if (instr.substitution_num >= 0)
+                    replacement = std::string_view(haystack_data + from, haystack_data + to); // capturing group \0
+                else
+                    replacement = instr.literal;
+                res_data.resize(res_data.size() + replacement.size());
+                memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                res_offset += replacement.size();
+            }
+
+            match_pos = to;
+        }
+
+        /// Copy suffix behind last match without modification
+        if (match_pos != haystack_length)
+        {
+            size_t bytes_to_copy = haystack_length - match_pos;
+            res_data.resize(res_data.size() + bytes_to_copy);
+            memcpy(&res_data[res_offset], haystack_data + match_pos, bytes_to_copy);
+            res_offset += bytes_to_copy;
+        }
+
+        res_data.resize(res_data.size() + 1);
+        res_data[res_offset] = 0;
+        ++res_offset;
+    }
+#endif
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        [[maybe_unused]] bool allow_hyperscan)
     {
         ColumnString::Offset res_offset = 0;
         res_data.reserve(data.size());
@@ -187,18 +278,75 @@ struct ReplaceRegexpImpl
                 "The pattern argument is not a valid re2 pattern: {}",
                 searcher.error());
 
-        int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+        int num_captures_in_needle = searcher.NumberOfCapturingGroups();
 
-        Instructions instructions = createInstructions(replacement, num_captures);
+#if USE_VECTORSCAN
+        /// 1. Vectorscan matches generally faster than re2. The caveat is that vectorscan recognizes
+        /// capturing groups but ignores them, so we can use vectorscan only when the pattern has
+        /// zero capturing groups.
+        /// 2. Because evaluation in vectorscan with flag HS_FLAG_SOM_LEFTMOST may reject some complex
+        /// but valid patterns according to documentation, we allow to turn vectorscan on/off via cfg.
+        /// 3. Don't use vectorscan for replaceRegexpOne(), see processStringWithVectorscan() why.
+        bool use_vectorscan = (num_captures_in_needle == 0) && allow_hyperscan && replace == ReplaceRegexpTraits::Replace::All;
+        if (use_vectorscan)
+        {
+            /// Because we rely on the HS_FLAG_SOM_LEFTMOST flag here and other usages of vectorscan
+            /// in ClickHouse don't, we can't use the internal regexp cache. Instead construct database
+            /// and scratch area directly.
+            hs_database_t * db = nullptr;
+            hs_compile_error_t * compile_error = nullptr;
 
-        /// Cannot perform search for whole columns. Will process each string separately.
+            hs_error_t err = hs_compile(
+                needle.c_str(),
+                HS_FLAG_SOM_LEFTMOST | HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8,
+                HS_MODE_BLOCK,
+                nullptr,
+                &db,
+                &compile_error);
+
+            if (err != HS_SUCCESS)
+            {
+                SCOPE_EXIT({ hs_free_compile_error(compile_error); });
+                throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        compile_error->message);
+            }
+
+            SCOPE_EXIT({ hs_free_database(db); });
+
+            hs_scratch_t * scratch = nullptr;
+
+            err = hs_alloc_scratch(db, &scratch);
+            if (err != HS_SUCCESS)
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+
+            SCOPE_EXIT({ hs_free_scratch(scratch); });
+
+            Instructions instructions = createInstructions(replacement, num_captures_in_needle /* "\0" capture */ + 1);
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t from = i > 0 ? offsets[i - 1] : 0;
+                const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
+                const size_t haystack_length = static_cast<unsigned>(offsets[i] - from - 1);
+
+                processStringWithVectorscan(haystack_data, haystack_length, res_data, res_offset, db, scratch, instructions);
+                res_offsets[i] = res_offset;
+            }
+
+            return;
+        }
+#endif
+        num_captures_in_needle = std::min(num_captures_in_needle /* "\0" capture */ + 1, max_captures_re2);
+        Instructions instructions = createInstructions(replacement, num_captures_in_needle);
+
         for (size_t i = 0; i < size; ++i)
         {
             size_t from = i > 0 ? offsets[i - 1] : 0;
             const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
             const size_t haystack_length = static_cast<unsigned>(offsets[i] - from - 1);
 
-            processString(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures, instructions);
+            processStringWithRe2(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures_in_needle, instructions);
             res_offsets[i] = res_offset;
         }
     }
@@ -209,7 +357,8 @@ struct ReplaceRegexpImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        [[maybe_unused]] bool allow_hyperscan)
     {
         ColumnString::Offset res_offset = 0;
         size_t size = data.size() / n;
@@ -228,9 +377,68 @@ struct ReplaceRegexpImpl
                 "The pattern argument is not a valid re2 pattern: {}",
                 searcher.error());
 
-        int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
+        int num_captures_in_needle = searcher.NumberOfCapturingGroups();
 
-        Instructions instructions = createInstructions(replacement, num_captures);
+#if USE_VECTORSCAN
+        /// 1. Vectorscan matches generally faster than re2. The caveat is that vectorscan recognizes
+        /// capturing groups but ignores them, so we can use vectorscan only when the pattern has
+        /// zero capturing groups.
+        /// 2. Because evaluation in vectorscan with flag HS_FLAG_SOM_LEFTMOST may reject some complex
+        /// but valid patterns according to documentation, we allow to turn vectorscan on/off via cfg.
+        /// 3. Don't use vectorscan for replaceRegexpOne(), see processStringWithVectorscan() why.
+        bool use_vectorscan = (num_captures_in_needle == 0) && allow_hyperscan && replace == ReplaceRegexpTraits::Replace::All;
+        if (use_vectorscan)
+        {
+            /// Because we rely on the HS_FLAG_SOM_LEFTMOST flag here and other usages of vectorscan
+            /// in ClickHouse don't, we can't use the internal regexp cache. Instead construct database
+            /// and scratch area directly.
+            hs_database_t * db = nullptr;
+            hs_compile_error_t * compile_error = nullptr;
+
+            hs_error_t err = hs_compile(
+                needle.c_str(),
+                HS_FLAG_SOM_LEFTMOST | HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8,
+                HS_MODE_BLOCK,
+                nullptr,
+                &db,
+                &compile_error);
+
+            if (err != HS_SUCCESS)
+            {
+                SCOPE_EXIT({ hs_free_compile_error(compile_error); });
+                throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        compile_error->message);
+            }
+
+            SCOPE_EXIT({ hs_free_database(db); });
+
+            hs_scratch_t * scratch = nullptr;
+
+            err = hs_alloc_scratch(db, &scratch);
+            if (err != HS_SUCCESS)
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+
+            SCOPE_EXIT({ hs_free_scratch(scratch); });
+
+            Instructions instructions = createInstructions(replacement, num_captures_in_needle /* "\0" capture */ + 1);
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t from = i * n;
+                const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
+                const size_t haystack_length = n;
+
+                processStringWithVectorscan(haystack_data, haystack_length, res_data, res_offset, db, scratch, instructions);
+                res_offsets[i] = res_offset;
+            }
+
+            return;
+        }
+#endif
+
+        num_captures_in_needle = std::min(num_captures_in_needle /* "\0" capture */ + 1, max_captures_re2);
+        Instructions instructions = createInstructions(replacement, num_captures_in_needle);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -238,7 +446,7 @@ struct ReplaceRegexpImpl
             const char * haystack_data = reinterpret_cast<const char *>(data.data() + from);
             const size_t haystack_length = n;
 
-            processString(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures, instructions);
+            processStringWithRe2(haystack_data, haystack_length, res_data, res_offset, searcher, num_captures_in_needle, instructions);
             res_offsets[i] = res_offset;
         }
     }
