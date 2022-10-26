@@ -31,6 +31,8 @@
 * Add OpenTelemetry support to ON CLUSTER DDL (require `distributed_ddl_entry_format_version` to be set to 4). [#41484](https://github.com/ClickHouse/ClickHouse/pull/41484) ([Frank Chen](https://github.com/FrankChen021)).
 * Added system table `asynchronous_insert_log`. It contains information about asynchronous inserts (including results of queries in fire-and-forget mode (with `wait_for_async_insert=0`)) for better introspection. [#42040](https://github.com/ClickHouse/ClickHouse/pull/42040) ([Anton Popov](https://github.com/CurtizJ)).
 * Add support for methods `lz4`, `bz2`, `snappy` in HTTP's `Accept-Encoding` which is a non-standard extension to HTTP protocol. [#42071](https://github.com/ClickHouse/ClickHouse/pull/42071) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Adds Morton Coding (ZCurve) encode/decode functions. [#41753](https://github.com/ClickHouse/ClickHouse/pull/41753) ([Constantine Peresypkin](https://github.com/pkit)).
+* Add support for `SET setting_name = DEFAULT`. [#42187](https://github.com/ClickHouse/ClickHouse/pull/42187) ([Filatenkov Artur](https://github.com/FArthur-cmd)).
 
 #### Experimental Feature
 * Added new infrastructure for query analysis and planning under the `allow_experimental_analyzer` setting. [#31796](https://github.com/ClickHouse/ClickHouse/pull/31796) ([Maksim Kita](https://github.com/kitaisreal)).
@@ -86,6 +88,9 @@ Only allow clients connecting to a secure server with an invalid certificate onl
 * Fix rarely invalid cast of aggregate state types with complex types such as Decimal. This fixes [#42408](https://github.com/ClickHouse/ClickHouse/issues/42408). [#42417](https://github.com/ClickHouse/ClickHouse/pull/42417) ([Amos Bird](https://github.com/amosbird)).
 * Allow to use `Date32` arguments for `dateName` function. [#42554](https://github.com/ClickHouse/ClickHouse/pull/42554) ([Roman Vasin](https://github.com/rvasin)).
 * Now filters with NULL literals will be used during index analysis. [#34063](https://github.com/ClickHouse/ClickHouse/issues/34063). [#41842](https://github.com/ClickHouse/ClickHouse/pull/41842) ([Amos Bird](https://github.com/amosbird)).
+* Merge parts if every part in the range is older than a certain threshold. The threshold can be set by using `min_age_to_force_merge_seconds`. This closes [#35836](https://github.com/ClickHouse/ClickHouse/issues/35836). [#42423](https://github.com/ClickHouse/ClickHouse/pull/42423) ([Antonio Andelic](https://github.com/antonio2368)). This is continuation of [#39550i](https://github.com/ClickHouse/ClickHouse/pull/39550) by [@fastio](https://github.com/fastio) who implemented most of the logic.
+* Added new infrastructure for query analysis and planning under `allow_experimental_analyzer` setting. [#31796](https://github.com/ClickHouse/ClickHouse/pull/31796) ([Maksim Kita](https://github.com/kitaisreal)).
+* Improve the time to recover lost keeper connections. [#42541](https://github.com/ClickHouse/ClickHouse/pull/42541) ([Raúl Marín](https://github.com/Algunenano)).
 
 #### Build/Testing/Packaging Improvement
 * Add fuzzer for table definitions [#40096](https://github.com/ClickHouse/ClickHouse/pull/40096) ([Anton Popov](https://github.com/CurtizJ)). This represents the biggest advancement for ClickHouse testing in this year so far.
@@ -139,6 +144,7 @@ Only allow clients connecting to a secure server with an invalid certificate onl
 * Fix bad_cast assert during INSERT into `Annoy` indexes over non-Float32 columns. `Annoy` indices is an experimental feature. [#42485](https://github.com/ClickHouse/ClickHouse/pull/42485) ([Robert Schulze](https://github.com/rschu1ze)).
 * Arithmetic operator with Date or DateTime and 128 or 256-bit integer was referencing uninitialized memory. [#42453](https://github.com/ClickHouse/ClickHouse/issues/42453). [#42573](https://github.com/ClickHouse/ClickHouse/pull/42573) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Fix unexpected table loading error when partition key contains alias function names during server upgrade. [#36379](https://github.com/ClickHouse/ClickHouse/pull/36379) ([Amos Bird](https://github.com/amosbird)).
+* Fixes a crash in `JSONExtract` with `LowCardinality`. [#42633](https://github.com/ClickHouse/ClickHouse/pull/42633) ([Anton Popov](https://github.com/CurtizJ)).
 
 
 ### <a id="229"></a> ClickHouse release 22.9, 2022-09-22
