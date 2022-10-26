@@ -326,6 +326,7 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
+        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
@@ -396,6 +397,7 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
+    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -585,6 +587,9 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
+    if (!connected.load(std::memory_order_acquire))
+        return;
+
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);
