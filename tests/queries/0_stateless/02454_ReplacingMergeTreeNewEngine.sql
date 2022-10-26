@@ -1,4 +1,4 @@
--- Tags: long, zookeeper
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
