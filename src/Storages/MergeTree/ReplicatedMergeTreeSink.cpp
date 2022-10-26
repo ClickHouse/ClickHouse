@@ -317,8 +317,9 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 {
     /// NOTE: No delay in this case. That's Ok.
 
-    assertSessionIsNotExpired(storage.getZooKeeper());
-    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(storage.getZooKeeper());
+    auto origin_zookeeper = storage.getZooKeeper();
+    assertSessionIsNotExpired(origin_zookeeper);
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
@@ -398,7 +399,7 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
         /// Allocate new block number and check for duplicates
-        bool deduplicate_block = !block_id.empty();
+        const bool deduplicate_block = !block_id.empty();
         String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
         std::optional<EphemeralLockInZooKeeper> block_number_lock
             = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
@@ -500,8 +501,6 @@ void ReplicatedMergeTreeSink::commitPart(
         else
         {
             is_already_existing_part = true;
-
-            /// TODO: looks unclear, - if deduplication is off then block_id will be empty, - so what will happened here then?
 
             /// This block was already written to some replica. Get the part name for it.
             /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
@@ -694,7 +693,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 block_id,
                 Coordination::errorMessage(multi_code));
         }
-    });
+    },
+    [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
 
     if (isQuorumEnabled())
     {
