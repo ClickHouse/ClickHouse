@@ -32,7 +32,7 @@ CassandraSource::CassandraSource(
     , has_more_pages(cass_true)
 {
     description.init(sample_block);
-    cassandraCheck(cass_statement_set_paging_size(statement, max_block_size));
+    cassandraCheck(cass_statement_set_paging_size(statement, static_cast<int>(max_block_size)));
 }
 
 void CassandraSource::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)
