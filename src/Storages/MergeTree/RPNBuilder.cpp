@@ -33,10 +33,10 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT):
+        case ActionsDAG::ActionType::INPUT:
             writeString(node.result_name, out);
             break;
-        case (ActionsDAG::ActionType::COLUMN):
+        case ActionsDAG::ActionType::COLUMN:
         {
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
@@ -47,15 +47,15 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                 writeString(node.result_name, out);
             break;
         }
-        case (ActionsDAG::ActionType::ALIAS):
+        case ActionsDAG::ActionType::ALIAS:
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             break;
-        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             writeChar(')', out);
             break;
-        case (ActionsDAG::ActionType::FUNCTION):
+        case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
             if (legacy && name == "modulo")
@@ -144,9 +144,23 @@ bool RPNBuilderTreeNode::isFunction() const
 bool RPNBuilderTreeNode::isConstant() const
 {
     if (ast_node)
-        return typeid_cast<const ASTLiteral *>(ast_node);
+    {
+        bool is_literal = typeid_cast<const ASTLiteral *>(ast_node);
+        if (is_literal)
+            return true;
+
+        String column_name = ast_node->getColumnName();
+        const auto & block_with_constants = tree_context.getBlockWithConstants();
+
+        if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
+            return true;
+
+        return false;
+    }
     else
+    {
         return dag_node->column && isColumnConst(*dag_node->column);
+    }
 }
 
 ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
@@ -154,28 +168,35 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
     if (!isConstant())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a constant");
 
-    ColumnWithTypeAndName res;
+    ColumnWithTypeAndName result;
 
     if (ast_node)
     {
         const auto * literal = assert_cast<const ASTLiteral *>(ast_node);
-        res.type = applyVisitor(FieldToDataType(), literal->value);
-        res.column = res.type->createColumnConst(0, literal->value);
+        if (literal)
+        {
+            result.type = applyVisitor(FieldToDataType(), literal->value);
+            result.column = result.type->createColumnConst(0, literal->value);
+
+            return result;
+        }
+
+        String column_name = ast_node->getColumnName();
+        const auto & block_with_constants = tree_context.getBlockWithConstants();
+
+        return block_with_constants.getByName(column_name);
     }
     else
     {
-        res.type = dag_node->result_type;
-        res.column = dag_node->column;
+        result.type = dag_node->result_type;
+        result.column = dag_node->column;
     }
 
-    return res;
+    return result;
 }
 
 bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & output_type) const
 {
-    if (!isConstant())
-        return false;
-
     if (ast_node)
     {
         // Constant expr should use alias names if any

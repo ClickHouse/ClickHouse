@@ -181,7 +181,7 @@ public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
 
-    explicit RPNBuilder(const ActionsDAG::Node * & filter_actions_dag_node,
+    explicit RPNBuilder(const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
         const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
         : tree_context(std::move(query_context_))
