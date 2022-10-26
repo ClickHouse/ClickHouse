@@ -71,8 +71,8 @@ CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
 INSERT INTO testReplica1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
 SYSTEM SYNC REPLICA testReplica2;
 
-INSERT INTO testReplica1 (*) VALUES VALUES ('d3', 2, 1);
-INSERT INTO testReplica1 (*) VALUES VALUES ('d1', 2, 1);
+INSERT INTO testReplica1 (*) VALUES ('d3', 2, 1);
+INSERT INTO testReplica1 (*) VALUES ('d1', 2, 1);
 
 SELECT '== Replica 1 ==';
 SELECT * FROM testReplica1 FINAL;
