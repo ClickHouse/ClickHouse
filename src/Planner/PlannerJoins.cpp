@@ -33,6 +33,7 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/GraceHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -628,6 +629,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
+    const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
@@ -684,6 +686,20 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     {
         if (FullSortingMergeJoin::isSupported(table_join))
             return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+    {
+        if (GraceHashJoin::isSupported(table_join))
+        {
+            auto query_context = planner_context->getQueryContext();
+            return std::make_shared<GraceHashJoin>(
+                query_context,
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                query_context->getTempDataOnDisk());
+        }
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
