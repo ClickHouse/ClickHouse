@@ -468,7 +468,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         if (collected_processors)
             collected_processors->emplace_back(delayed_root);
-        left->pipe.processors.emplace_back(delayed_root);
+        left->pipe.processors->emplace_back(delayed_root);
 
         for (auto & outport : delayed_root->getOutputs())
             delayed_root_output_ports.emplace_back(&outport);
@@ -499,7 +499,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
             if (collected_processors)
                 collected_processors->emplace_back(delayed);
-            left->pipe.processors.emplace_back(std::move(delayed));
+            left->pipe.processors->emplace_back(std::move(delayed));
         }
         else
         {
@@ -526,7 +526,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
         if (collected_processors)
             collected_processors->emplace_back(delayed_processor);
-        left->pipe.processors.emplace_back(delayed_processor);
+        left->pipe.processors->emplace_back(delayed_processor);
 
         // Connect @delayed_processor ports with inputs (JoiningTransforms & DelayedJoinedBlocksTransforms) / pipe outputs
         auto next_delayed_input = delayed_processor->getInputs().begin();
