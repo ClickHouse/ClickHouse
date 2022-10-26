@@ -10,7 +10,7 @@ INSERT INTO test_without_merge SELECT 2;
 INSERT INTO test_without_merge SELECT 3;
 
 SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
-SELECT count(*) FROM system.parts where table='test_without_merge' and active=1;
+SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_without_merge' AND active;
 
 DROP TABLE test_without_merge;
 
@@ -23,7 +23,7 @@ INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 3;
 
 SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
-SELECT count(*) FROM system.parts where table='test_with_merge' and active=1;
+SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 
 DROP TABLE test_with_merge;
 
@@ -36,7 +36,7 @@ INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 3;
 
 SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
-SELECT count(*) FROM system.parts where table='test_with_merge' and active=1;
+SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 
 DROP TABLE test_with_merge;
 
@@ -49,7 +49,7 @@ INSERT INTO test_replicated SELECT 2;
 INSERT INTO test_replicated SELECT 3;
 
 SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
-SELECT count(*) FROM system.parts where table='test_replicated' and active=1;
+SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;
 
@@ -62,6 +62,6 @@ INSERT INTO test_replicated SELECT 2;
 INSERT INTO test_replicated SELECT 3;
 
 SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
-SELECT count(*) FROM system.parts where table='test_replicated' and active=1;
+SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;
