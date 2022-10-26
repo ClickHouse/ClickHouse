@@ -85,7 +85,7 @@ public:
     {}
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
+    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0, bool infinite_read_ = false);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -116,7 +116,7 @@ public:
         size_t num_rows = 0;
     };
 
-    TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_, bool inifinite_read_ = false);
 
     void write(const Block & block);
     Stat finishWriting();
@@ -151,6 +151,8 @@ private:
 
     struct InputReader;
     std::unique_ptr<InputReader> in_reader;
+
+    bool infinite_read;
 };
 
 }

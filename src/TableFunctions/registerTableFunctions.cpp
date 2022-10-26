@@ -1,4 +1,4 @@
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -43,6 +43,8 @@ void registerTableFunctions()
 
     registerTableFunctionView(factory);
     registerTableFunctionViewIfPermitted(factory);
+
+    registerTableFunctionObfuscate(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

@@ -41,7 +41,7 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size, bool infinite_read_)
 {
     DiskPtr disk;
     if (max_file_size > 0)
@@ -59,7 +59,7 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, si
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
 
     std::lock_guard lock(mutex);
-    TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
+    TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this, infinite_read_));
     return *tmp_stream;
 }
 
@@ -134,10 +134,11 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header_)
+    InputReader(const String & path, const Block & header_, bool infinite_ = false)
         : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
+        , infinite(infinite_)
     {
     }
 
@@ -148,18 +149,29 @@ struct TemporaryFileStream::InputReader
     {
     }
 
-    Block read() { return in_reader.read(); }
+    Block read()
+    {
+        Block block = in_reader.read();
+
+        if (!block && infinite)
+            in_file_buf.rewind();
+
+        return block;
+    }
 
     ReadBufferFromFile in_file_buf;
     CompressedReadBuffer in_compressed_buf;
     NativeReader in_reader;
+
+    bool infinite;
 };
 
-TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
+TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_, bool infinite_read_)
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
     , out_writer(std::make_unique<OutputWriter>(file->getPath(), header))
+    , infinite_read(infinite_read_)
 {
 }
 
@@ -206,11 +218,11 @@ Block TemporaryFileStream::read()
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(file->getPath(), header);
+        in_reader = std::make_unique<InputReader>(file->getPath(), header, infinite_read);
     }
 
     Block block = in_reader->read();
-    if (!block)
+    if (!block && !infinite_read)
     {
         /// finalize earlier to release resources, do not wait for the destructor
         this->release();
