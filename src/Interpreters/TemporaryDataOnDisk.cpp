@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int uncompressed_delta)
+void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
@@ -41,7 +41,7 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int unco
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size)
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     DiskPtr disk;
     if (max_file_size > 0)
@@ -56,7 +56,7 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, Cu
         disk = volume->getDisk();
     }
 
-    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, metric_scope);
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
 
     std::lock_guard lock(mutex);
     TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
@@ -94,8 +94,8 @@ struct TemporaryFileStream::OutputWriter
         if (finalized)
             throw Exception("Cannot write to finalized stream", ErrorCodes::LOGICAL_ERROR);
         out_writer.write(block);
+        num_rows += block.rows();
     }
-
 
     void finalize()
     {
@@ -127,6 +127,8 @@ struct TemporaryFileStream::OutputWriter
     CompressedWriteBuffer out_compressed_buf;
     NativeWriter out_writer;
 
+    std::atomic_size_t num_rows = 0;
+
     bool finalized = false;
 };
 
@@ -157,7 +159,7 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
-    , out_writer(std::make_unique<OutputWriter>(file->path(), header))
+    , out_writer(std::make_unique<OutputWriter>(file->getPath(), header))
 {
 }
 
@@ -172,6 +174,9 @@ void TemporaryFileStream::write(const Block & block)
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
 {
+    if (isWriteFinished())
+        return stat;
+
     if (out_writer)
     {
         out_writer->finalize();
@@ -196,19 +201,19 @@ Block TemporaryFileStream::read()
     if (!isWriteFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
 
-    if (isFinalized())
+    if (isEof())
         return {};
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(file->path(), header);
+        in_reader = std::make_unique<InputReader>(file->getPath(), header);
     }
 
     Block block = in_reader->read();
     if (!block)
     {
         /// finalize earlier to release resources, do not wait for the destructor
-        this->finalize();
+        this->release();
     }
     return block;
 }
@@ -223,20 +228,21 @@ void TemporaryFileStream::updateAllocAndCheck()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
-            file->path(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
+            file->getPath(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
     parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
+    stat.num_rows = out_writer->num_rows;
 }
 
-bool TemporaryFileStream::isFinalized() const
+bool TemporaryFileStream::isEof() const
 {
     return file == nullptr;
 }
 
-void TemporaryFileStream::finalize()
+void TemporaryFileStream::release()
 {
     if (file)
     {
@@ -258,7 +264,7 @@ TemporaryFileStream::~TemporaryFileStream()
 {
     try
     {
-        finalize();
+        release();
     }
     catch (...)
     {

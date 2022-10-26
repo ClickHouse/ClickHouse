@@ -4,7 +4,6 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -132,15 +131,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -282,7 +279,7 @@ public:
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
-        std::string disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
+        const std::string & disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
@@ -291,7 +288,7 @@ public:
     /// Get best replica having this partition on a same type remote disk
     String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
 
-    inline String getReplicaName() const { return replica_name; }
+    inline const String & getReplicaName() const { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
@@ -313,9 +310,9 @@ public:
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
     // Return default or custom zookeeper name for table
-    String getZooKeeperName() const { return zookeeper_name; }
+    const String & getZooKeeperName() const { return zookeeper_name; }
 
-    String getZooKeeperPath() const { return zookeeper_path; }
+    const String & getZooKeeperPath() const { return zookeeper_path; }
 
     // Return table id, common for different replicas
     String getTableSharedID() const override;
@@ -323,13 +320,13 @@ public:
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 
-    static String getDefaultZooKeeperName() { return default_zookeeper_name; }
+    static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 
     static bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, ContextPtr local_context, const zkutil::ZooKeeperPtr & zookeeper);
+        const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
 private:
@@ -384,11 +381,11 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    static constexpr auto default_zookeeper_name = "default";
-    String zookeeper_name;
-    String zookeeper_path;
-    String replica_name;
-    String replica_path;
+    static const String default_zookeeper_name;
+    const String zookeeper_name;
+    const String zookeeper_path;
+    const String replica_name;
+    const String replica_path;
 
     /** /replicas/me/is_active.
       */
@@ -485,8 +482,6 @@ private:
 
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
-
-    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -834,7 +829,7 @@ private:
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 
-    static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, std::string disk_type, const String & table_uuid,
+    static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);
 
     static void createZeroCopyLockNode(

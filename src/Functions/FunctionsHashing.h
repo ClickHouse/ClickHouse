@@ -15,6 +15,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
@@ -61,6 +62,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -618,20 +620,27 @@ struct ImplXxHash64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-
-#if USE_BLAKE3
 struct ImplBLAKE3
 {
-    static constexpr auto name = "blake3";
+    static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
+    #if !USE_BLAKE3
+    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
+    {
+        UNUSED(begin);
+        UNUSED(size);
+        UNUSED(out_char_data);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
+    }
+    #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         #if defined(MEMORY_SANITIZER)
-            auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+            auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
             __msan_unpoison(out_char_data, length);
         #else
-            auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+            auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
         #endif
         if (err_msg != nullptr)
         {
@@ -640,9 +649,8 @@ struct ImplBLAKE3
             throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
+    #endif
 };
-#endif
-
 
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
@@ -1502,9 +1510,5 @@ using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
-
-#if USE_BLAKE3
-    using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
-#endif
-
+using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }

@@ -46,7 +46,7 @@ namespace
 
         HashMap<T, T> hash_map;
         for (auto val : index)
-            hash_map.insert({val, hash_map.size()});
+            hash_map.insert({val, static_cast<T>(hash_map.size())});
 
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();
@@ -632,7 +632,7 @@ void ColumnLowCardinality::Index::convertPositions()
 
             /// TODO: Optimize with SSE?
             for (size_t i = 0; i < size; ++i)
-                new_data[i] = data[i];
+                new_data[i] = static_cast<CurIndexType>(data[i]);
 
             positions = std::move(new_positions);
             size_of_type = sizeof(IndexType);
@@ -717,7 +717,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
                 positions_data.resize(size + limit);
 
                 for (UInt64 i = 0; i < limit; ++i)
-                    positions_data[size + i] = column_data[offset + i];
+                    positions_data[size + i] = static_cast<CurIndexType>(column_data[offset + i]);
             };
 
             callForType(std::move(copy), size_of_type);
@@ -789,7 +789,7 @@ void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 &
         auto size = data.size();
 
         for (size_t i = 0; i < size; ++i)
-            hash_data[i] = intHashCRC32(dict_hash_data[data[i]], hash_data[i]);
+            hash_data[i] = static_cast<UInt32>(intHashCRC32(dict_hash_data[data[i]], hash_data[i]));
     };
 
     callForType(std::move(update_weak_hash), size_of_type);

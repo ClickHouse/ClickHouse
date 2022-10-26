@@ -220,8 +220,11 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
-    Names source_column_names = source_part->getColumns().getNames();
-    NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
+    const auto & source_columns = source_part->getColumns();
+    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
+    for (const auto & it : source_columns)
+        source_columns_name_to_type[it.name] = it.type;
+
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
         if (updated_header.has(it->name))
@@ -233,14 +236,25 @@ getColumnsForNewDataPart(
         }
         else
         {
-            if (!source_columns_name_set.contains(it->name))
+            auto source_col = source_columns_name_to_type.find(it->name);
+            if (source_col == source_columns_name_to_type.end())
             {
                 /// Source part doesn't have column but some other column
                 /// was renamed to it's name.
                 auto renamed_it = renamed_columns_to_from.find(it->name);
-                if (renamed_it != renamed_columns_to_from.end()
-                    && source_columns_name_set.contains(renamed_it->second))
-                    ++it;
+                if (renamed_it != renamed_columns_to_from.end())
+                {
+                    source_col = source_columns_name_to_type.find(renamed_it->second);
+                    if (source_col == source_columns_name_to_type.end())
+                        it = storage_columns.erase(it);
+                    else
+                    {
+                        /// Take a type from source part column.
+                        /// It may differ from column type in storage.
+                        it->type = source_col->second;
+                        ++it;
+                    }
+                }
                 else
                     it = storage_columns.erase(it);
             }
@@ -262,7 +276,12 @@ getColumnsForNewDataPart(
                 if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
                     it = storage_columns.erase(it);
                 else
+                {
+                    /// Take a type from source part column.
+                    /// It may differ from column type in storage.
+                    it->type = source_col->second;
                     ++it;
+                }
             }
         }
     }

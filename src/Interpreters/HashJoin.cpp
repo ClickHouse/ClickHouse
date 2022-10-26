@@ -232,6 +232,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         data->type = Type::CROSS;
         sample_block_with_columns_to_add = right_sample_block;
     }
+    else if (table_join->getClauses().empty())
+    {
+        data->type = Type::EMPTY;
+        sample_block_with_columns_to_add = right_sample_block;
+    }
     else if (table_join->oneDisjunct())
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
@@ -624,7 +629,7 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 
@@ -1852,7 +1857,7 @@ private:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type)   ;
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <JoinStrictness STRICTNESS, typename Map>
