@@ -547,12 +547,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         }
         else
         {
-            {
-                /// Analyze query to check that types are valid (e.g. in PREWHERE).
-                InterpreterSelectQuery interpreter
-                    (modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections());
-            }
-
             storage->read(
                 plan,
                 real_column_names,

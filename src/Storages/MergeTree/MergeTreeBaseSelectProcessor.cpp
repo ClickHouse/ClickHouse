@@ -607,7 +607,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
                 throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
             }
 
             block.erase(prewhere_info->row_level_column_name);
@@ -620,7 +620,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         if (!prewhere_column.type->canBeUsedInBooleanContext())
         {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
 
         if (prewhere_info->remove_prewhere_column)
