@@ -10,9 +10,7 @@ jmethodID WriteBufferFromJavaOutputStream::output_stream_flush = nullptr;
 
 void WriteBufferFromJavaOutputStream::nextImpl()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
-
+    GET_JNIENV(env)
     size_t bytes_write = 0;
     while (offset() - bytes_write > 0)
     {
@@ -21,43 +19,28 @@ void WriteBufferFromJavaOutputStream::nextImpl()
         safeCallVoidMethod(env, output_stream, output_stream_write, buffer, 0, copy_num);
         bytes_write += copy_num;
     }
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 WriteBufferFromJavaOutputStream::WriteBufferFromJavaOutputStream(jobject output_stream_, jbyteArray buffer_)
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     buffer = static_cast<jbyteArray>(env->NewWeakGlobalRef(buffer_));
     output_stream = env->NewWeakGlobalRef(output_stream_);
     buffer_size = env->GetArrayLength(buffer);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 void WriteBufferFromJavaOutputStream::finalizeImpl()
 {
     next();
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     safeCallVoidMethod(env, output_stream, output_stream_flush);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 WriteBufferFromJavaOutputStream::~WriteBufferFromJavaOutputStream()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     env->DeleteWeakGlobalRef(output_stream);
     env->DeleteWeakGlobalRef(buffer);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 }

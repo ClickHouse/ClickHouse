@@ -50,8 +50,7 @@ bool ReadBufferFromJavaInputStream::nextImpl()
 }
 int ReadBufferFromJavaInputStream::readFromJava()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     if (buf == nullptr)
     {
         jbyteArray local_buf = env->NewByteArray(4096);
@@ -63,10 +62,7 @@ int ReadBufferFromJavaInputStream::readFromJava()
     {
         env->GetByteArrayRegion(buf, 0, count, reinterpret_cast<jbyte *>(internal_buffer.begin()));
     }
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
     return count;
 }
 ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_stream) : java_in(input_stream)
@@ -74,13 +70,14 @@ ReadBufferFromJavaInputStream::ReadBufferFromJavaInputStream(jobject input_strea
 }
 ReadBufferFromJavaInputStream::~ReadBufferFromJavaInputStream()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     env->DeleteGlobalRef(java_in);
     if (buf != nullptr)
     {
         env->DeleteGlobalRef(buf);
     }
+    CLEAN_JNIENV
+
 }
 
 }

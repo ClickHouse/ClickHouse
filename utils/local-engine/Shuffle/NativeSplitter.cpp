@@ -1,9 +1,9 @@
 #include "NativeSplitter.h"
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
+#include <jni/jni_common.h>
 #include "Common/Exception.h"
 #include <Common/JNIUtils.h>
-#include <jni/jni_common.h>
 
 namespace local_engine
 {
@@ -50,8 +50,7 @@ void NativeSplitter::split(DB::Block & block)
 
 NativeSplitter::NativeSplitter(Options options_, jobject input_) : options(options_)
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     input = env->NewGlobalRef(input_);
     partition_ids.reserve(options.buffer_size);
     partition_buffer.reserve(options.partition_nums);
@@ -59,20 +58,13 @@ NativeSplitter::NativeSplitter(Options options_, jobject input_) : options(optio
     {
         partition_buffer.emplace_back(std::make_shared<ColumnsBuffer>());
     }
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 NativeSplitter::~NativeSplitter()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     env->DeleteGlobalRef(input);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
 }
 bool NativeSplitter::hasNext()
 {
@@ -119,25 +111,17 @@ int32_t NativeSplitter::nextPartitionId()
 
 bool NativeSplitter::inputHasNext()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     bool next = safeCallBooleanMethod(env, input, iterator_has_next);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
     return next;
 }
 
 int64_t NativeSplitter::inputNext()
 {
-    int attached;
-    JNIEnv * env = JNIUtils::getENV(&attached);
+    GET_JNIENV(env)
     int64_t result = safeCallLongMethod(env, input, iterator_next);
-    if (attached)
-    {
-        JNIUtils::detachCurrentThread();
-    }
+    CLEAN_JNIENV
     return result;
 }
 std::unique_ptr<NativeSplitter> NativeSplitter::create(const std::string & short_name, Options options_, jobject input)
