@@ -1253,13 +1253,69 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
     {
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
+            ColumnString::Chars chars;
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            chars.push_back(0);
+            traverse(element, buf);
+            buf.finalize();
+            std::string str = reinterpret_cast<const char *>(chars.data());
+            chars.push_back(0);
+            assert_cast<ColumnLowCardinality &>(dest).insertData(str.data(), str.size());
+        }
+        else
+        {
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            auto & chars = col_str.getChars();
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            traverse(element, buf);
+            buf.finalize();
+            chars.push_back(0);
+            col_str.getOffsets().push_back(chars.size());
+        }
+        return true;
+    }
+
+    // We use insertResultToFixedStringColumn in case we are inserting raw data in a FixedString column
+    static bool insertResultToFixedStringColumn(IColumn & dest, const Element & element, std::string_view)
+    {
+        ColumnFixedString::Chars chars;
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
+        traverse(element, buf);
+        buf.finalize();
+
+        auto & col_str = assert_cast<ColumnFixedString &>(dest);
+
+        if (chars.size() > col_str.getN())
+            return false;
+
+        chars.push_back(0);
+        std::string str = reinterpret_cast<const char *>(chars.data());
+
+        auto padded_str = str + std::string(col_str.getN() - std::min(col_str.getN(), str.length()), '\0');
+        col_str.insertData(str.data(), str.size());
+
+
+        return true;
+    }
+
+    // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
+    static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
+    {
+        if (element.getObject().size() > fixed_length)
+            return false;
+
+        ColumnFixedString::Chars chars;
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
         chars.push_back(0);
-        col_str.getOffsets().push_back(chars.size());
+        std::string str = reinterpret_cast<const char *>(chars.data());
+
+        auto padded_str = str + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
+        assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+
         return true;
     }
 
