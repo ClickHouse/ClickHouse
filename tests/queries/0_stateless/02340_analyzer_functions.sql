@@ -1,4 +1,4 @@
-SET use_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 DESCRIBE (SELECT 1 + 1);
 SELECT 1 + 1;
