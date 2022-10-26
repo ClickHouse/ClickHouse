@@ -40,7 +40,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     if (config.has(prefix + "settings"))
         settings_common.loadSettingsFromConfig(prefix + "settings", config);
 
-    settings_common.prefer_localhost_replica = 0;
+    settings_common.prefer_localhost_replica = false;
 
     settings_pull = settings_common;
     if (config.has(prefix + "settings_pull"))
