@@ -11,7 +11,7 @@
 **[ClickHouse release v22.1, 2022-01-18](#221)**<br/>
 **[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br/>
 
-### <a id="2210"></a> ClickHouse release 22.10, 2022-10-25
+### <a id="2210"></a> ClickHouse release 22.10, 2022-10-26
 
 #### Backward Incompatible Change
 * Rename cache commands: `show caches` -> `show filesystem caches`, `describe cache` -> `describe filesystem cache`. [#41508](https://github.com/ClickHouse/ClickHouse/pull/41508) ([Kseniia Sumarokova](https://github.com/kssenii)).
