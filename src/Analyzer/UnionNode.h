@@ -154,8 +154,6 @@ public:
         return QueryTreeNodeType::UNION;
     }
 
-    String getName() const override;
-
     DataTypePtr getResultType() const override
     {
         if (constant_value)
