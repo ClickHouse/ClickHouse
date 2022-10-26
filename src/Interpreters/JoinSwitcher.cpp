@@ -7,12 +7,11 @@
 namespace DB
 {
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, OnDiskJoinFactory factory)
+JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
-    , make_on_disk_join(std::move(factory))
 {
     join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
@@ -45,7 +44,7 @@ bool JoinSwitcher::switchJoin()
     BlocksList right_blocks = hash_join->releaseJoinedBlocks();
 
     /// Destroy old join & create new one.
-    join = make_on_disk_join();
+    join = std::make_shared<MergeJoin>(table_join, right_sample_block);
 
     bool success = true;
     for (const Block & saved_block : right_blocks)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mutex>
-#include <functional>
 
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
@@ -13,13 +12,11 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE/JoinAlgorithm::GRACE_HASH joins respectively.
+/// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE joins respectively.
 class JoinSwitcher : public IJoin
 {
 public:
-    using OnDiskJoinFactory = std::function<JoinPtr()>;
-
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, OnDiskJoinFactory factory);
+    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
@@ -86,7 +83,6 @@ private:
     mutable std::mutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
     const Block right_sample_block;
-    OnDiskJoinFactory make_on_disk_join;
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.

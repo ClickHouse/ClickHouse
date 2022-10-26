@@ -1075,21 +1075,9 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
-        auto make_merge_join = [analyzed_join, right_sample_block]
-        {
-            return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
-        };
-
-        auto make_grace_hash_join = [context, analyzed_join, left_sample_block, right_sample_block]
-        {
-            return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
-        };
-
-        if (settings.allow_grace_hash_join && GraceHashJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_grace_hash_join);
 
         if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, make_merge_join);
+            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
