@@ -43,13 +43,15 @@ class ZooKeeperWithFaultInjection
     using zk = zkutil::ZooKeeper;
 
     zk::Ptr keeper;
+    zk::Ptr keeper_prev;
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
     UInt64 calls_total = 0;
     UInt64 calls_without_fault_injection = 0;
     const UInt64 seed = 0;
-    const std::function<void()> noop_cleanup = []() {};
+
+    std::vector<std::string> ephemeral_nodes;
 
     ZooKeeperWithFaultInjection(
         zk::Ptr const & keeper_,
@@ -124,8 +126,7 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
-        return access<Strings>(
-            "getChildren", path, [&]() { return keeper->getChildren(path, stat, watch, list_request_type); }, noop_cleanup);
+        return access("getChildren", path, [&]() { return keeper->getChildren(path, stat, watch, list_request_type); });
     }
 
     Coordination::Error tryGetChildren(
@@ -135,23 +136,17 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
-        return access<Coordination::Error>(
-            "tryGetChildren",
-            path,
-            [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); },
-            [&](Coordination::Error) {});
+        return access("tryGetChildren", path, [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); });
     }
 
     zk::FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {})
     {
-        return access<zk::FutureExists>(
-            "asyncExists", path, [&]() { return keeper->asyncExists(path, watch_callback); }, noop_cleanup);
+        return access("asyncExists", path, [&]() { return keeper->asyncExists(path, watch_callback); });
     }
 
     zk::FutureGet asyncTryGet(const std::string & path)
     {
-        return access<zk::FutureGet>(
-            "asyncTryGet", path, [&]() { return keeper->asyncTryGet(path); }, noop_cleanup);
+        return access("asyncTryGet", path, [&]() { return keeper->asyncTryGet(path); });
     }
 
     bool tryGet(
@@ -161,65 +156,78 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr)
     {
-        return access<bool>(
-            "tryGet", path, [&]() { return keeper->tryGet(path, res, stat, watch, code); }, noop_cleanup);
+        return access("tryGet", path, [&]() { return keeper->tryGet(path, res, stat, watch, code); });
     }
 
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
-        return access<Coordination::Error>(
-            "tryMulti",
+        constexpr auto method = "tryMulti";
+        auto error = access(
+            method,
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMulti(requests, responses); },
-            [&](Coordination::Error err)
+            [&](const Coordination::Error & err)
             {
                 if (err == Coordination::Error::ZOK)
-                    faultInjectionCleanup("tryMulti", requests, responses);
+                    faultInjectionCleanup(method, requests, responses);
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy) && Coordination::Error::ZOK == error)
+        {
+            doForEachEphemeralNode(
+                method, requests, responses, [&](const String & path_created) { ephemeral_nodes.push_back(path_created); });
+        }
+        return error;
     }
 
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
+        constexpr auto method = "tryMultiNoThrow";
         constexpr auto no_throw = true;
         constexpr auto inject_failure_before_op = false;
-        return access<Coordination::Error, no_throw, inject_failure_before_op>(
-            "tryMultiNoThrow",
+        auto error = access<no_throw, inject_failure_before_op>(
+            method,
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->tryMultiNoThrow(requests, responses); },
-            [&](Coordination::Error err)
+            [&](const Coordination::Error & err)
             {
                 if (err == Coordination::Error::ZOK)
-                    faultInjectionCleanup("tryMultiNoThrow", requests, responses);
+                    faultInjectionCleanup(method, requests, responses);
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy) && Coordination::Error::ZOK == error)
+        {
+            doForEachEphemeralNode(
+                method, requests, responses, [&](const String & path_created) { ephemeral_nodes.push_back(path_created); });
+        }
+        return error;
     }
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
-        return access<std::string>(
-            "get", path, [&]() { return keeper->get(path, stat, watch); }, [](const std::string &) {});
+        return access("get", path, [&]() { return keeper->get(path, stat, watch); });
     }
 
     zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths)
     {
-        return access<zkutil::ZooKeeper::MultiGetResponse>(
-            "get", paths.front(), [&]() { return keeper->get(paths); }, noop_cleanup);
+        return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
     {
-        return access<bool>(
-            "exists", path, [&]() { return keeper->exists(path, stat, watch); }, noop_cleanup);
+        return access("exists", path, [&]() { return keeper->exists(path, stat, watch); });
     }
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths)
     {
-        return access<zkutil::ZooKeeper::MultiExistsResponse>(
-            "exists", paths.front(), [&]() { return keeper->exists(paths); }, noop_cleanup);
+        return access("exists", !paths.empty() ? paths.front() : "", [&]() { return keeper->exists(paths); });
     }
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)
     {
-        return access<std::string>(
+        auto path_created = access(
             "create",
             path,
             [&]() { return keeper->create(path, data, mode); },
@@ -247,11 +255,20 @@ public:
                             e.message());
                 }
             });
+
+        /// collect ephemeral nodes to clean up
+        if (unlikely(fault_policy))
+        {
+            if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
+                ephemeral_nodes.push_back(path_created);
+        }
+
+        return path_created;
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
     {
-        return access<Coordination::Responses>(
+        return access(
             "multi",
             !requests.empty() ? requests.front()->getPath() : "",
             [&]() { return keeper->multi(requests); },
@@ -260,19 +277,35 @@ public:
 
     void createAncestors(const std::string & path)
     {
-        access<void>(
-            "createAncestors", path, [&]() { return keeper->createAncestors(path); }, noop_cleanup);
+        access("createAncestors", path, [&]() { return keeper->createAncestors(path); });
     }
 
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1)
     {
-        return access<Coordination::Error>(
-            "tryRemove", path, [&]() { return keeper->tryRemove(path, version); }, [&](Coordination::Error) {});
+        return access("tryRemove", path, [&]() { return keeper->tryRemove(path, version); });
+    }
+
+    void cleanupEphemeralNodes()
+    {
+        for (const auto & path : ephemeral_nodes)
+        {
+            try
+            {
+                if (keeper_prev)
+                    keeper_prev->tryRemove(path);
+            }
+            catch (...)
+            {
+                if (unlikely(logger))
+                    tryLogCurrentException(logger, "Exception during ephemeral nodes clean up");
+            }
+        }
+
+        ephemeral_nodes.clear();
     }
 
 private:
-    template <typename Result, typename FaultCleanup>
-    void faultInjectionAfter(const Result & res, FaultCleanup fault_cleanup)
+    void faultInjectionAfter(std::function<void()> fault_cleanup)
     {
         try
         {
@@ -281,25 +314,13 @@ private:
         }
         catch (const zkutil::KeeperException &)
         {
-            if constexpr (std::is_same_v<void, std::decay_t<Result>>)
-                fault_cleanup();
-            else
-            {
-                if constexpr (std::is_same_v<Result, std::string>)
-                    fault_cleanup(res);
-                else if constexpr (std::is_same_v<Result, Coordination::Responses>)
-                    fault_cleanup(res);
-                else if constexpr (std::is_same_v<Result, Coordination::Error>)
-                    fault_cleanup(res);
-                else
-                    fault_cleanup();
-            }
-
+            fault_cleanup();
             throw;
         }
     }
 
-    void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    void doForEachEphemeralNode(
+        const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses, auto && action)
     {
         if (responses.empty())
             return;
@@ -328,17 +349,38 @@ private:
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Response should be CreateResponse: method={} index={} path={}", method, i, req->path);
 
-            keeper->remove(create_resp->path_created);
+            action(create_resp->path_created);
         }
     }
 
+    void faultInjectionCleanup(const char * method, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    {
+        doForEachEphemeralNode(method, requests, responses, [&](const String & path_created) { keeper->remove(path_created); });
+    }
+
+    template <typename T>
+    struct FaultCleanupTypeImpl
+    {
+        using Type = std::function<void(const T &)>;
+    };
+
+    template <>
+    struct FaultCleanupTypeImpl<void>
+    {
+        using Type = std::function<void()>;
+    };
+
+    template <typename T>
+    using FaultCleanupType = typename FaultCleanupTypeImpl<T>::Type;
+
     template <
-        typename Result,
         bool no_throw_access = false,
         bool inject_failure_before_op = true,
         int inject_failure_after_op = true,
-        typename FaultCleanup>
-    Result access(const char * func_name, const std::string & path, auto && operation, FaultCleanup fault_after_op_cleanup)
+        typename Operation,
+        typename Result = std::invoke_result_t<Operation>>
+    Result
+    access(const char * func_name, const std::string & path, Operation operation, FaultCleanupType<Result> fault_after_op_cleanup = {})
     {
         try
         {
@@ -366,7 +408,14 @@ private:
                 }
 
                 if constexpr (inject_failure_after_op)
-                    faultInjectionAfter(res, fault_after_op_cleanup);
+                {
+                    faultInjectionAfter(
+                        [&]
+                        {
+                            if (fault_after_op_cleanup)
+                                fault_after_op_cleanup(res);
+                        });
+                }
 
                 ++calls_without_fault_injection;
 
@@ -381,8 +430,12 @@ private:
 
                 if constexpr (inject_failure_after_op)
                 {
-                    void * stub = nullptr; /// just for template overloading
-                    faultInjectionAfter(stub, fault_after_op_cleanup);
+                    faultInjectionAfter(
+                        [&fault_after_op_cleanup]
+                        {
+                            if (fault_after_op_cleanup)
+                                fault_after_op_cleanup();
+                        });
                 }
 
                 ++calls_without_fault_injection;
@@ -403,6 +456,8 @@ private:
                     e.code,
                     e.message());
 
+            if (keeper)
+                keeper_prev = keeper;
             keeper.reset();
 
             /// for try*NoThrow() methods

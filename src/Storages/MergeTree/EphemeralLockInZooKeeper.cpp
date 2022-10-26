@@ -20,13 +20,6 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
     path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
     if (path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
-
-    LOG_DEBUG(
-        &Poco::Logger::get("EphemeralLockInZooKeeper"),
-        "Path created: path={} path_prefix={} holder_path={}",
-        path,
-        path_prefix,
-        holder_path);
 }
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(

@@ -12,7 +12,6 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance("node1", with_zookeeper=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -28,17 +27,11 @@ def started_cluster():
 
 def test_replica_inserts_with_keeper_restart(started_cluster):
     try:
-        settings = {
-            "insert_quorum": "2",
-        }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
         )
-        node2.query(
-            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
-        )
 
-        p = Pool(3)
+        p = Pool(1)
         zk_stopped_event = threading.Event()
 
         def zoo_restart(zk_stopped_event):
@@ -48,44 +41,27 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
 
         job = p.apply_async(zoo_restart, (zk_stopped_event,))
 
-        zk_stopped_event.wait(60)
+        zk_stopped_event.wait(90)
 
+        node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10)")
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
-            settings=settings,
-        )
-        node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
-            settings=settings,
-        )
-        node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
-            settings=settings,
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)"
         )
 
         job.wait()
         p.close()
         p.join()
 
-        assert node1.query("SELECT COUNT() FROM r") == "30\n"
-        assert node2.query("SELECT COUNT() FROM r") == "30\n"
+        assert node1.query("SELECT COUNT() FROM r") == "20\n"
 
     finally:
         node1.query("DROP TABLE IF EXISTS r SYNC")
-        node2.query("DROP TABLE IF EXISTS r SYNC")
 
 
-@pytest.mark.skip(reason="Unfortunately it showed to be flaky. Disabled for now")
 def test_replica_inserts_with_keeper_disconnect(started_cluster):
     try:
-        settings = {
-            "insert_quorum": "2",
-        }
         node1.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
-        )
-        node2.query(
-            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '1') ORDER BY tuple()"
         )
 
         p = Pool(1)
@@ -95,7 +71,6 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
             with PartitionManager() as pm:
                 pm.drop_instance_zk_connections(node)
                 event.set()
-                time.sleep(5)
 
         job = p.apply_async(
             keeper_disconnect,
@@ -104,24 +79,18 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
                 disconnect_event,
             ),
         )
-        disconnect_event.wait(60)
+        disconnect_event.wait(90)
 
+        node1.query("INSERT INTO r SELECT number, toString(number) FROM numbers(10)")
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10)",
-            settings=settings,
-        )
-        node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)",
-            settings=settings,
-        )
-        node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(20, 10)",
-            settings=settings,
+            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10)"
         )
 
-        assert node1.query("SELECT COUNT() FROM r") == "30\n"
-        assert node2.query("SELECT COUNT() FROM r") == "30\n"
+        job.wait()
+        p.close()
+        p.join()
+
+        assert node1.query("SELECT COUNT() FROM r") == "20\n"
 
     finally:
         node1.query("DROP TABLE IF EXISTS r SYNC")
-        node2.query("DROP TABLE IF EXISTS r SYNC")
