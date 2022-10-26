@@ -80,7 +80,7 @@ Pipe StorageMeiliSearch::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

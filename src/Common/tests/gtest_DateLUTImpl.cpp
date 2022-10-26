@@ -58,7 +58,7 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
     const size_t count = test_result.total_part_count();
     for (size_t i = 0; i < count; ++i)
     {
-        const auto & part = test_result.GetTestPartResult(i);
+        const auto & part = test_result.GetTestPartResult(static_cast<int>(i));
         if (part.nonfatally_failed())
         {
             ++failures.non_fatal;

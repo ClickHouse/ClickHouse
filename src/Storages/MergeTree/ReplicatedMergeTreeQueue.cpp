@@ -1809,9 +1809,9 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     Status res;
 
-    res.future_parts = future_parts.size();
-    res.queue_size = queue.size();
-    res.last_queue_update = last_queue_update;
+    res.future_parts = static_cast<UInt32>(future_parts.size());
+    res.queue_size = static_cast<UInt32>(queue.size());
+    res.last_queue_update = static_cast<UInt32>(last_queue_update);
 
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
@@ -1824,7 +1824,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
     for (const LogEntryPtr & entry : queue)
     {
         if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
-            res.queue_oldest_time = entry->create_time;
+            res.queue_oldest_time = static_cast<UInt32>(entry->create_time);
 
         if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
         {
@@ -1832,7 +1832,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
             {
-                res.inserts_oldest_time = entry->create_time;
+                res.inserts_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_get = entry->new_part_name;
             }
         }
@@ -1843,7 +1843,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
             {
-                res.merges_oldest_time = entry->create_time;
+                res.merges_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_merge_to = entry->new_part_name;
             }
         }
@@ -1854,7 +1854,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
             {
-                res.part_mutations_oldest_time = entry->create_time;
+                res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
         }
