@@ -43,6 +43,7 @@ namespace DB
             const typename ColVecArg::Container & vec_end   = col_end->getData();
 
             using ColVecConc = typename ConcurrencyDataType::ColumnType;
+            using FieldType = typename ConcurrencyDataType::FieldType;
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
@@ -74,7 +75,7 @@ namespace DB
                 ongoing_until.erase(
                     ongoing_until.begin(), ongoing_until.upper_bound(begin));
 
-                vec_concurrency[i] = ongoing_until.size();
+                vec_concurrency[i] = static_cast<FieldType>(ongoing_until.size());
             }
 
             return col_concurrency;
