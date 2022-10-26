@@ -111,7 +111,7 @@ void StorageExecutable::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*threads*/)
+    size_t /*threads*/)
 {
     auto & script_name = settings.script_name;
 
