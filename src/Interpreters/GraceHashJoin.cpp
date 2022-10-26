@@ -52,10 +52,10 @@ namespace
 
         Block read()
         {
+            std::lock_guard<std::mutex> lock(mutex);
+
             if (eof)
                 return {};
-
-            std::lock_guard<std::mutex> lock(mutex);
 
             Blocks blocks;
             size_t rows_read = 0;
@@ -324,27 +324,27 @@ bool GraceHashJoin::fitsInMemory() const
     return table_join->sizeLimits().softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
 }
 
-GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t next_size)
+GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
 {
     std::unique_lock lock(rehash_mutex);
     size_t current_size = buckets.size();
 
-    if (next_size <= current_size)
+    if (to_size <= current_size)
         return buckets;
 
-    assert(isPowerOf2(next_size));
+    assert(isPowerOf2(to_size));
 
-    if (next_size > max_num_buckets)
+    if (to_size > max_num_buckets)
     {
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
             "Too many grace hash join buckets ({} > {}), consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join",
-            next_size, max_num_buckets);
+            to_size, max_num_buckets);
     }
 
-    LOG_TRACE(log, "Rehashing from {} to {}", current_size, next_size);
+    LOG_TRACE(log, "Rehashing from {} to {}", current_size, to_size);
 
-    buckets.reserve(next_size);
-    for (size_t i = current_size; i < next_size; ++i)
+    buckets.reserve(to_size);
+    for (size_t i = current_size; i < to_size; ++i)
         addBucket(buckets);
 
     return buckets;
