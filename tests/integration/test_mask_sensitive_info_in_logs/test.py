@@ -1,4 +1,5 @@
 import pytest
+import random, string
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -47,12 +48,22 @@ def check_logs(must_contain=[], must_not_contain=[]):
         )
 
 
+def new_password(len=16):
+    return "".join(
+        random.choice(string.ascii_uppercase + string.digits) for _ in range(len)
+    )
+
+
 # Passwords in CREATE/ALTER queries must be hidden in logs.
 def test_create_alter_user():
-    node.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 'a'")
-    node.query("ALTER USER u1 IDENTIFIED BY '123qwe' SETTINGS custom_b = 'b'")
+    password = new_password()
+
+    node.query(f"CREATE USER u1 IDENTIFIED BY '{password}' SETTINGS custom_a = 'a'")
     node.query(
-        "CREATE USER u2 IDENTIFIED WITH plaintext_password BY 'plainpasswd' SETTINGS custom_c = 'c'"
+        f"ALTER USER u1 IDENTIFIED BY '{password}{password}' SETTINGS custom_b = 'b'"
+    )
+    node.query(
+        f"CREATE USER u2 IDENTIFIED WITH plaintext_password BY '{password}' SETTINGS custom_c = 'c'"
     )
 
     assert (
@@ -71,9 +82,7 @@ def test_create_alter_user():
             "CREATE USER u2 IDENTIFIED WITH plaintext_password",
         ],
         must_not_contain=[
-            "qwe123",
-            "123qwe",
-            "plainpasswd",
+            password,
             "IDENTIFIED WITH sha256_password BY",
             "IDENTIFIED WITH sha256_hash BY",
             "IDENTIFIED WITH plaintext_password BY",
@@ -84,15 +93,17 @@ def test_create_alter_user():
 
 
 def test_create_table():
+    password = new_password()
+
     table_engines = [
-        "MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe124')",
-        "PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', 'qwe124')",
-        "MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', 'qwe124')",
-        "S3('http://minio1:9001/root/data/test1.csv')",
-        "S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
-        "S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
-        "S3('http://minio1:9001/root/data/test4.csv', 'minio', 'qwe124', 'CSV')",
-        "S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', 'qwe124', 'CSV', 'gzip')",
+        f"MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
+        f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
+        f"MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}')",
+        f"S3('http://minio1:9001/root/data/test1.csv')",
+        f"S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+        f"S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
+        f"S3('http://minio1:9001/root/data/test4.csv', 'minio', '{password}', 'CSV')",
+        f"S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '{password}', 'CSV', 'gzip')",
     ]
 
     for i, table_engine in enumerate(table_engines):
@@ -109,7 +120,7 @@ def test_create_table():
             "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
             "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
         ],
-        must_not_contain=["qwe124"],
+        must_not_contain=[password],
     )
 
     for i in range(0, len(table_engines)):
@@ -117,9 +128,11 @@ def test_create_table():
 
 
 def test_create_database():
+    password = new_password()
+
     database_engines = [
-        "MySQL('mysql57:3306', 'mysql_db', 'mysql_user', 'qwe125')",
-        "PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_user', 'qwe125')",
+        f"MySQL('mysql57:3306', 'mysql_db', 'mysql_user', '{password}')",
+        f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_user', '{password}')",
     ]
 
     for i, database_engine in enumerate(database_engines):
@@ -134,7 +147,7 @@ def test_create_database():
             "CREATE DATABASE database0 ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
             "CREATE DATABASE database1 ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
         ],
-        must_not_contain=["qwe125"],
+        must_not_contain=[password],
     )
 
     for i in range(0, len(database_engines)):
@@ -142,32 +155,34 @@ def test_create_database():
 
 
 def test_table_functions():
+    password = new_password()
+
     table_functions = [
-        "mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe126')",
-        "postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', 'qwe126')",
-        "mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', 'qwe126', 'x int')",
-        "s3('http://minio1:9001/root/data/test1.csv')",
-        "s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
-        "s3('http://minio1:9001/root/data/test3.csv', 'minio', 'qwe126')",
-        "s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
-        "s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
-        "s3('http://minio1:9001/root/data/test6.csv', 'minio', 'qwe126', 'CSV')",
-        "s3('http://minio1:9001/root/data/test7.csv', 'minio', 'qwe126', 'CSV', 'x int')",
-        "s3('http://minio1:9001/root/data/test8.csv.gz', 'minio', 'qwe126', 'CSV', 'x int', 'gzip')",
-        "s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test1.csv', 'minio', 'qwe126')",
-        "s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
-        "s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test3.csv', 'minio', 'qwe126', 'CSV')",
-        "remote('127.{2..11}', default.remote_table)",
-        "remote('127.{2..11}', default.remote_table, rand())",
-        "remote('127.{2..11}', default.remote_table, 'remote_user')",
-        "remote('127.{2..11}', default.remote_table, 'remote_user', 'qwe126')",
-        "remote('127.{2..11}', default.remote_table, 'remote_user', rand())",
-        "remote('127.{2..11}', default.remote_table, 'remote_user', 'qwe126', rand())",
-        "remote('127.{2..11}', 'default.remote_table', 'remote_user', 'qwe126', rand())",
-        "remote('127.{2..11}', 'default', 'remote_table', 'remote_user', 'qwe126', rand())",
-        "remote('127.{2..11}', numbers(10), 'remote_user', 'qwe126', rand())",
-        "remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', 'qwe126')",
-        "remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
+        f"mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
+        f"postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '{password}')",
+        f"mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '{password}', 'x int')",
+        f"s3('http://minio1:9001/root/data/test1.csv')",
+        f"s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+        f"s3('http://minio1:9001/root/data/test3.csv', 'minio', '{password}')",
+        f"s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
+        f"s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
+        f"s3('http://minio1:9001/root/data/test6.csv', 'minio', '{password}', 'CSV')",
+        f"s3('http://minio1:9001/root/data/test7.csv', 'minio', '{password}', 'CSV', 'x int')",
+        f"s3('http://minio1:9001/root/data/test8.csv.gz', 'minio', '{password}', 'CSV', 'x int', 'gzip')",
+        f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test1.csv', 'minio', '{password}')",
+        f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
+        f"s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test3.csv', 'minio', '{password}', 'CSV')",
+        f"remote('127.{{2..11}}', default.remote_table)",
+        f"remote('127.{{2..11}}', default.remote_table, rand())",
+        f"remote('127.{{2..11}}', default.remote_table, 'remote_user')",
+        f"remote('127.{{2..11}}', default.remote_table, 'remote_user', '{password}')",
+        f"remote('127.{{2..11}}', default.remote_table, 'remote_user', rand())",
+        f"remote('127.{{2..11}}', default.remote_table, 'remote_user', '{password}', rand())",
+        f"remote('127.{{2..11}}', 'default.remote_table', 'remote_user', '{password}', rand())",
+        f"remote('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}', rand())",
+        f"remote('127.{{2..11}}', numbers(10), 'remote_user', '{password}', rand())",
+        f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}')",
+        f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', rand())",
     ]
 
     for i, table_function in enumerate(table_functions):
@@ -201,7 +216,7 @@ def test_table_functions():
             "CREATE TABLE tablefunc23 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc24 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
         ],
-        must_not_contain=["qwe126"],
+        must_not_contain=[password],
     )
 
     for i in range(0, len(table_functions)):
@@ -209,15 +224,22 @@ def test_table_functions():
 
 
 def test_encryption_functions():
+    plaintext = new_password()
+    cipher = new_password()
+    key = new_password(32)
+    iv8 = new_password(8)
+    iv16 = new_password(16)
+    add = new_password()
+
     encryption_functions = [
-        "encrypt('aes-256-ofb', 'qwe127', 'encryptionkey_encryptionkey_encr')",
-        "encrypt('aes-256-ofb', 'qwe127', 'encryptionkey_encryptionkey_encr', 'iv_iv_iv_iv_iv_i')",
-        "encrypt('aes-256-gcm', 'qwe127', 'encryptionkey_encryptionkey_encr', 'iv_iv_iv')",
-        "encrypt('aes-256-gcm', 'qwe127', 'encryptionkey_encryptionkey_encr', 'iv_iv_iv', 'add')",
-        "decrypt('aes-256-ofb', unhex('3AC43029BF24'), 'encryptionkey_encryptionkey_encr', 'iv_iv_iv_iv_iv_i')",
-        "aes_encrypt_mysql('aes-256-ofb', 'qwe127', 'encryptionkey_encryptionkey_encr', 'iv_iv_iv_iv_iv_i')",
-        "aes_decrypt_mysql('aes-256-ofb', unhex('3AC43029BF24'), 'encryptionkey_encryptionkey_encr', 'iv_iv_iv_iv_iv_i')",
-        "tryDecrypt('aes-256-ofb', unhex('3AC43029BF24'), 'encryptionkey_encryptionkey_encr', 'iv_iv_iv_iv_iv_i')",
+        f"encrypt('aes-256-ofb', '{plaintext}', '{key}')",
+        f"encrypt('aes-256-ofb', '{plaintext}', '{key}', '{iv16}')",
+        f"encrypt('aes-256-gcm', '{plaintext}', '{key}', '{iv8}')",
+        f"encrypt('aes-256-gcm', '{plaintext}', '{key}', '{iv8}', '{add}')",
+        f"decrypt('aes-256-ofb', '{cipher}', '{key}', '{iv16}')",
+        f"aes_encrypt_mysql('aes-256-ofb', '{plaintext}', '{key}', '{iv16}')",
+        f"aes_decrypt_mysql('aes-256-ofb', '{cipher}', '{key}', '{iv16}')",
+        f"tryDecrypt('aes-256-ofb', '{cipher}', '{key}', '{iv16}')",
     ]
 
     for encryption_function in encryption_functions:
@@ -232,15 +254,17 @@ def test_encryption_functions():
             "SELECT aes_decrypt_mysql('aes-256-ofb', '[HIDDEN]')",
             "SELECT tryDecrypt('aes-256-ofb', '[HIDDEN]')",
         ],
-        must_not_contain=["qwe127", "3AC43029BF24"],
+        must_not_contain=[plaintext, cipher, key, iv8, iv16, add],
     )
 
 
 def test_create_dictionary():
+    password = new_password()
+
     node.query(
-        "CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
-        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD 'qwe128' DB 'default')) "
-        "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+        f"CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+        f"SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '{password}' DB 'default')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
     check_logs(
@@ -249,7 +273,7 @@ def test_create_dictionary():
             "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '[HIDDEN]' DB 'default')) "
             "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
         ],
-        must_not_contain=["qwe128"],
+        must_not_contain=[password],
     )
 
     node.query("DROP DICTIONARY dict1")
@@ -257,10 +281,11 @@ def test_create_dictionary():
 
 def test_backup_to_s3():
     node.query("CREATE TABLE temptbl (x int) ENGINE=Log")
+    password = new_password()
 
     queries = [
-        "BACKUP TABLE temptbl TO S3('http://minio1:9001/root/data/backups/backup1', 'minio', 'qwe129')",
-        "RESTORE TABLE temptbl AS temptbl2 FROM S3('http://minio1:9001/root/data/backups/backup1', 'minio', 'qwe129')",
+        f"BACKUP TABLE temptbl TO S3('http://minio1:9001/root/data/backups/backup1', 'minio', '{password}')",
+        f"RESTORE TABLE temptbl AS temptbl2 FROM S3('http://minio1:9001/root/data/backups/backup1', 'minio', '{password}')",
     ]
 
     for query in queries:
@@ -273,7 +298,7 @@ def test_backup_to_s3():
             "BACKUP TABLE temptbl TO S3('http://minio1:9001/root/data/backups/backup1', 'minio', '[HIDDEN]')",
             "RESTORE TABLE temptbl AS temptbl2 FROM S3('http://minio1:9001/root/data/backups/backup1', 'minio', '[HIDDEN]')",
         ],
-        must_not_contain=["qwe129"],
+        must_not_contain=[password],
     )
 
     node.query("DROP TABLE IF EXISTS temptbl")
@@ -281,8 +306,10 @@ def test_backup_to_s3():
 
 
 def test_on_cluster():
+    password = new_password()
+
     node.query(
-        "CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', 'qwe130')"
+        f"CREATE TABLE table_oncl ON CLUSTER 'test_shard_localhost' (x int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')"
     )
 
     check_logs(
@@ -290,7 +317,7 @@ def test_on_cluster():
             "CREATE TABLE table_oncl ON CLUSTER test_shard_localhost (`x` int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
             "CREATE TABLE default.table_oncl",
         ],
-        must_not_contain=["qwe130"],
+        must_not_contain=[password],
     )
 
     node.query(f"DROP TABLE table_oncl")
