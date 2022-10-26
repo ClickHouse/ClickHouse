@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     paths = [
         run_log_path,
-        os.path.join(workspace_path, "clickhouse-server"),
+        os.path.join(workspace_path, "clickhouse-server.log"),
         os.path.join(workspace_path, "stderr.log"),
         os.path.join(workspace_path, "stdout.log"),
     ]
