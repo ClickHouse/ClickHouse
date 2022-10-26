@@ -107,12 +107,6 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", constant_value_type: " << constant_value->getType()->getName();
     }
 
-    if (table_expression_modifiers)
-    {
-        buffer << ", ";
-        table_expression_modifiers->dump(buffer);
-    }
-
     buffer << ", union_mode: " << toString(union_mode);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
@@ -127,13 +121,6 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     else if (constant_value && !rhs_typed.constant_value)
         return false;
     else if (!constant_value && rhs_typed.constant_value)
-        return false;
-
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
         return false;
 
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name &&
@@ -160,9 +147,6 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
         state.update(constant_value_type_name.size());
         state.update(constant_value_type_name);
     }
-
-    if (table_expression_modifiers)
-        table_expression_modifiers->updateTreeHash(state);
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
@@ -173,7 +157,6 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_cte = is_cte;
     result_union_node->cte_name = cte_name;
     result_union_node->constant_value = constant_value;
-    result_union_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_union_node;
 }

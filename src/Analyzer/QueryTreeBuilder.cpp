@@ -673,14 +673,24 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
                 if (table_expression_modifiers)
                 {
-                    if (auto * query_node = node->as<QueryNode>())
-                        query_node->setTableExpressionModifiers(*table_expression_modifiers);
-                    else if (auto * union_node = node->as<UnionNode>())
-                        union_node->setTableExpressionModifiers(*table_expression_modifiers);
-                    else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected table expression subquery node. Expected union or query. Actual {}",
-                            node->formatASTForErrorMessage());
+                    String table_expression_modifiers_error_message;
+
+                    if (table_expression_modifiers->hasFinal())
+                    {
+                        table_expression_modifiers_error_message += "FINAL";
+
+                        if (table_expression_modifiers->hasSampleSizeRatio())
+                            table_expression_modifiers_error_message += ", SAMPLE";
+                    }
+                    else if (table_expression_modifiers->hasSampleSizeRatio())
+                    {
+                        table_expression_modifiers_error_message += "SAMPLE";
+                    }
+
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Table expression modifiers {} are not supported for subquery {}",
+                        table_expression_modifiers_error_message,
+                        node->formatASTForErrorMessage());
                 }
 
                 table_expressions.push_back(std::move(node));
