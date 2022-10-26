@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
@@ -45,6 +46,7 @@ template <> struct ActionValueTypeMap<DataTypeUInt32>     { using ActionValueTyp
 template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionValueTypeMap<DataTypeDate32>     { using ActionValueType = Int32; };
 template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
 template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = Int64; };
@@ -324,7 +326,7 @@ public:
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 2 or 3. Should be a integer or a date with time",
@@ -337,7 +339,7 @@ public:
                     "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                         + ", should be 2 or 3",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -393,6 +395,7 @@ public:
                     }))
                 {
                     if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDate32>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                         throw Exception(
@@ -405,6 +408,7 @@ public:
         else
         {
             if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDate32>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                 throw Exception(
@@ -494,6 +498,13 @@ public:
                 {
                     const auto c = DecimalUtils::split(vec[i], scale);
                     instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
+                }
+            }
+            else if constexpr (std::is_same_v<DataType, DataTypeDate32>)
+            {
+                for (auto & instruction : instructions)
+                {
+                    instruction.perform(pos, static_cast<Int32>(vec[i]), time_zone);
                 }
             }
             else
