@@ -366,8 +366,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                     partitions_info.end(),
                     [](const auto & e1, const auto & e2) { return e1.second.min_age > e2.second.min_age; });
 
-                if (best_partition_it != partitions_info.end()
-                    && static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
+                assert(best_partition_it != partitions_info.end());
+
+                if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
                     return selectAllPartsToMergeWithinPartition(
                         future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
             }
