@@ -139,7 +139,9 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+        recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
 
@@ -197,7 +199,7 @@ private:
             for (const auto & row : result_batch)
             {
                 const String & key = row.GetKey();
-                if (re2::RE2::FullMatch(key, *matcher))
+                if (recursive || re2::RE2::FullMatch(key, *matcher))
                 {
                     String path = fs::path(globbed_uri.bucket) / key;
                     if (object_infos)
@@ -224,7 +226,7 @@ private:
             for (const auto & row : result_batch)
             {
                 String key = row.GetKey();
-                if (re2::RE2::FullMatch(key, *matcher))
+                if (recursive || re2::RE2::FullMatch(key, *matcher))
                     buffer.emplace_back(std::move(key));
             }
         }
@@ -252,6 +254,7 @@ private:
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     std::unique_ptr<re2::RE2> matcher;
+    bool recursive{false};
     bool is_finished{false};
     std::unordered_map<String, S3::ObjectInfo> * object_infos;
     Strings * read_keys;
@@ -457,8 +460,9 @@ bool StorageS3Source::initialize()
 
     file_path = fs::path(bucket) / current_key;
 
-    auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
+    int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
+    read_buf = wrapReadBufferWithCompressionMethod(
+        createS3ReadBuffer(current_key), chooseCompressionMethod(current_key, compression_hint), zstd_window_log_max);
 
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;
@@ -875,7 +879,7 @@ Pipe StorageS3::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos
         || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
@@ -1079,12 +1083,12 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         upd.auth_settings.region,
         ctx->getRemoteHostFilter(),
-        ctx->getGlobalContext()->getSettingsRef().s3_max_redirects,
+        static_cast<unsigned>(ctx->getGlobalContext()->getSettingsRef().s3_max_redirects),
         ctx->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ false);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
-    client_configuration.maxConnections = upd.rw_settings.max_connections;
+    client_configuration.maxConnections = static_cast<unsigned>(upd.rw_settings.max_connections);
 
     auto credentials = Aws::Auth::AWSCredentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
     auto headers = upd.auth_settings.headers;
@@ -1254,7 +1258,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         }
 
         first = false;
-        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+        int zstd_window_log_max = static_cast<int>(ctx->getSettingsRef().zstd_window_log_max);
         return wrapReadBufferWithCompressionMethod(
             std::make_unique<ReadBufferFromS3>(
                 s3_configuration.client, s3_configuration.uri.bucket, key, s3_configuration.uri.version_id, s3_configuration.rw_settings.max_single_read_retries, ctx->getReadSettings()),

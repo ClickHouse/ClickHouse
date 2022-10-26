@@ -102,7 +102,7 @@ bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const
             if (pos + length > end)
                 return false;
 
-            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), length))
+            if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(pos), static_cast<int>(length)))
                 pos += length;
             else
                 return false;
