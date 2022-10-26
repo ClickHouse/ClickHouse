@@ -546,7 +546,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     if (read_xid != AUTH_XID)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected event received in reply to auth request: {}", read_xid);
 
-    int32_t actual_length = in->count() - count_before_event;
+    int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
     if (length != actual_length)
         throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
@@ -821,7 +821,7 @@ void ZooKeeper::receiveEvent()
             }
         }
 
-        int32_t actual_length = in->count() - count_before_event;
+        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
         if (length != actual_length)
             throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
