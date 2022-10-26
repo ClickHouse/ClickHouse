@@ -1,9 +1,5 @@
----
-slug: /en/operations/backup
-sidebar_position: 49
-sidebar_label: Data backup and restore
-title: Data backup and restore
----
+
+[//]: # (This file is included in Manage > Backups)
 
 - [Backup to a local disk](#backup-to-a-local-disk)
 - [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
