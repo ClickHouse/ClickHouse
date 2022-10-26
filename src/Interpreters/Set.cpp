@@ -131,6 +131,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
+            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }

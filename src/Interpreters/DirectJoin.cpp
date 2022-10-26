@@ -93,6 +93,16 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     LOG_TRACE(log, "Using direct join");
 }
 
+DirectKeyValueJoin::DirectKeyValueJoin(
+    std::shared_ptr<TableJoin> table_join_,
+    const Block & right_sample_block_,
+    std::shared_ptr<const IKeyValueEntity> storage_,
+    const Block & right_sample_block_with_storage_column_names_)
+    : DirectKeyValueJoin(table_join_, right_sample_block_, storage_)
+{
+    right_sample_block_with_storage_column_names = right_sample_block_with_storage_column_names_;
+}
+
 bool DirectKeyValueJoin::addJoinedBlock(const Block &, bool)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
@@ -114,14 +124,15 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         return;
 
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
-    const Names & attribute_names = original_right_block.getNames();
+    Block right_block_to_use = right_sample_block_with_storage_column_names ? right_sample_block_with_storage_column_names : original_right_block;
+    const Names & attribute_names = right_block_to_use.getNames();
 
     NullMap null_map;
     Chunk joined_chunk = storage->getByKeys({key_col}, null_map, attribute_names);
 
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);
-    MutableColumns result_columns = convertBlockStructure(sample_storage_block, original_right_block, joined_chunk.mutateColumns(), null_map);
+    MutableColumns result_columns = convertBlockStructure(sample_storage_block, right_block_to_use, joined_chunk.mutateColumns(), null_map);
 
     for (size_t i = 0; i < result_columns.size(); ++i)
     {
