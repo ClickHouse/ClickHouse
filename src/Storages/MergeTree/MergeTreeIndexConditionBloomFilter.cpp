@@ -361,7 +361,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         WhichDataType which(type);
 
-        if (which.isTuple() && function_name == "tuple")
+        if (which.isTuple() && key_node_function_name == "tuple")
         {
             const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
@@ -388,6 +388,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exists.
               */
+            if (!prepared_set)
+                return false;
 
             auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             ColumnWithTypeAndName default_column_with_type_to_check { default_column_to_check, type, "" };
