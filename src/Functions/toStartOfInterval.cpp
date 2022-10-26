@@ -1,5 +1,6 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -437,7 +438,7 @@ private:
 
         if (which_type.isDateTime64())
         {
-            const auto * time_column_vec = checkAndGetColumn<DataTypeDateTime64::ColumnType>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column.column.get());
             auto scale = assert_cast<const DataTypeDateTime64 &>(from_datatype).getScale();
 
             if (time_column_vec)
@@ -445,19 +446,19 @@ private:
         }
         if (which_type.isDateTime())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnUInt16>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate32())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnInt32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
