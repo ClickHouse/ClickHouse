@@ -51,11 +51,6 @@ public:
         return QueryTreeNodeType::CONSTANT;
     }
 
-    String getName() const override
-    {
-        return value_string;
-    }
-
     DataTypePtr getResultType() const override
     {
         return constant_value->getType();
