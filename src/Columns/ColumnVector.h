@@ -11,7 +11,7 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MULTITARGET_CODE
 #    include <immintrin.h>
@@ -416,6 +416,9 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
     auto data_pos = reinterpret_cast<const UInt8 *>(data.data());
     auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
     auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
+
+    if (limit == 0)
+        return;   /// nothing to do, just return
 
     if (data_size <= 64)
     {

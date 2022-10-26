@@ -18,7 +18,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace fs = std::filesystem;
 

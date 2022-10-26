@@ -1190,12 +1190,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         auto in = metadata_manager->read("columns.txt");
         loaded_columns.readText(*in);
 
-        for (const auto & column : loaded_columns)
-        {
-            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-                aggregate_function_data_type->setVersion(0, /* if_empty */true);
-        }
+        for (auto & column : loaded_columns)
+            setVersionToAggregateFunctions(column.type, true);
     }
 
     SerializationInfo::Settings settings =
@@ -1482,8 +1478,9 @@ void IMergeTreeDataPart::remove() const
     data_part_storage->remove(std::move(can_remove_callback), checksums, projection_checksums, is_temp, getState(), storage.log);
 }
 
-String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const
+std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
+    assert(!broken || detached);
     String res;
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
@@ -1495,33 +1492,51 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool 
     if (detached && parent_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
 
-    return data_part_storage->getRelativePathForPrefix(storage.log, prefix, detached);
+    return data_part_storage->getRelativePathForPrefix(storage.log, prefix, detached, broken);
 }
 
-String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
+std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix, bool broken) const
 {
     /// Do not allow underscores in the prefix because they are used as separators.
     assert(prefix.find_first_of('_') == String::npos);
     assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
-    return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
+    if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
+        return "detached/" + *path;
+    return {};
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
 {
-    renameTo(getRelativePathForDetachedPart(prefix), true, builder);
+    auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
+    assert(path_to_detach);
+    renameTo(path_to_detach.value(), true, builder);
     part_is_probably_removed_from_disk = true;
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
+    auto storage_settings = storage.getSettings();
+
+    /// In case of zero-copy replication we copy directory instead of hardlinks
+    /// because hardlinks tracking doesn't work for detached parts.
+    bool copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication;
+
+    /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
+    /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
+    bool broken = !prefix.empty();
+    auto maybe_path_in_detached = getRelativePathForDetachedPart(prefix, broken);
+    if (!maybe_path_in_detached)
+        return;
+
     data_part_storage->freeze(
         storage.relative_data_path,
-        getRelativePathForDetachedPart(prefix),
+        *maybe_path_in_detached,
         /*make_source_readonly*/ true,
         {},
-        /*copy_instead_of_hardlink*/ false);
+        copy_instead_of_hardlink,
+        {});
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const

@@ -21,9 +21,7 @@ static MutableColumnPtr createColumn(size_t n)
     auto & values = column->getData();
 
     for (size_t i = 0; i < n; ++i)
-    {
-        values.push_back(i);
-    }
+        values.push_back(static_cast<T>(i));
 
     return column;
 }
@@ -132,6 +130,7 @@ static void testIndex()
 
     try
     {
+        test_case(0, 0, 0);   /// test for zero length index
         for (size_t i = 0; i < TEST_RUNS; ++i)
         {
             /// make sure rows distribute in (column_sizes[r-1], colulmn_sizes[r]]
@@ -141,7 +140,7 @@ static void testIndex()
             size_t index_rows = rng() % MAX_ROWS + 1;
 
             test_case(rows, index_rows, 0);
-            test_case(rows, index_rows, 0.5 * index_rows);
+            test_case(rows, index_rows, static_cast<size_t>(0.5 * index_rows));
         }
     }
     catch (const Exception & e)

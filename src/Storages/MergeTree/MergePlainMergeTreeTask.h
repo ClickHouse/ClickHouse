@@ -69,7 +69,7 @@ private:
     bool deduplicate;
     Names deduplicate_by_columns;
     bool cleanup;
-    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
+    MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
     MergeTreeData::MutableDataPartPtr new_part;

@@ -12,7 +12,16 @@ then
         DIR="amd64"
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
-        DIR="aarch64"
+        # If the system has >=ARMv8.2 (https://en.wikipedia.org/wiki/AArch64), choose the corresponding build, else fall back to a v8.0
+        # compat build. Unfortunately, the ARM ISA level cannot be read directly, we need to guess from the "features" in /proc/cpuinfo.
+        # Also, the flags in /proc/cpuinfo are named differently than the flags passed to the compiler (cmake/cpu_features.cmake).
+        ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /lrcpc/')
+        if [ "${ARMV82}" ]
+        then
+            DIR="aarch64"
+        else
+            DIR="aarch64v80compat"
+        fi
     elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
     then
         DIR="powerpc64le"
@@ -22,12 +31,6 @@ then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
         DIR="freebsd"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
-    then
-        DIR="freebsd-aarch64"
-    elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
-    then
-        DIR="freebsd-powerpc64le"
     fi
 elif [ "${OS}" = "Darwin" ]
 then
@@ -42,7 +45,7 @@ fi
 
 if [ -z "${DIR}" ]
 then
-    echo "The '${OS}' operating system with the '${ARCH}' architecture is not supported."
+    echo "Operating system '${OS}' / architecture '${ARCH}' is unsupported."
     exit 1
 fi
 

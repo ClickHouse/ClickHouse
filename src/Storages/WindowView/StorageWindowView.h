@@ -151,7 +151,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     Pipe watch(
         const Names & column_names,
@@ -159,7 +159,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
