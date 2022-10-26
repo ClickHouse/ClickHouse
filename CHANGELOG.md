@@ -33,6 +33,7 @@
 * Add support for methods `lz4`, `bz2`, `snappy` in HTTP's `Accept-Encoding` which is a non-standard extension to HTTP protocol. [#42071](https://github.com/ClickHouse/ClickHouse/pull/42071) ([Nikolay Degterinsky](https://github.com/evillique)).
 
 #### Experimental Feature
+* Added new infrastructure for query analysis and planning under the `allow_experimental_analyzer` setting. [#31796](https://github.com/ClickHouse/ClickHouse/pull/31796) ([Maksim Kita](https://github.com/kitaisreal)).
 * Initial implementation of Kusto Query Language. Please don't use it. [#37961](https://github.com/ClickHouse/ClickHouse/pull/37961) ([Yong Wang](https://github.com/kashwy)).
 
 #### Performance Improvement
