@@ -317,8 +317,9 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 {
     /// NOTE: No delay in this case. That's Ok.
 
-    assertSessionIsNotExpired(storage.getZooKeeper());
-    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(storage.getZooKeeper());
+    auto origin_zookeeper = storage.getZooKeeper();
+    assertSessionIsNotExpired(origin_zookeeper);
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(origin_zookeeper);
 
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 

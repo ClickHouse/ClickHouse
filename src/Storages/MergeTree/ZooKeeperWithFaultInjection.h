@@ -212,7 +212,7 @@ public:
 
     zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths)
     {
-        return access("get", paths.front(), [&]() { return keeper->get(paths); });
+        return access("get", !paths.empty() ? paths.front() : "", [&]() { return keeper->get(paths); });
     }
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr)
@@ -222,7 +222,7 @@ public:
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths)
     {
-        return access("exists", paths.front(), [&]() { return keeper->exists(paths); });
+        return access("exists", !paths.empty() ? paths.front() : "", [&]() { return keeper->exists(paths); });
     }
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)

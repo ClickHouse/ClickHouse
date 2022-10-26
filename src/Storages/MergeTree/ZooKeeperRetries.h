@@ -216,7 +216,7 @@ private:
             throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
     }
 
-    void logLastError(std::string header)
+    void logLastError(std::string_view header)
     {
         if (user_error.code == ErrorCodes::OK)
         {
