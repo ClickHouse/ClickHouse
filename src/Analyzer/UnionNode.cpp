@@ -79,46 +79,6 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     return result_columns;
 }
 
-String UnionNode::getName() const
-{
-    WriteBufferFromOwnString buffer;
-
-    auto query_nodes = getQueries().getNodes();
-    size_t query_nodes_size = query_nodes.size();
-
-    for (size_t i = 0; i < query_nodes_size; ++i)
-    {
-        const auto & query_node = query_nodes[i];
-        buffer << query_node->getName();
-
-        if (i == 0)
-            continue;
-
-        auto query_union_mode = union_modes.at(i - 1);
-
-        if (query_union_mode == SelectUnionMode::UNION_DEFAULT)
-            buffer << "UNION";
-        else if (query_union_mode == SelectUnionMode::UNION_ALL)
-            buffer << "UNION ALL";
-        else if (query_union_mode == SelectUnionMode::UNION_DISTINCT)
-            buffer << "UNION DISTINCT";
-        else if (query_union_mode == SelectUnionMode::EXCEPT_DEFAULT)
-            buffer << "EXCEPT";
-        else if (query_union_mode == SelectUnionMode::EXCEPT_ALL)
-            buffer << "EXCEPT ALL";
-        else if (query_union_mode == SelectUnionMode::EXCEPT_DISTINCT)
-            buffer << "EXCEPT DISTINCT";
-        else if (query_union_mode == SelectUnionMode::INTERSECT_DEFAULT)
-            buffer << "INTERSECT";
-        else if (query_union_mode == SelectUnionMode::INTERSECT_ALL)
-            buffer << "INTERSECT ALL";
-        else if (query_union_mode == SelectUnionMode::INTERSECT_DISTINCT)
-            buffer << "INTERSECT DISTINCT";
-    }
-
-    return buffer.str();
-}
-
 void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "UNION id: " << format_state.getNodeId(this);
