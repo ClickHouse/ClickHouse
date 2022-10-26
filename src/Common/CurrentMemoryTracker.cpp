@@ -27,7 +27,7 @@ namespace CurrentMemoryTracker
 {
 
 using DB::current_thread;
-thread_local std::function<void(Int64)> before_alloc = nullptr;
+thread_local std::function<void(Int64, bool)> before_alloc = nullptr;
 
 thread_local std::function<void(Int64)> before_free  = nullptr;
 
@@ -47,7 +47,7 @@ namespace
                     Int64 tmp = current_thread->untracked_memory;
                     current_thread->untracked_memory = 0;
                     if (before_alloc)
-                        before_alloc(tmp);
+                        before_alloc(tmp, throw_if_memory_exceeded);
                     memory_tracker->allocImpl(tmp, throw_if_memory_exceeded);
                 }
             }

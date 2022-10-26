@@ -6,6 +6,7 @@ namespace local_engine
 {
 jclass ReservationListenerWrapper::reservation_listener_class= nullptr;
 jmethodID ReservationListenerWrapper::reservation_listener_reserve = nullptr;
+jmethodID ReservationListenerWrapper::reservation_listener_reserve_or_throw = nullptr;
 jmethodID ReservationListenerWrapper::reservation_listener_unreserve = nullptr;
 
 ReservationListenerWrapper::ReservationListenerWrapper(jobject listener_) : listener(listener_)
@@ -28,6 +29,17 @@ void ReservationListenerWrapper::reserve(int64_t size)
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
     safeCallVoidMethod(env, listener, reservation_listener_reserve, size);
+    if (attached)
+    {
+        JNIUtils::detachCurrentThread();
+    }
+}
+
+void ReservationListenerWrapper::reserveOrThrow(int64_t size)
+{
+    int attached;
+    JNIEnv * env = JNIUtils::getENV(&attached);
+    safeCallVoidMethod(env, listener, reservation_listener_reserve_or_throw, size);
     if (attached)
     {
         JNIUtils::detachCurrentThread();

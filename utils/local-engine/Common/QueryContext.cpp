@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 namespace CurrentMemoryTracker
 {
-extern thread_local std::function<void(Int64)> before_alloc;
+extern thread_local std::function<void(Int64, bool)> before_alloc;
 extern thread_local std::function<void(Int64)> before_free;
 }
 
@@ -32,7 +32,7 @@ int64_t initializeQuery(ReservationListenerWrapperPtr listener)
 {
     auto query_context = Context::createCopy(SerializedPlanParser::global_context);
     query_context->makeQueryContext();
-    auto allocator_context= std::make_shared<NativeAllocatorContext>();
+    auto allocator_context = std::make_shared<NativeAllocatorContext>();
     allocator_context->thread_status = std::make_shared<ThreadStatus>();
     allocator_context->query_scope = std::make_shared<CurrentThread::QueryScope>(query_context);
     allocator_context->query_context = query_context;
@@ -40,7 +40,13 @@ int64_t initializeQuery(ReservationListenerWrapperPtr listener)
     thread_status = std::weak_ptr<ThreadStatus>(allocator_context->thread_status);
     query_scope = std::weak_ptr<CurrentThread::QueryScope>(allocator_context->query_scope);
     auto allocator_id = reinterpret_cast<int64_t>(allocator_context.get());
-    CurrentMemoryTracker::before_alloc = [listener](Int64 size) -> void { listener->reserve(size); };
+    CurrentMemoryTracker::before_alloc = [listener](Int64 size, bool throw_if_memory_exceed) -> void
+    {
+        if (throw_if_memory_exceed)
+            listener->reserveOrThrow(size);
+        else
+            listener->reserve(size);
+    };
     CurrentMemoryTracker::before_free = [listener](Int64 size) -> void { listener->free(size); };
     {
         std::lock_guard lock{allocator_lock};
