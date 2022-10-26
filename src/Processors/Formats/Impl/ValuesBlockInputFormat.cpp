@@ -156,9 +156,9 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
 /// and it's more efficient if they don't (as everything is already tokenized)
 void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize()
 {
-    if (!skipToNextRow(buf.get(), 0, 1))
+    if (tokens && token_iterator)
         return;
-
+    skipToNextRow(buf.get(), 0, 1);
     buf->makeContinuousMemoryFromCheckpointToPos();
     auto rowEnd = buf->position();
     buf->rollbackToCheckpoint();
@@ -168,7 +168,8 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize()
 
 void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 {
-    bool line_has_been_tokenized = false;
+    tokens.reset();
+    token_iterator.reset();
     assertChar('(', *buf);
 
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
@@ -182,29 +183,11 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
         /// so it makes possible to parse the following rows much faster
         /// if expressions in the following rows have the same structure
         if (parser_type_for_column[column_idx] == ParserType::Streaming)
-        {
             read = tryReadValue(*columns[column_idx], column_idx);
-        }
         else if (parser_type_for_column[column_idx] == ParserType::BatchTemplate)
-        {
-            if (!line_has_been_tokenized)
-            {
-                readUntilTheEndOfRowAndReTokenize();
-                line_has_been_tokenized = true;
-            }
             read = tryParseExpressionUsingTemplate(columns[column_idx], column_idx);
-        }
-
-        /// For SingleExpressionEvaluation or it the previous ones failed
-        if (!read)
-        {
-            if (!line_has_been_tokenized)
-            {
-                readUntilTheEndOfRowAndReTokenize();
-                line_has_been_tokenized = true;
-            }
+        else
             read = parseExpression(*columns[column_idx], column_idx);
-        }
 
         if (!read)
             block_missing_values.setBit(column_idx, row_num);
@@ -220,6 +203,7 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
+    readUntilTheEndOfRowAndReTokenize();
     chassert(token_iterator.has_value());
     chassert((*token_iterator)->begin <= buf->position());
     IParser::Pos start = *token_iterator;
@@ -294,7 +278,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
         buf->rollbackToCheckpoint();
-        return false;
+        return parseExpression(column, column_idx);
     }
 }
 
@@ -386,6 +370,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     auto settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
+    readUntilTheEndOfRowAndReTokenize();
     chassert(token_iterator.has_value());
     chassert((*token_iterator)->begin <= buf->position());
     while ((*token_iterator)->begin < buf->position())
