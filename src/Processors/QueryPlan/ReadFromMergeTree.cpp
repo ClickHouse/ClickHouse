@@ -906,11 +906,15 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         for (const auto & node : added_filter_nodes.nodes)
             nodes.nodes.push_back(node);
 
+        NameSet array_join_name_set;
+        if (query_info.syntax_analyzer_result)
+            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
+
         key_condition.emplace(std::move(nodes),
             context,
             primary_key_columns,
             primary_key.expression,
-            query_info.syntax_analyzer_result->getArrayJoinSourceNameSet());
+            array_join_name_set);
     }
     else
     {
