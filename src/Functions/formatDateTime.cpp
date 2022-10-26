@@ -317,44 +317,39 @@ public:
         if constexpr (support_integer)
         {
             if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 1, 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
+                    getName(), arguments.size());
             if (arguments.size() == 1 && !isInteger(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 1. Should be integer",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 1 argument of function {} when arguments size is 1. Should be integer",
+                    arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + " when arguments size is 2 or 3. Should be a integer or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 1 argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
+                    arguments[0].type->getName(), getName());
         }
         else
         {
             if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                        + ", should be 2 or 3",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                    getName(), arguments.size());
             if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(
-                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                        + ". Should be a date or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 1 argument of function {}. Should be a date or a date with time",
+                    arguments[0].type->getName(), getName());
         }
 
         if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 2 argument of function {}. Must be String.",
+                arguments[1].type->getName(), getName());
 
         if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 3 argument of function {}. Must be String.",
+                arguments[2].type->getName(), getName());
 
         if (arguments.size() == 1)
             return std::make_shared<DataTypeDateTime>();
@@ -375,10 +370,9 @@ public:
                         return true;
                     }))
                 {
-                    throw Exception(
-                        "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                            + ", must be Integer or DateTime when arguments size is 1.",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of function {}, must be Integer or DateTime when arguments size is 1.",
+                        arguments[0].column->getName(), getName());
                 }
             }
             else
@@ -387,10 +381,9 @@ public:
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!(res = executeType<FromDataType>(arguments, result_type)))
-                            throw Exception(
-                                "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                    + ", must be Integer or DateTime.",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Illegal column {} of function {}, must be Integer or DateTime.",
+                                arguments[0].column->getName(), getName());
                         return true;
                     }))
                 {
@@ -398,10 +391,9 @@ public:
                         || (res = executeType<DataTypeDate32>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime>(arguments, result_type))
                         || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                        throw Exception(
-                            "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                                + ", must be Integer or DateTime.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal column {} of function {}, must be Integer or DateTime.",
+                            arguments[0].column->getName(), getName());
                 }
             }
         }
@@ -411,10 +403,9 @@ public:
                 || (res = executeType<DataTypeDate32>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime>(arguments, result_type))
                 || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of function " + getName()
-                        + ", must be Date or DateTime.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of function {}, must be Date or DateTime.",
+                    arguments[0].column->getName(), getName());
         }
 
         return res;
@@ -429,10 +420,9 @@ public:
 
         const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + arguments[1].column->getName()
-                            + " of second ('format') argument of function " + getName()
-                            + ". Must be constant string.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                arguments[1].column->getName(), getName());
 
         String pattern = pattern_column->getValue<String>();
 
@@ -498,13 +488,6 @@ public:
                 {
                     const auto c = DecimalUtils::split(vec[i], scale);
                     instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
-                }
-            }
-            else if constexpr (std::is_same_v<DataType, DataTypeDate32>)
-            {
-                for (auto & instruction : instructions)
-                {
-                    instruction.perform(pos, static_cast<Int32>(vec[i]), time_zone);
                 }
             }
             else
@@ -723,12 +706,14 @@ public:
                     // Unimplemented
                     case 'U': [[fallthrough]];
                     case 'W':
-                        throw Exception("Wrong pattern '" + pattern + "', symbol '" + *pos + " is not implemented ' for function " + getName(),
-                            ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Wrong pattern '{}', symbol '{}' is not implemented for function {}",
+                            pattern, *pos, getName());
 
                     default:
-                        throw Exception(
-                            "Wrong pattern '" + pattern + "', unexpected symbol '" + *pos + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Wrong pattern '{}', unexpected symbol '{}' for function {}",
+                            pattern, *pos, getName());
                 }
 
                 ++pos;
