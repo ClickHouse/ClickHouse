@@ -1330,12 +1330,23 @@ public:
     // We use insertResultToFixedStringColumn in case we are inserting raw data in a FixedString column
     static bool insertResultToFixedStringColumn(IColumn & dest, const Element & element, std::string_view)
     {
-        ColumnFixedString & col_str = assert_cast<ColumnFixedString &>(dest);
-        auto & chars = col_str.getChars();
+        ColumnFixedString::Chars chars;
         WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
-        col_str.insertDefault();
+
+        auto & col_str = assert_cast<ColumnFixedString &>(dest);
+
+        if (chars.size() > col_str.getN())
+            return false;
+
+        chars.push_back(0);
+        std::string str = reinterpret_cast<const char *>(chars.data());
+
+        auto padded_str = str + std::string(col_str.getN() - std::min(col_str.getN(), str.length()), '\0');
+        col_str.insertData(str.data(), str.size());
+
+
         return true;
     }
 
