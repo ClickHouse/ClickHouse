@@ -27,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
     extern const int CANNOT_BACKUP_TABLE;
-    extern const int TABLE_IS_DROPPED;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
 }
@@ -526,14 +525,10 @@ void BackupEntriesCollector::lockTablesForReading()
         auto storage = table_info.storage;
         if (storage)
         {
-            try
+            table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+            if (table_info.table_lock == nullptr)
             {
-                table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
-                    throw;
+                // Table was dropped while acquiring the lock
                 throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} was dropped during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true));
             }
         }

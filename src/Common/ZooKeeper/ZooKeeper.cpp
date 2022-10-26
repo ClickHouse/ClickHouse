@@ -99,7 +99,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             if (dns_error)
                 throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
             else
-                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
+                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZCONNECTIONLOSS);
         }
 
         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
@@ -777,19 +777,34 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     return false;
 }
 
-void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
+void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
     zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
-    if (!tryGet(path, content, nullptr, eph_node_disappeared))
+    Coordination::Stat stat;
+    if (!tryGet(path, content, &stat, eph_node_disappeared))
         return;
 
-    int32_t timeout_ms = 3 * args.session_timeout_ms;
-    if (!eph_node_disappeared->tryWait(timeout_ms))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                            "Node data: '{}'", path, timeout_ms / 1000, content);
+    if (content == fast_delete_if_equal_value)
+    {
+        auto code = tryRemove(path, stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw Coordination::Exception(code, path);
+    }
+    else
+    {
+        LOG_WARNING(log, "Ephemeral node ('{}') already exists but it isn't owned by us. Will wait until it disappears", path);
+        int32_t timeout_ms = 3 * args.session_timeout_ms;
+        if (!eph_node_disappeared->tryWait(timeout_ms))
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
+                "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
+                "Node data: '{}'",
+                path,
+                timeout_ms / 1000,
+                content);
+    }
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
