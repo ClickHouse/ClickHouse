@@ -5,8 +5,8 @@ SELECT * FROM tbl WHERE id = 10000; -- single row expected (bar), because the fo
 SELECT * FROM tbl final WHERE id = 10000; -- single row expected (bar), because the force_select_final is in action and FINAL is there.
 10000	bar
 SELECT * FROM tbl WHERE id = 10000 SETTINGS ignore_force_select_final=1; -- now we see 2 'real' rows
-10000	bar
 10000	foo
+10000	bar
 SELECT * FROM tbl FINAL WHERE id = 10000 SETTINGS ignore_force_select_final=1; -- now we see single row again.
 10000	bar
 SYSTEM START MERGES tbl;
