@@ -80,9 +80,9 @@ SELECT '== Replica 2 ==';
 SELECT * FROM testReplica2 FINAL;
 
 SELECT '== OPTIMIZE on replicas ==';
-OPTIMIZE TABLE testReplica2 FINAL CLEANUP;
+OPTIMIZE TABLE testReplica2 FINAL;
 -- Only d3 to d5 remain
 SELECT '== Replica 1 ==';
-SELECT * FROM replicated1;
+SELECT * FROM testReplica1;
 SELECT '== Replica 2 ==';
-SELECT * FROM replicated2;
+SELECT * FROM testReplica1;

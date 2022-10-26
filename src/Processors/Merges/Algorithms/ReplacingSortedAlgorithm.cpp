@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
