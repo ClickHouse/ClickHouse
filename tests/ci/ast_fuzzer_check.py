@@ -17,7 +17,7 @@ from env_helper import (
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from build_download_helper import get_build_name_for_check, get_build_urls
+from build_download_helper import get_build_name_for_check, read_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
-    urls = get_build_urls(build_name, reports_path)
+    urls = read_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
 

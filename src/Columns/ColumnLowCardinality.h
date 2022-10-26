@@ -59,10 +59,6 @@ public:
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getDictionary().getDataAtWithTerminatingZero(getIndexes().getUInt(n));
-    }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -175,6 +171,19 @@ public:
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
             callback(dictionary.getColumnUniquePtr());
+    }
+
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
     }
 
     bool structureEquals(const IColumn & rhs) const override

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter
 sidebar_position: 36
 sidebar_label: ALTER
 ---

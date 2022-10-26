@@ -1,9 +1,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/checkStackSize.h>
+#include <Common/getRandomASCIIString.h>
 #include <ranges>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -409,7 +409,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
                 throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
             if (!metadata_storage.exists(from_path))
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", to_path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
 
             tx->moveFile(from_path, to_path);
         }));

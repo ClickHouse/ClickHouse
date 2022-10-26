@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---

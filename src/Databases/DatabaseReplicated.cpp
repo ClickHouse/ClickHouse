@@ -126,30 +126,13 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
     return {shard, replica};
 }
 
-ClusterPtr DatabaseReplicated::tryGetCluster() const
+ClusterPtr DatabaseReplicated::getCluster() const
 {
     std::lock_guard lock{mutex};
     if (cluster)
         return cluster;
 
-    /// Database is probably not created or not initialized yet, it's ok to return nullptr
-    if (is_readonly)
-        return cluster;
-
-    try
-    {
-        /// A quick fix for stateless tests with DatabaseReplicated. Its ZK
-        /// node can be destroyed at any time. If another test lists
-        /// system.clusters to get client command line suggestions, it will
-        /// get an error when trying to get the info about DB from ZK.
-        /// Just ignore these inaccessible databases. A good example of a
-        /// failing test is `01526_client_start_and_exit`.
-        cluster = getClusterImpl();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
+    cluster = getClusterImpl();
     return cluster;
 }
 
@@ -366,7 +349,7 @@ bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & cu
         return false;
     if (maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK))
         return true;
-    if (maybe_database_mark.empty())
+    if (!maybe_database_mark.empty())
         return false;
 
     /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
@@ -1257,6 +1240,26 @@ void DatabaseReplicated::createTableRestoredFromBackup(
                             "Couldn't restore table {}.{} on other node or sync it (elapsed {})",
                             backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name), to_string(elapsed));
     }
+}
+
+bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const
+{
+    if (query_context->getClientInfo().is_replicated_database_internal)
+        return false;
+
+    /// Some ALTERs are not replicated on database level
+    if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
+    {
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
+    }
+
+    /// DROP DATABASE is not replicated
+    if (const auto * drop = query_ptr->as<const ASTDropQuery>())
+    {
+        return drop->table.get();
+    }
+
+    return true;
 }
 
 }

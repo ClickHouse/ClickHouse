@@ -38,6 +38,8 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
+    if build_config["bundled"] != "bundled":
+        return False
     if build_config["libraries"] == "shared":
         return False
     if build_config["sanitizer"] != "":
@@ -58,9 +60,8 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
-    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"cd {packager_path} && ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
@@ -291,7 +292,9 @@ def main():
 
     logging.info("Will try to fetch cache for our build")
     try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+        get_ccache_if_not_exists(
+            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
+        )
     except Exception as e:
         # In case there are issues with ccache, remove the path and do not fail a build
         logging.info("Failed to get ccache, building without it. Error: %s", e)

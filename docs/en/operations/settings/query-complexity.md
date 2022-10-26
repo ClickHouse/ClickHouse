@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
 ---

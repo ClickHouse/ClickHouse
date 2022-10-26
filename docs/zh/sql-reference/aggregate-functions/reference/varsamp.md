@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/varsamp
 sidebar_position: 33
 ---
 

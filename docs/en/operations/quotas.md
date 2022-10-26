@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/quotas
 sidebar_position: 51
 sidebar_label: Quotas
 ---

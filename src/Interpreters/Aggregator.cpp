@@ -23,14 +23,12 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
-#include <Common/filesystemHelpers.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -39,18 +37,11 @@ namespace ProfileEvents
     extern const Event ExternalAggregationWritePart;
     extern const Event ExternalAggregationCompressedBytes;
     extern const Event ExternalAggregationUncompressedBytes;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
     extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric TemporaryFilesForAggregation;
 }
 
 namespace
@@ -777,6 +768,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key32;
             if (size_of_field == 8)
                 return AggregatedDataVariants::Type::low_cardinality_key64;
+            if (size_of_field == 16)
+                return AggregatedDataVariants::Type::low_cardinality_keys128;
+            if (size_of_field == 32)
+                return AggregatedDataVariants::Type::low_cardinality_keys256;
+            throw Exception("Logical error: low cardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
         }
 
         if (size_of_field == 1)
@@ -1478,26 +1474,40 @@ bool Aggregator::executeOnBlock(Columns columns,
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+
+        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
+
+        // enoughSpaceInDirectory() is not enough to make it right, since
+        // another process (or another thread of aggregator) can consume all
+        // space.
+        //
+        // But true reservation (IVolume::reserve()) cannot be used here since
+        // current_memory_usage does not takes compression into account and
+        // will reserve way more that actually will be used.
+        //
+        // Hence let's do a simple check.
+        if (!enoughSpaceInDirectory(tmp_path, size))
+            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
+        writeToTemporaryFile(result, tmp_path);
     }
 
     return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const
 {
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTempFile(max_temp_file_size);
-
-    const auto & path = file->path();
+    auto file = createTemporaryFile(tmp_path);
+    const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", path);
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
@@ -1540,8 +1550,6 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_bytes);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_bytes);
 
     LOG_DEBUG(log,
         "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
@@ -1560,22 +1568,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 }
 
 
-TemporaryFileOnDiskHolder Aggregator::createTempFile(size_t max_temp_file_size) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants) const
 {
-    auto file = std::make_unique<TemporaryFileOnDisk>(params.tmp_volume->getDisk(), CurrentMetrics::TemporaryFilesForAggregation);
-
-    // enoughSpaceInDirectory() is not enough to make it right, since
-    // another process (or another thread of aggregator) can consume all
-    // space.
-    //
-    // But true reservation (IVolume::reserve()) cannot be used here since
-    // current_memory_usage does not takes compression into account and
-    // will reserve way more that actually will be used.
-    //
-    // Hence let's do a simple check.
-    if (max_temp_file_size > 0 && !enoughSpaceInDirectory(file->getPath(), max_temp_file_size))
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
-    return file;
+    String tmp_path = params.tmp_volume->getDisk()->getPath();
+    return writeToTemporaryFile(data_variants, tmp_path);
 }
 
 
@@ -1764,8 +1760,11 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
       * It is also tricky, because there are aggregate functions with "-State" modifier.
       * When we call "insertResultInto" for them, they insert a pointer to the state to ColumnAggregateFunction
       *  and ColumnAggregateFunction will take ownership of this state.
-      * So, for aggregate functions with "-State" modifier, the state must not be destroyed
-      *  after it has been transferred to ColumnAggregateFunction.
+      * So, for aggregate functions with "-State" modifier, only states of all combinators that are used
+      *  after -State will be destroyed after result has been transferred to ColumnAggregateFunction.
+      *  For example, if we have function `uniqStateForEachMap` after aggregation we should destroy all states that
+      *  were created by combinators `-ForEach` and `-Map`, because resulting ColumnAggregateFunction will be
+      *  responsible only for destruction of the states created by `uniq` function.
       * But we should mark that the data no longer owns these states.
       */
 
@@ -1788,8 +1787,8 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 
     /** Destroy states that are no longer needed. This loop does not throw.
         *
-        * Don't destroy states for "-State" aggregate functions,
-        *  because the ownership of this state is transferred to ColumnAggregateFunction
+        * For functions with -State combinator we destroy only states of all combinators that are used
+        *  after -State, because the ownership of the rest states is transferred to ColumnAggregateFunction
         *  and ColumnAggregateFunction will take care.
         *
         * But it's only for states that has been transferred to ColumnAggregateFunction
@@ -1797,10 +1796,10 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
         */
     for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
     {
-        /// If ownership was not transferred to ColumnAggregateFunction.
-        if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
-            aggregate_functions[destroy_i]->destroy(
-                mapped + offsets_of_aggregate_states[destroy_i]);
+        if (destroy_i < insert_i)
+            aggregate_functions[destroy_i]->destroyUpToState(mapped + offsets_of_aggregate_states[destroy_i]);
+        else
+            aggregate_functions[destroy_i]->destroy(mapped + offsets_of_aggregate_states[destroy_i]);
     }
 
     /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -1894,11 +1893,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             size_t destroy_index = aggregate_functions_destroy_index;
             ++aggregate_functions_destroy_index;
 
-            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
-            bool is_state = aggregate_functions[destroy_index]->isState();
-            bool destroy_place_after_insert = !is_state;
-
-            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+            aggregate_functions[destroy_index]->insertResultIntoBatch(0, places.size(), places.data(), offset, *final_aggregate_column, arena);
         }
     }
     catch (...)
@@ -2004,18 +1999,15 @@ Block Aggregator::prepareBlockAndFill(
 
             if (aggregate_functions[i]->isState())
             {
-                /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(final_aggregate_columns[i].get()))
-                    for (auto & pool : data_variants.aggregates_pools)
-                        column_aggregate_func->addArena(pool);
-
-                /// Aggregate state can be wrapped into array if aggregate function ends with -Resample combinator.
-                final_aggregate_columns[i]->forEachSubcolumn([&data_variants](auto & subcolumn)
+                auto callback = [&](auto & subcolumn)
                 {
+                    /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
                     if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
                         for (auto & pool : data_variants.aggregates_pools)
                             column_aggregate_func->addArena(pool);
-                });
+                };
+                callback(final_aggregate_columns[i]);
+                final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
             }
         }
     }
@@ -2840,7 +2832,22 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        writeToTemporaryFile(result, size);
+
+        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
+
+        // enoughSpaceInDirectory() is not enough to make it right, since
+        // another process (or another thread of aggregator) can consume all
+        // space.
+        //
+        // But true reservation (IVolume::reserve()) cannot be used here since
+        // current_memory_usage does not takes compression into account and
+        // will reserve way more that actually will be used.
+        //
+        // Hence let's do a simple check.
+        if (!enoughSpaceInDirectory(tmp_path, size))
+            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
+        writeToTemporaryFile(result, tmp_path);
     }
 
     return true;

@@ -100,6 +100,11 @@ protected:
 
     QueryPriorities::Handle priority_handle = nullptr;
 
+    /// True if query cancellation is in progress right now
+    /// ProcessListEntry should not be destroyed if is_cancelling is true
+    /// Flag changes is synced with ProcessListBase::mutex and notified with ProcessList::cancelled_cv
+    bool is_cancelling { false };
+    /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
     /// All data to the client already had been sent.
@@ -331,6 +336,9 @@ protected:
 
     /// List of queries
     Container processes;
+    /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
+    mutable std::condition_variable cancelled_cv;
+
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
     /// Stores per-user info: queries, statistics and limits

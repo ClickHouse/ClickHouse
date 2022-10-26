@@ -406,7 +406,6 @@ requestor
 resultset
 rethrow
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock

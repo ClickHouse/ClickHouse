@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/ansi
 sidebar_position: 40
 sidebar_label: "ANSI\u517C\u5BB9\u6027"
 ---

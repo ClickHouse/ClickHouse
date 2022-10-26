@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/date-time-functions
----
 # 时间日期函数 {#shi-jian-ri-qi-han-shu}
 
 支持时区。

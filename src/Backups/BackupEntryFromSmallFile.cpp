@@ -36,5 +36,4 @@ BackupEntryFromSmallFile::BackupEntryFromSmallFile(
     : BackupEntryFromMemory(readFile(disk_, file_path_), checksum_), disk(disk_), file_path(file_path_)
 {
 }
-
 }

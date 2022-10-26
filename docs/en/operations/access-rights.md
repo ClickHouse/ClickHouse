@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/access-rights
 sidebar_position: 48
 sidebar_label: Access Control and Account Management
 title: Access Control and Account Management

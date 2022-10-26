@@ -421,7 +421,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
     }

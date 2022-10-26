@@ -138,8 +138,9 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
     if ((!optimize_final && subquery.final())
         || (!optimize_with && subquery.with())
         || subquery.withFill()
-        || subquery.limitBy() || subquery.limitLength()
-        || hasNonRewritableFunction(subquery.select(), getContext()))
+        || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
+        || hasNonRewritableFunction(subquery.select(), getContext())
+        || (subquery.orderBy() && subquery.limitOffset()))
         return false;
 
     Names outer_columns = table_columns.columns.getNames();

@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 DataPartStorageOnDisk::DataPartStorageOnDisk(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -247,9 +248,23 @@ void DataPartStorageOnDisk::remove(
         {
             disk->removeSharedRecursive(fs::path(to) / "", !can_remove_shared_data, names_not_to_remove);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            LOG_ERROR(log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                return;
+            }
+            throw;
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
+                          "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                return;
+            }
             throw;
         }
     }
@@ -415,7 +430,7 @@ std::string DataPartStorageOnDisk::getDiskName() const
 
 std::string DataPartStorageOnDisk::getDiskType() const
 {
-    return toString(volume->getDisk()->getDataSourceDescription().type);
+    return toString(volume->getDisk()->getType());
 }
 
 bool DataPartStorageOnDisk::isStoredOnRemoteDisk() const

@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/operations/multi-region-replication
 title: Does ClickHouse support multi-region replication?
 sidebar_position: 30
 ---

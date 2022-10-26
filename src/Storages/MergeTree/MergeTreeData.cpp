@@ -19,6 +19,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Columns/ColumnObject.h>
 #include <DataTypes/hasNullable.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -62,7 +63,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -1939,10 +1939,11 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 
     renamed_parts.tryRenameAll();
 
-    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
         LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
+        old_name.clear();
     }
 
     return renamed_parts.old_and_new_names.size();
@@ -5503,7 +5504,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
+    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query
+        || settings.aggregate_functions_null_for_empty /* projections don't work correctly with this setting */)
         return std::nullopt;
 
     // Currently projections don't support parallel replicas reading yet.

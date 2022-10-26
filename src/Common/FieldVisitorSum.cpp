@@ -15,7 +15,7 @@ FieldVisitorSum::FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
 bool FieldVisitorSum::operator() (Int64 & x) const { return this->operator()(reinterpret_cast<UInt64 &>(x)); }
 bool FieldVisitorSum::operator() (UInt64 & x) const
 {
-    x += rhs.reinterpret<UInt64>();
+    x += applyVisitor(FieldVisitorConvertToNumber<UInt64>(), rhs);
     return x != 0;
 }
 

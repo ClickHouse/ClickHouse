@@ -15,8 +15,8 @@ namespace DB
 
     static void callback(void * arg, int status, int, struct hostent * host)
     {
-        auto * ptr_records = reinterpret_cast<std::unordered_set<std::string>*>(arg);
-        if (status == ARES_SUCCESS && host->h_aliases)
+        auto * ptr_records = static_cast<std::unordered_set<std::string>*>(arg);
+        if (ptr_records && status == ARES_SUCCESS)
         {
             /*
              * In some cases (e.g /etc/hosts), hostent::h_name is filled and hostent::h_aliases is empty.
@@ -28,11 +28,14 @@ namespace DB
                 ptr_records->insert(ptr_record);
             }
 
-            int i = 0;
-            while (auto * ptr_record = host->h_aliases[i])
+            if (host->h_aliases)
             {
-                ptr_records->insert(ptr_record);
-                i++;
+                int i = 0;
+                while (auto * ptr_record = host->h_aliases[i])
+                {
+                    ptr_records->insert(ptr_record);
+                    i++;
+                }
             }
         }
     }

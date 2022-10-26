@@ -54,6 +54,8 @@ Checks: '*,
     -cppcoreguidelines-slicing,
     -cppcoreguidelines-special-member-functions,
 
+    -concurrency-mt-unsafe,
+
     -darwin-*,
 
     -fuchsia-*,

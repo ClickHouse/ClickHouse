@@ -918,7 +918,7 @@ public:
     bool applyDeletedMask() const { return apply_deleted_mask; }
     void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
-    ActionLocksManagerPtr getActionLocksManager();
+    ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType
     {

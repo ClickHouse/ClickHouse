@@ -278,6 +278,12 @@ void ColumnMap::forEachSubcolumn(ColumnCallback callback)
     callback(nested);
 }
 
+void ColumnMap::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    callback(nested);
+    nested->forEachSubcolumnRecursively(callback);
+}
+
 bool ColumnMap::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))

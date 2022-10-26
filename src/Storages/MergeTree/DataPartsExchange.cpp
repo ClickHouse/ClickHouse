@@ -458,11 +458,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             Disks disks = data.getDisks();
             for (const auto & data_disk : disks)
                 if (data_disk->supportZeroCopyReplication())
-                    capability.push_back(toString(data_disk->getDataSourceDescription().type));
+                    capability.push_back(toString(data_disk->getType()));
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(toString(disk->getDataSourceDescription().type));
+            capability.push_back(toString(disk->getType()));
         }
     }
     if (!capability.empty())

@@ -115,7 +115,13 @@ protected:
     }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; } /// NOLINT
+    static size_t minimum_memory_for_elements(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {

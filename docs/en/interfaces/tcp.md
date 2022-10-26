@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/tcp
 sidebar_position: 18
 sidebar_label: Native Interface (TCP)
 ---

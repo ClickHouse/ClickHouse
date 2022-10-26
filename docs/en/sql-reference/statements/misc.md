@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/misc
 toc_hidden: true
 sidebar_position: 70
 ---

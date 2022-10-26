@@ -69,9 +69,6 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
-    ContextAccess() { } /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
-
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
     /// Same as above, but can return nullptr.
@@ -166,16 +163,12 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
-    template <typename... Args>
-    static std::shared_ptr<ContextAccess> make(Args &&... args)
-    {
-        return std::make_shared<ContextAccess>(std::forward<Args>(args)...);
-    }
-
     ~ContextAccess();
 
 private:
     friend class AccessControl;
+    ContextAccess() {} /// NOLINT
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
     void setUser(const UserPtr & user_) const;

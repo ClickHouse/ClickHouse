@@ -186,7 +186,6 @@ CREATE TABLE system.disks
     `total_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
-    `is_encrypted` UInt8,
     `cache_path` String
 )
 ENGINE = SystemDisks
@@ -270,8 +269,7 @@ CREATE TABLE system.functions
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
-    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
-    `description` String
+    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2)
 )
 ENGINE = SystemFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1023,8 +1021,7 @@ ENGINE = SystemTableEngines
 COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.table_functions
 (
-    `name` String,
-    `description` String
+    `name` String
 )
 ENGINE = SystemTableFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'

@@ -13,8 +13,6 @@
 #include <array>
 #include <sys/resource.h>
 #include <base/bit_cast.h>
-#include <Common/randomSeed.h>
-#include <pcg_random.hpp>
 
 #include <base/StringRef.h>
 #include <base/arraySize.h>
@@ -220,7 +218,6 @@ int main(int argc, char ** argv)
     }
 
     std::cerr << std::fixed << std::setprecision(2);
-    pcg64 rng(randomSeed());
 
     size_t n = parse<size_t>(argv[1]);
     std::vector<std::string> data;
@@ -284,8 +281,8 @@ int main(int argc, char ** argv)
         size_t bytes = 0;
         for (size_t i = 0, size = data.size(); i < size; ++i)
         {
-            size_t index_from = rng() % size;
-            size_t index_to = rng() % size;
+            size_t index_from = lrand48() % size;
+            size_t index_to = lrand48() % size;
 
             arena.free(const_cast<char *>(refs[index_to].data), refs[index_to].size);
             const auto & s = data[index_from];
@@ -321,8 +318,8 @@ int main(int argc, char ** argv)
         size_t bytes = 0;
         for (size_t i = 0, size = data.size(); i < size; ++i)
         {
-            size_t index_from = rng() % size;
-            size_t index_to = rng() % cache_size;
+            size_t index_from = lrand48() % size;
+            size_t index_to = lrand48() % cache_size;
 
             dictionary.setAttributeValue(attr, index_to, data[index_from]);
 

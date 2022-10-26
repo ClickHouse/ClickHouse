@@ -16,7 +16,7 @@ void setTerminalEcho(bool enable)
     struct termios tty{};
 
     if (0 != tcgetattr(STDIN_FILENO, &tty))
-        throw std::runtime_error(std::string("setTerminalEcho failed get: ") + errnoToString());
+        throw std::runtime_error(std::string("setTerminalEcho failed get: ") + errnoToString(errno));
 
     if (enable)
         tty.c_lflag |= ECHO;
@@ -24,5 +24,5 @@ void setTerminalEcho(bool enable)
         tty.c_lflag &= ~ECHO;
 
     if (0 != tcsetattr(STDIN_FILENO, TCSANOW, &tty))
-        throw std::runtime_error(std::string("setTerminalEcho failed set: ") + errnoToString());
+        throw std::runtime_error(std::string("setTerminalEcho failed set: ") + errnoToString(errno));
 }

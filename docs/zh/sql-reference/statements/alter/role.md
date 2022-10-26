@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter/role
 sidebar_position: 46
 sidebar_label: 角色
 ---

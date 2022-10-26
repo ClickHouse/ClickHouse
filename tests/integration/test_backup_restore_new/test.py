@@ -89,8 +89,6 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -131,8 +129,6 @@ def test_restore_table_under_another_name():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     assert instance.query("EXISTS test.table2") == "0\n"
 
     instance.query(f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}")
@@ -145,8 +141,6 @@ def test_backup_table_under_another_name():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table AS test.table2 TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
 
     assert instance.query("EXISTS test.table2") == "0\n"
 
@@ -176,8 +170,6 @@ def test_incremental_backup():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
@@ -189,6 +181,42 @@ def test_incremental_backup():
         f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
+def test_incremental_backup_overflow():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table(y String CODEC(NONE)) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    # Create a column of 4GB+10K
+    instance.query(
+        "INSERT INTO test.table SELECT toString(repeat('A', 1024)) FROM numbers((4*1024*1024)+10)"
+    )
+    # Force one part
+    instance.query("OPTIMIZE TABLE test.table FINAL")
+
+    # ensure that the column's size on disk is indeed greater then 4GB
+    assert (
+        int(
+            instance.query(
+                "SELECT bytes_on_disk FROM system.parts_columns WHERE active AND database = 'test' AND table = 'table' AND column = 'y'"
+            )
+        )
+        > 4 * 1024 * 1024 * 1024
+    )
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    # And now check that incremental backup does not have any files
+    assert os.listdir(os.path.join(get_path_to_backup(incremental_backup_name))) == [
+        ".backup"
+    ]
 
 
 def test_incremental_backup_after_renaming_table():
@@ -252,8 +280,6 @@ def test_file_engine():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
 
@@ -267,9 +293,6 @@ def test_database():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-
-    assert instance.contains_in_log("using native copy")
-
     instance.query("DROP DATABASE test")
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
 
@@ -282,7 +305,6 @@ def test_zip_archive():
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
     assert os.path.isfile(get_path_to_backup(backup_name))
 
     instance.query("DROP TABLE test.table")

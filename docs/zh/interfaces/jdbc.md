@@ -1,5 +1,4 @@
 ---
-slug: /zh/interfaces/jdbc
 sidebar_position: 22
 sidebar_label: JDBC驱动
 ---

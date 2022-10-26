@@ -4,14 +4,12 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
-
 #if defined(OS_LINUX)
     #include <sys/prctl.h>
 #endif
@@ -317,13 +315,13 @@ private:
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+                thread_num, strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
@@ -667,7 +665,7 @@ void BaseDaemon::initialize(Application & self)
     if (config().has("timezone"))
     {
         const std::string config_timezone = config().getString("timezone");
-        if (0 != setenv("TZ", config_timezone.data(), 1)) // NOLINT(concurrency-mt-unsafe) // ok if not called concurrently with other setenv/getenv
+        if (0 != setenv("TZ", config_timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
@@ -942,13 +940,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
@@ -1016,8 +1014,8 @@ void BaseDaemon::setupWatchdog()
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
             Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
+            if (config().getString("logger.formatting", "") == "json")
+                pf = new OwnJSONPatternFormatter;
             else
                 pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
@@ -1066,7 +1064,7 @@ void BaseDaemon::setupWatchdog()
                     break;
             }
             else if (errno != EINTR)
-                throw Poco::Exception("Cannot waitpid, errno: " + errnoToString());
+                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
         } while (true);
 
         if (errno == ECHILD)
