@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import atexit
+import time
 
 from github import Github
 
@@ -221,12 +222,18 @@ if __name__ == "__main__":
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 os.path.join(temp_path, "post_commit_status.tsv"),
-                "Skipped (no pr-bugfix)",
+                f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
             )
-        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
-        sys.exit(0)
+        logging.info("Skipping '%s' (no pr-bugfix in %s)", check_name, pr_info.labels)
+
+        # >>>>
+        time.sleep(10)
+        pr_info = PRInfo(need_changed_files=run_changed_tests)
+        logging.info("pr_info '%s' (%s)", pr_info, pr_info.labels)
+        sys.exit(1)
+        # <<<<
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
