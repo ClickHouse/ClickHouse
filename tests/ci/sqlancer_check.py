@@ -122,26 +122,19 @@ if __name__ == "__main__":
         "NoREC",
     ]
 
-    paths = {
-        # "runlog.log": run_log_path,
-        "clickhouse-server.log": os.path.join(workspace_path, "clickhouse-server"),
-        "stderr.log": os.path.join(workspace_path, "stderr.log"),
-        "stdout.log": os.path.join(workspace_path, "stdout.log"),
-    }
+    paths = [
+        run_log_path,
+        os.path.join(workspace_path, "clickhouse-server"),
+        os.path.join(workspace_path, "stderr.log"),
+        os.path.join(workspace_path, "stdout.log"),
+    ]
     for t in tests:
         err_name = f"{t}.err"
         log_name = f"{t}.err"
-        paths[err_name] = os.path.join(workspace_path, err_name)
-        paths[log_name] = os.path.join(workspace_path, log_name)
+        paths.append(os.path.join(workspace_path, err_name))
+        paths.append(os.path.join(workspace_path, log_name))
 
     s3_helper = S3Helper()
-    for f in paths:
-        try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
-        except Exception as ex:
-            logging.info("Exception uploading file %s text %s", f, ex)
-            paths[f] = ""
-
     report_url = GITHUB_RUN_URL
 
     status = "succeess"
