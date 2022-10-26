@@ -41,18 +41,7 @@ responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, 
     CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
-    {
-        /// If client supports brotli - it's preferred.
-        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-        /// NOTE parsing of the list of methods is slightly incorrect.
-
-        if (std::string::npos != http_response_compression_methods.find("br"))
-            http_response_compression_method = CompressionMethod::Brotli;
-        else if (std::string::npos != http_response_compression_methods.find("gzip"))
-            http_response_compression_method = CompressionMethod::Gzip;
-        else if (std::string::npos != http_response_compression_methods.find("deflate"))
-            http_response_compression_method = CompressionMethod::Zlib;
-    }
+        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 

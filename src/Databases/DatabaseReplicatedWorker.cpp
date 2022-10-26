@@ -221,6 +221,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
 
+    OpenTelemetry::SpanHolder span(__FUNCTION__);
+    span.addAttribute("clickhouse.cluster", database->getDatabaseName());
+    entry.tracing_context = OpenTelemetry::CurrentContext();
+
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));

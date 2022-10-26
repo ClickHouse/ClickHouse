@@ -24,7 +24,8 @@ public:
         const String & is_deleted_column, const String & version_column,
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool use_average_block_sizes = false);
+        bool use_average_block_sizes = false,
+        bool cleanup = false);
 
     Status merge() override;
 
@@ -33,6 +34,7 @@ private:
 
     ssize_t is_deleted_column_number = 0;
     ssize_t version_column_number = -1;
+    bool cleanup = false;
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

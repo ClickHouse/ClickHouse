@@ -220,8 +220,11 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
-    Names source_column_names = source_part->getColumns().getNames();
-    NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
+    const auto & source_columns = source_part->getColumns();
+    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
+    for (const auto & it : source_columns)
+        source_columns_name_to_type[it.name] = it.type;
+
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
         if (updated_header.has(it->name))
@@ -233,14 +236,25 @@ getColumnsForNewDataPart(
         }
         else
         {
-            if (!source_columns_name_set.contains(it->name))
+            auto source_col = source_columns_name_to_type.find(it->name);
+            if (source_col == source_columns_name_to_type.end())
             {
                 /// Source part doesn't have column but some other column
                 /// was renamed to it's name.
                 auto renamed_it = renamed_columns_to_from.find(it->name);
-                if (renamed_it != renamed_columns_to_from.end()
-                    && source_columns_name_set.contains(renamed_it->second))
-                    ++it;
+                if (renamed_it != renamed_columns_to_from.end())
+                {
+                    source_col = source_columns_name_to_type.find(renamed_it->second);
+                    if (source_col == source_columns_name_to_type.end())
+                        it = storage_columns.erase(it);
+                    else
+                    {
+                        /// Take a type from source part column.
+                        /// It may differ from column type in storage.
+                        it->type = source_col->second;
+                        ++it;
+                    }
+                }
                 else
                     it = storage_columns.erase(it);
             }
@@ -262,7 +276,12 @@ getColumnsForNewDataPart(
                 if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
                     it = storage_columns.erase(it);
                 else
+                {
+                    /// Take a type from source part column.
+                    /// It may differ from column type in storage.
+                    it->type = source_col->second;
                     ++it;
+                }
             }
         }
     }
@@ -843,6 +862,7 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
+                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
@@ -1467,6 +1487,8 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
+            MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+
             if (task->executeStep())
                 return true;
 
@@ -1505,8 +1527,24 @@ bool MutateTask::prepare()
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
+        NameSet files_to_copy_instead_of_hardlinks;
+        auto settings_ptr = ctx->data->getSettings();
+        /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
+        /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
+        /// Example:
+        ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        ///                                         ^ part name don't participate in lock path
+        /// In case of full hardlink we will have:
+        ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        /// So we need to copy to have a new name
+        bool copy_checksumns = ctx->data->supportsReplication() && settings_ptr->allow_remote_fs_zero_copy_replication && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
+        if (copy_checksumns)
+            files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
+
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
         ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
@@ -1619,7 +1657,24 @@ bool MutateTask::prepare()
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
             /// new_data_part is not used here, another part is created instead (see the comment above)
             ctx->temporary_directory_lock = {};
-            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+
+            /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
+            /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
+            /// Example:
+            ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+            ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+            ///                                         ^ part name don't participate in lock path
+            /// In case of full hardlink we will have:
+            ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+            ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+            /// So we need to copy to have a new name
+            NameSet files_to_copy_instead_of_hardlinks;
+            auto settings_ptr = ctx->data->getSettings();
+            bool copy_checksumns = ctx->data->supportsReplication() && settings_ptr->allow_remote_fs_zero_copy_replication && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
+            if (copy_checksumns)
+                files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
+
+            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
             ctx->temporary_directory_lock = std::move(lock);
             promise.set_value(std::move(part));
             return false;

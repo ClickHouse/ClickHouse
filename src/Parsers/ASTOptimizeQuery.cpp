@@ -24,7 +24,7 @@ void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatSt
     if (deduplicate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
 
-    if (with_cleanup)
+    if (cleanup)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
 
     if (deduplicate_by_columns)

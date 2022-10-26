@@ -12,7 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -232,6 +232,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             }
             else
                 table->checkTableCanBeDropped();
+
+            /// Check dependencies before shutting table down
+            if (context_->getSettingsRef().check_table_dependencies)
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
 
             table->flushAndShutdown();
 

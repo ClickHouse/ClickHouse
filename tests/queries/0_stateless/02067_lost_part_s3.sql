@@ -15,6 +15,8 @@ INSERT INTO partslost_0 SELECT toString(number) AS x from system.numbers LIMIT 1
 
 ALTER TABLE partslost_0 ADD INDEX idx x TYPE tokenbf_v1(285000, 3, 12345) GRANULARITY 3;
 
+SET mutations_sync = 2;
+
 ALTER TABLE partslost_0 MATERIALIZE INDEX idx;
 
 -- In worst case doesn't check anything, but it's not flaky

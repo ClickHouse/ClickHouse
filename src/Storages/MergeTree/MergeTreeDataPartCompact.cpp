@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 
 namespace DB
@@ -110,18 +111,26 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     size_t marks_file_size = data_part_storage_->getFileSize(marks_file_path);
 
-    auto buffer = data_part_storage_->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
-    while (!buffer->eof())
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_->readFile(
+        marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+
+    std::unique_ptr<ReadBuffer> marks_reader;
+    bool marks_compressed = index_granularity_info_.mark_type.compressed;
+    if (marks_compressed)
+        marks_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    else
+        marks_reader = std::move(buffer);
+
+    while (!marks_reader->eof())
     {
-        /// Skip offsets for columns
-        buffer->seek(columns_count * sizeof(MarkInCompressedFile), SEEK_CUR);
+        marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
         size_t granularity;
-        readIntBinary(granularity, *buffer);
+        readIntBinary(granularity, *marks_reader);
         index_granularity_.appendMark(granularity);
     }
 
-    if (index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_count) != marks_file_size)
-        throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+    if (!marks_compressed && index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_count) != marks_file_size)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", marks_file_path);
 
     index_granularity_.setInitialized();
 }

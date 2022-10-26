@@ -266,7 +266,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (max_num_params == 0)
             msg += "no parameters";
-        if (min_num_params == max_num_params)
+        else if (min_num_params == max_num_params)
             msg += fmt::format("{} parameters: {}", min_num_params, needed_params);
         else
             msg += fmt::format("{} to {} parameters: {}", min_num_params, max_num_params, needed_params);
@@ -446,7 +446,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (arg_cnt > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
                 throw Exception(
@@ -693,8 +693,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        auto storage_policy = args.getContext()->getStoragePolicy(storage_settings->storage_policy);
-
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,

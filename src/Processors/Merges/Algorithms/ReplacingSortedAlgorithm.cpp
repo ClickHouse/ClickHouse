@@ -14,9 +14,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const String & version_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
+    bool use_average_block_sizes,
+    bool cleanup_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size), cleanup(cleanup_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -91,6 +92,13 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);
+            UInt8 selected_is_deleted = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
+            if (cleanup && selected_is_deleted)
+                selected_row.clear();
+        }
+        else if (cleanup && is_deleted)
+        {
+                current_row.clear();
         }
 
         if (!current->isLast())
