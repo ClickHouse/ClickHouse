@@ -61,7 +61,10 @@ struct AsciiImpl
     }
 
 private:
-    static Int32 doAscii(const ColumnString::Chars & buf, size_t offset, size_t size) { return size ? static_cast<ReturnType>(buf[offset]) : 0; }
+    static Int32 doAscii(const ColumnString::Chars & buf, size_t offset, size_t size)
+    {
+        return size ? static_cast<ReturnType>(buf[offset]) : 0;
+    }
 };
 
 using FunctionAscii = FunctionStringOrArrayToT<AsciiImpl, AsciiName, AsciiImpl::ReturnType>;
