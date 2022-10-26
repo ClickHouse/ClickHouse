@@ -51,7 +51,7 @@ void Throttler::add(size_t amount)
         if (max_speed && prev_ns != 0)
         {
             double delta_seconds = static_cast<double>(now - prev_ns) / NS;
-            tokens = std::max<double>(tokens + max_speed * delta_seconds - amount, max_burst);
+            tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
         }
         count += amount;
         count_value = count;
