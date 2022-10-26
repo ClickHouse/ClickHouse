@@ -111,24 +111,6 @@ public:
         return children[queries_child_index];
     }
 
-    /// Return true if union node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
-    {
-        return table_expression_modifiers.has_value();
-    }
-
-    /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
-    {
-        return table_expression_modifiers;
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
-
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
@@ -173,7 +155,6 @@ private:
     std::string cte_name;
     SelectUnionMode union_mode;
     ConstantValuePtr constant_value;
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t children_size = queries_child_index + 1;
