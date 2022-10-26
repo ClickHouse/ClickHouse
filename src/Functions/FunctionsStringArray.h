@@ -32,12 +32,12 @@ namespace ErrorCodes
 
 /** Functions that split strings into an array of strings or vice versa.
   *
-  * splitByChar(sep, s[, max_split])
-  * splitByString(sep, s[, max_split])
-  * splitByRegexp(regexp, s[, max_split])
+  * splitByChar(sep, s)
+  * splitByString(sep, s)
+  * splitByRegexp(regexp, s)
   *
-  * splitByWhitespace(s[, max_split])      - split the string by whitespace characters
-  * splitByNonAlpha(s[, max_split])        - split the string by whitespace and punctuation characters
+  * splitByWhitespace(s)      - split the string by whitespace characters
+  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
   *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
