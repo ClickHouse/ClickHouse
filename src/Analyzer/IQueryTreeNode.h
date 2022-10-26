@@ -82,14 +82,6 @@ public:
         return toString(getNodeType());
     }
 
-    /** Get name of query tree node that can be used as part of expression.
-      * TODO: Projection name, expression name must be refactored in better interface.
-      */
-    virtual String getName() const
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getName is not supported for {} query node", getNodeTypeName());
-    }
-
     /** Get result type of query tree node that can be used as part of expression.
       * If node does not support this method exception is thrown.
       * TODO: Maybe this can be a part of ExpressionQueryTreeNode.
