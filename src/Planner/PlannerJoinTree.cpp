@@ -489,7 +489,8 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
         }
     }
 
-    auto left_table_names = left_plan.getCurrentDataStream().header.getNames();
+    const Block & left_header = left_plan.getCurrentDataStream().header;
+    auto left_table_names = left_header.getNames();
     NameSet left_table_names_set(left_table_names.begin(), left_table_names.end());
 
     auto columns_from_joined_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
@@ -501,7 +502,8 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             table_join->addJoinedColumn(column_from_joined_table);
     }
 
-    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), right_plan.getCurrentDataStream().header, planner_context);
+    const Block & right_header = right_plan.getCurrentDataStream().header;
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
 
     auto result_plan = QueryPlan();
 
