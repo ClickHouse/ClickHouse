@@ -116,7 +116,7 @@ public:
 protected:
     virtual Block nextImpl() = 0;
 
-    bool finished = false;
+    std::atomic_bool finished{false};
 
 };
 
