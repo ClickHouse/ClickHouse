@@ -166,7 +166,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     const auto & settings = context->getSettingsRef();
     zookeeper_retries_info = ZooKeeperRetriesInfo(
         "ReplicatedMergeTreeSink::consume",
-        log,
+        settings.insert_keeper_max_retries ? log : nullptr,
         settings.insert_keeper_max_retries,
         settings.insert_keeper_retry_initial_backoff_ms,
         settings.insert_keeper_retry_max_backoff_ms);
