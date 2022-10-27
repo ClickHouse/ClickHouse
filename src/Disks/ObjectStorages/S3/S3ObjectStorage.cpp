@@ -230,7 +230,9 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
-    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+    ThreadPoolCallbackRunner<void> scheduler;
+    if (write_settings.s3_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
@@ -482,7 +484,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
-        part_request.SetPartNumber(part_number);
+        part_request.SetPartNumber(static_cast<int>(part_number));
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = client_ptr->UploadPartCopy(part_request);
@@ -515,7 +517,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         for (size_t i = 0; i < part_tags.size(); ++i)
         {
             Aws::S3::Model::CompletedPart part;
-            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
+            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(static_cast<int>(i) + 1));
         }
 
         req.SetMultipartUpload(multipart_upload);

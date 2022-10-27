@@ -88,7 +88,7 @@ Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & typ
     if (!type.canStoreWhole(value))
         throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    T scaled_value = type.getScaleMultiplier() * static_cast<T>(value);
+    T scaled_value = type.getScaleMultiplier() * T(static_cast<typename T::NativeType>(value));
     return DecimalField<T>(scaled_value, type.getScale());
 }
 
