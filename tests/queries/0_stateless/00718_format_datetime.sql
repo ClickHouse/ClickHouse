@@ -40,6 +40,10 @@ SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%%');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), 'no formatting pattern');
 
 SELECT formatDateTime(toDate('2018-01-01'), '%F %T');
+
+SELECT formatDateTime(toDate32('2018-01-01'), '%F %T');
+SELECT formatDateTime(toDate32('1927-01-01'), '%F %T');
+
 SELECT
     formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'UTC'),
     formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'Asia/Istanbul');
