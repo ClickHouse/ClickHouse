@@ -27,27 +27,34 @@ def check_logs(must_contain=[], must_not_contain=[]):
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
-        assert (
-            int(
-                node.query(
-                    f"SELECT COUNT() FROM system.query_log WHERE query LIKE '%{escaped_str}%'"
-                ).strip()
-            )
-            >= 1
-        )
+        assert system_query_log_contains_search_pattern(escaped_str)
 
     for str in must_not_contain:
         escaped_str = str.replace("'", "\\'")
-        assert (
-            int(
-                node.query(
-                    f"SELECT COUNT() FROM system.query_log WHERE query LIKE '%{escaped_str}%'"
-                ).strip()
-            )
-            == 0
+        assert not system_query_log_contains_search_pattern(escaped_str)
+
+
+# Returns true if "system.query_log" has a query matching a specified pattern.
+def system_query_log_contains_search_pattern(search_pattern):
+    return (
+        int(
+            node.query(
+                f"SELECT COUNT() FROM system.query_log WHERE query LIKE '%{search_pattern}%'"
+            ).strip()
         )
+        >= 1
+    )
 
 
+# Returns true if the file "clickhouse-server.log" has at least one line containing all specified parts.
+def logs_contain_multipart_string(parts):
+    lines = node.grep_in_log(parts[0]).split("\n")
+    for i in range(1, len(parts)):
+        lines = [line for line in lines if parts[i] in line]
+    return len(lines) >= 1
+
+
+# Generates a random string.
 def new_password(len=16):
     return "".join(
         random.choice(string.ascii_uppercase + string.digits) for _ in range(len)
@@ -315,9 +322,41 @@ def test_on_cluster():
     check_logs(
         must_contain=[
             "CREATE TABLE table_oncl ON CLUSTER test_shard_localhost (`x` int) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-            "CREATE TABLE default.table_oncl",
         ],
         must_not_contain=[password],
+    )
+
+    # Check logs of DDLWorker during executing of this query.
+    assert logs_contain_multipart_string(
+        [
+            "DDLWorker: Processing task ",
+            "CREATE TABLE default.table_oncl UUID",
+            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+        ]
+    )
+    assert logs_contain_multipart_string(
+        [
+            "DDLWorker: Executing query: ",
+            "CREATE TABLE default.table_oncl UUID",
+            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+        ]
+    )
+    assert logs_contain_multipart_string(
+        [
+            "executeQuery: ",
+            "CREATE TABLE default.table_oncl UUID",
+            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+        ]
+    )
+    assert logs_contain_multipart_string(
+        [
+            "DDLWorker: Executed query: ",
+            "CREATE TABLE default.table_oncl UUID",
+            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+        ]
+    )
+    assert system_query_log_contains_search_pattern(
+        "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql57:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\'"
     )
 
     node.query(f"DROP TABLE table_oncl")
