@@ -387,7 +387,7 @@ public:
             {
                 if (capacity < rhs_size)
                 {
-                    capacity = static_cast<UInt32>(roundUpToPowerOfTwoOrZero(rhs_size));
+                    capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(rhs_size));
                     /// Don't free large_data here.
                     large_data = arena->alloc(capacity);
                 }
