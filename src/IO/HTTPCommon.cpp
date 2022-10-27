@@ -142,7 +142,7 @@ namespace
                 bool proxy_https_,
                 size_t max_pool_size_,
                 bool resolve_host_ = true)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
+            : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
             , https(https_)
@@ -271,7 +271,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;

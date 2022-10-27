@@ -44,12 +44,12 @@ namespace
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
-            context->getGlobalContext()->getSettingsRef().s3_max_redirects,
+            static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
             /* for_disk_s3 = */ false);
 
         client_configuration.endpointOverride = s3_uri.endpoint;
-        client_configuration.maxConnections = context->getSettingsRef().s3_max_connections;
+        client_configuration.maxConnections = static_cast<unsigned>(context->getSettingsRef().s3_max_connections);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -221,7 +221,7 @@ void BackupWriterS3::copyObjectMultipartImpl(
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
-        part_request.SetPartNumber(part_number);
+        part_request.SetPartNumber(static_cast<int>(part_number));
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = client->UploadPartCopy(part_request);
@@ -251,7 +251,7 @@ void BackupWriterS3::copyObjectMultipartImpl(
         for (size_t i = 0; i < part_tags.size(); ++i)
         {
             Aws::S3::Model::CompletedPart part;
-            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
+            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(static_cast<int>(i) + 1));
         }
 
         req.SetMultipartUpload(multipart_upload);
