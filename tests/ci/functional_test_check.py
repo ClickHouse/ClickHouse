@@ -211,7 +211,8 @@ if __name__ == "__main__":
     run_changed_tests = flaky_check or validate_bugix_check
     gh = Github(get_best_robot_token(), per_page=100)
 
-    pr_info = PRInfo(need_changed_files=run_changed_tests)
+    # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
+    pr_info = PRInfo(need_changed_files=run_changed_tests, pr_event_from_api=validate_bugix_check)
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
@@ -227,13 +228,7 @@ if __name__ == "__main__":
                 "null",
             )
         logging.info("Skipping '%s' (no pr-bugfix in %s)", check_name, pr_info.labels)
-
-        # >>>>
-        time.sleep(10)
-        pr_info = PRInfo(need_changed_files=run_changed_tests)
-        logging.info("pr_info '%s' (%s)", pr_info, pr_info.labels)
-        sys.exit(1)
-        # <<<<
+        sys.exit(0)
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM"))
