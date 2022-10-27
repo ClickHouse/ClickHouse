@@ -561,13 +561,10 @@ public:
 
     virtual bool getResult(ASTPtr & node)
     {
-        if (elements.size() == 1)
-        {
-            node = std::move(elements[0]);
-            return true;
-        }
+        if (!finished)
+            return false;
 
-        return false;
+        return getResultImpl(node);
     }
 
     virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
@@ -746,6 +743,17 @@ public:
     Checkpoint current_checkpoint = Checkpoint::None;
 
 protected:
+    virtual bool getResultImpl(ASTPtr & node)
+    {
+        if (elements.size() == 1)
+        {
+            node = std::move(elements[0]);
+            return true;
+        }
+
+        return false;
+    }
+
     std::vector<Operator> operators;
     ASTs operands;
     ASTs elements;
@@ -766,17 +774,12 @@ public:
     bool getResult(ASTPtr & node) override
     {
         /// We can exit the main cycle outside the parse() function,
-        ///  so we need to merge the element here
+        ///  so we need to merge the element here.
+        /// Because of this 'finished' flag can also not be set.
         if (!mergeElement())
             return false;
 
-        if (elements.size() == 1)
-        {
-            node = std::move(elements[0]);
-            return true;
-        }
-
-        return false;
+        return Layer::getResultImpl(node);
     }
 
     bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
@@ -829,16 +832,6 @@ class FunctionLayer : public Layer
 public:
     explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true)
         : function_name(function_name_), allow_function_parameters(allow_function_parameters_){}
-
-    bool getResult(ASTPtr & node) override
-    {
-        // FunctionLayer can be the only layer in our Layers stack,
-        //  so we need to check that we exited the main cycle properly
-        if (!finished)
-            return false;
-
-        return Layer::getResult(node);
-    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1039,17 +1032,6 @@ private:
 class RoundBracketsLayer : public Layer
 {
 public:
-    bool getResult(ASTPtr & node) override
-    {
-        // Round brackets can mean priority operator as well as function tuple()
-        if (!is_tuple && elements.size() == 1)
-            node = std::move(elements[0]);
-        else
-            node = makeASTFunction("tuple", std::move(elements));
-
-        return true;
-    }
-
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         if (ParserToken(TokenType::Comma).ignore(pos, expected))
@@ -1079,6 +1061,19 @@ public:
 
         return true;
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        // Round brackets can mean priority operator as well as function tuple()
+        if (!is_tuple && elements.size() == 1)
+            node = std::move(elements[0]);
+        else
+            node = makeASTFunction("tuple", std::move(elements));
+
+        return true;
+    }
+
 private:
     bool is_tuple = false;
 };
@@ -1087,15 +1082,16 @@ private:
 class ArrayLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
-    bool getResult(ASTPtr & node) override
-    {
-        node = makeASTFunction("array", std::move(elements));
-        return true;
-    }
-
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         return LayerWithSeparator::parse(pos, expected, action);
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("array", std::move(elements));
+        return true;
     }
 };
 
@@ -1216,23 +1212,6 @@ class ExtractLayer : public LayerWithSeparator<TokenType::Comma, TokenType::Clos
 public:
     ExtractLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
-    bool getResult(ASTPtr & node) override
-    {
-        if (state == 2)
-        {
-            if (elements.empty())
-                return false;
-
-            node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
-        }
-        else
-        {
-            node = makeASTFunction("extract", std::move(elements));
-        }
-
-        return true;
-    }
-
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// extract(haystack, pattern) or EXTRACT(DAY FROM Date)
@@ -1278,6 +1257,25 @@ public:
         return true;
     }
 
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (state == 2)
+        {
+            if (elements.empty())
+                return false;
+
+            node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
+        }
+        else
+        {
+            node = makeASTFunction("extract", std::move(elements));
+        }
+
+        return true;
+    }
+
+
 private:
     IntervalKind interval_kind;
 };
@@ -1286,12 +1284,6 @@ class SubstringLayer : public Layer
 {
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        node = makeASTFunction("substring", std::move(elements));
-        return true;
-    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1342,21 +1334,19 @@ public:
 
         return true;
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("substring", std::move(elements));
+        return true;
+    }
 };
 
 class PositionLayer : public Layer
 {
 public:
     PositionLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        if (state == 2)
-            std::swap(elements[1], elements[0]);
-
-        node = makeASTFunction("position", std::move(elements));
-        return true;
-    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1412,6 +1402,16 @@ public:
 
         return true;
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (state == 2)
+            std::swap(elements[1], elements[0]);
+
+        node = makeASTFunction("position", std::move(elements));
+        return true;
+    }
 };
 
 class ExistsLayer : public Layer
@@ -1445,12 +1445,6 @@ class TrimLayer : public Layer
 public:
     TrimLayer(bool trim_left_, bool trim_right_)
         : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), trim_left(trim_left_), trim_right(trim_right_) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        node = makeASTFunction(function_name, std::move(elements));
-        return true;
-    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1593,6 +1587,14 @@ public:
 
         return true;
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction(function_name, std::move(elements));
+        return true;
+    }
+
 private:
     bool trim_left;
     bool trim_right;
@@ -1607,23 +1609,6 @@ class DateAddLayer : public LayerWithSeparator<TokenType::Comma, TokenType::Clos
 public:
     explicit DateAddLayer(const char * function_name_)
         : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), function_name(function_name_) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        if (parsed_interval_kind)
-        {
-            if (elements.size() < 2)
-                return false;
-
-            elements[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements[0]);
-            node = makeASTFunction(function_name, elements[1], elements[0]);
-        }
-        else
-            node = makeASTFunction(function_name, std::move(elements));
-
-        return true;
-    }
-
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1654,6 +1639,23 @@ public:
         return true;
     }
 
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (parsed_interval_kind)
+        {
+            if (elements.size() < 2)
+                return false;
+
+            elements[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements[0]);
+            node = makeASTFunction(function_name, elements[1], elements[0]);
+        }
+        else
+            node = makeASTFunction(function_name, std::move(elements));
+
+        return true;
+    }
+
 private:
     IntervalKind interval_kind;
     const char * function_name;
@@ -1664,24 +1666,6 @@ class DateDiffLayer : public LayerWithSeparator<TokenType::Comma, TokenType::Clo
 {
 public:
     DateDiffLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool getResult(ASTPtr & node) override
-    {
-        if (parsed_interval_kind)
-        {
-            if (elements.size() == 2)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
-            else if (elements.size() == 3)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
-            else
-                return false;
-        }
-        else
-        {
-            node = makeASTFunction("dateDiff", std::move(elements));
-        }
-        return true;
-    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1706,6 +1690,25 @@ public:
             return LayerWithSeparator::parse(pos, expected, action);
         }
 
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (parsed_interval_kind)
+        {
+            if (elements.size() == 2)
+                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
+            else if (elements.size() == 3)
+                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
+            else
+                return false;
+        }
+        else
+        {
+            node = makeASTFunction("dateDiff", std::move(elements));
+        }
         return true;
     }
 
@@ -1892,16 +1895,6 @@ class ViewLayer : public Layer
 public:
     explicit ViewLayer(bool if_permitted_) : if_permitted(if_permitted_) {}
 
-    bool getResult(ASTPtr & node) override
-    {
-        if (if_permitted)
-            node = makeASTFunction("viewIfPermitted", std::move(elements));
-        else
-            node = makeASTFunction("view", std::move(elements));
-
-        return true;
-    }
-
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
         /// view(SELECT ...)
@@ -1954,6 +1947,17 @@ public:
                 finished = true;
             }
         }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (if_permitted)
+            node = makeASTFunction("viewIfPermitted", std::move(elements));
+        else
+            node = makeASTFunction("view", std::move(elements));
 
         return true;
     }
