@@ -130,7 +130,7 @@ if __name__ == "__main__":
     ]
     for t in tests:
         err_name = f"{t}.err"
-        log_name = f"{t}.err"
+        log_name = f"{t}.out"
         paths.append(os.path.join(workspace_path, err_name))
         paths.append(os.path.join(workspace_path, log_name))
 
@@ -141,11 +141,12 @@ if __name__ == "__main__":
     test_results = []
     # Try to get status message saved by the SQLancer
     try:
-        with open(
-            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        ) as status_f:
-            status = status_f.readline().rstrip("\n")
-
+        # with open(
+        #     os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
+        # ) as status_f:
+        #     status = status_f.readline().rstrip("\n")
+        if os.path.exists(os.path.join, "server_crashed.log"):
+            test_results.append("Server crashed", "FAIL")
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
@@ -158,7 +159,7 @@ if __name__ == "__main__":
         ) as desc_f:
             description = desc_f.readline().rstrip("\n")[:140]
     except:
-        status = "failure"
+        # status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
     report_url = upload_results(
