@@ -81,6 +81,7 @@ Multiple path components can have globs. For being processed file must exist and
 -   `?` — Substitutes any single character.
 -   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Substitutes any number in range from N to M including both borders.
+-   `**` - Fetches all files inside the folder recursively.
 
 Constructions with `{}` are similar to the [remote](remote.md) table function.
 
@@ -117,6 +118,22 @@ Query the data from files named `file000`, `file001`, … , `file999`:
 
 ``` sql
 SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
+```
+
+**Example**
+
+Query the data from all files inside `big_dir` directory recursively:
+
+``` sql
+SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
+```
+
+**Example**
+
+Query the data from all `file002` files from any folder inside `big_dir` directory recursively:
+
+``` sql
+SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
 ## Virtual Columns

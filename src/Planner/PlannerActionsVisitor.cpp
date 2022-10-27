@@ -502,7 +502,16 @@ String calculateActionNodeName(const QueryTreeNodePtr & node, const PlannerConte
         case QueryTreeNodeType::COLUMN:
         {
             const auto * column_identifier = planner_context.getColumnNodeIdentifierOrNull(node);
-            result = column_identifier ? *column_identifier : node->getName();
+
+            if (column_identifier)
+            {
+                result = *column_identifier;
+            }
+            else
+            {
+                const auto & column_node = node->as<ColumnNode &>();
+                result = column_node.getColumnName();
+            }
 
             break;
         }
