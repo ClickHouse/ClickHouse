@@ -124,7 +124,7 @@ void RandImpl::execute(char * output, size_t size)
     char * end = output + size;
 
     constexpr int vec_size = 4;
-    constexpr int safe_overwrite = 15;
+    constexpr int safe_overwrite = PADDING_FOR_SIMD - 1;
     constexpr int bytes_per_write = 4 * sizeof(UInt64x4);
 
     UInt64 rand_seed = randomSeed();

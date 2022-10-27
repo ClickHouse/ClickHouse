@@ -848,9 +848,11 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
+    if (syntax_analyzer_result)
+    {
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
+    }
 
     return result;
 }
@@ -887,13 +889,22 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -962,6 +973,12 @@ KeyCondition::KeyCondition(
         const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
             key_columns[name] = i;
+    }
+
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
     }
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
@@ -1407,6 +1424,7 @@ public:
             ColumnsWithTypeAndName new_arguments;
             new_arguments.reserve(arguments.size() + 1);
             new_arguments.push_back(const_arg);
+            new_arguments.front().column = new_arguments.front().column->cloneResized(input_rows_count);
             for (const auto & arg : arguments)
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
@@ -1415,6 +1433,7 @@ public:
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
+            new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
         else
