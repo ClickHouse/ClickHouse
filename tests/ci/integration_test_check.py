@@ -167,17 +167,19 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     is_flaky_check = "flaky" in check_name
-    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check)
+
+    # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
+    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check, pr_event_from_api=validate_bugix_check)
 
     if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 os.path.join(temp_path, "post_commit_status.tsv"),
-                "Skipped (no pr-bugfix)",
+                f"Skipped (no pr-bugfix in {pr_info.labels})",
                 "success",
                 "null",
             )
-        logging.info("Skipping '%s' (no pr-bugfix)", check_name)
+        logging.info("Skipping '%s' (no pr-bugfix in '%s')", check_name, pr_info.labels)
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
