@@ -82,7 +82,6 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
-        DataPartStorageBuilderPtr part_builder,
         size_t replicas_num);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
