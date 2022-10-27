@@ -139,7 +139,9 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+        recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
 
@@ -197,7 +199,7 @@ private:
             for (const auto & row : result_batch)
             {
                 const String & key = row.GetKey();
-                if (re2::RE2::FullMatch(key, *matcher))
+                if (recursive || re2::RE2::FullMatch(key, *matcher))
                 {
                     String path = fs::path(globbed_uri.bucket) / key;
                     if (object_infos)
@@ -224,7 +226,7 @@ private:
             for (const auto & row : result_batch)
             {
                 String key = row.GetKey();
-                if (re2::RE2::FullMatch(key, *matcher))
+                if (recursive || re2::RE2::FullMatch(key, *matcher))
                     buffer.emplace_back(std::move(key));
             }
         }
@@ -252,6 +254,7 @@ private:
     Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     std::unique_ptr<re2::RE2> matcher;
+    bool recursive{false};
     bool is_finished{false};
     std::unordered_map<String, S3::ObjectInfo> * object_infos;
     Strings * read_keys;
