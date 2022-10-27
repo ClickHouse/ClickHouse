@@ -31,26 +31,32 @@ fi
 cd /workspace
 /clickhouse server -P /workspace/clickhouse-server.pid -L /workspace/clickhouse-server.log -E /workspace/clickhouse-server.log.err --daemon
 
-for _ in $(seq 1 30); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
+for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
 
 cd /sqlancer/sqlancer-master
 
-export TIMEOUT=300
-export NUM_QUERIES=1000
-export NUM_THREADS=30
+TIMEOUT=300
+NUM_QUERIES=1000
+NUM_THREADS=10
+TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" )
+echo ${TESTS[@]}
 
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere | tee /workspace/TLPWhere.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhere.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPGroupBy | tee /workspace/TLPGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPGroupBy.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPHaving | tee /workspace/TLPHaving.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPHaving.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere --oracle TLPGroupBy | tee /workspace/TLPWhereGroupBy.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPWhereGroupBy.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /workspace/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPDistinct.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /workspace/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /workspace/TLPAggregate.err
-( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /workspace/NoREC.out )  3>&1 1>&2 2>&3 | tee /workspace/NoREC.err
+for TEST in ${TESTS[@]}; do
+    echo $TEST
+    if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]
+    then
+        echo "Server is OK"
+        ( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle $TEST | tee /workspace/$TEST.out )  3>&1 1>&2 2>&3 | tee /workspace/$TEST.err
+    else
+        touch  /workspace/$TEST.err  /workspace/$TEST.out
+        echo "Server is not responding" | tee /workspace/server_crashed.log
+    fi
+done
 
 ls /workspace
-pkill -F /workspace/clickhouse-server.pid
+pkill -F /workspace/clickhouse-server.pid || true
 
-for _ in $(seq 1 30); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
+for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]; then sleep 1 ; else break; fi ; done
 
 /process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /workspace/check_status.tsv
 ls /workspace
