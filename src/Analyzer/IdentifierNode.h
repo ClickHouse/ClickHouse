@@ -50,11 +50,6 @@ public:
         return QueryTreeNodeType::IDENTIFIER;
     }
 
-    String getName() const override
-    {
-        return identifier.getFullName();
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
