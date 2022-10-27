@@ -22,7 +22,7 @@ select 'parts';
 select type, has_watch, op_num, path, is_ephemeral, is_sequential, version, requests_size, request_idx, error, watch_type,
        watch_state, path_created, stat_version, stat_cversion, stat_dataLength, stat_numChildren
 from system.zookeeper_log
-where (session_id, xid) in (select session_id, xid from system.zookeeper_log where path='/test/01158/' || currentDatabase() || '/rmt/replicas/1/parts/all_0_0_0')
+where (session_id, xid) in (select session_id, xid from system.zookeeper_log where path='/test/01158/' || currentDatabase() || '/rmt/replicas/1/parts/all_0_0_0' and op_num not in(3))
 order by xid, type, request_idx;
 
 select 'blocks';

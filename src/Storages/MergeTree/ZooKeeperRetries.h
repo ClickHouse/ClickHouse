@@ -168,7 +168,8 @@ private:
         /// iteration succeeded -> no need to retry
         if (iteration_succeeded)
         {
-            if (retries_info.logger)
+            /// avoid unnecessary logs, - print something only in case of retries
+            if (retries_info.logger && iteration_count > 1)
                 LOG_DEBUG(
                     retries_info.logger,
                     "ZooKeeperRetriesControl: {}/{}: succeeded after: iterations={} total_retries={}",
