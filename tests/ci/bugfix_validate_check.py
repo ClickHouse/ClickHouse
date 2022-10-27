@@ -40,24 +40,21 @@ def process_result(file_path):
     prefix = os.path.basename(os.path.dirname(file_path))
     is_ok = state == "success"
 
-    test_results.append(
-        [
-            f"{prefix}: {description}",
-            "Bug reproduced" if is_ok else "Bug is not reproduced",
-            report_url,
-        ]
-    )
+    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>'
+    if not is_ok:
+        status = f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
+    test_results.append([f"{prefix}: {description}", status])
     return is_ok, test_results
 
 
 def process_all_results(file_paths):
-    all_ok = True
+    any_ok = False
     all_results = []
     for status_path in file_paths:
         is_ok, test_results = process_result(status_path)
-        all_ok = all_ok and is_ok
+        any_ok = any_ok or is_ok
         all_results.extend(test_results)
-    return all_ok, all_results
+    return any_ok, all_results
 
 
 def main(args):
