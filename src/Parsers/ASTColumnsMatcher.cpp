@@ -198,7 +198,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
 
-    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
