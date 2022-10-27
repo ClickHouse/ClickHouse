@@ -46,7 +46,7 @@ for TEST in "${TESTS[@]}"; do
     if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]
     then
         echo "Server is OK"
-        ( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads $NUM_THREADS --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle $TEST | tee "/workspace/$TEST.out" )  3>&1 1>&2 2>&3 | tee "/workspace/$TEST.err"
+        ( java -jar target/sqlancer-*.jar --log-each-select true --print-failed false --num-threads "$NUM_THREADS" --timeout-seconds "$TIMEOUT" --num-queries "$NUM_QUERIES"  --username default --password "" clickhouse --oracle "$TEST" | tee "/workspace/$TEST.out" )  3>&1 1>&2 2>&3 | tee "/workspace/$TEST.err"
     else
         touch "/workspace/$TEST.err" "/workspace/$TEST.out"
         echo "Server is not responding" | tee /workspace/server_crashed.log
