@@ -4,16 +4,16 @@ namespace DB
 {
 
 void SerializationNamed::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    addToPath(path);
-    path.back().data = data;
-    path.back().creator = std::make_shared<SubcolumnCreator>(name, escape_delimiter);
+    addToPath(settings.path);
+    settings.path.back().data = data;
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(name, escape_delimiter);
 
-    nested_serialization->enumerateStreams(path, callback, data);
-    path.pop_back();
+    nested_serialization->enumerateStreams(settings, callback, data);
+    settings.path.pop_back();
 }
 
 void SerializationNamed::serializeBinaryBulkStatePrefix(

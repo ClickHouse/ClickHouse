@@ -17,7 +17,7 @@ from env_helper import (
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from build_download_helper import get_build_name_for_check, get_build_urls
+from build_download_helper import get_build_name_for_check, read_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
@@ -29,7 +29,11 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return (
-        f"docker run --network=host --volume={workspace_path}:/workspace "
+        f"docker run "
+        # For sysctl
+        "--privileged "
+        "--network=host "
+        f"--volume={workspace_path}:/workspace "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
         f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
@@ -69,7 +73,7 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
-    urls = get_build_urls(build_name, reports_path)
+    urls = read_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
 

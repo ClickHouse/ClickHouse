@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
@@ -55,6 +56,18 @@ MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void MergeTreeWriteAheadLog::dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path)
+{
+    std::vector<std::string> files;
+    disk_to_drop->listFiles(relative_data_path, files);
+    for (const auto & file : files)
+    {
+        if (file.starts_with(WAL_FILE_NAME))
+            disk_to_drop->removeFile(fs::path(relative_data_path) / file);
     }
 }
 
@@ -122,7 +135,10 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    std::unique_lock<std::mutex> & parts_lock)
 {
     std::unique_lock lock(write_mutex);
 
@@ -172,6 +188,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
+
+                if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
+                    continue;
             }
             else
             {
@@ -237,6 +256,15 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     MergeTreeData::MutableDataPartsVector result;
     std::copy_if(parts.begin(), parts.end(), std::back_inserter(result),
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
+
+    /// All parts in WAL had been already committed into the disk -> clear the WAL
+    if (result.empty())
+    {
+        LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
+        disk->removeFile(path);
+        init();
+        return {};
+    }
 
     return result;
 }

@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/array
+---
 # 阵列(T) {#data-type-array}
 
 由 `T` 类型元素组成的数组。

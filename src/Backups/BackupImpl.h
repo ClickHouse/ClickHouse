@@ -122,7 +122,7 @@ private:
     size_t num_files = 0;
     UInt64 uncompressed_size = 0;
     UInt64 compressed_size = 0;
-    UInt64 version;
+    int version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
@@ -130,7 +130,7 @@ private:
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     String lock_file_name;
-    size_t num_files_written = 0;
+    std::atomic<size_t> num_files_written = 0;
     bool writing_finalized = false;
     const Poco::Logger * log;
 };

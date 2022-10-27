@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/datetime
 sidebar_position: 48
 sidebar_label: DateTime
 ---

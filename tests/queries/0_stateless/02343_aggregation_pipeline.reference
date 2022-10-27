@@ -1,5 +1,22 @@
 -- { echoOn }
 
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number;
+(Expression)
+ExpressionTransform × 16
+  (Aggregating)
+  Resize 16 → 16
+    AggregatingTransform × 16
+      StrictResize 16 → 16
+        (Expression)
+        ExpressionTransform × 16
+          (Aggregating)
+          Resize 1 → 16
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromStorage)
+                Limit
+                  Numbers 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
 (Expression)
 ExpressionTransform × 16

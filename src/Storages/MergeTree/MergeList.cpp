@@ -89,7 +89,7 @@ MergeListElement::MergeListElement(
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
     memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
-    if (settings.memory_tracker_fault_probability)
+    if (settings.memory_tracker_fault_probability > 0.0)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
     /// Let's try to copy memory related settings from the query,

@@ -83,7 +83,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertDataWithTerminatingZero(symbol->name, strlen(symbol->name) + 1);
+                result_column->insertData(symbol->name, strlen(symbol->name));
             else
                 result_column->insertDefault();
         }

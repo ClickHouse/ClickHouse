@@ -14,7 +14,7 @@
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -61,7 +61,7 @@ namespace DB
         ColumnsDescription /*cached_columns_*/) const
     {
         const Settings & settings = context_->getSettings();
-        ParserLambdaExpression partition_by_parser;
+        ParserExpression partition_by_parser;
         ASTPtr partition_by_ast = parseQuery(
             partition_by_parser,
             "(" + partition_by_def + ")",

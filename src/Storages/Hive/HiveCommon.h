@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 

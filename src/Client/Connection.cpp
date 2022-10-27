@@ -24,6 +24,7 @@
 #include <Common/randomSeed.h>
 #include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -32,8 +33,8 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include <Common/config_version.h>
-#include <Common/config.h>
+#include "config_version.h"
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -178,12 +179,18 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
+
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
+
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
@@ -483,6 +490,22 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    span.addAttribute("clickhouse.query_id", query_id_);
+    span.addAttribute("clickhouse.query", query);
+    span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
+
+    ClientInfo new_client_info;
+    const auto &current_trace_context = OpenTelemetry::CurrentContext();
+    if (client_info && current_trace_context.isTraceEnabled())
+    {
+        // use current span as the parent of remote span
+        new_client_info = *client_info;
+        new_client_info.client_trace_context = current_trace_context;
+
+        client_info = &new_client_info;
+    }
+
     if (!connected)
         connect(timeouts);
 
@@ -540,7 +563,7 @@ void Connection::sendQuery(
         /// Send correct hash only for !INITIAL_QUERY, due to:
         /// - this will avoid extra protocol complexity for simplest cases
         /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/unsecure changes)
+        ///   (since there is no secure/non-secure changes)
         if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL

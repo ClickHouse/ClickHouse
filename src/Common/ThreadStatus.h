@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -33,7 +32,6 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
-struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -80,7 +78,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::vector<UInt64> thread_ids;
+    std::unordered_set<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
@@ -142,12 +140,6 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
-
-    // This is the current most-derived OpenTelemetry span for this thread. It
-    // can be changed throughout the query execution, whenever we enter a new
-    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
-    // for these changes.
-    OpenTelemetryTraceContext thread_trace_context;
 
 protected:
     ThreadGroupStatusPtr thread_group;

@@ -111,7 +111,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             for (const auto & disk : volumes[i]->getDisks())
             {
-                UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
+                UInt64 required_maximum_available_space = static_cast<UInt64>(disk->getTotalSpace() * policy->getMoveFactor());
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
                 if (unreserved_space < required_maximum_available_space && !disk->isBroken())
@@ -211,12 +211,11 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
 
     DataPartStoragePtr cloned_part_storage;
 
-    const String directory_to_move = "moving";
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
         moving_part.part->assertOnDisk();
-        String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
+        String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
         String relative_path = part->data_part_storage->getPartDirectory();
         if (disk->exists(path_to_clone + relative_path))
         {
@@ -236,7 +235,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, directory_to_move);
+        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
     }
 
     MergeTreeData::MutableDataPartPtr cloned_part = data->createPart(part->name, cloned_part_storage);

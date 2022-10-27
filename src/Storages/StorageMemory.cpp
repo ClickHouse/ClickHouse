@@ -95,7 +95,7 @@ protected:
             ++name_and_type;
         }
 
-        fillMissingColumns(columns, src.rows(), column_names_and_types, /*metadata_snapshot=*/ nullptr);
+        fillMissingColumns(columns, src.rows(), column_names_and_types, column_names_and_types, {}, nullptr);
         assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
@@ -231,7 +231,7 @@ Pipe StorageMemory::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 

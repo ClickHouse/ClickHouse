@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/
 sidebar_label: Data Types
 sidebar_position: 37
 ---

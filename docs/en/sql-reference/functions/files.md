@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/functions/files
 sidebar_position: 43
 sidebar_label: Files
+title: "Functions for Working with Files"
 ---
-
-# Functions for Working with Files
 
 ## file
 

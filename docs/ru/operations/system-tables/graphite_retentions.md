@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/graphite_retentions
+---
 # system.graphite_retentions {#system-graphite-retentions}
 
 Содержит информацию о том, какие параметры [graphite_rollup](../server-configuration-parameters/settings.md#server_configuration_parameters-graphite) используются в таблицах с движками [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md).

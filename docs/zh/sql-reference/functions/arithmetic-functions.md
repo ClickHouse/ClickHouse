@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/arithmetic-functions
 sidebar_position: 35
 sidebar_label: 算术函数
 ---
