@@ -145,7 +145,7 @@ if __name__ == "__main__":
         #     os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
         # ) as status_f:
         #     status = status_f.readline().rstrip("\n")
-        if os.path.exists(os.path.join, "server_crashed.log"):
+        if os.path.exists(os.path.join(workspace_path, "server_crashed.log")):
             test_results.append("Server crashed", "FAIL")
         with open(
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
