@@ -75,7 +75,7 @@ BlockIO InterpreterDescribeQuery::execute()
         auto select_query = table_expression.subquery->children.at(0);
         auto current_context = getContext();
 
-        if (settings.use_analyzer)
+        if (settings.allow_experimental_analyzer)
         {
             SelectQueryOptions select_query_options;
             names_and_types = InterpreterSelectQueryAnalyzer(select_query, select_query_options, current_context).getSampleBlock().getNamesAndTypesList();
