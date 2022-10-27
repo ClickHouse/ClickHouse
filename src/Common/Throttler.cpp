@@ -48,9 +48,9 @@ void Throttler::add(size_t amount)
     {
         std::lock_guard lock(mutex);
         auto now = clock_gettime_ns_adjusted(prev_ns);
-        if (max_speed && prev_ns != 0)
+        if (max_speed)
         {
-            double delta_seconds = static_cast<double>(now - prev_ns) / NS;
+            double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
             tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
         }
         count += amount;
