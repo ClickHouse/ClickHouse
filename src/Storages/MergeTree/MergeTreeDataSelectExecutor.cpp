@@ -1078,6 +1078,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto current_rows_estimate = ranges.getRowsCount();
                     size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
                     size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
+                    if (query_info.limit > 0 && total_rows_estimate > query_info.limit)
+                    {
+                        total_rows_estimate = query_info.limit;
+                    }
                     limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
                     leaf_limits.check(
                         total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
