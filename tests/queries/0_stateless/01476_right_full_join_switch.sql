@@ -1,6 +1,5 @@
 SET join_algorithm = 'auto';
 SET max_bytes_in_join = 100;
-SET allow_grace_hash_join = false;
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS nr;
