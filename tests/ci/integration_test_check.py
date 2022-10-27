@@ -169,7 +169,10 @@ if __name__ == "__main__":
     is_flaky_check = "flaky" in check_name
 
     # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
-    pr_info = PRInfo(need_changed_files=is_flaky_check or validate_bugix_check, pr_event_from_api=validate_bugix_check)
+    pr_info = PRInfo(
+        need_changed_files=is_flaky_check or validate_bugix_check,
+        pr_event_from_api=validate_bugix_check,
+    )
 
     if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
@@ -246,7 +249,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     state, description, test_results, additional_logs = process_results(result_path)
-    state = override_status(state, check_name, validate_bugix_check)
+    state = override_status(state, check_name, invert=validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

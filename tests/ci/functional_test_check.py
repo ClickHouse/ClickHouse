@@ -212,7 +212,9 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token(), per_page=100)
 
     # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
-    pr_info = PRInfo(need_changed_files=run_changed_tests, pr_event_from_api=validate_bugix_check)
+    pr_info = PRInfo(
+        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugix_check
+    )
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
@@ -322,7 +324,7 @@ if __name__ == "__main__":
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path
     )
-    state = override_status(state, check_name, validate_bugix_check)
+    state = override_status(state, check_name, invert=validate_bugix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
