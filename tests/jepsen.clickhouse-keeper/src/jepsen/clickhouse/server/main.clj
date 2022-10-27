@@ -9,7 +9,9 @@
              [tests :as tests]
              [util :as util :refer [meh]]]
             [jepsen.clickhouse.server.db :refer :all]
-            [jepsen.clickhouse.server.register :as register]
+            [jepsen.clickhouse.server
+             [register :as register]
+             [set :as set]]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
@@ -17,7 +19,8 @@
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
-   {"register" register/workload})
+   {"register" register/workload
+    "set" set/workload})
 
 (def custom-nemesises
   {})

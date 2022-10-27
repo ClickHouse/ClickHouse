@@ -1,6 +1,9 @@
 (ns jepsen.clickhouse.server.client
   (:require [clojure.java.jdbc :as j]
+            [clojure.tools.logging :refer :all]
             [jepsen.reconnect :as rc]))
+
+(def operation-timeout "Default operation timeout in ms" 10000)
 
 (defn db-spec
   [node]
@@ -47,3 +50,13 @@
        (throw (ex-info "Connection not yet ready."
                        {:type :conn-not-ready})))
      ~@body))
+
+(defmacro with-exception
+  "Takes an operation and a body. Evaluates body, catches exceptions, and maps
+  them to ops with :type :info and a descriptive :error."
+  [op & body]
+  `(try ~@body
+        (catch Exception e#
+          (if-let [message# (.getMessage e#)]
+            (assoc ~op :type :fail, :error message#)
+            (throw e#)))))
