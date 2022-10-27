@@ -194,7 +194,7 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
+For more information about backups and restoring data, see the [Data Backup](/docs/en/manage/backups.mdx) section.
 
 ## UNFREEZE PARTITION
 
