@@ -160,9 +160,9 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize()
         return;
     skipToNextRow(buf.get(), 0, 1);
     buf->makeContinuousMemoryFromCheckpointToPos();
-    auto rowEnd = buf->position();
+    auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
-    tokens.emplace(buf->position(), rowEnd);
+    tokens.emplace(buf->position(), row_end);
     token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
 }
 
