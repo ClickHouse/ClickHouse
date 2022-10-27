@@ -7,10 +7,18 @@ import os
 import sys
 
 
+from github import Github
+
+from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from upload_result_helper import upload_results
+from commit_status_helper import post_commit_status
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("report1")
-    parser.add_argument("report2")
+    parser.add_argument("status", nargs="+", help="Path to status file")
     return parser.parse_args()
 
 
@@ -27,19 +35,43 @@ def post_commit_status_from_file(file_path):
 
 
 def process_results(file_path):
+    test_results = []
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = os.path.basename(os.path.dirname(file_path))
-    print(
-        f"::notice:: bugfix check: {prefix} - {state}: {description} Report url: {report_url}"
-    )
-    return state == "success"
+
+    test_results.append([f"{prefix}: {description}", state, report_url])
+    return state == "success", test_results
 
 
 def main(args):
-    is_ok = False
-    is_ok = process_results(args.report1) or is_ok
-    is_ok = process_results(args.report2) or is_ok
-    sys.exit(0 if is_ok else 1)
+    all_ok = False
+    all_results = []
+    for status_path in args.status:
+        is_ok, test_results = process_results(status_path)
+        all_ok = all_ok or is_ok
+        all_results.extend(test_results)
+
+    check_name_with_group = "Bugfix validate check"
+
+    pr_info = PRInfo()
+    report_url = upload_results(
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        all_results,
+        [],
+        check_name_with_group,
+    )
+
+    gh = Github(get_best_robot_token(), per_page=100)
+    post_commit_status(
+        gh,
+        pr_info.sha,
+        check_name_with_group,
+        "",
+        "success" if is_ok else "error",
+        report_url,
+    )
 
 
 if __name__ == "__main__":
