@@ -135,7 +135,7 @@ def check_args_and_update_paths(args):
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call(
-        'docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(
+        'docker ps --all --quiet --filter name={name} --format="{{{{.ID}}}}"'.format(
             name=CONTAINER_NAME
         ),
         shell=True,
@@ -350,8 +350,7 @@ if __name__ == "__main__":
         # randomizer, we should remove it after Sep 2022
         try:
             subprocess.check_call(
-                "docker volume rm $(docker volume ls -q | "
-                f"grep '{VOLUME_NAME}_.*_volume')",
+                f"docker volume ls -q | grep '{VOLUME_NAME}_.*_volume' | xargs --no-run-if-empty docker volume rm",
                 shell=True,
             )
         except Exception as ex:
@@ -405,7 +404,7 @@ if __name__ == "__main__":
     )
 
     containers = subprocess.check_output(
-        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
         shell=True,
         universal_newlines=True,
     ).splitlines()

@@ -88,8 +88,6 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// small amounts of data (strings).
 class IMetadataStorage : private boost::noncopyable
 {
-friend class MetadataStorageFromDiskTransaction;
-
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
@@ -126,7 +124,7 @@ public:
 
     virtual ~IMetadataStorage() = default;
 
-    /// ==== More specefic methods. Previous were almost general purpose. ====
+    /// ==== More specific methods. Previous were almost general purpose. ====
 
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;

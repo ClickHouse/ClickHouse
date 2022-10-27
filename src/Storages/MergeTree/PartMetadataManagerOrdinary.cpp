@@ -1,6 +1,7 @@
 #include "PartMetadataManagerOrdinary.h"
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
@@ -18,9 +19,14 @@ PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPar
 }
 
 
-std::unique_ptr<SeekableReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
+std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    return openForReading(part->data_part_storage, file_name);
+    auto res = openForReading(part->data_part_storage, file_name);
+
+    if (isCompressedFromFileName(file_name))
+        return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+
+    return res;
 }
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const

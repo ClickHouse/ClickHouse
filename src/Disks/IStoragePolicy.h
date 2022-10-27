@@ -55,6 +55,7 @@ public:
     /// Get volume by index.
     virtual VolumePtr getVolume(size_t index) const = 0;
     virtual VolumePtr tryGetVolumeByName(const String & volume_name) const = 0;
+    virtual VolumePtr tryGetVolumeByDisk(const DiskPtr & disk_ptr) const = 0;
     VolumePtr getVolumeByName(const String & volume_name) const;
     /// Checks if storage policy can be replaced by another one.
     virtual void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const = 0;

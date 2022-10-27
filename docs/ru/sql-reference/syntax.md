@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/syntax
 sidebar_position: 31
 sidebar_label: "Синтаксис"
 ---

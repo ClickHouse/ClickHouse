@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -21,6 +22,7 @@
 #include <Storages/MergeTree/IPartMetadataManager.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -157,7 +159,7 @@ public:
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
-    String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
+    String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
@@ -223,45 +225,22 @@ public:
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
 
-    /**
-     * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
-     * Part state should be modified under data_parts mutex.
-     *
-     * Possible state transitions:
-     * Temporary -> PreActive:       we are trying to add a fetched, inserted or merged part to active set
-     * PreActive -> Outdated:        we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * PreActive -> Active:          we successfully added a part to active dataset
-     * PreActive -> Outdated:        a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:         a cleaner selected this part for deletion
-     * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Active -> DeleteOnDestroy:    if part was moved to another disk
-     */
-    enum class State
-    {
-        Temporary,       /// the part is generating now, it is not in data_parts list
-        PreActive,    /// the part is in data_parts, but not used for SELECTs
-        Active,       /// active data part, used by current and upcoming SELECTs
-        Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
-        Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
-        DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
-    };
-
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
     mutable TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    void setState(State new_state) const;
-    State getState() const;
+    void setState(MergeTreeDataPartState new_state) const;
+    MergeTreeDataPartState getState() const;
 
-    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
+    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
-    bool checkState(const std::initializer_list<State> & affordable_states) const
+    bool checkState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
     {
         for (auto affordable_state : affordable_states)
         {
@@ -272,7 +251,7 @@ public:
     }
 
     /// Throws an exception if state of the part is not in affordable_states
-    void assertState(const std::initializer_list<State> & affordable_states) const;
+    void assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const;
 
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -368,7 +347,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
+    std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -433,7 +412,7 @@ public:
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 
     /// [Re]writes file with transactional metadata on disk
-    void storeVersionMetadata() const;
+    void storeVersionMetadata(bool force = false) const;
 
     /// Appends the corresponding CSN to file on disk (without fsync)
     void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
@@ -506,7 +485,7 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    String getRelativePathForDetachedPart(const String & prefix) const;
+    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of
@@ -522,6 +501,7 @@ protected:
 
     void initializePartMetadataManager();
 
+    void initializeIndexGranularityInfo();
 
 private:
     /// In compact parts order of columns is necessary
@@ -592,18 +572,20 @@ private:
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
-    mutable State state{State::Temporary};
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
 };
 
-using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
+inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+bool isCompressedFromIndexExtension(const String & index_extension);
 
 }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/log-family/stripelog
 sidebar_position: 32
 sidebar_label: StripeLog
 ---

@@ -72,7 +72,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -113,6 +113,8 @@ protected:
         std::vector<Arguments> & external_tables_arguments,
         std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
+    void setInsertionTable(const ASTInsertQuery & insert_query);
+
 
 private:
     void receiveResult(ASTPtr parsed_query);
@@ -145,7 +147,6 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void outputQueryInfo(bool echo_query_);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
@@ -176,9 +177,6 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    ServerConnectionPtr connection;
-    ConnectionParameters connection_parameters;
-
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
@@ -198,6 +196,12 @@ protected:
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    /// thread status should be destructed before shared context because it relies on process list.
+    std::optional<ThreadStatus> thread_status;
+
+    ServerConnectionPtr connection;
+    ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -247,6 +251,7 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+    int create_query_fuzzer_runs = 0;
 
     struct
     {

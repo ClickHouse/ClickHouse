@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/integration/
 title: Интеграция ClickHouse с другими системами
 toc_hidden_folder: true
 sidebar_position: 4

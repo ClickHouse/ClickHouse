@@ -78,10 +78,9 @@ public:
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+                    res_data.emplace_back(static_cast<Float64>(boost::geometry::perimeter(geometries[i])));
             }
-        }
-        );
+        });
 
         return res_column;
     }

@@ -1,6 +1,7 @@
 ---
+slug: /en/operations/named-collections
 sidebar_position: 69
-sidebar_label: "Named connections"
+sidebar_label: "Named collections"
 ---
 
 # Storing details for connecting to external sources in configuration files
@@ -12,7 +13,7 @@ from users with only SQL access.
 Parameters can be set in XML `<format>CSV</format>` and overridden in SQL `, format = 'TSV'`.
 The parameters in SQL can be overridden using format `key` = `value`: `compression_method = 'gzip'`.
 
-Named connections are stored in the `config.xml` file of the ClickHouse server in the `<named_collections>` section and are applied when ClickHouse starts.
+Named collections are stored in the `config.xml` file of the ClickHouse server in the `<named_collections>` section and are applied when ClickHouse starts.
 
 Example of configuration:
 ```xml
@@ -24,7 +25,7 @@ $ cat /etc/clickhouse-server/config.d/named_collections.xml
 </clickhouse>
 ```
 
-## Named connections for accessing S3.
+## Named collections for accessing S3.
 
 The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
 
@@ -42,7 +43,7 @@ Example of configuration:
 </clickhouse>
 ```
 
-### Example of using named connections with the s3 function
+### Example of using named collections with the s3 function
 
 ```sql
 INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
@@ -58,7 +59,7 @@ FROM s3(s3_mydata, filename = 'test_file.tsv.gz')
 1 rows in set. Elapsed: 0.279 sec. Processed 10.00 thousand rows, 90.00 KB (35.78 thousand rows/s., 322.02 KB/s.)
 ```
 
-### Example of using named connections with an S3 table
+### Example of using named collections with an S3 table
 
 ```sql
 CREATE TABLE s3_engine_table (number Int64)
@@ -73,7 +74,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 └────────┘
 ```
 
-## Named connections for accessing MySQL database
+## Named collections for accessing MySQL database
 
 The description of parameters see [mysql](../sql-reference/table-functions/mysql.md).
 
@@ -95,7 +96,7 @@ Example of configuration:
 </clickhouse>
 ```
 
-### Example of using named connections with the mysql function
+### Example of using named collections with the mysql function
 
 ```sql
 SELECT count() FROM mysql(mymysql, table = 'test');
@@ -105,7 +106,7 @@ SELECT count() FROM mysql(mymysql, table = 'test');
 └─────────┘
 ```
 
-### Example of using named connections with an MySQL table
+### Example of using named collections with an MySQL table
 
 ```sql
 CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
@@ -116,7 +117,7 @@ SELECT count() FROM mytable;
 └─────────┘
 ```
 
-### Example of using named connections with database with engine MySQL
+### Example of using named collections with database with engine MySQL
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
@@ -129,7 +130,7 @@ SHOW TABLES FROM mydatabase;
 └────────┘
 ```
 
-### Example of using named connections with an external dictionary with source MySQL
+### Example of using named collections with an external dictionary with source MySQL
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -145,7 +146,7 @@ SELECT dictGet('dict', 'B', 2);
 └─────────────────────────┘
 ```
 
-## Named connections for accessing PostgreSQL database
+## Named collections for accessing PostgreSQL database
 
 The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md).
 
@@ -166,7 +167,7 @@ Example of configuration:
 </clickhouse>
 ```
 
-### Example of using named connections with the postgresql function
+### Example of using named collections with the postgresql function
 
 ```sql
 SELECT * FROM postgresql(mypg, table = 'test');
@@ -186,8 +187,7 @@ SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 └───┘
 ```
 
-
-### Example of using named connections with database with engine PostgreSQL
+### Example of using named collections with database with engine PostgreSQL
 
 ```sql
 CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
@@ -201,7 +201,7 @@ SELECT * FROM mypgtable;
 └───┘
 ```
 
-### Example of using named connections with database with engine PostgreSQL
+### Example of using named collections with database with engine PostgreSQL
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
@@ -213,7 +213,7 @@ SHOW TABLES FROM mydatabase
 └──────┘
 ```
 
-### Example of using named connections with an external dictionary with source POSTGRESQL
+### Example of using named collections with an external dictionary with source POSTGRESQL
 
 ```sql
 CREATE DICTIONARY dict (a Int64, b String)
@@ -226,5 +226,61 @@ SELECT dictGet('dict', 'b', 2);
 
 ┌─dictGet('dict', 'b', 2)─┐
 │ two                     │
+└─────────────────────────┘
+```
+
+## Named collections for accessing remote ClickHouse database
+
+The description of parameters see [remote](../sql-reference/table-functions/remote.md/#parameters).
+
+Example of configuration:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>localhost</host>
+            <port>9000</port>
+            <database>system</database>
+            <user>foo</user>
+            <password>secret</password>
+        </remote1>
+    </named_collections>
+</clickhouse>
+```
+
+### Example of using named collections with the `remote`/`remoteSecure` functions
+
+```sql
+SELECT * FROM remote(remote1, table = one);
+┌─dummy─┐
+│     0 │
+└───────┘
+
+SELECT * FROM remote(remote1, database = merge(system, '^one'));
+┌─dummy─┐
+│     0 │
+└───────┘
+
+INSERT INTO FUNCTION remote(remote1, database = default, table = test) VALUES (1,'a');
+
+SELECT * FROM remote(remote1, database = default, table = test);
+┌─a─┬─b─┐
+│ 1 │ a │
+└───┴───┘
+```
+
+### Example of using named collections with an external dictionary with source ClickHouse
+
+```sql
+CREATE DICTIONARY dict(a Int64, b String)
+PRIMARY KEY a
+SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 1);
+┌─dictGet('dict', 'b', 1)─┐
+│ a                       │
 └─────────────────────────┘
 ```

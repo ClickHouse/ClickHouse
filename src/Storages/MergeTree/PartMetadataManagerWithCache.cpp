@@ -5,6 +5,7 @@
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace ProfileEvents
@@ -38,7 +39,7 @@ String PartMetadataManagerWithCache::getFilePathFromKey(const String & key) cons
     return key.substr(part->data_part_storage->getDiskName().size() + 1);
 }
 
-std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
+std::unique_ptr<ReadBuffer> PartMetadataManagerWithCache::read(const String & file_name) const
 {
     String file_path = fs::path(part->data_part_storage->getRelativePath()) / file_name;
     String key = getKeyFromFilePath(file_path);
@@ -48,7 +49,13 @@ std::unique_ptr<SeekableReadBuffer> PartMetadataManagerWithCache::read(const Str
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
         auto in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
-        readStringUntilEOF(value, *in);
+        std::unique_ptr<ReadBuffer> reader;
+        if (!isCompressedFromFileName(file_name))
+            reader = std::move(in);
+        else
+            reader = std::make_unique<CompressedReadBufferFromFile>(std::move(in));
+
+        readStringUntilEOF(value, *reader);
         cache->put(key, value);
     }
     else
@@ -191,6 +198,7 @@ void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vect
     {
         ReadBufferFromString rbuf(values[i]);
         HashingReadBuffer hbuf(rbuf);
+        hbuf.ignoreAll();
         checksums.push_back(hbuf.getHash());
     }
 }

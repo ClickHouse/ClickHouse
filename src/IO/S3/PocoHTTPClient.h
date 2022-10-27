@@ -1,6 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
+
+#include <string>
+#include <vector>
 
 #if USE_AWS_S3
 
@@ -8,13 +11,12 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <Storages/StorageS3Settings.h>
+#include <Storages/HeaderCollection.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
-
 
 namespace Aws::Http::Standard
 {
@@ -23,6 +25,7 @@ class StandardHttpResponse;
 
 namespace DB
 {
+
 class Context;
 }
 
@@ -44,6 +47,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
+    bool for_disk_s3;
     HeaderCollection extra_headers;
 
     void updateSchemeAndRegion();
@@ -55,7 +59,8 @@ private:
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
-        bool enable_s3_requests_logging_
+        bool enable_s3_requests_logging_,
+        bool for_disk_s3_
     );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -78,6 +83,13 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
         );
+    }
+
+    void SetResponseBody(std::string & response_body) /// NOLINT
+    {
+        auto stream = Aws::New<std::stringstream>("http result buf", response_body); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        stream->exceptions(std::ios::failbit);
+        body_stream = Aws::Utils::Stream::ResponseStream(std::move(stream));
     }
 
     Aws::IOStream & GetResponseBody() const override
@@ -106,11 +118,34 @@ public:
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
 
 private:
+
     void makeRequestInternal(
         Aws::Http::HttpRequest & request,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
+
+    enum class S3MetricType
+    {
+        Microseconds,
+        Count,
+        Errors,
+        Throttling,
+        Redirects,
+
+        EnumSize,
+    };
+
+    enum class S3MetricKind
+    {
+        Read,
+        Write,
+
+        EnumSize,
+    };
+
+    static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
+    void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
 
     std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
@@ -118,6 +153,7 @@ private:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
+    bool for_disk_s3;
     const HeaderCollection extra_headers;
 };
 

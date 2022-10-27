@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/optimize
 sidebar_position: 47
 sidebar_label: OPTIMIZE
+title: "OPTIMIZE Statement"
 ---
-
-# OPTIMIZE Statement
 
 This query tries to initialize an unscheduled merge of data parts for tables.
 

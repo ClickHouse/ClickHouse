@@ -4,12 +4,13 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -735,7 +736,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     /// Back thread even with no data. We have some unfinished data in buffer.
     if (!not_processed && left_blocks_buffer)
-        not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
+        not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0, 0});
 
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
@@ -759,6 +760,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         auto & continuation = static_cast<NotProcessed &>(*not_processed);
         left_cursor.nextN(continuation.left_position);
+        left_key_tail = continuation.left_key_tail;
         skip_right = continuation.right_position;
         starting_right_block = continuation.right_block;
         not_processed.reset();
@@ -778,7 +780,10 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
+                {
+                    skip_right = 0;
                     continue; /// (right) ... (left)
+                }
             }
 
             /// Use skip_right as ref. It would be updated in join.
@@ -787,7 +792,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
             if (!leftJoin<is_all>(left_cursor, block, right_block, left_columns, right_columns, left_key_tail))
             {
                 not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
-                                                   left_cursor.position(), skip_right, i);
+                                                   left_cursor.position(), left_key_tail, skip_right, i);
                 return;
             }
         }
@@ -811,7 +816,10 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
+                {
+                    skip_right = 0;
                     continue; /// (right) ... (left)
+                }
             }
 
             /// Use skip_right as ref. It would be updated in join.
@@ -822,7 +830,7 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
                 if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail))
                 {
                     not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
-                                                       left_cursor.position(), skip_right, i);
+                                                       left_cursor.position(), left_key_tail, skip_right, i);
                     return;
                 }
             }
@@ -884,7 +892,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             {
                 right_cursor.nextN(range.right_length);
                 right_block_info.skip = right_cursor.position();
-                left_cursor.nextN(range.left_length);
+                left_key_tail = range.left_length;
                 return false;
             }
         }
@@ -991,15 +999,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 /// Split block into processed (result) and not processed. Not processed block would be joined next time.
 template <bool is_all>
 ExtraBlockPtr MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                                    size_t left_position [[maybe_unused]], size_t right_position [[maybe_unused]],
-                                    size_t right_block_number [[maybe_unused]])
+                                    size_t left_position [[maybe_unused]], size_t left_key_tail [[maybe_unused]],
+                                    size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
 {
     ExtraBlockPtr not_processed;
 
     if constexpr (is_all)
     {
         not_processed = std::make_shared<NotProcessed>(
-            NotProcessed{{processed.cloneEmpty()}, left_position, right_position, right_block_number});
+            NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number});
         not_processed->block.swap(processed);
 
         changeLeftColumns(processed, std::move(left_columns));
@@ -1025,7 +1033,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getPath(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 

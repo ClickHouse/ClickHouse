@@ -1,10 +1,11 @@
 ---
+slug: /en/development/build
 sidebar_position: 64
 sidebar_label: Build on Linux
+title: How to Build ClickHouse on Linux
 description: How to build ClickHouse on Linux
 ---
 
-# How to Build ClickHouse on Linux
 
 Supported platforms:
 
@@ -37,13 +38,13 @@ For other Linux distribution - check the availability of the [prebuild packages]
 #### Use the latest clang for Builds
 
 ``` bash
-export CC=clang-14
-export CXX=clang++-14
+export CC=clang-15
+export CXX=clang++-15
 ```
 
-In this example we use version 14 that is the latest as of Feb 2022.
+In this example we use version 15 that is the latest as of Sept 2022.
 
-Gcc can also be used though it is discouraged.
+Gcc cannot be used.
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
@@ -139,6 +140,6 @@ hash cmake
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
 
-They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
+Binaries are built for stable and LTS releases and also every commit to `master` for each pull request.
 
 To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.

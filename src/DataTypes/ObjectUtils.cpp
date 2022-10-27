@@ -1,3 +1,4 @@
+#include <Storages/StorageSnapshot.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -156,6 +157,16 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
 
         /// Check that constructed Tuple type and type in storage are compatible.
         getLeastCommonTypeForObject({column.type, it->second}, true);
+    }
+}
+
+void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
+{
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto storage_columns = storage_snapshot->getColumns(options);
+        convertObjectsToTuples(block, storage_columns);
     }
 }
 
@@ -442,15 +453,19 @@ using SubcolumnsTreeWithColumns = SubcolumnsTree<ColumnWithTypeAndDimensions>;
 using Node = SubcolumnsTreeWithColumns::Node;
 
 /// Creates data type and column from tree of subcolumns.
-ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
+ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
 {
     auto collect_tuple_elemets = [](const auto & children)
     {
+        if (children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create type from empty Tuple or Nested node");
+
         std::vector<std::tuple<String, ColumnWithTypeAndDimensions>> tuple_elements;
         tuple_elements.reserve(children.size());
         for (const auto & [name, child] : children)
         {
-            auto column = createTypeFromNode(child.get());
+            assert(child);
+            auto column = createTypeFromNode(*child);
             tuple_elements.emplace_back(name, std::move(column));
         }
 
@@ -464,13 +479,13 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         return std::make_tuple(std::move(tuple_names), std::move(tuple_columns));
     };
 
-    if (node->kind == Node::SCALAR)
+    if (node.kind == Node::SCALAR)
     {
-        return node->data;
+        return node.data;
     }
-    else if (node->kind == Node::NESTED)
+    else if (node.kind == Node::NESTED)
     {
-        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node->children);
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
 
         Columns offsets_columns;
         offsets_columns.reserve(tuple_columns[0].array_dimensions + 1);
@@ -481,7 +496,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         /// `k1 Array(Nested(k2 Int, k3 Int))` and k1 is marked as Nested
         /// and `k2` and `k3` has anonymous_array_level = 1 in that case.
 
-        const auto & current_array = assert_cast<const ColumnArray &>(*node->data.column);
+        const auto & current_array = assert_cast<const ColumnArray &>(*node.data.column);
         offsets_columns.push_back(current_array.getOffsetsPtr());
 
         auto first_column = tuple_columns[0].column;
@@ -518,7 +533,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
     }
     else
     {
-        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node->children);
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
 
         size_t num_elements = tuple_columns.size();
         Columns tuple_elements_columns(num_elements);
@@ -576,6 +591,15 @@ std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & co
 {
     const auto & subcolumns = column.getSubcolumns();
 
+    if (subcolumns.empty())
+    {
+        auto type = std::make_shared<DataTypeTuple>(
+            DataTypes{std::make_shared<DataTypeUInt8>()},
+            Names{ColumnObject::COLUMN_NAME_DUMMY});
+
+        return {type->createColumn()->cloneResized(column.size()), type};
+    }
+
     PathsInData paths;
     DataTypes types;
     Columns columns;
@@ -601,6 +625,9 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
 {
     assert(paths.size() == tuple_types.size());
     assert(paths.size() == tuple_columns.size());
+
+    if (paths.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unflatten empty Tuple");
 
     /// We add all paths to the subcolumn tree and then create a type from it.
     /// The tree stores column, type and number of array dimensions
@@ -737,14 +764,31 @@ Field FieldVisitorReplaceScalars::operator()(const Array & x) const
     return res;
 }
 
-size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x) const
+size_t FieldVisitorToNumberOfDimensions::operator()(const Array & x)
 {
     const size_t size = x.size();
     size_t dimensions = 0;
     for (size_t i = 0; i < size; ++i)
-        dimensions = std::max(dimensions, applyVisitor(*this, x[i]));
+    {
+        size_t element_dimensions = applyVisitor(*this, x[i]);
+        if (i > 0 && element_dimensions != dimensions)
+            need_fold_dimension = true;
+        dimensions = std::max(dimensions, element_dimensions);
+    }
 
     return 1 + dimensions;
 }
 
+Field FieldVisitorFoldDimension::operator()(const Array & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+    const size_t size = x.size();
+    Array res(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        res[i] = applyVisitor(FieldVisitorFoldDimension(num_dimensions_to_fold - 1), x[i]);
+    }
+    return res;
+}
 }

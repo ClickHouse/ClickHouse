@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -32,6 +32,8 @@ namespace JSONBuilder
     class IItem;
     using ItemPtr = std::unique_ptr<IItem>;
 }
+
+class SortDescription;
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -73,7 +75,7 @@ public:
         DataTypePtr result_type;
 
         FunctionOverloadResolverPtr function_builder;
-        /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
+        /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
         ExecutableFunctionPtr function;
@@ -179,19 +181,19 @@ public:
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
     /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT SUM(val) GROUP BY toStartOfHour(dt)));
+    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
     ///
-    /// Query: SELECT toStartOfHour(dt), SUM(val) FROM tbl GROUP BY toStartOfHour(dt);
+    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
     ///
     /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       SUM(val)
+    /// FUNCTION: toStartOfHour(dt)       sum(val)
     ///                 ^                   ^
     ///                 |                   |
     /// INPUT:          dt                  val
     ///
     /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
     /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       SUM(val)
+    /// INPUT:  toStartOfHour(dt)       sum(val)
     ///
     /// We don't need aggregate columns from projection because they are matched after DAG.
     /// Currently we use canonical names of each node to find matches. It can be improved after we
@@ -317,6 +319,9 @@ public:
         bool can_remove_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    bool
+    isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
 
 private:
     Node & addNode(Node node);

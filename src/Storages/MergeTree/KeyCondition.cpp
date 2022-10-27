@@ -116,10 +116,20 @@ static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuf
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT): [[fallthrough]];
-        case (ActionsDAG::ActionType::COLUMN):
+        case (ActionsDAG::ActionType::INPUT):
             writeString(node.result_name, out);
             break;
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            /// It may be possible that column is ColumnSet
+            else
+                writeString(node.result_name, out);
+            break;
+        }
         case (ActionsDAG::ActionType::ALIAS):
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             break;
@@ -297,8 +307,10 @@ public:
                 assert(indexes_mapping.size() == data_types.size());
 
                 for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                {
                     if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
                         return false;
+                }
 
                 return true;
             };
@@ -836,9 +848,11 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
+    if (syntax_analyzer_result)
+    {
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
+    }
 
     return result;
 }
@@ -875,13 +889,22 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -950,6 +973,12 @@ KeyCondition::KeyCondition(
         const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
             key_columns[name] = i;
+    }
+
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
     }
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
@@ -1395,6 +1424,7 @@ public:
             ColumnsWithTypeAndName new_arguments;
             new_arguments.reserve(arguments.size() + 1);
             new_arguments.push_back(const_arg);
+            new_arguments.front().column = new_arguments.front().column->cloneResized(input_rows_count);
             for (const auto & arg : arguments)
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
@@ -1403,6 +1433,7 @@ public:
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
+            new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
         else
@@ -1628,6 +1659,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(1).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
@@ -1651,6 +1689,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(0).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
@@ -1792,7 +1837,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
         }
         else if (const_value.getType() == Field::Types::Float64)
         {
-            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -2463,7 +2508,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
     return rpn_stack[0];
 }
 
-
 bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
     const FieldRef * left_keys,
@@ -2474,6 +2518,7 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
+
 String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
@@ -2555,7 +2600,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             return "true";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -2563,10 +2608,12 @@ bool KeyCondition::alwaysUnknownOrTrue() const
 {
     return unknownOrAlwaysTrue(false);
 }
+
 bool KeyCondition::anyUnknownOrAlwaysTrue() const
 {
     return unknownOrAlwaysTrue(true);
 }
+
 bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
 {
     std::vector<UInt8> rpn_stack;
@@ -2627,6 +2674,80 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
     return rpn_stack[0];
 }
 
+bool KeyCondition::alwaysFalse() const
+{
+    /// 0: always_false, 1: always_true, 2: non_const
+    std::vector<UInt8> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.push_back(1);
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.push_back(0);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET
+            || element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
+            || element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.push_back(2);
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+
+            auto & arg = rpn_stack.back();
+            if (arg == 0)
+                arg = 1;
+            else if (arg == 1)
+                arg = 0;
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            if (arg1 == 0 || arg2 == 0)
+                rpn_stack.back() = 0;
+            else if (arg1 == 1 && arg2 == 1)
+                rpn_stack.back() = 1;
+            else
+                rpn_stack.back() = 2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+            auto arg2 = rpn_stack.back();
+
+            if (arg1 == 1 || arg2 == 1)
+                rpn_stack.back() = 1;
+            else if (arg1 == 0 && arg2 == 0)
+                rpn_stack.back() = 0;
+            else
+                rpn_stack.back() = 2;
+        }
+        else
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::alwaysFalse", ErrorCodes::LOGICAL_ERROR);
+
+    return rpn_stack[0] == 0;
+}
 
 size_t KeyCondition::getMaxKeyColumn() const
 {

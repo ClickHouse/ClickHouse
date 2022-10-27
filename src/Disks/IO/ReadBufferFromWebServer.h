@@ -31,9 +31,15 @@ public:
 
     off_t getPosition() override;
 
+    String getFileName() const override { return url; }
+
+    void setReadUntilPosition(size_t position) override;
+
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
-    String getFileName() const override { return url; }
+    Range getRemainingReadRange() const override;
+
+    bool supportsRightBoundedReads() const override { return true; }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

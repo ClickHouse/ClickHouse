@@ -651,19 +651,19 @@ def test_table_function(started_cluster):
 
     assert (
         node.query(
-            "SELECT COUNT() FROM MeiliSearch('http://meili1:7700', 'new_table', '')"
+            "SELECT COUNT() FROM meilisearch('http://meili1:7700', 'new_table', '')"
         )
         == "100\n"
     )
     assert (
         node.query(
-            "SELECT sum(id) FROM MeiliSearch('http://meili1:7700', 'new_table', '')"
+            "SELECT sum(id) FROM meilisearch('http://meili1:7700', 'new_table', '')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
         node.query(
-            "SELECT data FROM MeiliSearch('http://meili1:7700', 'new_table', '') WHERE id = 42"
+            "SELECT data FROM meilisearch('http://meili1:7700', 'new_table', '') WHERE id = 42"
         )
         == hex(42 * 42) + "\n"
     )
@@ -685,35 +685,35 @@ def test_table_function_secure(started_cluster):
 
     assert (
         node.query(
-            "SELECT COUNT() FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'password')"
+            "SELECT COUNT() FROM meilisearch('http://meili_secure:7700', 'new_table', 'password')"
         )
         == "100\n"
     )
     assert (
         node.query(
-            "SELECT sum(id) FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'password')"
+            "SELECT sum(id) FROM meilisearch('http://meili_secure:7700', 'new_table', 'password')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
         node.query(
-            "SELECT data FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'password') WHERE id = 42"
+            "SELECT data FROM meilisearch('http://meili_secure:7700', 'new_table', 'password') WHERE id = 42"
         )
         == hex(42 * 42) + "\n"
     )
 
     error = node.query_and_get_error(
-        "SELECT COUNT() FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'wrong_password')"
+        "SELECT COUNT() FROM meilisearch('http://meili_secure:7700', 'new_table', 'wrong_password')"
     )
     assert "MEILISEARCH_EXCEPTION" in error
 
     error = node.query_and_get_error(
-        "SELECT sum(id) FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'wrong_password')"
+        "SELECT sum(id) FROM meilisearch('http://meili_secure:7700', 'new_table', 'wrong_password')"
     )
     assert "MEILISEARCH_EXCEPTION" in error
 
     error = node.query_and_get_error(
-        "SELECT data FROM MeiliSearch('http://meili_secure:7700', 'new_table', 'wrong_password') WHERE id = 42"
+        "SELECT data FROM meilisearch('http://meili_secure:7700', 'new_table', 'wrong_password') WHERE id = 42"
     )
     assert "MEILISEARCH_EXCEPTION" in error
 
@@ -751,103 +751,103 @@ def test_types_in_table_function(started_cluster):
 
     assert (
         node.query(
-            "SELECT id FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT id FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "SELECT UInt8_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT UInt8_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "128\n"
     )
     assert (
         node.query(
-            "SELECT UInt16_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT UInt16_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "32768\n"
     )
     assert (
         node.query(
-            "SELECT UInt32_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT UInt32_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "2147483648\n"
     )
     assert (
         node.query(
-            "SELECT Int8_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Int8_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "-128\n"
     )
     assert (
         node.query(
-            "SELECT Int16_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Int16_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "-32768\n"
     )
     assert (
         node.query(
-            "SELECT Int32_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Int32_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "-2147483648\n"
     )
     assert (
         node.query(
-            "SELECT Int64_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Int64_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "-9223372036854775808\n"
     )
     assert (
         node.query(
-            "SELECT String_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT String_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "abacaba\n"
     )
     assert (
         node.query(
-            "SELECT Float32_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Float32_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "42.42\n"
     )
     assert (
         node.query(
-            "SELECT Float32_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Float32_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "42.42\n"
     )
     assert (
         node.query(
-            "SELECT Array_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Array_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "[['aba','caba'],['2d','array']]\n"
     )
     assert (
         node.query(
-            "SELECT Null_test1 FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Null_test1 FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "value\n"
     )
     assert (
         node.query(
-            "SELECT Null_test2 FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Null_test2 FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "NULL\n"
     )
     assert (
         node.query(
-            "SELECT Bool_test1 FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Bool_test1 FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "SELECT Bool_test2 FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Bool_test2 FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == "0\n"
     )
     assert (
         node.query(
-            "SELECT Json_test FROM MeiliSearch('http://meili1:7700', 'types_table', '')"
+            "SELECT Json_test FROM meilisearch('http://meili1:7700', 'types_table', '')"
         )
         == '{"a":1,"b":{"in_json":"qwerty"}}\n'
     )

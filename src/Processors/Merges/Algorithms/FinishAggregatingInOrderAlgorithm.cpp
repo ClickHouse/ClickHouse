@@ -163,7 +163,7 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.
-        accumulated_bytes += states[i].total_bytes * (static_cast<double>(current_rows) / states[i].num_rows);
+        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
         accumulated_rows += current_rows;
 
 

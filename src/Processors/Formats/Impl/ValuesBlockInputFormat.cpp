@@ -350,7 +350,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf->position(), buf->buffer().end());
-    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
+    IParser::Pos token_iterator(tokens, static_cast<unsigned>(settings.max_parser_depth));
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -513,7 +513,7 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
@@ -633,6 +633,10 @@ void registerValuesSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

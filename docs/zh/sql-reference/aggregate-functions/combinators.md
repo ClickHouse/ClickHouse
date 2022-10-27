@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/combinators
 sidebar_position: 37
 sidebar_label: 聚合函数组合器
 ---

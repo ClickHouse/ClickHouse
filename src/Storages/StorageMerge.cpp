@@ -2,6 +2,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageView.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -224,11 +225,15 @@ SelectQueryInfo getModifiedQueryInfo(
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    /// Original query could contain JOIN but we need only the first joined table and its columns.
-    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-    removeJoin(modified_select, new_analyzer_res, modified_context);
-    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+    /// TODO: Analyzer syntax analyzer result
+    if (modified_query_info.syntax_analyzer_result)
+    {
+        /// Original query could contain JOIN but we need only the first joined table and its columns.
+        auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
+        removeJoin(modified_select, new_analyzer_res, modified_context);
+        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+    }
 
     if (!is_merge_engine)
     {
@@ -248,7 +253,7 @@ void StorageMerge::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
@@ -356,7 +361,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
         = std::min(static_cast<unsigned>(tables_count), std::max(1U, static_cast<unsigned>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
-    size_t num_streams = requested_num_streams * num_streams_multiplier;
+    size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
     InputOrderInfoPtr input_sorting_info;
@@ -512,7 +517,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
     }
 
-    if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
+    bool final = false;
+    if (modified_query_info.table_expression_modifiers)
+        final = modified_query_info.table_expression_modifiers->hasFinal();
+    else
+        final = modified_select.final();
+
+    if (!final && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
@@ -528,15 +539,33 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
         QueryPlan plan;
-        storage->read(
-            plan,
-            real_column_names,
-            storage_snapshot,
-            modified_query_info,
-            modified_context,
-            processed_stage,
-            max_block_size,
-            UInt32(streams_num));
+        if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
+        {
+            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+            /// The most intuitive way is to use InterpreterSelectQuery.
+
+            /// Intercept the settings
+            modified_context->setSetting("max_threads", streams_num);
+            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+            modified_context->setSetting("max_block_size", max_block_size);
+
+            InterpreterSelectQuery(
+                modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
+                .buildQueryPlan(plan);
+        }
+        else
+        {
+            storage->read(
+                plan,
+                real_column_names,
+                storage_snapshot,
+                modified_query_info,
+                modified_context,
+                processed_stage,
+                max_block_size,
+                UInt32(streams_num));
+
+        }
 
         if (!plan.isInitialized())
             return {};

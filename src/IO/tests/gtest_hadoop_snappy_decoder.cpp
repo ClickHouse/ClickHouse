@@ -60,7 +60,8 @@ TEST(HadoopSnappyDecoder, repeatNeedMoreInput)
     String output;
     WriteBufferFromString out(output);
     copyData(read_buffer, out);
+    out.finalize();
     UInt128 hashcode = sipHash128(output.c_str(), output.size());
     String hashcode_str = getHexUIntLowercase(hashcode);
-    ASSERT_EQ(hashcode_str, "593afe14f61866915cc00b8c7bd86046");
+    ASSERT_EQ(hashcode_str, "673e5b065186cec146789451c2a8f703");
 }

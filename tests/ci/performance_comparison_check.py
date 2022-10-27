@@ -141,11 +141,19 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    docker_env += (
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD"
-    )
+    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
+    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
+    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
+
+    env_extra = {
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
+    }
+
+    docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
         result_path,
@@ -158,23 +166,10 @@ if __name__ == "__main__":
     )
     logging.info("Going to run command %s", run_command)
 
-    popen_env = os.environ.copy()
-
-    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
-    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
-    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
-
-    popen_env.update(
-        {
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
-        }
-    )
-
     run_log_path = os.path.join(temp_path, "runlog.log")
+
+    popen_env = os.environ.copy()
+    popen_env.update(env_extra)
     with TeePopen(run_command, run_log_path, env=popen_env) as process:
         retcode = process.wait()
         if retcode == 0:

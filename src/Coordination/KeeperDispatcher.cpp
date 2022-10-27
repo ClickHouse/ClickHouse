@@ -1,13 +1,20 @@
 #include <Coordination/KeeperDispatcher.h>
+
+#include <Poco/Path.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
+#include <Common/hex.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <future>
-#include <chrono>
-#include <Poco/Path.h>
-#include <Common/hex.h>
-#include <filesystem>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
+
+
+#include <future>
+#include <chrono>
+#include <filesystem>
+#include <iterator>
+#include <limits>
 
 namespace CurrentMetrics
 {
@@ -32,9 +39,7 @@ KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
-{
-}
-
+{}
 
 void KeeperDispatcher::requestThread()
 {
@@ -191,7 +196,13 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+
+            if (snapshot_path.empty())
+                continue;
+
+            if (isLeader())
+                snapshot_s3.uploadSnapshot(snapshot_path);
         }
         catch (...)
         {
@@ -285,7 +296,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
+    snapshot_s3.startup(config);
+
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
 
     try
     {
@@ -312,7 +325,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
     update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
-    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -354,9 +366,6 @@ void KeeperDispatcher::shutdown()
                 update_configuration_thread.join();
         }
 
-        if (server)
-            server->shutdown();
-
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
@@ -368,10 +377,60 @@ void KeeperDispatcher::shutdown()
             setResponse(request_for_session.session_id, response);
         }
 
-        /// Clear all registered sessions
-        std::lock_guard lock(session_to_response_callback_mutex);
-        session_to_response_callback.clear();
+        KeeperStorage::RequestsForSessions close_requests;
+        {
+            /// Clear all registered sessions
+            std::lock_guard lock(session_to_response_callback_mutex);
+
+            if (server && hasLeader())
+            {
+                close_requests.reserve(session_to_response_callback.size());
+                // send to leader CLOSE requests for active sessions
+                for (const auto & [session, response] : session_to_response_callback)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    request->xid = Coordination::CLOSE_XID;
+                    using namespace std::chrono;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
+
+                    close_requests.push_back(std::move(request_info));
+                }
+            }
+
+            session_to_response_callback.clear();
+        }
+
+        // if there is no leader, there is no reason to do CLOSE because it's a write request
+        if (server && hasLeader() && !close_requests.empty())
+        {
+            LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
+            const auto raft_result = server->putRequestBatch(close_requests);
+            auto sessions_closing_done_promise = std::make_shared<std::promise<void>>();
+            auto sessions_closing_done = sessions_closing_done_promise->get_future();
+            raft_result->when_ready([sessions_closing_done_promise = std::move(sessions_closing_done_promise)](
+                                        nuraft::cmd_result<nuraft::ptr<nuraft::buffer>> & /*result*/,
+                                        nuraft::ptr<std::exception> & /*exception*/) { sessions_closing_done_promise->set_value(); });
+
+            auto session_shutdown_timeout = configuration_and_settings->coordination_settings->session_shutdown_timeout.totalMilliseconds();
+            if (sessions_closing_done.wait_for(std::chrono::milliseconds(session_shutdown_timeout)) != std::future_status::ready)
+                LOG_WARNING(
+                    log,
+                    "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
+                    session_shutdown_timeout);
+        }
+
+        if (server)
+            server->shutdown();
+
+        snapshot_s3.shutdown();
+
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
+
     }
     catch (...)
     {
@@ -418,13 +477,15 @@ void KeeperDispatcher::sessionCleanerTask()
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
 
                     /// Close session == send close request to raft server
-                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    KeeperStorage::RequestForSession request_info;
-                    request_info.request = request;
                     using namespace std::chrono;
-                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                    request_info.session_id = dead_session;
+                    KeeperStorage::RequestForSession request_info
+                    {
+                        .session_id = dead_session,
+                        .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
+                        .request = std::move(request),
+                    };
                     {
                         std::lock_guard lock(push_request_mutex);
                         if (!requests_queue->push(std::move(request_info)))
@@ -631,6 +692,8 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
         if (!push_result)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
+
+    snapshot_s3.updateS3Configuration(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: "Настройки пользователей"
 ---

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/truncate
 sidebar_position: 51
 sidebar_label: TRUNCATE
 ---
