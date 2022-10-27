@@ -138,7 +138,8 @@ FilterDAGInfoPtr generateFilterActions(
     expr_list->children.push_back(row_policy_filter->clone());
 
     /// Keep columns that are required after the filter actions.
-    for (const auto & column_str : prerequisite_columns) {
+    for (const auto & column_str : prerequisite_columns)
+    {
         ParserExpression expr_parser;
         expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
