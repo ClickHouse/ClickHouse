@@ -20,7 +20,7 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
-static const size_t default_burst_seconds = 10;
+static const size_t default_burst_seconds = 1;
 
 Throttler::Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_)
     : max_speed(max_speed_)
