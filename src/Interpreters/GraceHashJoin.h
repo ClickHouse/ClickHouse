@@ -73,6 +73,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

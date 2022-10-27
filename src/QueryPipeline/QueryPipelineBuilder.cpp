@@ -384,7 +384,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right);
     /// Remember the last step of the right pipeline.
-    ExpressionStep* step = typeid_cast<ExpressionStep*>(right->pipe.processors->back()->getQueryPlanStep());
+    ExpressionStep * step = typeid_cast<ExpressionStep *>(right->pipe.processors->back()->getQueryPlanStep());
     if (!step)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The top step of the right pipeline should be ExpressionStep");
@@ -392,6 +392,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
+
+    if (!join->supportTotals() && (left->hasTotals() || right->hasTotals()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+
     if (!left->hasTotals() && right->hasTotals())
     {
         left->addDefaultTotals();
