@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 UnionNode::UnionNode(SelectUnionMode union_mode_)
