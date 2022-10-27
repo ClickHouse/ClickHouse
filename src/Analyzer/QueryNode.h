@@ -559,8 +559,6 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
-    String getName() const override;
-
     DataTypePtr getResultType() const override
     {
         if (constant_value)

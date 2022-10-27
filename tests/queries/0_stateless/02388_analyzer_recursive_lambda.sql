@@ -1,4 +1,4 @@
-SET use_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 WITH x -> plus(lambda(1), x) AS lambda SELECT lambda(1048576); -- { serverError 1 };
 
