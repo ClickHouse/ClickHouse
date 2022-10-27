@@ -294,7 +294,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjecti
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder, delayed_chunk->replicas_num);
+            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -328,7 +328,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder(), replicas_num);
+        commitPart(zookeeper, part, "", replicas_num);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -342,7 +342,6 @@ void ReplicatedMergeTreeSink::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
-    DataPartStorageBuilderPtr builder,
     size_t replicas_num)
 {
     /// It is possible that we alter a part with different types of source columns.
@@ -351,7 +350,7 @@ void ReplicatedMergeTreeSink::commitPart(
     ///
     /// metadata_snapshot->check(part->getColumns());
 
-    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
+    String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -564,7 +563,7 @@ void ReplicatedMergeTreeSink::commitPart(
         try
         {
             auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
+            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
         }
         catch (const Exception & e)
         {
@@ -591,12 +590,10 @@ void ReplicatedMergeTreeSink::commitPart(
         }
         catch (const Exception &)
         {
-            /// todo: add 'rename back to temp state' func
             transaction.rollbackPartsToTemporaryState();
 
             part->is_temp = true;
-            part->renameTo(temporary_part_relative_path, false, builder);
-            builder->commit();
+            part->renameTo(temporary_part_relative_path, false);
 
             throw;
         }
@@ -648,8 +645,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false, builder);
-                builder->commit();
+                part->renameTo(temporary_part_relative_path, false);
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next iteration.
