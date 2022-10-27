@@ -65,7 +65,7 @@ void Throttler::add(size_t amount)
     /// Wait unless there is positive amount of tokens - throttling
     if (max_speed && tokens_value < 0)
     {
-        int64_t sleep_time = static_cast<int64_t>(-tokens_value * max_speed * NS);
+        int64_t sleep_time = static_cast<int64_t>(-tokens_value / max_speed * NS);
         accumulated_sleep += sleep_time;
         sleepForNanoseconds(sleep_time);
         accumulated_sleep -= sleep_time;
