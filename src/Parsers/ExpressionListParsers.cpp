@@ -830,6 +830,16 @@ public:
     explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true)
         : function_name(function_name_), allow_function_parameters(allow_function_parameters_){}
 
+    bool getResult(ASTPtr & node) override
+    {
+        // FunctionLayer can be the only layer in our Layers stack,
+        //  so we need to check that we exited the main cycle properly
+        if (!finished)
+            return false;
+
+        return Layer::getResult(node);
+    }
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         ///   | 0 |      1      |     2    |
