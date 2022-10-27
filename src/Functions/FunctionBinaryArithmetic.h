@@ -39,6 +39,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -1790,25 +1791,32 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{left.column->cloneResized(1), left.type, left.name},
-                           {right.type->createColumnConst(1, point), right.type, right.name}};
+                        = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
+                           {right_type->createColumnConst(1, point), right_type, right.name}};
 
-                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
+                    /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
+                    /// It was possible to check monotonicity for nullable right type which result to exception.
+                    /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
+                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;
                 };
-                transform(left_point);
-                transform(right_point);
+
+                bool is_positive_monotonicity = applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point));
 
                 if (name_view == "plus")
                 {
                     // Check if there is an overflow
-                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
-                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                    if (is_positive_monotonicity)
                         return {true, true, false, true};
                     else
                         return {false, true, false, false};
@@ -1816,8 +1824,7 @@ public:
                 else
                 {
                     // Check if there is an overflow
-                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
-                            != applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                    if (!is_positive_monotonicity)
                         return {true, false, false, true};
                     else
                         return {false, false, false, false};
@@ -1826,13 +1833,17 @@ public:
             // variable +|- constant
             else if (right.column && isColumnConst(*right.column))
             {
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{left.type->createColumnConst(1, point), left.type, left.name},
-                           {right.column->cloneResized(1), right.type, right.name}};
+                        = {{left_type->createColumnConst(1, point), left_type, left.name},
+                           {right_type->createColumnConst(1, (*right.column)[0]), right_type, right.name}};
 
-                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
+                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;

@@ -2146,6 +2146,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
+    auto local_limits = getStorageLimits(*context, options);
+
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, JOIN, LIMIT BY, WITH TIES
      *  but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
@@ -2164,17 +2166,22 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query_analyzer->hasAggregation()
         && !query_analyzer->hasWindow()
         && query.limitLength()
-        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
-        && limit_length + limit_offset < max_block_size)
+        && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
     {
-        max_block_size = std::max<UInt64>(1, limit_length + limit_offset);
-        max_threads_execute_query = max_streams = 1;
+        if (limit_length + limit_offset < max_block_size)
+        {
+            max_block_size = std::max<UInt64>(1, limit_length + limit_offset);
+            max_threads_execute_query = max_streams = 1;
+        }
+        if (limit_length + limit_offset < local_limits.local_limits.size_limits.max_rows)
+        {
+            query_info.limit = limit_length + limit_offset;
+        }
     }
 
     if (!max_block_size)
         throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-    auto local_limits = getStorageLimits(*context, options);
     storage_limits.emplace_back(local_limits);
 
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
