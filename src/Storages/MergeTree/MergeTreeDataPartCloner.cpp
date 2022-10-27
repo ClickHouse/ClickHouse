@@ -53,7 +53,7 @@ DataPartStoragePtr MergeTreeDataPartCloner::flushPartStorageToDiskIfInMemory() c
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        return src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
+        return src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
     }
 
     return src_part->data_part_storage;
