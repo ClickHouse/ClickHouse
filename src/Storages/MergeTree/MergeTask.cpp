@@ -64,7 +64,8 @@ static void extractMergingAndGatheringColumns(
         key_columns.emplace(merging_params.sign_column);
 
     /// Force version column for Replacing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Replacing) {
+    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    {
         key_columns.emplace(merging_params.is_deleted_column);
         key_columns.emplace(merging_params.version_column);
     }

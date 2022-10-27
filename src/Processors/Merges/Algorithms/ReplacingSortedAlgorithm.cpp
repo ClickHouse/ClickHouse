@@ -83,7 +83,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             current_row_sources.emplace_back(current.impl->order, true);
 
         UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
-        if ((is_deleted != 1) && (is_deleted != 0))
+        if ((is_deleted_column_number!=1) && (is_deleted != 1) && (is_deleted != 0))
             throw Exception("Incorrect data: is_deleted = " + toString(is_deleted) + " (must be 1 or 0).",
                             ErrorCodes::INCORRECT_DATA);
 

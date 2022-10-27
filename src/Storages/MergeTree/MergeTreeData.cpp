@@ -781,7 +781,9 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                 return;
 
             throw Exception("Logical error: is_deleted column for storage " + storage + " is empty", ErrorCodes::LOGICAL_ERROR);
-        } else {
+        }
+        else
+        {
             if (version_column.empty())
                  throw Exception("Logical error: Version column for storage " + storage + " is empty while is_deleted is not", ErrorCodes::LOGICAL_ERROR);
         }
@@ -849,7 +851,8 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         }
     }
 
-    if (mode == MergingParams::Replacing) {
+    if (mode == MergingParams::Replacing)
+    {
         check_is_deleted_version_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
