@@ -65,12 +65,6 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse/libgsasl.git
-[submodule "contrib/libcxx"]
-	path = contrib/libcxx
-	url = https://github.com/ClickHouse/libcxx.git
-[submodule "contrib/libcxxabi"]
-	path = contrib/libcxxabi
-	url = https://github.com/ClickHouse/libcxxabi.git
 [submodule "contrib/snappy"]
 	path = contrib/snappy
 	url = https://github.com/ClickHouse/snappy.git
