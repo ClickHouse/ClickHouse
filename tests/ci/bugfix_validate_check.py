@@ -34,7 +34,7 @@ def post_commit_status_from_file(file_path):
     return res[0]
 
 
-def process_results(file_path):
+def process_result(file_path):
     test_results = []
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = os.path.basename(os.path.dirname(file_path))
@@ -50,22 +50,27 @@ def process_results(file_path):
     return is_ok, test_results
 
 
-def main(args):
-    all_ok = False
+def process_all_results(file_paths):
+    all_ok = True
     all_results = []
-    for status_path in args.status:
-        is_ok, test_results = process_results(status_path)
-        all_ok = all_ok or is_ok
+    for status_path in file_paths:
+        is_ok, test_results = process_result(status_path)
+        all_ok = all_ok and is_ok
         all_results.extend(test_results)
+    return all_ok, all_results
 
+
+def main(args):
     check_name_with_group = "Bugfix validate check"
+
+    is_ok, test_results = process_all_results(args.status)
 
     pr_info = PRInfo()
     report_url = upload_results(
         S3Helper(),
         pr_info.number,
         pr_info.sha,
-        all_results,
+        test_results,
         [],
         check_name_with_group,
     )
