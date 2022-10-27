@@ -38,9 +38,16 @@ def process_results(file_path):
     test_results = []
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = os.path.basename(os.path.dirname(file_path))
+    is_ok = state == "success"
 
-    test_results.append([f"{prefix}: {description}", state, report_url])
-    return state == "success", test_results
+    test_results.append(
+        [
+            f"{prefix}: {description}",
+            "Bug reproduced" if is_ok else "Bug is not reproduced",
+            report_url,
+        ]
+    )
+    return is_ok, test_results
 
 
 def main(args):
@@ -68,7 +75,7 @@ def main(args):
         gh,
         pr_info.sha,
         check_name_with_group,
-        "",
+        "" if is_ok else "Changed tests doesn't reproduce the bug",
         "success" if is_ok else "error",
         report_url,
     )
