@@ -1013,7 +1013,8 @@ COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.table_functions
 (
     `name` String,
-    `description` String
+    `description` String,
+    `allow_readonly` UInt8
 )
 ENGINE = SystemTableFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
