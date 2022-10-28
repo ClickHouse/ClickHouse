@@ -228,12 +228,12 @@ catch (...)
             path));
 }
 
-int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    const int sleep_max_ms = 1000 * seconds_to_wait;
-    const int sleep_one_ms = 100;
-    int sleep_current_ms = 0;
-    int current_connections = 0;
+    const size_t sleep_max_ms = 1000 * seconds_to_wait;
+    const size_t sleep_one_ms = 100;
+    size_t sleep_current_ms = 0;
+    size_t current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -933,7 +933,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         else
         {
             rlim_t old = rlim.rlim_cur;
-            rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
@@ -1507,7 +1507,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            int current_connections = 0;
+            size_t current_connections = 0;
             for (auto & server : servers_to_start_before_tables)
             {
                 server.stop();
@@ -1793,7 +1793,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             is_cancelled = true;
 
-            int current_connections = 0;
+            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers)
