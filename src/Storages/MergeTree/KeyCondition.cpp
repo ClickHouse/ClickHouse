@@ -55,7 +55,7 @@ String Range::toString() const
 
 
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-String extractFixedPrefixFromLikePattern(const String & like_pattern)
+String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfect_prefix_match)
 {
     String fixed_prefix;
 
@@ -68,6 +68,8 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern)
             case '%':
                 [[fallthrough]];
             case '_':
+                if (perfect_prefix_match && std::find_if(pos+1, end, [](const char c) { return c != '%' && c != '_'; }) != end)
+                    return "";
                 return fixed_prefix;
 
             case '\\':
@@ -567,7 +569,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), true);
             if (prefix.empty())
                 return false;
 
