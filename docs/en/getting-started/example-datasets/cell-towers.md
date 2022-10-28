@@ -15,7 +15,7 @@ import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 ## Goal
 
 In this guide you will learn how to:
-- load the OpenCellID data in Clickhouse
+- load the OpenCelliD data in Clickhouse
 - connect Apache Superset to ClickHouse
 - build a dashboard based on data available in the dataset
 - how to choose data types for your table fields
@@ -27,7 +27,7 @@ Here is a preview of the dashboard created in this guide:
 
 ## Get the Dataset {#get-the-dataset}
 
-This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
+This dataset is from [OpenCelliD](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
 As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
 
@@ -241,7 +241,7 @@ WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
 
 This dataset primarily provides the location (Longitude and Latitude) and radio types at mobile cellular towers worldwide. The column descriptions can be found in the [community forum](https://community.opencellid.org/t/documenting-the-columns-in-the-downloadable-cells-database-csv/186).  The columns used in the visualizations that will be built are described below
 
-Here is a description of the columns taken from the OpenCellID forum:
+Here is a description of the columns taken from the OpenCelliD forum:
 
 | Column       | Description                                            |
 |--------------|--------------------------------------------------------|
@@ -260,25 +260,43 @@ Superset is easy to run from Docker.  If you already have Superset running, all 
 
 <SupersetDocker />
 
-## Build a dashboard
+### Build a dashboard
 
-1. foo
+To build a Superset dashboard using the OpenCelliD dataset you should:
+- Add your ClickHouse service as a Superset **database**
+- Add the table **cell_towers** as a Superset **dataset**
+- Create some **charts**
+- Add the charts to a **dashboard**
 
-![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
+1. Add your ClickHouse service as a Superset **database**
 
-1. foo
+In Superset a database can be added by choosing the database type, and then providing the connection details.
+
+![Add a database](@site/docs/en/getting-started/example-datasets/images/superset-add.png)
+
+![Choose clickhouse connect as database type](@site/docs/en/getting-started/example-datasets/images/superset-choose-a-database.png)
+
+#### Choose 
+
+Add your connection details:
 
 ![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
 
-1. foo
+1. Add the table **cell_towers** as a Superset **dataset**
+
+In Superset a **dataset** maps to a table within a database.  Click on add a dataset and choose your ClickHouse service, the database containing your table (`default`), and choose the `cell_towers` table:
+
+![Add cell_towers table as a dataset](@site/docs/en/getting-started/example-datasets/images/superset-add-dataset.png)
+
+foo
 
 ![Create a map in Superset](@site/docs/en/getting-started/example-datasets/images/superset-create-map.png)
 
-1. foo
+1. Create some **charts**
 
 ![Specify longitude and latitude fields](@site/docs/en/getting-started/example-datasets/images/superset-lon-lat.png)
 
-1. foo
+1. Add the charts to a **dashboard**
 
 ![Filter on MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-mcc-204.png)
 
@@ -289,6 +307,10 @@ Superset is easy to run from Docker.  If you already have Superset running, all 
 1. foo
 
 ![Chart for UMTS radios in MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-umts-netherlands.png)
+
+1. foo
+
+![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
 
 The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
