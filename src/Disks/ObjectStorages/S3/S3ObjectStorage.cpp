@@ -248,7 +248,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -279,9 +279,9 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     } while (outcome.GetResult().GetIsTruncated());
 }
 
-void S3ObjectStorage::listPrefixInPath(const std::string & path,
-    RelativePathsWithSize & children,
-    std::vector<std::string> & common_prefixes) const
+void S3ObjectStorage::getDirectoryContents(const std::string & path,
+    RelativePathsWithSize & files,
+    std::vector<std::string> & directories) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -308,14 +308,14 @@ void S3ObjectStorage::listPrefixInPath(const std::string & path,
             break;
 
         for (const auto & object : result_objects)
-            children.emplace_back(object.GetKey(), object.GetSize());
+            files.emplace_back(object.GetKey(), object.GetSize());
 
         for (const auto & common_prefix : result_common_prefixes)
         {
-            std::string subfolder = common_prefix.GetPrefix();
+            std::string directory = common_prefix.GetPrefix();
             /// Make it compatible with std::filesystem::path::filename()
-            trimRight(subfolder, '/');
-            common_prefixes.emplace_back(subfolder);
+            trimRight(directory, '/');
+            directories.emplace_back(directory);
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
