@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 import atexit
-import time
 
 from github import Github
 
