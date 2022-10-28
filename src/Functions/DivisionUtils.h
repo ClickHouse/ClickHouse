@@ -163,7 +163,7 @@ struct ModuloImpl
                     return static_cast<Result>(int_a % static_cast<CastA>(int_b));
             }
             else
-                return IntegerAType(a) % IntegerBType(b);
+                return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
         }
     }
 
