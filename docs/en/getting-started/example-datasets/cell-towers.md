@@ -304,7 +304,7 @@ foo
 
 ![Filter on radio = UMTS](@site/docs/en/getting-started/example-datasets/images/superset-radio-umts.png)
 
-1. foo
+This is the full comfiguration for the chart that filters on `radio = 'UMTS'` and `mcc = 204`:
 
 ![Chart for UMTS radios in MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-umts-netherlands.png)
 
