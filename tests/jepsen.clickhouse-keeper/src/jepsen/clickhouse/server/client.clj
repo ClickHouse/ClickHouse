@@ -1,6 +1,7 @@
 (ns jepsen.clickhouse.server.client
   (:require [clojure.java.jdbc :as j]
             [clojure.tools.logging :refer :all]
+            [jepsen.util :as util]
             [jepsen.reconnect :as rc]))
 
 (def operation-timeout "Default operation timeout in ms" 10000)
@@ -16,11 +17,15 @@
 
 (defn open-connection
   [node]
-  (let [spec (db-spec node)
-        connection (j/get-connection spec)
-        added-connection (j/add-connection spec connection)]
-    (assert added-connection)
-    added-connection))
+   (util/timeout 30000
+               (throw (RuntimeException.
+                        (str "Connection to " node " timed out")))
+    (util/retry 0.1
+      (let [spec (db-spec node)
+            connection (j/get-connection spec)
+            added-connection (j/add-connection spec connection)]
+        (assert added-connection)
+        added-connection))))
 
 (defn close-connection
   "Close connection"
@@ -35,7 +40,7 @@
   (rc/open!
     (rc/wrapper
       {:name (name node)
-       :open #(open-connection node)
+       :open (partial open-connection node)
        :close close-connection
        :log? true})))
 
