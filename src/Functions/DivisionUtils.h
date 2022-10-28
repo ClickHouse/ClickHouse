@@ -178,4 +178,22 @@ struct ModuloLegacyImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
 };
 
+template <typename A, typename B>
+struct PositiveModuloImpl : ModuloImpl<A, B>
+{
+    using ResultType = typename ModuloImpl<A, B>::ResultType;
+    using IntegerAType = typename ModuloImpl<A, B>::IntegerAType;
+    using IntegerBType = typename ModuloImpl<A, B>::IntegerBType;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        Result res = ModuloImpl<A, B>::template apply<Result>(a, b);
+        if constexpr (is_signed_v<A>)
+            if (res < 0)
+                res += b >= 0 ? static_cast<Result>(b) : static_cast<Result>(-b);
+        return res;
+    }
+};
+
 }
