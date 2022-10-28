@@ -33,7 +33,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartClone
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Could not clone and load part {} because disk does not belong to storage policy",
-                quoteString(src_part->data_part_storage->getFullPath()));
+                quoteString(src_part->getDataPartStorage()->getFullPath()));
 
     assert(!tmp_part_prefix.empty());
 
@@ -56,14 +56,14 @@ DataPartStoragePtr MergeTreeDataPartCloner::flushPartStorageToDiskIfInMemory() c
         return src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
     }
 
-    return src_part->data_part_storage;
+    return src_part->getDataPartStorage();
 }
 
 bool MergeTreeDataPartCloner::doesStoragePolicyAllowSameDisk() const
 {
     for (const DiskPtr & disk : merge_tree_data->getStoragePolicy()->getDisks())
     {
-        if (disk->getName() == src_part->data_part_storage->getDiskName())
+        if (disk->getName() == src_part->getDataPartStorage()->getDiskName())
         {
             return true;
         }
@@ -73,7 +73,7 @@ bool MergeTreeDataPartCloner::doesStoragePolicyAllowSameDisk() const
 
 void MergeTreeDataPartCloner::reserveSpaceOnDisk() const
 {
-    src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
+    src_part->getDataPartStorage()->reserve(src_part->getBytesOnDisk());
 }
 
 std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
@@ -113,7 +113,7 @@ void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
     hardlinked_files->source_part_name = src_part->name;
     hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
-    for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
+    for (auto it = src_part->getDataPartStorage()->iterate(); it->isValid(); it->next())
     {
         if (!files_to_copy_instead_of_hardlinks.contains(it->name())
             && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
@@ -133,7 +133,7 @@ MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::finalizePar
 
     dst_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
 
-    dst_part->modification_time = dst_part->data_part_storage->getLastModified().epochTime();
+    dst_part->modification_time = dst_part->getDataPartStorage()->getLastModified().epochTime();
 
     return dst_part;
 }
