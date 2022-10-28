@@ -322,11 +322,11 @@ public:
                     getName(), arguments.size());
             if (arguments.size() == 1 && !isInteger(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1 argument of function {} when arguments size is 1. Should be integer",
+                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be integer",
                     arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1 argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
+                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
                     arguments[0].type->getName(), getName());
         }
         else
@@ -337,18 +337,18 @@ public:
                     getName(), arguments.size());
             if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1 argument of function {}. Should be a date or a date with time",
+                    "Illegal type {} of first argument of function {}. Should be a date or a date with time",
                     arguments[0].type->getName(), getName());
         }
 
         if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 2 argument of function {}. Must be String.",
+                "Illegal type {} of second argument of function {}. Must be String.",
                 arguments[1].type->getName(), getName());
 
         if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 3 argument of function {}. Must be String.",
+                "Illegal type {} of third argument of function {}. Must be String.",
                 arguments[2].type->getName(), getName());
 
         if (arguments.size() == 1)
