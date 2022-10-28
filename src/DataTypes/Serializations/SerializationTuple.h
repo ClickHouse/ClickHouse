@@ -34,7 +34,7 @@ public:
     /** Each sub-column in a tuple is serialized in separate stream.
       */
     void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 

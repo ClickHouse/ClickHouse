@@ -65,6 +65,8 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     for (size_t i = 0; i < paths.size(); ++i)
     {
         auto field_info = getFieldInfo(values[i]);
+        if (field_info.need_fold_dimension)
+            values[i] = applyVisitor(FieldVisitorFoldDimension(field_info.num_dimensions), std::move(values[i]));
         if (isNothing(field_info.scalar_type))
             continue;
 
@@ -258,7 +260,12 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     auto * state_object = checkAndGetState<SerializeStateObject>(state);
 
     if (!column_object.isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write non-finalized ColumnObject");
+    {
+        auto finalized_object = column_object.clone();
+        assert_cast<ColumnObject &>(*finalized_object).finalize();
+        serializeBinaryBulkWithMultipleStreams(*finalized_object, offset, limit, settings, state);
+        return;
+    }
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 

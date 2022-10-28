@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/string-replace-functions
+---
 # 字符串替换函数 {#zi-fu-chuan-ti-huan-han-shu}
 
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}

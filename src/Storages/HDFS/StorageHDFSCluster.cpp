@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -72,7 +72,7 @@ Pipe StorageHDFSCluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
@@ -99,7 +99,7 @@ Pipe StorageHDFSCluster::read(
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.cluster, node.cluster_secret,
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                 "HDFSClusterInititiator",
                 node.compression,
                 node.secure

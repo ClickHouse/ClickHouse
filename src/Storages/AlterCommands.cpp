@@ -26,6 +26,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
@@ -756,6 +757,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
         if (nullable_to)
         {
+            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
             from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
@@ -1056,6 +1058,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
+            if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception{"Cannot add column " + backQuote(column_name) + ": this column name is reserved for lightweight delete feature",
+                               ErrorCodes::ILLEGAL_COLUMN};
+
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
 
@@ -1240,6 +1246,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
+            if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": this column name is reserved for lightweight delete feature",
+                               ErrorCodes::ILLEGAL_COLUMN};
+
             if (modified_columns.contains(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
@@ -1274,7 +1284,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
-        /// Collect default expressions for MODIFY and ADD comands
+        /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
             if (command.default_expression)

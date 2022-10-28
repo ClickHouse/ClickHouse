@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/
 sidebar_label: 示例数据集
 sidebar_position: 12
 ---

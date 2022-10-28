@@ -69,8 +69,7 @@ public:
 
 REGISTER_FUNCTION(NullIf)
 {
-    factory.registerFunction<FunctionNullIf>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionNullIf>({}, FunctionFactory::CaseInsensitive);
 }
 
 }
-

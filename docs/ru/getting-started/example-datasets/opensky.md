@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/opensky
 sidebar_position: 20
 sidebar_label: Набор данных о воздушном движении OpenSky Network 2020
 ---

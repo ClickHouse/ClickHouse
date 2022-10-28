@@ -46,7 +46,6 @@ def change_config_to_key(name, pass_phrase=""):
             "bash",
             "-c",
             """cat > /etc/clickhouse-server/config.d/cert.xml << EOF
-<?xml version="1.0"?>
 <clickhouse>
     <https_port>8443</https_port>
     <openSSL>

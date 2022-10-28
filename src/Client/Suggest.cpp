@@ -138,7 +138,8 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
+    connection.sendQuery(
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
 
     while (true)
     {
@@ -186,9 +187,8 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-    {
-        new_words.emplace_back(column.getDataAt(i).toString());
-    }
+        new_words.emplace_back(column[i].get<String>());
+
     addWords(std::move(new_words));
 }
 

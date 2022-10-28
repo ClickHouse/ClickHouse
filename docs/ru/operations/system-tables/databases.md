@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/databases
+---
 # system.databases {#system-databases}
 
 Таблица содержит один столбец name типа String - имя базы данных.

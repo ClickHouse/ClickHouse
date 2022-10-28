@@ -14,7 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
@@ -585,7 +585,7 @@ Pipe StorageJoin::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

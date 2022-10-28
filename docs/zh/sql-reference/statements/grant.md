@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/grant
 sidebar_position: 39
 sidebar_label: 授权操作
 ---

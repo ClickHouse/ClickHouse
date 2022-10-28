@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/url-functions
+---
 # URL函数 {#urlhan-shu}
 
 所有这些功能都不遵循RFC。它们被最大程度简化以提高性能。

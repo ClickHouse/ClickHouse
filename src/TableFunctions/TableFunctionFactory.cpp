@@ -17,14 +17,15 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness)
+void TableFunctionFactory::registerFunction(
+    const std::string & name, TableFunctionCreator creator, Documentation doc, CaseSensitiveness case_sensitiveness)
 {
-    if (!table_functions.emplace(name, creator).second)
+    if (!table_functions.emplace(name, TableFunctionFactoryData{creator, doc}).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_table_functions.emplace(Poco::toLower(name), creator).second)
+        && !case_insensitive_table_functions.emplace(Poco::toLower(name), TableFunctionFactoryData{creator, doc}).second)
         throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
@@ -57,12 +58,14 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     auto it = table_functions.find(name);
     if (table_functions.end() != it)
-        res = it->second();
+    {
+        res = it->second.first();
+    }
     else
     {
         it = case_insensitive_table_functions.find(Poco::toLower(name));
         if (case_insensitive_table_functions.end() != it)
-            res = it->second();
+            res = it->second.first();
     }
 
     if (!res)
@@ -81,6 +84,15 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
     return table_functions.contains(name);
+}
+
+Documentation TableFunctionFactory::getDocumentation(const std::string & name) const
+{
+    auto it = table_functions.find(name);
+    if (it == table_functions.end())
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", name);
+
+    return it->second.second;
 }
 
 TableFunctionFactory & TableFunctionFactory::instance()

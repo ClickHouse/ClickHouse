@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/
 sidebar_label: "Интерфейсы"
 sidebar_position: 14
 ---

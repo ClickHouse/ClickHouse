@@ -69,7 +69,7 @@ int main(int argc, char ** argv)
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
 
-        zkutil::ZooKeeper zk(argv[1]);
+        zkutil::ZooKeeper zk{zkutil::ZooKeeperArgs(argv[1])};
         LineReader lr({}, false, {"\\"}, {});
 
         do

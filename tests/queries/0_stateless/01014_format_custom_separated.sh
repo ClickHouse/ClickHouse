@@ -34,3 +34,8 @@ FORMAT CustomSeparated"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM custom_separated ORDER BY n FORMAT CSV"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE custom_separated"
+
+echo -ne "a,b\nc,d\n" | $CLICKHOUSE_LOCAL --structure "a String, b String"  \
+  --input-format CustomSeparated --format_custom_escaping_rule=Escaped \
+  --format_custom_field_delimiter=',' --format_custom_row_after_delimiter=$'\n' -q 'select * from table' \
+  2>&1| grep -Fac "'Escaped' serialization requires delimiter"
