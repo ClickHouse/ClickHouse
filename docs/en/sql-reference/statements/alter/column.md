@@ -204,7 +204,7 @@ It is used if it is necessary to add or update a column with a complicated expre
 Syntax:
 
 ```sql
-ALTER TABLE table MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
 ```
 - If you specify a PARTITION, a column will be materialized with only the specified partition.
 
