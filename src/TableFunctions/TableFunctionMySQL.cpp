@@ -37,11 +37,26 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (!args_func.arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
+    auto & args = args_func.arguments->children;
+
     MySQLSettings mysql_settings;
-    configuration = StorageMySQL::getConfiguration(args_func.arguments->children, context, mysql_settings);
+
     const auto & settings = context->getSettingsRef();
     mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
     mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+
+    for (auto it = args.begin(); it != args.end(); ++it)
+    {
+        const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            mysql_settings.loadFromQuery(*settings_ast);
+            args.erase(it);
+            break;
+        }
+    }
+
+    configuration = StorageMySQL::getConfiguration(args, context, mysql_settings);
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 

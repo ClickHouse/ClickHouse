@@ -167,7 +167,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
             }
         }
 
-        app.logger().error("Connection to all replicas failed " + std::to_string(try_no + 1) + " times");
+        if (replicas_by_priority.size() > 1)
+            app.logger().error("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
+        else
+            app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)
@@ -177,7 +180,11 @@ PoolWithFailover::Entry PoolWithFailover::get()
     }
 
     DB::WriteBufferFromOwnString message;
-    message << "Connections to all replicas failed: ";
+    if (replicas_by_priority.size() > 1)
+        message << "Connections to all mysql replicas failed: ";
+    else
+        message << "Connections to mysql failed: ";
+
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
             message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();

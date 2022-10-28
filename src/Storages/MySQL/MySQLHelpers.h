@@ -9,10 +9,9 @@ namespace mysqlxx { class PoolWithFailover; }
 namespace DB
 {
 struct StorageMySQLConfiguration;
-struct MySQLSettings;
 
-mysqlxx::PoolWithFailover
-createMySQLPoolWithFailover(const StorageMySQLConfiguration & configuration, const MySQLSettings & mysql_settings);
+template <typename T> mysqlxx::PoolWithFailover
+createMySQLPoolWithFailover(const StorageMySQLConfiguration & configuration, const T & mysql_settings);
 
 }
 

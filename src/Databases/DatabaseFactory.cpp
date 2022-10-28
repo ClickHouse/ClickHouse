@@ -156,15 +156,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         StorageMySQLConfiguration configuration;
         ASTs & arguments = engine->arguments->children;
-        MySQLSettings mysql_settings;
+        auto mysql_settings = std::make_unique<ConnectionMySQLSettings>();
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, mysql_settings))
+        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, *mysql_settings))
         {
             auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
 
             configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            mysql_settings.applyChanges(settings_changes);
+            mysql_settings->applyChanges(settings_changes);
 
             if (!storage_specific_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -201,15 +201,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             if (engine_name == "MySQL")
             {
-                auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                auto mysql_pool = createMySQLPoolWithFailover(configuration, mysql_settings);
+                mysql_settings->loadFromQueryContext(context);
+                mysql_settings->loadFromQuery(*engine_define); /// higher priority
 
-                mysql_database_settings->loadFromQueryContext(context);
-                mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
+                auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 
                 return std::make_shared<DatabaseMySQL>(
                     context, database_name, metadata_path, engine_define, configuration.database,
-                    std::move(mysql_database_settings), std::move(mysql_pool), create.attach);
+                    std::move(mysql_settings), std::move(mysql_pool), create.attach);
             }
 
             MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);

@@ -260,7 +260,10 @@ void Pool::Entry::forceConnected() const
         else
             sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
-        pool->logger.debug("Entry: Reconnecting to MySQL server %s", pool->description);
+        pool->logger.debug(
+            "Creating a new MySQL connection to %s with settings: connect_timeout=%u, read_write_timeout=%u",
+            pool->description, pool->connect_timeout, pool->rw_timeout);
+
         data->conn.connect(
             pool->db.c_str(),
             pool->server.c_str(),
@@ -324,6 +327,10 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     try
     {
         logger.debug("Connecting to %s", description);
+
+        logger.debug(
+            "Creating a new MySQL connection to %s with settings: connect_timeout=%u, read_write_timeout=%u",
+            description, connect_timeout, rw_timeout);
 
         conn_ptr->conn.connect(
             db.c_str(),
