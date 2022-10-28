@@ -136,7 +136,7 @@ if __name__ == "__main__":
     s3_helper = S3Helper()
     report_url = GITHUB_RUN_URL
 
-    status = "succeess"
+    status = "success"
     test_results = []
     # Try to get status message saved by the SQLancer
     try:
@@ -189,6 +189,5 @@ if __name__ == "__main__":
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
-    print(f"::notice ::Report url: {report_url}")
+    print(f"::notice Result: '{status}', '{description}', '{report_url}'")
     post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
