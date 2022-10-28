@@ -57,34 +57,34 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
 
     /// NOTE: This check is far from ideal, since it work only if the directory
     /// really has files, and has excessive API calls
-    RelativePathsWithSize children;
-    std::vector<std::string> common_prefixes;
-    object_storage->listPrefixInPath(directory, children, common_prefixes);
-    return !children.empty() || !common_prefixes.empty();
+    RelativePathsWithSize files;
+    std::vector<std::string> directories;
+    object_storage->getDirectoryContents(directory, files, directories);
+    return !files.empty() || !directories.empty();
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     RelativePathsWithSize children;
-    object_storage->listPrefix(getAbsolutePath(path), children);
+    object_storage->findAllFiles(getAbsolutePath(path), children);
     if (children.empty())
         return 0;
     if (children.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "listPrefix() return multiple paths ({}) for {}", children.size(), path);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "findAllFiles() return multiple paths ({}) for {}", children.size(), path);
     return children.front().bytes_size;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
-    RelativePathsWithSize children;
-    std::vector<std::string> common_prefixes;
-    object_storage->listPrefixInPath(getAbsolutePath(path), children, common_prefixes);
+    RelativePathsWithSize files;
+    std::vector<std::string> directories;
+    object_storage->getDirectoryContents(getAbsolutePath(path), files, directories);
 
     std::vector<std::string> result;
-    for (const auto & path_size : children)
+    for (const auto & path_size : files)
         result.push_back(path_size.relative_path);
-    for (const auto & common_prefix : common_prefixes)
-        result.push_back(common_prefix);
+    for (const auto & directory : directories)
+        result.push_back(directory);
     return result;
 }
 

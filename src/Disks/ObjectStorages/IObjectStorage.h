@@ -65,32 +65,32 @@ public:
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 
-    /// List on prefix, return children (relative paths) with their sizes.
-    /// So it should return all "objects" with their sizes.
+    /// List all objects with specific prefix.
     ///
     /// For example if you do this over filesystem, you should skip folders and
     /// return files only, so something like on local filesystem:
     ///
     ///     find . -type f
     ///
+    /// @param children - out files (relative paths) with their sizes.
+    ///
     /// NOTE: It makes sense only for real object storages (S3, Azure), since
     /// it is used only for one of the following:
     /// - send_metadata (to restore metadata)
     ///   - see DiskObjectStorage::restoreMetadataIfNeeded()
     /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
-    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const;
+    virtual void findAllFiles(const std::string & path, RelativePathsWithSize & children) const;
 
-    /// List on prefix, but it is limited only to current path, something like
-    /// on local filesystem:
+    /// Analog of directory content for object storage (object storage does not
+    /// have "directory" definition, but it can be emulated with usage of
+    /// "delimiter"), so this is analog of:
     ///
-    ///     find . -maxdepth 1
+    ///     find . -maxdepth 1 $path
     ///
-    /// @param path - path to list prefix in
-    /// @param children - list of child nodes (for unix filesystem - files goes here)
-    /// @param common_prefixes - list of common prefixes in this path, (for unix filesystem - subfolders)
-    virtual void listPrefixInPath(const std::string & path,
-        RelativePathsWithSize & children,
-        std::vector<std::string> & common_prefixes) const;
+    /// Return files in @files and directories in @directories
+    virtual void getDirectoryContents(const std::string & path,
+        RelativePathsWithSize & files,
+        std::vector<std::string> & directories) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object

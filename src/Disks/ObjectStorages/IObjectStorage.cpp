@@ -14,15 +14,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void IObjectStorage::listPrefix(const std::string &, RelativePathsWithSize &) const
+void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listPrefix() is not supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
 }
-void IObjectStorage::listPrefixInPath(const std::string &,
+void IObjectStorage::getDirectoryContents(const std::string &,
     RelativePathsWithSize &,
     std::vector<std::string> &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listPrefixInPath() is not supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
 }
 
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
