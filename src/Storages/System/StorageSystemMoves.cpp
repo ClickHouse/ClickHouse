@@ -1,5 +1,5 @@
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MovesList.h>
 #include <Storages/System/StorageSystemMoves.h>
 #include <Access/ContextAccess.h>
 
