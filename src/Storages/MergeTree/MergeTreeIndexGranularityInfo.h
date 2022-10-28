@@ -48,7 +48,7 @@ public:
 
     MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
 
-    void changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage);
+    void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 
     String getMarksFilePath(const String & path_prefix) const
     {
@@ -57,7 +57,7 @@ public:
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
-    static std::optional<std::string> getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+    static std::optional<std::string> getMarksExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 };
 
 constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
