@@ -1,6 +1,7 @@
 ---
+slug: /ru/sql-reference/statements/describe-table
 sidebar_position: 42
-sidebar_label: DESCRIBE
+sidebar_label: DESCRIBE TABLE
 ---
 
 # DESCRIBE TABLE {#misc-describe-table}

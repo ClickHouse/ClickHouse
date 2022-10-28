@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/numbers
+---
 # system.numbers {#system-numbers}
 
 这个表有一个名为 `number` 的 UInt64 列，包含了几乎所有从 0 开始的自然数。

@@ -61,7 +61,6 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
-    const FormatSettings format_settings;
     bool first_row = true;
 };
 

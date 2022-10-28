@@ -430,6 +430,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
 
         disk->createDirectories(directoryPath(path));
         auto relative_key = shrinkKey(source_path, key);
+        auto full_path = fs::path(disk->object_storage_root_path) / relative_key;
 
         StoredObject object_from{key};
         StoredObject object_to{fs::path(disk->object_storage_root_path) / relative_key};

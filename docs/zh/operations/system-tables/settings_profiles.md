@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/settings_profiles
+---
 # system.settings_profiles {#system_tables-settings_profiles}
 
 包含 Setting 配置文件中指定的属性.

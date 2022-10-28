@@ -117,7 +117,7 @@ void StorageSystemPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = IMergeTreeDataPart::State;
+        using State = MergeTreeDataPartState;
 
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
@@ -190,9 +190,9 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getDiskName());
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getFullPath());
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
@@ -242,7 +242,7 @@ void StorageSystemPartsColumns::processNextStorage(
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
                 /// We count only final subcolumns, which are represented by files on disk
-                /// and skip intermediate suibcolumns of types Tuple and Nested.
+                /// and skip intermediate subcolumns of types Tuple and Nested.
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
@@ -261,7 +261,7 @@ void StorageSystemPartsColumns::processNextStorage(
                     size.data_uncompressed += bin_checksum->second.uncompressed_size;
                 }
 
-                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.marks_file_extension);
+                auto mrk_checksum = part->checksums.files.find(file_name + part->index_granularity_info.mark_type.getFileExtension());
                 if (mrk_checksum != part->checksums.files.end())
                     size.marks += mrk_checksum->second.file_size;
 
@@ -270,7 +270,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
 
-            }, { serialization, column.type, nullptr, nullptr });
+            }, ISerialization::SubstreamData(serialization).withType(column.type));
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);

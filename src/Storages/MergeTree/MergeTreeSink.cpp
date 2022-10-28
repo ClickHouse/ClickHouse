@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
 
 namespace ProfileEvents
@@ -23,6 +24,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
+    , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
 {
 }
 
@@ -54,9 +56,8 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
 
-    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
+    deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
@@ -80,7 +81,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -159,7 +160,7 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+            added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }
 

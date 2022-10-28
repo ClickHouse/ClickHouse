@@ -38,6 +38,11 @@ struct FormatSettings
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
     String column_names_for_schema_inference;
+    String schema_inference_hints;
+
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
 
     enum class DateTimeInputFormat
     {
@@ -106,11 +111,11 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
-        bool input_format_enum_as_number = false;
-        bool input_format_arrays_as_nested_csv = false;
+        bool enum_as_number = false;
+        bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
     } csv;
 
@@ -137,12 +142,24 @@ struct FormatSettings
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
+        bool quote_64bit_floats = false;
         bool quote_denormals = true;
+        bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool read_numbers_as_strings = true;
+        bool try_infer_numbers_from_strings = false;
+        bool validate_types_from_metadata = true;
+        bool validate_utf8 = false;
+        bool try_infer_objects = false;
     } json;
+
+    struct
+    {
+        String column_for_object_name;
+    } json_object_each_row;
 
     struct
     {
@@ -221,8 +238,8 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
-        bool input_format_enum_as_number = false;
-        bool input_format_use_best_effort_in_schema_inference = true;
+        bool enum_as_number = false;
+        bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
     } tsv;
 

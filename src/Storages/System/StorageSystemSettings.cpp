@@ -40,8 +40,8 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[3]->insert(setting.getDescription());
 
         Field min, max;
-        bool read_only = false;
-        constraints.get(setting_name, min, max, read_only);
+        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
+        constraints.get(settings, setting_name, min, max, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -49,17 +49,9 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
-        if (!read_only)
-        {
-            if ((settings.readonly == 1)
-                || ((settings.readonly > 1) && (setting_name == "readonly"))
-                || ((!settings.allow_ddl) && (setting_name == "allow_ddl")))
-                read_only = true;
-        }
-
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(read_only);
+        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
     }
 }

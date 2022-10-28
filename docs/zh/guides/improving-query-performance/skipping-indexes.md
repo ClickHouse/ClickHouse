@@ -1,4 +1,5 @@
 ---
+slug: /zh/guides/improving-query-performance/skipping-indexes
 sidebar_label: Data Skipping Indexes
 sidebar_position: 2
 ---

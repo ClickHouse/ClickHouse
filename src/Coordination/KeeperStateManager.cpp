@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 namespace DB
 {
@@ -94,6 +95,14 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
             continue;
 
         std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
+
+        if (getMultipleValuesFromConfig(config, full_prefix, "id").size() > 1
+            || getMultipleValuesFromConfig(config, full_prefix, "hostname").size() > 1
+            || getMultipleValuesFromConfig(config, full_prefix, "port").size() > 1)
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Multiple <id> or <hostname> or <port> specified for a single <server>");
+        }
+
         int new_server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
         int port = config.getInt(full_prefix + ".port");

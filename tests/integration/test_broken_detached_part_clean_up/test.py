@@ -96,6 +96,9 @@ def remove_broken_detached_part_impl(table, node, expect_broken_prefix):
     assert "unexpected_all_42_1337_5" in result
 
     time.sleep(15)
+    assert node.contains_in_log(
+        "Removed broken detached part unexpected_all_42_1337_5 due to a timeout"
+    )
 
     result = node.exec_in_container(["ls", path_to_detached])
     print(result)

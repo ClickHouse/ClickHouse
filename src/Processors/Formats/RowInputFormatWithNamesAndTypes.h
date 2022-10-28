@@ -41,6 +41,7 @@ protected:
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void readPrefix() override;
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -48,7 +49,6 @@ protected:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
@@ -57,6 +57,8 @@ private:
     bool with_names;
     bool with_types;
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
+
+protected:
     std::unordered_map<String, size_t> column_indexes_by_names;
 };
 
@@ -123,7 +125,7 @@ class FormatWithNamesAndTypesSchemaReader : public IRowSchemaReader
 public:
     FormatWithNamesAndTypesSchemaReader(
         ReadBuffer & in,
-        const FormatSettings & format_settings,
+        const FormatSettings & format_settings_,
         bool with_names_,
         bool with_types_,
         FormatWithNamesAndTypesReader * format_reader_,

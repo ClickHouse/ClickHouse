@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/table-functions/hdfsCluster
 sidebar_position: 55
 sidebar_label: hdfsCluster
 ---

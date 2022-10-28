@@ -1,6 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -46,22 +46,17 @@
 namespace DB
 {
 StorageS3Cluster::StorageS3Cluster(
-    const String & filename_,
-    const String & access_key_id_,
-    const String & secret_access_key_,
+    const StorageS3ClusterConfiguration & configuration_,
     const StorageID & table_id_,
-    String cluster_name_,
-    const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
-    const String & compression_method_)
+    ContextPtr context_)
     : IStorage(table_id_)
-    , s3_configuration{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, {}, {}, S3Settings::ReadWriteSettings(context_->getSettingsRef())}
-    , filename(filename_)
-    , cluster_name(cluster_name_)
-    , format_name(format_name_)
-    , compression_method(compression_method_)
+    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , filename(configuration_.url)
+    , cluster_name(configuration_.cluster_name)
+    , format_name(configuration_.format)
+    , compression_method(configuration_.compression_method)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;
@@ -102,7 +97,7 @@ Pipe StorageS3Cluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
 
@@ -129,7 +124,7 @@ Pipe StorageS3Cluster::read(
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.cluster, node.cluster_secret,
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                 "S3ClusterInititiator",
                 node.compression,
                 node.secure

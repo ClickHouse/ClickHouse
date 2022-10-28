@@ -35,7 +35,7 @@ class SelectStreamFactory;
 ///
 /// @return new Context with adjusted settings
 ContextMutablePtr updateSettingsForCluster(
-    const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
+    const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info = nullptr, Poco::Logger * log = nullptr);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query

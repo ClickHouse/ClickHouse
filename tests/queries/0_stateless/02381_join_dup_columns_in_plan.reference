@@ -1,0 +1,58 @@
+Expression
+Header: key String
+        value String
+  Join
+  Header: key String
+          value String
+    Expression
+    Header: key String
+      ReadFromStorage
+      Header: dummy UInt8
+    Expression
+    Header: s2.key String
+            value String
+      Union
+      Header: key String
+              value String
+        Expression
+        Header: key String
+                value String
+          ReadFromStorage
+          Header: dummy UInt8
+        Expression
+        Header: key String
+                value String
+          ReadFromStorage
+          Header: dummy UInt8
+Expression
+Header: key String
+        value String
+  Join
+  Header: key String
+          s2.key String
+          value String
+    Sorting
+    Header: key String
+      Expression
+      Header: key String
+        ReadFromStorage
+        Header: dummy UInt8
+    Sorting
+    Header: s2.key String
+            value String
+      Expression
+      Header: s2.key String
+              value String
+        Union
+        Header: key String
+                value String
+          Expression
+          Header: key String
+                  value String
+            ReadFromStorage
+            Header: dummy UInt8
+          Expression
+          Header: key String
+                  value String
+            ReadFromStorage
+            Header: dummy UInt8

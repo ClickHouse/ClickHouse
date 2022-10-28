@@ -18,6 +18,10 @@ private:
     /// NOTE: It is pretty short, so use STL is fine.
     std::unordered_set<std::string> parts;
 
+    void add(const std::string & basename);
+    void remove(const std::string & basename);
+
+    friend class MergeTreeData;
 public:
     /// Returns true if passed part name is active.
     /// (is the destination for one of active mutation/merge).
@@ -25,9 +29,6 @@ public:
     /// NOTE: that it accept basename (i.e. dirname), not the path,
     /// since later requires canonical form.
     bool contains(const std::string & basename) const;
-
-    void add(std::string basename);
-    void remove(const std::string & basename);
 };
 
 }

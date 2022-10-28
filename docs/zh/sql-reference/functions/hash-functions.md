@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/hash-functions
+---
 # Hash函数 {#hashhan-shu}
 
 Hash函数可以用于将元素不可逆的伪随机打乱。
