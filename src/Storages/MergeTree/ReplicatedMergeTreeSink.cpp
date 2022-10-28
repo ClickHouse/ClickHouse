@@ -368,11 +368,15 @@ void ReplicatedMergeTreeSink::commitPart(
     {
         zookeeper->setKeeper(storage.getZooKeeper());
 
-        /// if we are in retry, check if last iteration was actually successful
-        /// we could get network error on latest keeper operation in iteration
-        /// but operation could be completed by keeper server
         if (retries_ctl.isRetry())
         {
+            /// If we are retrying, check if last iteration was actually successful,
+            /// we could get network error on committing part to zk
+            /// but the operation could be completed by zk server
+
+            /// If this flag is true, then part is in Active state, and we'll not retry anymore
+            /// we only check if part was committed to zk and return success or failure correspondingly
+            /// Note: if commit to zk failed then cleanup thread will mark the part as Outdated later
             if (part_committed_locally_but_zookeeper)
             {
                 /// check that info about the part was actually written in zk
@@ -616,9 +620,15 @@ void ReplicatedMergeTreeSink::commitPart(
              *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
              */
             transaction.commit();
+
+            /// Setting this flag is point of no return
+            /// On next retry, we'll just check if actually operation succeed or failed
+            /// and return ok or error correspondingly
             part_committed_locally_but_zookeeper = true;
 
             /// if all retries will be exhausted by accessing zookeeper on fresh retry -> we'll add committed part to queue in the action
+            /// here lambda capture part name, it's ok since we'll not generate new one for this insert, 
+            /// see comments around 'part_committed_locally_but_zookeeper' flag
             retries_ctl.actionAfterLastFailedRetry(
                 [&storage = storage, part_name = part->name]()
                 { storage.enqueuePartForCheck(part_name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER); });
