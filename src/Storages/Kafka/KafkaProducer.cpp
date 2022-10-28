@@ -20,7 +20,7 @@ static const auto BATCH = 1000;
 
 namespace ErrorCodes
 {
-    const extern int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 KafkaProducer::KafkaProducer(

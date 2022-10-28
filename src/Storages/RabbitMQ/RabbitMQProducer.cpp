@@ -72,18 +72,16 @@ void RabbitMQProducer::finishImpl()
     connection.disconnect();
 }
 
-
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
     LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "push {}", message);
-    
+
     Payload payload;
     payload.message = message;
     payload.id = ++payload_counter;
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
-
 
 void RabbitMQProducer::setupChannel()
 {
@@ -136,7 +134,6 @@ void RabbitMQProducer::setupChannel()
     });
 }
 
-
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
@@ -165,7 +162,6 @@ void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple,
     }
 }
 
-
 void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 {
     Payload payload;
@@ -179,8 +175,6 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 
         if (!pop_result)
             return;
-
-        LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "pop {}", payload.message);
 
         AMQP::Envelope envelope(payload.message.data(), payload.message.size());
 
@@ -230,11 +224,8 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
     iterateEventLoop();
 }
 
-
 void RabbitMQProducer::producingTask()
 {
-    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "start producingTask");
-    
     while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
@@ -259,8 +250,6 @@ void RabbitMQProducer::producingTask()
         }
     }
 
-    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "finish producingTask");
-    
     LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
 }
 

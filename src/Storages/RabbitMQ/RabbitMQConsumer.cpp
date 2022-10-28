@@ -37,7 +37,6 @@ RabbitMQConsumer::RabbitMQConsumer(
 }
 
 
-
 void RabbitMQConsumer::closeChannel()
 {
     if (consumer_channel)
