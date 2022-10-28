@@ -371,7 +371,7 @@ public:
                     }))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer or DateTime when arguments size is 1.",
+                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
                         arguments[0].column->getName(), getName());
                 }
             }
@@ -382,7 +382,7 @@ public:
                         using FromDataType = std::decay_t<decltype(type)>;
                         if (!(res = executeType<FromDataType>(arguments, result_type)))
                             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Illegal column {} of function {}, must be Integer or DateTime.",
+                                "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
                                 arguments[0].column->getName(), getName());
                         return true;
                     }))
