@@ -136,6 +136,7 @@ public:
 
     Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
 
+    /// action will be called only once and only after latest failed retry
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
 private:
