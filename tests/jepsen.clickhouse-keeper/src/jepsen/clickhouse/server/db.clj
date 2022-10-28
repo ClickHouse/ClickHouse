@@ -29,10 +29,21 @@
             [jepsen.clickhouse.server.utils :refer :all]
             [jepsen.clickhouse.utils :as chu]))
 
+(defn replicated-merge-tree-config
+  [test node config-template]
+  (let [nodes (:nodes test)
+        replacement-map {#"\{server1\}" (get nodes 0)
+                         #"\{server2\}" (get nodes 1)
+                         #"\{server3\}" (get nodes 2)
+                         #"\{server_id\}" (str (inc (.indexOf nodes node)))
+                         #"\{replica_name\}" node}]
+    (reduce #(clojure.string/replace %1 (get %2 0) (get %2 1)) config-template replacement-map)))
+
 (defn install-configs
   [test node]
   (c/exec :echo (slurp (io/resource "config.xml")) :> (str configs-dir "/config.xml"))
-  (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml")))
+  (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml"))
+  (c/exec :echo (replicated-merge-tree-config test node (slurp (io/resource "replicated_merge_tree.xml"))) :> (str sub-configs-dir "/replicated_merge_tree.xml")))
 
 (defn extra-setup
   [test node]
