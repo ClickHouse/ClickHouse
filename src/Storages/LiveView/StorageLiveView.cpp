@@ -531,7 +531,7 @@ Pipe StorageLiveView::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     std::lock_guard lock(mutex);
 
@@ -556,7 +556,7 @@ Pipe StorageLiveView::watch(
     ContextPtr local_context,
     QueryProcessingStage::Enum & processed_stage,
     size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 

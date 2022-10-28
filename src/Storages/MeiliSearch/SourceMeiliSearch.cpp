@@ -174,7 +174,7 @@ size_t MeiliSearchSource::parseJSON(MutableColumns & columns, const JSON & jres)
         {
             ++cnt_fields;
             const auto & name = kv_pair.getName();
-            int pos = description.sample_block.getPositionByName(name);
+            size_t pos = description.sample_block.getPositionByName(name);
             MutableColumnPtr & col = columns[pos];
             DataTypePtr type_ptr = description.sample_block.getByPosition(pos).type;
             insertWithTypeId(col, kv_pair.getValue(), type_ptr);
