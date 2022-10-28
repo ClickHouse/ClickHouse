@@ -69,12 +69,6 @@ public:
         size_t min_bytes,
         size_t max_rows)>;
 
-    /// This callback allows to perform some additional actions after writing a single row.
-    /// It's initial purpose was to flush Kafka message for each row.
-    using WriteCallback = std::function<void(
-        const Columns & columns,
-        size_t row)>;
-
 private:
     using InputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
