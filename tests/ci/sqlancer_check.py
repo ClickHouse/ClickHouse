@@ -113,12 +113,11 @@ if __name__ == "__main__":
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_lower}/"
 
     tests = [
-        "TLPAggregate",
-        "TLPDistinct",
         "TLPGroupBy",
         "TLPHaving",
         "TLPWhere",
-        "TLPWhereGroupBy",
+        "TLPDistinct",
+        "TLPAggregate",
         "NoREC",
     ]
 
