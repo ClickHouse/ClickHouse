@@ -393,6 +393,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
     /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
     else if (2 * total_zero_rows_in_tails > filter.size())
     {
+        rows_per_granule_original.clear();  /// It could have been used in previous step, need to clear
         for (auto i : collections::range(0, rows_per_granule.size()))
         {
             rows_per_granule_original.push_back(rows_per_granule[i]);
@@ -403,7 +404,8 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
         filter_original = filter;
 
         /// Check if const 1 after shrink
-        if (num_rows == filter.size() &&
+        if (num_rows == total_rows_per_granule && /// We can apply shrink only if after the previous step the number of rows in the result
+                                                  /// matches the rows_per_granule info. Otherwise we will not be able to match newly added zeros in granule
             allow_filter_columns && filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule)
         {
             total_rows_per_granule = total_rows_per_granule - total_zero_rows_in_tails;
