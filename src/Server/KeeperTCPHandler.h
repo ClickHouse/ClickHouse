@@ -81,6 +81,8 @@ private:
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
 
+    std::atomic<bool> connected{false};
+
     void runImpl();
 
     void sendHandshake(bool has_leader);
