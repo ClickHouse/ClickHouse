@@ -149,7 +149,7 @@ OffsetTransform::Status OffsetTransform::preparePairNegative(PortsData & data)
 
     data.current_chunk = input.pull(true);
 
-    ///Push chunk into queue
+    /// Push chunk into queue
     PortsData to_push;
     to_push.current_chunk = std::move(data.current_chunk);
     to_push.output_port = data.output_port;

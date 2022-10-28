@@ -849,6 +849,7 @@ void Planner::buildQueryPlanIfNeeded()
             limit_offset,
             always_read_till_end,
             limit_with_ties,
+            false,
             limit_with_ties_sort_description);
 
         if (limit_with_ties)
