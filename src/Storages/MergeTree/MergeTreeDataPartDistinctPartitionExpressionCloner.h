@@ -33,17 +33,17 @@ private:
     const IMergeTreeDataPart::MinMaxIndex & new_min_max_index;
     const bool sync_new_files;
 
-    void deleteMinMaxFiles(const DataPartStorageBuilderPtr & storage_builder) const;
+    void deleteMinMaxFiles(IDataPartStorage & storage) const;
 
     WrittenFiles updateMinMaxFiles(
         const MutableDataPartPtr & dst_part,
-        const DataPartStorageBuilderPtr & storage_builder
+        IDataPartStorage & storage
     ) const;
 
     WrittenFile updatePartitionFile(
         const MergeTreePartition & new_partition,
         const MutableDataPartPtr & dst_part,
-        const DataPartStorageBuilderPtr & storage_builder
+        IDataPartStorage & storage
     ) const;
 
     /// Re-writes partition.dat and minmax_<fields>.idx. Also deletes checksums.txt

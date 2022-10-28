@@ -21,47 +21,47 @@ MergeTreeDataPartDistinctPartitionExpressionCloner::MergeTreeDataPartDistinctPar
 {}
 
 void MergeTreeDataPartDistinctPartitionExpressionCloner::deleteMinMaxFiles(
-    const DataPartStorageBuilderPtr & storage_builder
+    IDataPartStorage & storage
 ) const
 {
     for (const auto & column : src_part->getColumns())
     {
         auto file = "minmax_" + escapeForFileName(column.name) + ".idx";
-        storage_builder->removeFile(file);
+        storage.removeFile(file);
     }
 }
 
 MergeTreeDataPartDistinctPartitionExpressionCloner::WrittenFiles MergeTreeDataPartDistinctPartitionExpressionCloner::updateMinMaxFiles(
     const MutableDataPartPtr & dst_part,
-    const DataPartStorageBuilderPtr & storage_builder
+    IDataPartStorage & storage
 ) const
 {
-    deleteMinMaxFiles(storage_builder);
+    deleteMinMaxFiles(storage);
 
-    return dst_part->minmax_idx->store(*merge_tree_data, storage_builder, dst_part->checksums);
+    return dst_part->minmax_idx->store(*merge_tree_data, storage, dst_part->checksums);
 }
 
 MergeTreeDataPartDistinctPartitionExpressionCloner::WrittenFile MergeTreeDataPartDistinctPartitionExpressionCloner::updatePartitionFile(
     const MergeTreePartition & partition,
     const MutableDataPartPtr & dst_part,
-    const DataPartStorageBuilderPtr & storage_builder
+    IDataPartStorage & storage
 ) const
 {
-    storage_builder->removeFile("partition.dat");
+    storage.removeFile("partition.dat");
     // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
     // Checksum is re-calculated later.
-    return partition.store(*merge_tree_data, storage_builder, dst_part->checksums);
+    return partition.store(*merge_tree_data, storage, dst_part->checksums);
 }
 
 void MergeTreeDataPartDistinctPartitionExpressionCloner::updateNewPartFiles(const MutableDataPartPtr & dst_part) const
 {
-    auto data_part_storage_builder = dst_part->data_part_storage->getBuilder();
+    auto & storage = dst_part->getDataPartStorage();
 
     *dst_part->minmax_idx = new_min_max_index;
 
-    auto partition_file = updatePartitionFile(new_partition, dst_part, data_part_storage_builder);
+    auto partition_file = updatePartitionFile(new_partition, dst_part, storage);
 
-    auto min_max_files = updateMinMaxFiles(dst_part, data_part_storage_builder);
+    auto min_max_files = updateMinMaxFiles(dst_part, storage);
 
     WrittenFiles written_files;
 
@@ -74,7 +74,7 @@ void MergeTreeDataPartDistinctPartitionExpressionCloner::updateNewPartFiles(cons
     // MergeTreeDataPartCloner::finalize_part calls IMergeTreeDataPart::loadColumnsChecksumsIndexes, which will re-create
     // the checksum file if it doesn't exist. Relying on that is cumbersome, but this refactoring is simply a code extraction
     // with small improvements. It can be further improved in the future.
-    data_part_storage_builder->removeFile("checksums.txt");
+    storage.removeFile("checksums.txt");
 }
 
 void MergeTreeDataPartDistinctPartitionExpressionCloner::finalizeNewFiles(const WrittenFiles & files) const
