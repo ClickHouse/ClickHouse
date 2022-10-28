@@ -12,14 +12,26 @@ import ActionsMenu from '@site/docs/en/_snippets/_service_actions_menu.md';
 import SQLConsoleDetail from '@site/docs/en/_snippets/_launch_sql_console.md';
 import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 
+## Goal
+
+In this guide you will learn how to:
+- load the OpenCellID data in Clickhouse
+- connect Apache Superset to ClickHouse
+- build a dashboard based on data available in the dataset
+- how to choose data types for your table fields
+- how to choose a primary key
+
+Here is a preview of the dashboard created in this guide:
+
+![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
+
+## Get the Dataset {#get-the-dataset}
+
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
 As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
 
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up-to-date version of the dataset is available to download after sign in.
-
-
-## Get the Dataset {#get-the-dataset}
 
 <Tabs groupId="deployMethod">
 <TabItem value="serverless" label="ClickHouse Cloud" default>
@@ -247,6 +259,36 @@ To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobi
 Superset is easy to run from Docker.  If you already have Superset running, all you need to do is add ClickHouse Connect with `pip install clickhouse-connect`.  If you need to install Superset open the **Launch Apache Superset in Docker** directly below.
 
 <SupersetDocker />
+
+## Build a dashboard
+
+1. foo
+
+![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
+
+1. foo
+
+![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
+
+1. foo
+
+![Create a map in Superset](@site/docs/en/getting-started/example-datasets/images/superset-create-map.png)
+
+1. foo
+
+![Specify longitude and latitude fields](@site/docs/en/getting-started/example-datasets/images/superset-lon-lat.png)
+
+1. foo
+
+![Filter on MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-mcc-204.png)
+
+1. foo
+
+![Filter on radio = UMTS](@site/docs/en/getting-started/example-datasets/images/superset-radio-umts.png)
+
+1. foo
+
+![Chart for UMTS radios in MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-umts-netherlands.png)
 
 The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
