@@ -486,7 +486,6 @@ class MergeTreeSettingsRandomizer:
         "prefer_fetch_merged_part_size_threshold": lambda: random.randint(
             1, 10 * 1024 * 1024 * 1024
         ),
-        "always_fetch_merged_part": lambda: random.randint(0, 1),
         "vertical_merge_algorithm_min_rows_to_activate": lambda: random.randint(
             1, 32 * 8192
         ),
@@ -618,7 +617,7 @@ class TestCase:
         return " ".join([f"--{setting}" for setting in settings_list])
 
     def has_show_create_table_in_test(self):
-        return not subprocess.call(["grep", "-iq", "show create table", self.case_file])
+        return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
     def add_random_settings(self, client_options):
         new_options = ""
@@ -684,12 +683,17 @@ class TestCase:
             args.no_random_settings or has_no_random_settings_tag
         )
 
+        has_no_random_merge_tree_settings_tag = (
+            self.tags and "no-random-merge-tree-settings" in self.tags
+        )
+
         # If test contains SHOW CREATE TABLE do not
         # randomize merge tree settings, because
-        # they are added to table definition and test will fail
+        # they will be added to table definition and test will fail
         self.randomize_merge_tree_settings = not (
             args.no_random_merge_tree_settings
             or has_no_random_settings_tag
+            or has_no_random_merge_tree_settings_tag
             or self.has_show_create_table_in_test()
         )
 
