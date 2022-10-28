@@ -75,7 +75,7 @@ void NATSProducer::publishThreadFunc(void * arg)
         if (!pop_result)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
 
-        status = natsConnection_Publish(producer->connection.getConnection(), producer->subject.c_str(), payload.c_str(), payload.size());
+        status = natsConnection_Publish(producer->connection.getConnection(), producer->subject.c_str(), payload.c_str(), static_cast<int>(payload.size()));
 
         if (status != NATS_OK)
         {
