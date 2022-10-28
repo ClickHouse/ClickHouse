@@ -69,13 +69,15 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
+template <typename Distance>
+MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , index(nullptr)
 {}
 
-MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(
+template <typename Distance>
+MergeTreeIndexGranuleAnnoy<Distance>::MergeTreeIndexGranuleAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
     AnnoyIndexPtr index_base_)
@@ -84,7 +86,8 @@ MergeTreeIndexGranuleAnnoy::MergeTreeIndexGranuleAnnoy(
     , index(std::move(index_base_))
 {}
 
-void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
+template <typename Distance>
+void MergeTreeIndexGranuleAnnoy<Distance>::serializeBinary(WriteBuffer & ostr) const
 {
     /// number of dimensions is required in the constructor,
     /// so it must be written and read separately from the other part
@@ -92,7 +95,8 @@ void MergeTreeIndexGranuleAnnoy::serializeBinary(WriteBuffer & ostr) const
     index->serialize(ostr);
 }
 
-void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+template <typename Distance>
+void MergeTreeIndexGranuleAnnoy<Distance>::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     uint64_t dimension;
     readIntBinary(dimension, istr);
@@ -100,8 +104,8 @@ void MergeTreeIndexGranuleAnnoy::deserializeBinary(ReadBuffer & istr, MergeTreeI
     index->deserialize(istr);
 }
 
-
-MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
+template <typename Distance>
+MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
     uint64_t number_of_trees_)
@@ -110,16 +114,18 @@ MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
     , number_of_trees(number_of_trees_)
 {}
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
+template <typename Distance>
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
     // NOLINTNEXTLINE(*)
     index->build(number_of_trees, /*number_of_threads=*/1);
-    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance> >(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
 }
 
-void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, size_t limit)
+template <typename Distance>
+void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -203,8 +209,9 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
 MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const IndexDescription & /*index*/,
     const SelectQueryInfo & query,
-    ContextPtr context)
-    : condition(query, context)
+    ContextPtr context,
+    const String& metric_name_)
+    : condition(query, context), metric_name(metric_name_)
 {}
 
 
@@ -215,10 +222,28 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue("L2Distance");
+    return condition.alwaysUnknownOrTrue(metric_name);
 }
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
+{
+    if (metric_name == "L2Distance")
+    {
+        return getUsefulRangesImpl<::Annoy::Euclidean>(idx_granule);
+    }
+    else if (metric_name == "cosineDistance")
+    {
+        return getUsefulRangesImpl<::Annoy::Angular>(idx_granule);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong metric type {}", metric_name);
+    }
+}
+
+
+template <typename Distance>
+std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const
 {
     UInt64 limit = condition.getLimit();
     UInt64 index_granularity = condition.getIndexGranularity();
@@ -230,7 +255,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
 
     std::vector<float> target_vec = condition.getTargetVector();
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance> >(idx_granule);
     if (granule == nullptr)
     {
         throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
@@ -284,38 +309,70 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndex
     return result_vector;
 }
 
-
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleAnnoy>(index.name, index.sample_block);
+    if (metric_name == "L2Distance")
+    {
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block);
+    }
+    if (metric_name == "cosineDistance")
+    {
+        return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular> >(index.name, index.sample_block);
+    }
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Wrong metric name {}", metric_name);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorAnnoy>(index.name, index.sample_block, number_of_trees);
+    if (metric_name == "L2Distance")
+    {
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block, number_of_trees);
+    }
+    if (metric_name == "cosineDistance")
+    {
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular> >(index.name, index.sample_block, number_of_trees);
+    }
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Wrong metric name {}", metric_name);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context, metric_name);
 };
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
-    uint64_t param = index.arguments[0].get<uint64_t>();
-    return std::make_shared<MergeTreeIndexAnnoy>(index, param);
+    uint64_t param = 100;
+    String metric_name = "L2Distance";
+    if (index.arguments.size() > 0 && !index.arguments[0].tryGet<uint64_t>(param))
+    {
+        if (!index.arguments[0].tryGet<String>(metric_name))
+        {
+            throw Exception("Can't parse first argument", ErrorCodes::INCORRECT_DATA);
+        }
+    }
+    if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(metric_name))
+    {
+        throw Exception("Can't parse second argument", ErrorCodes::INCORRECT_DATA);
+    }
+    return std::make_shared<MergeTreeIndexAnnoy>(index, param, metric_name);
 }
 
 void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
-    if (index.arguments.size() != 1)
+    if (index.arguments.size() > 2)
     {
-        throw Exception("Annoy index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Annoy index must no more than two arguments.", ErrorCodes::INCORRECT_QUERY);
     }
-    if (index.arguments[0].getType() != Field::Types::UInt64)
+    if (index.arguments.size() > 0 && index.arguments[0].getType() != Field::Types::UInt64
+        && index.arguments[0].getType() != Field::Types::String)
     {
-        throw Exception("Annoy index argument must be UInt64.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Annoy index first argument must be UInt64 or String.", ErrorCodes::INCORRECT_QUERY);
+    }
+    if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
+    {
+        throw Exception("Annoy index second argument must be String.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 

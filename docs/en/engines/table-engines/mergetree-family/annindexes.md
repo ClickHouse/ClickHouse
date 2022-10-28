@@ -2,11 +2,18 @@
 
 The main task that indexes achieve is to quickly find nearest neighbors for multidimensional data. An example of such a problem can be finding similar pictures (texts) for a given picture (text). That problem can be reduced to finding the nearest [embeddings](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning). They can be created from data using [UDF](../../../sql-reference/functions/index.md#executable-user-defined-functions).
 
-The next query finds the closest neighbors in N-dimensional space using the L2 (Euclidean) distance:
+The next queries find the closest neighbors in N-dimensional space using the L2 (Euclidean) distance:
 ``` sql 
 SELECT * 
 FROM table_name 
 WHERE L2Distance(Column, Point) < MaxDistance 
+LIMIT N
+```
+
+``` sql 
+SELECT * 
+FROM table_name 
+ORDER BY L2Distance(Column, Point)
 LIMIT N
 ```
 But it will take some time for execution because of the long calculation of the distance between `TargetEmbedding` and all other vectors. This is where ANN indexes can help. They store a compact approximation of the search space (e.g. using clustering, search trees, etc.) and are able to compute approximate neighbors quickly.
@@ -53,7 +60,7 @@ CREATE TABLE t
 (
   `id` Int64,
   `number` Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy GRANULARITY N
+  INDEX x number TYPE index_name(parameters) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -64,7 +71,7 @@ CREATE TABLE t
 (
   `id` Int64,
   `number` Array(Float32),
-  INDEX x number TYPE annoy GRANULARITY N
+  INDEX x number TYPE index_name(parameters) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -92,7 +99,7 @@ CREATE TABLE t
 (
   id Int64,
   number Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy(T) GRANULARITY N
+  INDEX x number TYPE annoy(Trees, DistanceName) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -103,7 +110,7 @@ CREATE TABLE t
 (
   id Int64,
   number Array(Float32),
-  INDEX x number TYPE annoy(T) GRANULARITY N
+  INDEX x number TYPE annoy(Trees, DistanceName) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -111,9 +118,19 @@ ORDER BY id;
 !!! note "Note"
     Table with array field will work faster, but all arrays **must** have same length. Use [CONSTRAINT](../../../sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1 CHECK length(number) = 256`.
 
-Parameter `T` is the number of trees which algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness). 
+Parameter `Trees` is the number of trees which algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness). By default it is set to `100`. Parameter `DistanceName` is name of distance function. By default it is set to `L2Distance`. It can be set without changing first parameter, for example
+```sql
+CREATE TABLE t
+(
+  id Int64,
+  number Array(Float32),
+  INDEX x number TYPE annoy('cosineDistance') GRANULARITY N
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
 
-Annoy supports only `L2Distance`.
+Annoy supports `L2Distance` and `cosineDistance`.
 
 In the `SELECT` in the settings (`ann_index_select_query_params`) you can specify the size of the internal buffer (more details in the description above or in the [original repository](https://github.com/spotify/annoy)). During the query it will inspect up to `search_k` nodes which defaults to `n_trees * n` if not provided. `search_k` gives you a run-time tradeoff between better accuracy and speed.
 
