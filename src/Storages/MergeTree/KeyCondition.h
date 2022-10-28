@@ -481,6 +481,6 @@ private:
     bool strict;
 };
 
-String extractFixedPrefixFromLikePattern(const String & like_pattern);
+String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfect_prefix_match = false);
 
 }
