@@ -1231,7 +1231,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             /// There is only one filter column. Record the actual number
             if (!has_column)
-                result.num_rows = result.getFilterOriginal().countBytesInFilter();
+                result.num_rows = result.filter/*getFilterOriginal()*/.countBytesInFilter();
         }
 
         /// Check if the PREWHERE column is needed
