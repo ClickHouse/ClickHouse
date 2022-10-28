@@ -12,6 +12,7 @@
             [jepsen.clickhouse.server
              [register :as register]
              [set :as set]]
+            [jepsen.clickhouse.server.nemesis :as custom-nemesis]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
@@ -48,13 +49,15 @@
   [opts]
   (info "Test opts\n" (with-out-str (pprint opts)))
   (let [quorum (boolean (:quorum opts))
-        workload  ((get workloads (:workload opts)) opts)]
+        workload  ((get workloads (:workload opts)) opts)
+        current-nemesis (get custom-nemesis/custom-nemesises "random-node-hammer-time")]
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-server-"  (name (:workload opts)))
             :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
+            :nemesis (:nemesis current-nemesis)
             :client (:client workload)
             :checker (checker/compose
                       {:perf     (checker/perf)
@@ -62,7 +65,12 @@
             :generator (gen/phases
                         (->> (:generator workload)
                              (gen/stagger (/ (:rate opts)))
+                             (gen/nemesis (:generator current-nemesis))
                              (gen/time-limit (:time-limit opts)))
+                        (gen/log "Healing cluster")
+                        (gen/nemesis (gen/once {:type :info, :f :stop}))
+                        (gen/log "Waiting for recovery")
+                        (gen/sleep 10)
                         (gen/clients (:final-generator workload)))})))
 
 (defn clickhouse-server-test

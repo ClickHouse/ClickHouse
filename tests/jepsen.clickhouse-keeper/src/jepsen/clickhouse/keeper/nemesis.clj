@@ -5,6 +5,7 @@
     [nemesis :as nemesis]
     [control :as c]
     [generator :as gen]]
+   [jepsen.clickhouse.nemesis :as chnem]
    [jepsen.clickhouse.constants :refer :all]
    [jepsen.clickhouse.utils :as chu]
    [jepsen.clickhouse.keeper.utils :refer :all]))
@@ -22,14 +23,6 @@
    identity
    (fn start [test node] (chu/kill-clickhouse! node test))
    (fn stop [test node] (start-clickhouse! node test))))
-
-(defn random-node-hammer-time-nemesis
-  []
-  (nemesis/hammer-time "clickhouse"))
-
-(defn all-nodes-hammer-time-nemesis
-  []
-  (nemesis/hammer-time identity "clickhouse"))
 
 (defn select-last-file
   [path]
@@ -141,9 +134,9 @@
                        :generator (start-stop-generator 1 10)}
    "simple-partitioner" {:nemesis (nemesis/partition-random-halves)
                          :generator (start-stop-generator 5 5)}
-   "random-node-hammer-time"    {:nemesis (random-node-hammer-time-nemesis)
+   "random-node-hammer-time"    {:nemesis (chnem/random-node-hammer-time-nemesis)
                                  :generator (start-stop-generator 5 5)}
-   "all-nodes-hammer-time"    {:nemesis (all-nodes-hammer-time-nemesis)
+   "all-nodes-hammer-time"    {:nemesis (chnem/all-nodes-hammer-time-nemesis)
                                :generator (start-stop-generator 1 10)}
    "logs-corruptor" {:nemesis (logs-corruption-nemesis)
                      :generator (corruption-generator)}
