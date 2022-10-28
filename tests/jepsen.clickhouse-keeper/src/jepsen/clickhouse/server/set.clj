@@ -17,7 +17,6 @@
     (assoc this :conn (chc/client node)))
 
   (setup! [this test]
-    (info (macroexpand (chc/with-connection [c conn] false (print "test"))))
     (locking table-created?
       (when (compare-and-set! table-created? false true)
         (chc/with-connection [c conn] false

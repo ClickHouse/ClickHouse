@@ -113,14 +113,6 @@
   []
   (nemesis/partitioner nemesis/bridge))
 
-(defn start-stop-generator
-  [time-corrupt time-ok]
-  (->>
-   (cycle [(gen/sleep time-ok)
-           {:type :info, :f :start}
-           (gen/sleep time-corrupt)
-           {:type :info, :f :stop}])))
-
 (defn corruption-generator
   []
   (->>
@@ -129,15 +121,15 @@
 
 (def custom-nemesises
   {"random-node-killer" {:nemesis (random-node-killer-nemesis)
-                         :generator (start-stop-generator 5 5)}
+                         :generator (chnem/start-stop-generator 5 5)}
    "all-nodes-killer" {:nemesis (all-nodes-killer-nemesis)
-                       :generator (start-stop-generator 1 10)}
+                       :generator (chnem/start-stop-generator 1 10)}
    "simple-partitioner" {:nemesis (nemesis/partition-random-halves)
-                         :generator (start-stop-generator 5 5)}
+                         :generator (chnem/start-stop-generator 5 5)}
    "random-node-hammer-time"    {:nemesis (chnem/random-node-hammer-time-nemesis)
-                                 :generator (start-stop-generator 5 5)}
+                                 :generator (chnem/start-stop-generator 5 5)}
    "all-nodes-hammer-time"    {:nemesis (chnem/all-nodes-hammer-time-nemesis)
-                               :generator (start-stop-generator 1 10)}
+                               :generator (chnem/start-stop-generator 1 10)}
    "logs-corruptor" {:nemesis (logs-corruption-nemesis)
                      :generator (corruption-generator)}
    "snapshots-corruptor" {:nemesis (snapshots-corruption-nemesis)
@@ -147,8 +139,8 @@
    "drop-data-corruptor" {:nemesis (drop-all-corruption-nemesis)
                           :generator (corruption-generator)}
    "bridge-partitioner" {:nemesis (partition-bridge-nemesis)
-                         :generator (start-stop-generator 5 5)}
+                         :generator (chnem/start-stop-generator 5 5)}
    "blind-node-partitioner" {:nemesis (blind-node-partition-nemesis)
-                             :generator (start-stop-generator 5 5)}
+                             :generator (chnem/start-stop-generator 5 5)}
    "blind-others-partitioner" {:nemesis (blind-others-partition-nemesis)
-                               :generator (start-stop-generator 5 5)}})
+                               :generator (chnem/start-stop-generator 5 5)}})
