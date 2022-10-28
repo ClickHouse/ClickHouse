@@ -9,6 +9,10 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+#include <Poco/Logger.h>
+#include <Loggers/Loggers.h>
+
 
 namespace DB
 {
@@ -25,26 +29,24 @@ namespace ErrorCodes
 
 struct DecimalOpHerpers
 {
-    static std::vector<UInt8> multiply(std::vector<UInt8> num1, std::vector<UInt8> num2)
+    static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
         int len1 = num1.size();
         int len2 = num2.size();
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        std::vector<UInt8> result(77, 0);
+        std::vector<UInt8> result(76, 0);
         int i_n1 = 0;
         int i_n2;
 
         for (int i = len1 - 1; i >= 0; --i)
         {
             int carry = 0;
-            int n1 = num1[i];
             i_n2 = 0;
             for (int j = len2 - 1; j >= 0; --j)
             {
-                int n2 = num2[j];
-                int sum = n1 * n2 + result[i_n1 + i_n2] + carry;
+                int sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
                 ++i_n2;
@@ -58,7 +60,10 @@ struct DecimalOpHerpers
 
         int i = result.size() - 1;
         while (i >= 0 && result[i] == 0)
+        {
+            result.pop_back();
             --i;
+        }
         if (i == -1)
             return {0};
 
@@ -66,12 +71,12 @@ struct DecimalOpHerpers
         return result;
     }
 
-    static std::vector<UInt8> divide(std::vector<UInt8> number, Int256 divisor)
+    static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
     {
-        std::vector<UInt8> result(77, 0);
+        std::vector<UInt8> result;
 
         int idx = 0;
-        int temp = number[idx];
+        Int256 temp = number[idx];
         while (temp < divisor)
             temp = temp * 10 + (number[++idx]);
 
@@ -87,24 +92,24 @@ struct DecimalOpHerpers
         return result;
     }
 
-    static std::vector<UInt8> getDigits(Int256 x)
+    static std::vector<UInt8> toDigits(Int256 x)
     {
         std::vector<UInt8> result;
         if (x >= 10)
-            result = getDigits(x / 10);
+            result = toDigits(x / 10);
 
         result.push_back(x % 10);
         return result;
     }
 
-    static Int256 fromDigits(std::vector<UInt8> digits)
+    static Int256 fromDigits(const std::vector<UInt8> & digits)
     {
         Int256 result = 0;
-        Int256 multiplier = 1;
+        Int256 scale = 0;
         for (auto i = digits.rbegin(); i != digits.rend(); ++i)
         {
-            result += multiplier * (*i);
-            multiplier *= 10;
+            result += DecimalUtils::scaleMultiplier<Decimal256>(scale) * (*i);
+            ++scale;
         }
         return result;
     }
@@ -127,34 +132,23 @@ struct DivideDecimalsImpl
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHerpers::getDigits(a.value * sign_a);
-        for (int i = a_digits.size() - 1; a_digits[i] == 0; --i)
-        {
-            a_digits.pop_back();
-            --scale_a;
-        }
+        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(sign_a * a.value);
 
-        while (!(b.value % 10))
-        {
-            b.value /= 10;
-            --scale_b;
-        }
-
-        auto product_scale = scale_a - scale_b;
-        for (int i = product_scale; i < result_scale; ++i)
-        {
+        while (scale_a < scale_b + result_scale) {
             a_digits.push_back(0);
+            ++scale_a;
         }
 
-        for (int i = product_scale; i > result_scale; --i)
+        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value);
+
+        while (scale_a > + scale_b + result_scale)
         {
-            a_digits.pop_back();
+            --scale_a;
+            divided.pop_back();
         }
 
-        auto divided = DecimalOpHerpers::divide(a_digits, b.value);
         if (divided.size() > 76)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(divided));
     }
 };
@@ -170,8 +164,8 @@ struct MultiplyDecimalsImpl
     {
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
-        std::vector<UInt8> a_digits = DecimalOpHerpers::getDigits(a.value * sign_a);
-        std::vector<UInt8> b_digits = DecimalOpHerpers::getDigits(b.value * sign_b);
+        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(a.value * sign_a);
+        std::vector<UInt8> b_digits = DecimalOpHerpers::toDigits(b.value * sign_b);
 
         for (int i = a_digits.size() - 1; a_digits[i] == 0; --i)
         {
@@ -198,8 +192,8 @@ struct MultiplyDecimalsImpl
             a_digits.pop_back();
         }
 
-        if (multiplied.size() > 76)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+//        if (multiplied.size() > 76)
+//            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(multiplied));
     }
@@ -338,8 +332,8 @@ public:
         As in simple division/multiplication for decimals, we scale the result up, but is is explicit here and no downscale is performed.
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
-        if (scale <= 76)
-            return std::make_shared<DataTypeDecimal256>(76, scale);
+        if (scale <= DecimalUtils::max_precision<Decimal256>)
+            return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
 
         throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -414,6 +408,7 @@ private:
 
         }
 
+        // the compiler is happy now
         return nullptr;
     }
 };
