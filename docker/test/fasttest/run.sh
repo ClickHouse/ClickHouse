@@ -226,6 +226,7 @@ function run_tests
         --hung-check
         --fast-tests-only
         --no-random-settings
+        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard
