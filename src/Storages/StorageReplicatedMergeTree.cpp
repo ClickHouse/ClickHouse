@@ -3089,7 +3089,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
     const Names deduplicate_by_columns = {};
-    const bool cleanup = !(storage_settings_ptr->clean_deleted_rows.toString() == "never");
+    const bool cleanup = (storage_settings_ptr->clean_deleted_rows.toString() != "never");
     CreateMergeEntryResult create_result = CreateMergeEntryResult::Other;
 
     try

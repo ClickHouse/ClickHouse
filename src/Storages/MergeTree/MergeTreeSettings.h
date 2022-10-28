@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Core/SettingsEnums.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -65,7 +66,7 @@ struct Settings;
     M(UInt64, min_age_to_force_merge_seconds, 0, "If all parts in a certain range are older than this value, range will be always eligible for merging. Set to 0 to disable.", 0) \
     M(UInt64, merge_tree_enable_clear_old_broken_detached, false, "Enable clearing old broken detached parts operation in background.", 0) \
     M(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
-    M(String, clean_deleted_rows, "never", "Is the Replicated Merge cleanup has to be done automatically at each merge or manually (possible values are \"always\"/\"never\"(default))", 0) \
+    M(CleanDeletedRows, clean_deleted_rows, 0, "Is the Replicated Merge cleanup has to be done automatically at each merge or manually (possible values are \"Always\"/\"Never\"(default))", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 150, "If table contains at least that many active parts in single partition, artificially slow down insert into table.", 0) \
