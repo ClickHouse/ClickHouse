@@ -1639,10 +1639,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
 {
-    if (!index_helper->getDeserializedFormat(part->data_part_storage, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part->data_part_storage->getFullPath()) / index_helper->getFileName()).string());
+            (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
         return ranges;
     }
 
@@ -1757,7 +1757,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 {
     for (const auto & index_helper : indices)
     {
-        if (!part->data_part_storage->exists(index_helper->getFileName() + ".idx"))
+        if (!part->getDataPartStorage().exists(index_helper->getFileName() + ".idx"))
         {
             LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
             return ranges;
