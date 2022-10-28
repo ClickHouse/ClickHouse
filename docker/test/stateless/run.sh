@@ -126,8 +126,6 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
 
-    ADDITIONAL_OPTIONS+=("--randomize-merge-tree-settings")
-
     if [[ "${HIGH_LEVEL_COVERAGE}" = "YES" ]]; then
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
