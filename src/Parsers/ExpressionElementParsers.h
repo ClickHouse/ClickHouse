@@ -104,7 +104,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** COLUMNS('<regular expression>')
+/** COLUMNS(columns_names) or COLUMNS('<regular expression>')
   */
 class ParserColumnsMatcher : public IParserBase
 {
@@ -116,6 +116,23 @@ public:
 
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    ColumnTransformers allowed_transformers;
+};
+
+/** Qualified columns matcher identifier.COLUMNS(columns_names) or identifier.COLUMNS('<regular expression>')
+  */
+class ParserQualifiedColumnsMatcher : public IParserBase
+{
+public:
+    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
+    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+        : allowed_transformers(allowed_transformers_)
+    {}
+
+protected:
+    const char * getName() const override { return "qualified COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
     ColumnTransformers allowed_transformers;
