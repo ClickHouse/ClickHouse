@@ -13,6 +13,8 @@
    :classname "com.clickhouse.ClickhouseDriver"
    :host (name node)
    :port 8123
+   :connectTimeout 30
+   :socketTimeout 30
    :jdbcCompliant false})
 
 (defn open-connection
@@ -48,13 +50,16 @@
   "Like jepsen.reconnect/with-conn, but also asserts that the connection has
   not been closed. If it has, throws an ex-info with :type :conn-not-ready.
   Delays by 1 second to allow time for the DB to recover."
-  [[c client] & body]
-  `(rc/with-conn [~c ~client]
-     (when (.isClosed (j/db-find-connection ~c))
-       (Thread/sleep 1000)
-       (throw (ex-info "Connection not yet ready."
-                       {:type :conn-not-ready})))
-     ~@body))
+  [[c client] final & body]
+  `(do
+     (when ~final
+      (rc/reopen! ~client))
+     (rc/with-conn [~c ~client]
+       (when (.isClosed (j/db-find-connection ~c))
+         (Thread/sleep 1000)
+         (throw (ex-info "Connection not yet ready."
+                         {:type :conn-not-ready})))
+       ~@body)))
 
 (defmacro with-exception
   "Takes an operation and a body. Evaluates body, catches exceptions, and maps

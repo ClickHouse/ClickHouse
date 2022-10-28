@@ -8,11 +8,12 @@
              [generator :as gen]
              [tests :as tests]
              [util :as util :refer [meh]]]
-            [jepsen.clickhouse.server.db :refer :all]
             [jepsen.clickhouse.server
-             [register :as register]
+             [db :refer :all]
+             [nemesis :as ch-nemesis]]
+            [jepsen.clickhouse.server
              [set :as set]]
-            [jepsen.clickhouse.server.nemesis :as custom-nemesis]
+            [jepsen.clickhouse.utils :as chu]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
@@ -20,20 +21,16 @@
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
-   {"register" register/workload
-    "set" set/workload})
-
-(def custom-nemesises
-  {})
+   {"set" set/workload})
 
 (def cli-opts
   "Additional command line options."
   [["-w" "--workload NAME" "What workload should we run?"
     :default "set"
     :validate [workloads (cli/one-of workloads)]]
-   ;[nil "--nemesis NAME" "Which nemesis will poison our lives?"
-   ; :default "random-node-killer"
-   ; :validate [custom-nemesises (cli/one-of custom-nemesises)]]
+   [nil "--nemesis NAME" "Which nemesis will poison our lives?"
+    :default "random-node-killer"
+    :validate [ch-nemesis/custom-nemeses (cli/one-of ch-nemesis/custom-nemeses)]]
    ["-r" "--rate HZ" "Approximate number of requests per second, per thread."
     :default  10
     :parse-fn read-string
@@ -50,10 +47,10 @@
   (info "Test opts\n" (with-out-str (pprint opts)))
   (let [quorum (boolean (:quorum opts))
         workload  ((get workloads (:workload opts)) opts)
-        current-nemesis (get custom-nemesis/custom-nemesises "random-node-hammer-time")]
+        current-nemesis (get ch-nemesis/custom-nemeses (:nemesis opts))]
     (merge tests/noop-test
            opts
-           {:name (str "clickhouse-server-"  (name (:workload opts)))
+           {:name (str "clickhouse-server-"  (name (:workload opts)) "-" (name (:nemesis opts)))
             :os ubuntu/os
             :db (get-db opts)
             :pure-generators true
@@ -81,20 +78,22 @@
 
 (def all-workloads (keys workloads))
 
+(def all-nemeses (keys ch-nemesis/custom-nemeses))
+
 (defn all-test-options
   "Takes base cli options, a collection of nemeses, workloads, and a test count,
   and constructs a sequence of test options."
-  [cli]
+  [cli workload-nemesis-collection]
   (take (:test-count cli)
-        (shuffle (for [[workload] all-workloads]
+        (shuffle (for [[workload nemesis] workload-nemesis-collection]
                    (assoc cli
+                          :nemesis   nemesis
                           :workload  workload
                           :test-count 1)))))
-
 (defn all-tests
   "Turns CLI options into a sequence of tests."
   [test-fn cli]
-  (map test-fn (all-test-options cli)))
+  (map test-fn (all-test-options cli (chu/cart [all-workloads all-nemeses]))))
 
 (defn main
   "Handles command line arguments. Can either run a test, or a web server for

@@ -163,19 +163,12 @@
                        "blind-node-partitioner"
                        "blind-others-partitioner"])
 
-(defn cart [colls]
-  (if (empty? colls)
-    '(())
-    (for [more (cart (rest colls))
-          x (first colls)]
-      (cons x more))))
-
 (defn all-test-options
   "Takes base cli options, a collection of nemeses, workloads, and a test count,
   and constructs a sequence of test options."
-  [cli worload-nemeseis-collection]
+  [cli workload-nemesis-collection]
   (take (:test-count cli)
-        (shuffle (for [[workload nemesis] worload-nemeseis-collection]
+        (shuffle (for [[workload nemesis] workload-nemesis-collection]
                    (assoc cli
                           :nemesis   nemesis
                           :workload  workload
@@ -184,8 +177,8 @@
   "Turns CLI options into a sequence of tests."
   [test-fn cli]
   (if (boolean (:lightweight-run cli))
-    (map test-fn (all-test-options cli (cart [lightweight-workloads useful-nemesises])))
-    (map test-fn (all-test-options cli (cart [all-workloads all-nemesises])))))
+    (map test-fn (all-test-options cli (chu/cart [lightweight-workloads useful-nemesises])))
+    (map test-fn (all-test-options cli (chu/cart [all-workloads all-nemesises])))))
 
 (defn main
   "Handles command line arguments. Can either run a test, or a web server for

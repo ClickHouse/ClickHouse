@@ -25,6 +25,13 @@
   (if (and s (> (count s) 0))
     (Long/parseLong s)))
 
+(defn cart [colls]
+  (if (empty? colls)
+    '(())
+    (for [more (cart (rest colls))
+          x (first colls)]
+      (cons x more))))
+
 (defn md5 [^String s]
   (let [algorithm (MessageDigest/getInstance "MD5")
         raw (.digest algorithm (.getBytes s))]

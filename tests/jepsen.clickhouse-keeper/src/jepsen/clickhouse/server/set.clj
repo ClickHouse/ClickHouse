@@ -17,28 +17,28 @@
     (assoc this :conn (chc/client node)))
 
   (setup! [this test]
+    (info (macroexpand (chc/with-connection [c conn] false (print "test"))))
     (locking table-created?
       (when (compare-and-set! table-created? false true)
-        (chc/with-connection [c conn]
-          (j/query c "DROP TABLE IF EXISTS set")
-          (j/query c "CREATE TABLE set (value Int64) Engine=MergeTree ORDER BY value")))))
+        (chc/with-connection [c conn] false
+          (j/query c "DROP TABLE IF EXISTS set ON CLUSTER test_cluster")
+          (j/query c "CREATE TABLE set ON CLUSTER test_cluster (value Int64) Engine=ReplicatedMergeTree ORDER BY value")))))
 
   (invoke! [this test op]
     (chc/with-exception op
-      (chc/with-connection [c conn]
-        (util/with-retry []
-          (case (:f op)
-            :add (do
-                    (j/query c (str "INSERT INTO set VALUES (" (:value op) ")"))
-                    (assoc op :type :ok))
-            :read (->> (j/query c "SELECT value FROM set")
-                       (mapv :value)
-                       (assoc op :type :ok, :value)))))))
+      (chc/with-connection [c conn] (= :read (:f op))
+        (case (:f op)
+          :add (do
+                  (j/query c (str "INSERT INTO set VALUES (" (:value op) ")"))
+                  (assoc op :type :ok))
+          :read (->> (j/query c "SELECT value FROM set")
+                     (mapv :value)
+                     (assoc op :type :ok, :value))))))
 
   (teardown! [_ test]
     (util/timeout chc/operation-timeout
-      (chc/with-connection [c conn]
-        (j/query c ["DROP TABLE set"]))))
+      (chc/with-connection [c conn] false
+        (j/query c ["DROP TABLE set ON CLUSTER test_cluster"]))))
 
   (close! [_ test]
     (rc/close! conn)))
