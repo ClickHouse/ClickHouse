@@ -61,8 +61,14 @@ elseif (ARCH_AARCH64)
     endif ()
 
 elseif (ARCH_PPC64LE)
+    # By Default, build for power8 and up, allow building for power9 and up
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    option (POWER9 "Build for Power 9 CPU and above" 0)
+    if(POWER9)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power9 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    else ()
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    endif ()
 
 elseif (ARCH_AMD64)
     option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
@@ -75,6 +81,7 @@ elseif (ARCH_AMD64)
     option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
     option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
     option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
+    option (ENABLE_BMI2 "Use BMI2 instructions on x86_64 (depends on ENABLE_AVX2)" 0)
     option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
     option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
 
@@ -90,6 +97,7 @@ elseif (ARCH_AMD64)
         SET(ENABLE_AVX512 0)
         SET(ENABLE_AVX512_VBMI 0)
         SET(ENABLE_BMI 0)
+        SET(ENABLE_BMI2 0)
         SET(ENABLE_AVX2_FOR_SPEC_OP 0)
         SET(ENABLE_AVX512_FOR_SPEC_OP 0)
     endif()
@@ -234,6 +242,20 @@ elseif (ARCH_AMD64)
         }
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
+    set (TEST_FLAG "-mbmi2")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto a = _pdep_u64(0, 0);
+            (void)a;
+            return 0;
+        }
+    " HAVE_BMI2)
+    if (HAVE_BMI2 AND HAVE_AVX2 AND ENABLE_AVX2 AND ENABLE_BMI2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 

@@ -869,9 +869,11 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
+    if (syntax_analyzer_result)
+    {
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
+    }
 
     return result;
 }
@@ -908,13 +910,22 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -983,6 +994,12 @@ KeyCondition::KeyCondition(
         const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
             key_columns[name] = i;
+    }
+
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
     }
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
@@ -2602,7 +2619,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             return "true";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

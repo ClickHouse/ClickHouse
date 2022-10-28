@@ -5,6 +5,13 @@
 #include <Interpreters/Context.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
+#include <Common/CurrentMetrics.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesUnknown;
+}
 
 namespace DB
 {
@@ -17,7 +24,6 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
-
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -47,7 +53,7 @@ public:
     VolumePtr getVolume() const { return volume; }
 
 protected:
-    void deltaAllocAndCheck(int compressed_delta, int uncompressed_delta);
+    void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
     VolumePtr volume;
@@ -65,15 +71,21 @@ protected:
 class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 {
     friend class TemporaryFileStream; /// to allow it to call `deltaAllocAndCheck` to account data
+
 public:
     using TemporaryDataOnDiskScope::StatAtomic;
 
     explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-        : TemporaryDataOnDiskScope(std::move(parent_), 0)
+        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+    {}
+
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
+        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+        , current_metric_scope(metric_scope)
     {}
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size = 0);
+    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -83,6 +95,8 @@ public:
 private:
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
+
+    typename CurrentMetrics::Value current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
 /*
@@ -99,6 +113,7 @@ public:
         /// Non-atomic because we don't allow to `read` or `write` into single file from multiple threads
         size_t compressed_size = 0;
         size_t uncompressed_size = 0;
+        size_t num_rows = 0;
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
@@ -109,17 +124,19 @@ public:
 
     Block read();
 
-    const String & path() const { return file->getPath(); }
+    const String path() const { return file->getPath(); }
     Block getHeader() const { return header; }
+
+    /// Read finished and file released
+    bool isEof() const;
 
     ~TemporaryFileStream();
 
 private:
     void updateAllocAndCheck();
 
-    /// Finalize everything, close reader and writer, delete file
-    void finalize();
-    bool isFinalized() const;
+    /// Release everything, close reader and writer, delete file
+    void release();
 
     TemporaryDataOnDisk * parent;
 

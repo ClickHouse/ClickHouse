@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -113,7 +112,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
+        size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -207,9 +206,6 @@ private:
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
-
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
-    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     String remote_database;
     String remote_table;
