@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS test_without_merge;
 DROP TABLE IF EXISTS test_with_merge;
 DROP TABLE IF EXISTS test_replicated;
