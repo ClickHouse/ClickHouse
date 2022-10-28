@@ -91,8 +91,8 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     const auto settings = storage.getSettings();
-    auto threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
-    auto threshold_init = 0;
+    time_t threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
+    time_t threshold_init = 0;
     if (settings->allow_remote_fs_zero_copy_replication)
         threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
@@ -127,7 +127,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
             active_replicas_tmp.push_back(replica);
             if (replica == storage.replica_name)
             {
-                current_replica_index_tmp = active_replicas_tmp.size() - 1;
+                current_replica_index_tmp = static_cast<int>(active_replicas_tmp.size() - 1);
             }
         }
     }
