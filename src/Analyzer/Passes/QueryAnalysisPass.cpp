@@ -2255,7 +2255,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         for (auto & join_using_node : join_using_list.getNodes())
         {
             auto & column_node = join_using_node->as<ColumnNode &>();
-            join_using_column_name_to_column_node.emplace(column_node.getName(), std::static_pointer_cast<ColumnNode>(join_using_node));
+            join_using_column_name_to_column_node.emplace(column_node.getColumnName(), std::static_pointer_cast<ColumnNode>(join_using_node));
         }
     }
 
