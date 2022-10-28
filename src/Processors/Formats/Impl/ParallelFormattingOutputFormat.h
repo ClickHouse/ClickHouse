@@ -22,7 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    const extern int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /**

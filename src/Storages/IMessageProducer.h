@@ -49,7 +49,7 @@ protected:
     virtual void finishImpl() {}
 
     virtual String getProducingTaskName() const = 0;
-    /// Method that is called inside producing task, all producing wokr should be done here.
+    /// Method that is called inside producing task, all producing work should be done here.
     virtual void producingTask() = 0;
 
 private:
