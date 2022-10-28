@@ -486,17 +486,20 @@ class MergeTreeSettingsRandomizer:
         "prefer_fetch_merged_part_size_threshold": lambda: random.randint(
             1, 10 * 1024 * 1024 * 1024
         ),
-        "vertical_merge_algorithm_min_rows_to_activate": lambda: random.randint(
-            1, 32 * 8192
-        ),
-        "vertical_merge_algorithm_min_columns_to_activate": lambda: random.randint(
-            1, 20
-        ),
+        "vertical_merge_algorithm_min_rows_to_activate": lambda: 1
+        if random.random() < 0.2
+        else 100000000
+        if random.random() < 0.25
+        else random.randint(1, 32 * 8192),
+        "vertical_merge_algorithm_min_columns_to_activate": lambda: 1
+        if random.random() < 0.2
+        else 100000000
+        if random.random() < 0.25
+        else random.randint(1, 20),
         "min_merge_bytes_to_use_direct_io": lambda: 1
         if random.random() < 0.2
         else random.randint(1, 10 * 1024 * 1024 * 1024),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
-        "write_final_mark": lambda: random.randint(0, 1),
     }
 
     @staticmethod
