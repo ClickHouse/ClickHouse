@@ -19,7 +19,7 @@ namespace ApproximateNearestNeighbour
     using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexMultiThreadedBuildPolicy;
     // TODO: Support different metrics. List of available metrics can be taken from here:
     // https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
-    template <typename Distance = ::Annoy::Euclidean>
+    template <typename Distance>
     class AnnoyIndex : public ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>
     {
         using Base = ::Annoy::AnnoyIndex<UInt64, Float32, Distance, ::Annoy::Kiss64Random, AnnoyIndexThreadedBuildPolicy>;
@@ -31,9 +31,10 @@ namespace ApproximateNearestNeighbour
     };
 }
 
+template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
-    using AnnoyIndex = ANN::AnnoyIndex<>;
+    using AnnoyIndex = ANN::AnnoyIndex<Distance>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexGranuleAnnoy(const String & index_name_, const Block & index_sample_block_);
@@ -54,10 +55,10 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
     AnnoyIndexPtr index;
 };
 
-
+template <typename Distance>
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    using AnnoyIndex = ANN::AnnoyIndex<>;
+    using AnnoyIndex = ANN::AnnoyIndex<Distance>;
     using AnnoyIndexPtr = std::shared_ptr<AnnoyIndex>;
 
     MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, uint64_t number_of_trees);
@@ -80,7 +81,8 @@ public:
     MergeTreeIndexConditionAnnoy(
         const IndexDescription & index,
         const SelectQueryInfo & query,
-        ContextPtr context);
+        ContextPtr context,
+        const String& metric_name);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -91,16 +93,21 @@ public:
     ~MergeTreeIndexConditionAnnoy() override = default;
 
 private:
+    template <typename Distance>
+    std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
+
     ANN::ANNCondition condition;
+    const String metric_name;
 };
 
 
 class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_)
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& metric_name_)
         : IMergeTreeIndex(index_)
         , number_of_trees(number_of_trees_)
+        , metric_name(metric_name_)
     {}
 
     ~MergeTreeIndexAnnoy() override = default;
@@ -115,6 +122,7 @@ public:
 
 private:
     const uint64_t number_of_trees;
+    const String metric_name;
 };
 
 
