@@ -128,13 +128,13 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 10 rows in set. Elapsed: 0.019 sec. Processed 43.28 million rows, 86.55 MB (2.33 billion rows/s., 4.65 GB/s.)
 ```
 
-So, the top countries are: the USA, Germany, and Russia.
+Based on the above query and the [MCC list](https://en.wikipedia.org/wiki/Mobile_country_code), the countries with the most cell towers are: the USA, Germany, and Russia.
 
 You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
 
 ## Use case: Incorporate geo data {#use-case}
 
-Using `pointInPolygon` function.
+Using the [`pointInPolygon`](/docs/en/sql-reference/functions/geo/coordinates.md/#pointinpolygon) function.
 
 1. Create a table where we will store polygons:
 
