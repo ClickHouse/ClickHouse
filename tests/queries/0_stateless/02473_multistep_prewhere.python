@@ -86,7 +86,7 @@ def main():
     url = os.environ['CLICKHOUSE_URL'] + '&mutations_sync=2&allow_experimental_lightweight_delete=1&max_threads=1'
 
     default_index_granularity = 10;
-    total_rows = 5 * default_index_granularity
+    total_rows = 8 * default_index_granularity
     step = default_index_granularity
     session = requests.Session()
     for index_granularity in [default_index_granularity-1, default_index_granularity]: # [default_index_granularity-1, default_index_granularity+1, default_index_granularity]:
@@ -94,9 +94,9 @@ def main():
         # Test combinations of ranges of various size masked by lightweight DELETES
         # along with ranges of various size masked by row-level policies
         for delete_range_start in range(0, total_rows, step):
-            for delete_range_end in range(delete_range_start, total_rows, step):
+            for delete_range_end in range(delete_range_start + 3 * step, total_rows, step):
                 for row_level_policy_range_start in range(0, total_rows, step):
-                    for row_level_policy_range_end in range(row_level_policy_range_start, total_rows, step):
+                    for row_level_policy_range_end in range(row_level_policy_range_start + 3 * step, total_rows, step):
                         tester.run_test(delete_range_start, delete_range_end, row_level_policy_range_start, row_level_policy_range_end)
 
 
