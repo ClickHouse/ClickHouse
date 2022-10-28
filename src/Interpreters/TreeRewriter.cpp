@@ -784,7 +784,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
 }
 
-
 std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressionsFromFunctionArgs(const ASTFunction & function, ASTExpressionList & into)
 {
     checkStackSize();
