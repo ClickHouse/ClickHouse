@@ -52,7 +52,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-
 namespace DB
 {
 
