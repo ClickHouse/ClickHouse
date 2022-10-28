@@ -12,9 +12,8 @@ namespace DB
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params_,
     const FormatSettings & settings_)
-        : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_),
+        : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_),
             settings(settings_)
 {
     fields = JSONUtils::makeNamesValidJSONStrings(getPort(PortKind::Main).getHeader().getNames(), settings, settings.json.validate_utf8);
@@ -81,13 +80,11 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         factory.registerOutputFormat(format, [serialize_as_strings](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
             const FormatSettings & _format_settings)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;
-            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
-                settings);
+            return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, settings);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
     };

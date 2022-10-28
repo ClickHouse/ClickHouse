@@ -10,12 +10,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
+IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
     : IOutputFormat(header, out_)
     , num_columns(header.columns())
     , types(header.getDataTypes())
     , serializations(header.getSerializations())
-    , params(params_)
 {
 }
 
@@ -30,10 +29,6 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
             writeRowBetweenDelimiter();
 
         write(columns, row);
-
-        if (params.callback)
-            params.callback(columns, row);
-
         first_row = false;
     }
 }

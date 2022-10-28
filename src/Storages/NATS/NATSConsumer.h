@@ -16,16 +16,15 @@ class Logger;
 namespace DB
 {
 
-class ReadBufferFromNATSConsumer : public ReadBuffer
+class NATSConsumer
 {
 public:
-    ReadBufferFromNATSConsumer(
+    NATSConsumer(
         std::shared_ptr<NATSConnectionManager> connection_,
         StorageNATS & storage_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,
         Poco::Logger * log_,
-        char row_delimiter_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
 
@@ -44,13 +43,14 @@ public:
 
     bool queueEmpty() { return received.empty(); }
     size_t queueSize() { return received.size(); }
-    void allowNext() { allowed = true; } // Allow to read next message.
 
     auto getSubject() const { return current.subject; }
 
-private:
-    bool nextImpl() override;
+    /// Return read buffer containing next available message
+    /// or nullptr if there are no messages to process.
+    ReadBufferPtr consume();
 
+private:
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
     std::shared_ptr<NATSConnectionManager> connection;
@@ -58,8 +58,6 @@ private:
     std::vector<SubscriptionPtr> subscriptions;
     std::vector<String> subjects;
     Poco::Logger * log;
-    char row_delimiter;
-    bool allowed = true;
     const std::atomic<bool> & stopped;
 
     bool subscribed = false;

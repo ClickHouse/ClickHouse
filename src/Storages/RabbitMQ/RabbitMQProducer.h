@@ -1,53 +1,53 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <list>
 #include <mutex>
 #include <atomic>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 
 namespace DB
 {
 
-class WriteBufferToRabbitMQProducer : public WriteBuffer
+class RabbitMQProducer : public ConcurrentMessageProducer
 {
 public:
-    WriteBufferToRabbitMQProducer(
-            const RabbitMQConfiguration & configuration_,
-            ContextPtr global_context,
-            const Names & routing_keys_,
-            const String & exchange_name_,
-            const AMQP::ExchangeType exchange_type_,
-            const size_t channel_id_base_,
-            const bool persistent_,
-            std::atomic<bool> & shutdown_called_,
-            Poco::Logger * log_,
-            std::optional<char> delimiter,
-            size_t rows_per_message,
-            size_t chunk_size_
-    );
+    RabbitMQProducer(
+        const RabbitMQConfiguration & configuration_,
+        const Names & routing_keys_,
+        const String & exchange_name_,
+        const AMQP::ExchangeType exchange_type_,
+        const size_t channel_id_base_,
+        const bool persistent_,
+        std::atomic<bool> & shutdown_called_,
+        Poco::Logger * log_);
 
-    ~WriteBufferToRabbitMQProducer() override;
-
-    void countRow();
-    void activateWriting() { writing_task->activateAndSchedule(); }
-    void updateMaxWait() { wait_num.store(payload_counter); }
+    void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
 private:
-    void nextImpl() override;
-    void addChunk();
-    void reinitializeChunks();
+    String getProducingTaskName() const override { return "RabbitMQProducingTask"; }
+
+    struct Payload
+    {
+        String message;
+        UInt64 id;
+    };
+
+    using Payloads = ConcurrentBoundedQueue<Payload>;
+
+    void initialize() override;
+    void stopProducingTask() override;
+    void finishImpl() override;
 
     void iterateEventLoop();
-    void writingFunc();
+    void producingTask() override;
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
-    void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
+    void publish(Payloads & messages, bool republishing);
 
     RabbitMQConnection connection;
 
@@ -63,7 +63,6 @@ private:
     std::atomic<bool> & shutdown_called;
 
     AMQP::Table key_arguments;
-    BackgroundSchedulePool::TaskHolder writing_task;
 
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
     bool producer_ready = false;
@@ -84,7 +83,7 @@ private:
      *              to disk or it was unable to reach the queue.
      *      - payloads are popped from the queue once republished
      */
-    ConcurrentBoundedQueue<std::pair<UInt64, String>> payloads, returned;
+    Payloads payloads, returned;
 
     /* Counter of current delivery on a current channel. Delivery tags are scoped per channel. The server attaches a delivery tag for each
      * published message - a serial number of delivery on current channel. Delivery tag is a way of server to notify publisher if it was
@@ -97,25 +96,15 @@ private:
      *  2) non-persistent messages reached the queue
      * true: continue to process deliveries and returned messages
      */
-    bool wait_all = true;
-
-    /* false: until writeSuffix is called
-     * true: means payloads.queue will not grow anymore
-     */
-    std::atomic<UInt64> wait_num = 0;
+//    bool wait_all = true;
 
     /// Needed to fill messageID property
     UInt64 payload_counter = 0;
 
     /// Record of pending acknowledgements from the server; its size never exceeds size of returned.queue
-    std::map<UInt64, std::pair<UInt64, String>> delivery_record;
+    std::map<UInt64, Payload> delivery_record;
 
     Poco::Logger * log;
-    const std::optional<char> delim;
-    const size_t max_rows;
-    const size_t chunk_size;
-    size_t rows = 0;
-    std::list<std::string> chunks;
 };
 
 }

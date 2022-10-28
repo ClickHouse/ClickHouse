@@ -1316,7 +1316,7 @@ formatRow(format, x, y, ...)
 
 **Возвращаемое значение**
 
--   Отформатированная строка.
+-   Отформатированная строка. (в текстовых форматах обычно с завершающим переводом строки).
 
 **Пример**
 
@@ -1338,6 +1338,74 @@ FROM numbers(3);
 │ 2,"good"
                          │
 └──────────────────────────────────┘
+```
+
+**Примечание**: если формат содержит префикс/суффикс, то он будет записан в каждой строке.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRow('CustomSeparated', number, 'good')
+FROM numbers(3)
+SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
+```
+
+Результат:
+
+``` text
+┌─formatRow('CustomSeparated', number, 'good')─┐
+│ <prefix>
+0	good
+<suffix>                   │
+│ <prefix>
+1	good
+<suffix>                   │
+│ <prefix>
+2	good
+<suffix>                   │
+└──────────────────────────────────────────────┘
+```
+
+**Примечание**: данная функция поддерживает только строковые форматы вывода.
+
+## formatRowNoNewline {#formatrownonewline}
+
+Преобразует произвольные выражения в строку заданного формата. Отличается от функции formatRow тем, что удаляет лишний перевод строки `\n` а конце, если он есть.
+
+**Синтаксис**
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Аргументы**
+
+-   `format` — текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — выражения.
+
+**Возвращаемое значение**
+
+-   Отформатированная строка (в текстовых форматах без завершающего перевода строки).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3);
+```
+
+Результат:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
 ```
 
 ## snowflakeToDateTime {#snowflaketodatetime}

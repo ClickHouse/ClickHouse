@@ -450,6 +450,7 @@
 "formatReadableSize"
 "formatReadableTimeDelta"
 "formatRow"
+"formatRowNoNewline"
 "FQDN"
 "fragment"
 "FREEZE"

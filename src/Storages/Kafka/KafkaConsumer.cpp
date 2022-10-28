@@ -2,7 +2,8 @@
 // should be defined before any instantiation
 #include <fmt/ostream.h>
 
-#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Storages/Kafka/KafkaConsumer.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <Common/logger_useful.h>
 
@@ -44,7 +45,7 @@ const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
-ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
+KafkaConsumer::KafkaConsumer(
     ConsumerPtr consumer_,
     Poco::Logger * log_,
     size_t max_batch_size,
@@ -52,8 +53,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
     const Names & _topics)
-    : ReadBuffer(nullptr, 0)
-    , consumer(consumer_)
+    : consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
@@ -127,7 +127,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     });
 }
 
-ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
+KafkaConsumer::~KafkaConsumer()
 {
     try
     {
@@ -155,7 +155,7 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 // after unsubscribe, otherwise consumer will hang on destruction
 // see https://github.com/edenhill/librdkafka/issues/2077
 //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
-void ReadBufferFromKafkaConsumer::drain()
+void KafkaConsumer::drain()
 {
     auto start_time = std::chrono::steady_clock::now();
     cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
@@ -194,7 +194,7 @@ void ReadBufferFromKafkaConsumer::drain()
 }
 
 
-void ReadBufferFromKafkaConsumer::commit()
+void KafkaConsumer::commit()
 {
     auto print_offsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
     {
@@ -279,7 +279,7 @@ void ReadBufferFromKafkaConsumer::commit()
     offsets_stored = 0;
 }
 
-void ReadBufferFromKafkaConsumer::subscribe()
+void KafkaConsumer::subscribe()
 {
     LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
 
@@ -313,22 +313,20 @@ void ReadBufferFromKafkaConsumer::subscribe()
     }
 
     cleanUnprocessed();
-    allowed = false;
 
     // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
     if (stalled_status != CONSUMER_STOPPED)
         stalled_status = NO_MESSAGES_RETURNED;
 }
 
-void ReadBufferFromKafkaConsumer::cleanUnprocessed()
+void KafkaConsumer::cleanUnprocessed()
 {
     messages.clear();
     current = messages.begin();
-    BufferBase::set(nullptr, 0, 0);
     offsets_stored = 0;
 }
 
-void ReadBufferFromKafkaConsumer::unsubscribe()
+void KafkaConsumer::unsubscribe()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
     cleanUnprocessed();
@@ -346,13 +344,13 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer::unsubscribe: {}", e.what());
+        LOG_ERROR(log, "Exception from KafkaConsumer::unsubscribe: {}", e.what());
     }
 
 }
 
 
-void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
+void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
     {
@@ -365,18 +363,15 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 }
 
 // it do the poll when needed
-bool ReadBufferFromKafkaConsumer::poll()
+ReadBufferPtr KafkaConsumer::consume()
 {
     resetIfStopped();
 
     if (polledDataUnusable())
-        return false;
+        return nullptr;
 
     if (hasMorePolledMessages())
-    {
-        allowed = true;
-        return true;
-    }
+        return getNextNonEmptyMessage();
 
     if (intermediate_commit)
         commit();
@@ -401,7 +396,7 @@ bool ReadBufferFromKafkaConsumer::poll()
         resetIfStopped();
         if (stalled_status == CONSUMER_STOPPED)
         {
-            return false;
+            return nullptr;
         }
         else if (stalled_status == REBALANCE_HAPPENED)
         {
@@ -412,7 +407,7 @@ bool ReadBufferFromKafkaConsumer::poll()
                 // otherwise we will continue polling from that position
                 resetToLastCommitted("Rewind last poll after rebalance.");
             }
-            return false;
+            return nullptr;
         }
 
         if (new_messages.empty())
@@ -430,18 +425,18 @@ bool ReadBufferFromKafkaConsumer::poll()
                 {
                     LOG_WARNING(log, "Can't get assignment. Will keep trying.");
                     stalled_status = NO_ASSIGNMENT;
-                    return false;
+                    return nullptr;
                 }
             }
             else if (assignment->empty())
             {
                 LOG_TRACE(log, "Empty assignment.");
-                return false;
+                return nullptr;
             }
             else
             {
                 LOG_TRACE(log, "Stalled");
-                return false;
+                return nullptr;
             }
         }
         else
@@ -459,17 +454,31 @@ bool ReadBufferFromKafkaConsumer::poll()
     {
         LOG_ERROR(log, "Only errors left");
         stalled_status = ERRORS_RETURNED;
-        return false;
+        return nullptr;
     }
 
     ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
     stalled_status = NOT_STALLED;
-    allowed = true;
-    return true;
+    return getNextNonEmptyMessage();
 }
 
-size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
+ReadBufferPtr KafkaConsumer::getNextNonEmptyMessage()
+{
+    if (current == messages.end())
+        return nullptr;
+
+    const auto * data = current->get_payload().get_data();
+    size_t size = current->get_payload().get_size();
+    ++current;
+
+    if (data && size > 0)
+        return std::make_shared<ReadBufferFromMemory>(data, size);
+
+    return getNextNonEmptyMessage();
+}
+
+size_t KafkaConsumer::filterMessageErrors()
 {
     assert(current == messages.begin());
 
@@ -494,7 +503,7 @@ size_t ReadBufferFromKafkaConsumer::filterMessageErrors()
     return skipped;
 }
 
-void ReadBufferFromKafkaConsumer::resetIfStopped()
+void KafkaConsumer::resetIfStopped()
 {
     // we can react on stop only during fetching data
     // after block is formed (i.e. during copying data to MV / committing)  we ignore stop attempts
@@ -505,29 +514,8 @@ void ReadBufferFromKafkaConsumer::resetIfStopped()
     }
 }
 
-/// Do commit messages implicitly after we processed the previous batch.
-bool ReadBufferFromKafkaConsumer::nextImpl()
-{
-    if (!allowed || !hasMorePolledMessages())
-        return false;
 
-    const auto * message_data = current->get_payload().get_data();
-    size_t message_size = current->get_payload().get_size();
-
-    allowed = false;
-    ++current;
-
-    /// If message is empty, return end of stream.
-    if (message_data == nullptr)
-        return false;
-
-    /// const_cast is needed, because ReadBuffer works with non-const char *.
-    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(message_data));
-    BufferBase::set(new_position, message_size, 0);
-    return true;
-}
-
-void ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
+void KafkaConsumer::storeLastReadMessageOffset()
 {
     if (!isStalled())
     {

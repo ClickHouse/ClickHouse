@@ -1,12 +1,9 @@
-#include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
+#include <Storages/RabbitMQ/RabbitMQProducer.h>
 
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <amqpcpp.h>
-#include <uv.h>
 #include <boost/algorithm/string/split.hpp>
 #include <chrono>
 #include <thread>
@@ -25,41 +22,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
-        const RabbitMQConfiguration & configuration_,
-        ContextPtr global_context,
-        const Names & routing_keys_,
-        const String & exchange_name_,
-        const AMQP::ExchangeType exchange_type_,
-        const size_t channel_id_base_,
-        const bool persistent_,
-        std::atomic<bool> & shutdown_called_,
-        Poco::Logger * log_,
-        std::optional<char> delimiter,
-        size_t rows_per_message,
-        size_t chunk_size_)
-        : WriteBuffer(nullptr, 0)
-        , connection(configuration_, log_)
-        , routing_keys(routing_keys_)
-        , exchange_name(exchange_name_)
-        , exchange_type(exchange_type_)
-        , channel_id_base(std::to_string(channel_id_base_))
-        , persistent(persistent_)
-        , shutdown_called(shutdown_called_)
-        , payloads(BATCH)
-        , returned(RETURNED_LIMIT)
-        , log(log_)
-        , delim(delimiter)
-        , max_rows(rows_per_message)
-        , chunk_size(chunk_size_)
+RabbitMQProducer::RabbitMQProducer(
+    const RabbitMQConfiguration & configuration_,
+    const Names & routing_keys_,
+    const String & exchange_name_,
+    const AMQP::ExchangeType exchange_type_,
+    const size_t channel_id_base_,
+    const bool persistent_,
+    std::atomic<bool> & shutdown_called_,
+    Poco::Logger * log_)
+    : connection(configuration_, log_)
+    , routing_keys(routing_keys_)
+    , exchange_name(exchange_name_)
+    , exchange_type(exchange_type_)
+    , channel_id_base(std::to_string(channel_id_base_))
+    , persistent(persistent_)
+    , shutdown_called(shutdown_called_)
+    , payloads(BATCH)
+    , returned(RETURNED_LIMIT)
+    , log(log_)
+{
+}
+
+void RabbitMQProducer::initialize()
 {
     if (connection.connect())
         setupChannel();
     else
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to RabbitMQ {}", connection.connectionInfoForLog());
-
-    writing_task = global_context->getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
-    writing_task->deactivate();
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
@@ -70,47 +60,32 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
             key_arguments[matching[0]] = matching[1];
         }
     }
-
-    reinitializeChunks();
 }
 
-
-WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
+void RabbitMQProducer::stopProducingTask()
 {
-    writing_task->deactivate();
+    payloads.finish();
+}
+
+void RabbitMQProducer::finishImpl()
+{
     connection.disconnect();
-    assert(rows == 0);
 }
 
 
-void WriteBufferToRabbitMQProducer::countRow()
+void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
-    if (++rows % max_rows == 0)
-    {
-        const std::string & last_chunk = chunks.back();
-        size_t last_chunk_size = offset();
-
-        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
-            --last_chunk_size;
-
-        std::string payload;
-        payload.reserve((chunks.size() - 1) * chunk_size + last_chunk_size);
-
-        for (auto i = chunks.begin(), end = --chunks.end(); i != end; ++i)
-            payload.append(*i);
-
-        payload.append(last_chunk, 0, last_chunk_size);
-
-        reinitializeChunks();
-
-        ++payload_counter;
-        if (!payloads.push(std::make_pair(payload_counter, payload)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
-    }
+    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "push {}", message);
+    
+    Payload payload;
+    payload.message = message;
+    payload.id = ++payload_counter;
+    if (!payloads.push(std::move(payload)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
 
 
-void WriteBufferToRabbitMQProducer::setupChannel()
+void RabbitMQProducer::setupChannel()
 {
     producer_channel = connection.createChannel();
 
@@ -162,7 +137,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
 }
 
 
-void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
+void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
     assert(record_iter != delivery_record.end());
@@ -191,9 +166,9 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
 }
 
 
-void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & messages, bool republishing)
+void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 {
-    std::pair<UInt64, String> payload;
+    Payload payload;
 
     /* It is important to make sure that delivery_record.size() is never bigger than returned.size(), i.e. number if unacknowledged
      * messages cannot exceed returned.size(), because they all might end up there
@@ -203,9 +178,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
         bool pop_result = messages.pop(payload);
 
         if (!pop_result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+            return;
 
-        AMQP::Envelope envelope(payload.second.data(), payload.second.size());
+        LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "pop {}", payload.message);
+
+        AMQP::Envelope envelope(payload.message.data(), payload.message.size());
 
         /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty
         AMQP::Table message_settings = key_arguments;
@@ -222,7 +199,7 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
          * consumer side "republished" field of message metadata can be checked and, if it set to 1, consumer might also check "messageID"
          * property. This way detection of duplicates is guaranteed
          */
-        envelope.setMessageID(std::to_string(payload.first));
+        envelope.setMessageID(std::to_string(payload.id));
 
         /// Delivery mode is 1 or 2. 1 is default. 2 makes a message durable, but makes performance 1.5-2 times worse
         if (persistent)
@@ -254,9 +231,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
 }
 
 
-void WriteBufferToRabbitMQProducer::writingFunc()
+void RabbitMQProducer::producingTask()
 {
-    while ((!payloads.empty() || wait_all) && !shutdown_called.load())
+    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "start producingTask");
+    
+    while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
         /// but must publish only after onReady callback.
@@ -273,43 +252,20 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         iterateEventLoop();
 
-        if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
-            wait_all = false;
-        else if (!producer_channel->usable())
+        if (!producer_channel->usable())
         {
             if (connection.reconnect())
                 setupChannel();
         }
     }
 
+    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "finish producingTask");
+    
     LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
 }
 
 
-void WriteBufferToRabbitMQProducer::nextImpl()
-{
-    addChunk();
-}
-
-void WriteBufferToRabbitMQProducer::addChunk()
-{
-    chunks.push_back(std::string());
-    chunks.back().resize(chunk_size);
-    set(chunks.back().data(), chunk_size);
-}
-
-void WriteBufferToRabbitMQProducer::reinitializeChunks()
-{
-    rows = 0;
-    chunks.clear();
-    /// We cannot leave the buffer in the undefined state (i.e. without any
-    /// underlying buffer), since in this case the WriteBuffeR::next() will
-    /// not call our nextImpl() (due to available() == 0)
-    addChunk();
-}
-
-
-void WriteBufferToRabbitMQProducer::iterateEventLoop()
+void RabbitMQProducer::iterateEventLoop()
 {
     connection.getHandler().iterateLoop();
 }

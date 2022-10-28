@@ -1,12 +1,11 @@
 #include <utility>
 #include <chrono>
 #include <thread>
-#include <mutex>
 #include <atomic>
 #include <memory>
-#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
+#include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <boost/algorithm/string/split.hpp>
+#include <IO/ReadBufferFromMemory.h>
 #include <Common/logger_useful.h>
 #include "Poco/Timer.h"
 #include <amqpcpp.h>
@@ -19,41 +18,33 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
+RabbitMQConsumer::RabbitMQConsumer(
         RabbitMQHandler & event_handler_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
         Poco::Logger * log_,
-        char row_delimiter_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
-        : ReadBuffer(nullptr, 0)
-        , event_handler(event_handler_)
+        : event_handler(event_handler_)
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
         , log(log_)
-        , row_delimiter(row_delimiter_)
         , stopped(stopped_)
         , received(queue_size_)
 {
 }
 
 
-ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
-{
-    BufferBase::set(nullptr, 0, 0);
-}
 
-
-void ReadBufferFromRabbitMQConsumer::closeChannel()
+void RabbitMQConsumer::closeChannel()
 {
     if (consumer_channel)
         consumer_channel->close();
 }
 
-void ReadBufferFromRabbitMQConsumer::subscribe()
+void RabbitMQConsumer::subscribe()
 {
     for (const auto & queue_name : queues)
     {
@@ -70,8 +61,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
             if (message.bodySize())
             {
                 String message_received = std::string(message.body(), message.body() + message.bodySize());
-                if (row_delimiter != '\0')
-                    message_received += row_delimiter;
 
                 if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
                         message.hasTimestamp() ? message.timestamp() : 0,
@@ -91,7 +80,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
 }
 
 
-bool ReadBufferFromRabbitMQConsumer::ackMessages()
+bool RabbitMQConsumer::ackMessages()
 {
     AckTracker record_info = last_inserted_record_info;
 
@@ -116,7 +105,7 @@ bool ReadBufferFromRabbitMQConsumer::ackMessages()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
+void RabbitMQConsumer::updateAckTracker(AckTracker record_info)
 {
     if (record_info.delivery_tag && channel_error.load())
         return;
@@ -128,7 +117,7 @@ void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
 }
 
 
-void ReadBufferFromRabbitMQConsumer::setupChannel()
+void RabbitMQConsumer::setupChannel()
 {
     if (!consumer_channel)
         return;
@@ -159,7 +148,7 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
 }
 
 
-bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
+bool RabbitMQConsumer::needChannelUpdate()
 {
     if (wait_subscription)
         return false;
@@ -168,27 +157,17 @@ bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
+void RabbitMQConsumer::iterateEventLoop()
 {
     event_handler.iterateLoop();
 }
 
-
-bool ReadBufferFromRabbitMQConsumer::nextImpl()
+ReadBufferPtr RabbitMQConsumer::consume()
 {
-    if (stopped || !allowed)
-        return false;
+    if (stopped || !received.tryPop(current))
+        return nullptr;
 
-    if (received.tryPop(current))
-    {
-        auto * new_position = const_cast<char *>(current.message.data());
-        BufferBase::set(new_position, current.message.size(), 0);
-        allowed = false;
-
-        return true;
-    }
-
-    return false;
+    return std::make_shared<ReadBufferFromMemory>(current.message.data(), current.message.size());
 }
 
 }

@@ -22,10 +22,10 @@ namespace DB
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
-class ReadBufferFromKafkaConsumer : public ReadBuffer
+class KafkaConsumer
 {
 public:
-    ReadBufferFromKafkaConsumer(
+    KafkaConsumer(
         ConsumerPtr consumer_,
         Poco::Logger * log_,
         size_t max_batch_size,
@@ -34,7 +34,8 @@ public:
         const std::atomic<bool> & stopped_,
         const Names & _topics
     );
-    ~ReadBufferFromKafkaConsumer() override;
+
+    ~KafkaConsumer();
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
@@ -56,11 +57,9 @@ public:
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
 
-    // Polls batch of messages from Kafka or allows to read consecutive message by nextImpl
-    // returns true if there are some messages to process
-    // return false and sets stalled to false if there are no messages to process.
-    // additionally sets
-    bool poll();
+    /// Polls batch of messages from Kafka and return read buffer containing the next message or
+    /// nullptr when there are no messages to process.
+    ReadBufferPtr consume();
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
@@ -94,7 +93,6 @@ private:
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
     bool intermediate_commit = true;
-    bool allowed = true;
     size_t waited_for_assignment = 0;
 
     const std::atomic<bool> & stopped;
@@ -112,8 +110,7 @@ private:
     void resetIfStopped();
     /// Return number of messages with an error.
     size_t filterMessageErrors();
-
-    bool nextImpl() override;
+    ReadBufferPtr getNextNonEmptyMessage();
 };
 
 }

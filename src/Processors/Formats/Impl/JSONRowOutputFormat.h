@@ -19,7 +19,6 @@ public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
         const Block & header,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool yield_strings_);
 
@@ -34,8 +33,6 @@ public:
         statistics.applied_limit = true;
         statistics.rows_before_limit = rows_before_limit_;
     }
-
-    WriteBuffer & getWriteBuffer() const override { return *ostr; }
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
@@ -59,6 +56,7 @@ protected:
     void writeAfterExtremes() override;
 
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 

@@ -76,17 +76,13 @@ public:
 
     void doNotWritePrefix() { need_write_prefix = false; }
 
-    virtual WriteBuffer & getWriteBuffer() const { return out; }
-
-protected:
-    friend class ParallelFormattingOutputFormat;
-
-    virtual void consume(Chunk) = 0;
-    virtual void consumeTotals(Chunk) {}
-    virtual void consumeExtremes(Chunk) {}
-    virtual void finalizeImpl() {}
-    virtual void writePrefix() {}
-    virtual void writeSuffix() {}
+    void resetFormatter()
+    {
+        need_write_prefix = true;
+        need_write_suffix = true;
+        finalized = false;
+        resetFormatterImpl();
+    }
 
     void writePrefixIfNot()
     {
@@ -97,6 +93,9 @@ protected:
         }
     }
 
+protected:
+    friend class ParallelFormattingOutputFormat;
+
     void writeSuffixIfNot()
     {
         if (need_write_suffix)
@@ -105,6 +104,15 @@ protected:
             need_write_suffix = false;
         }
     }
+
+    virtual void consume(Chunk) = 0;
+    virtual void consumeTotals(Chunk) {}
+    virtual void consumeExtremes(Chunk) {}
+    virtual void finalizeImpl() {}
+    virtual void finalizeBuffers() {}
+    virtual void writePrefix() {}
+    virtual void writeSuffix() {}
+    virtual void resetFormatterImpl() {}
 
     /// Methods-helpers for parallel formatting.
 
