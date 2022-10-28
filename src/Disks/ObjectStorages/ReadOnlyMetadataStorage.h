@@ -124,26 +124,27 @@ public:
         /// Required by MergeTree
         return {};
     }
-    time_t getLastChanged(const std::string & /* path */) const override
-    {
-        return {};
-    }
-
-    struct stat stat(const String & /* path */) const override
-    {
-        throwNotAllowed();
-    }
 
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
         return 1;
     }
 
+    ///
+    /// Throw
+    ///
+    struct stat stat(const String & /* path */) const override
+    {
+        throwNotAllowed();
+    }
+    time_t getLastChanged(const std::string & /* path */) const override
+    {
+        throwNotAllowed();
+    }
     std::string readFileToString(const std::string & /* path */) const override
     {
         throwNotAllowed();
     }
-
     std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & /* file_paths */) const override
     {
         throwNotAllowed();
