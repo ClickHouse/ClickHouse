@@ -4,8 +4,6 @@ import argparse
 import csv
 import itertools
 import os
-import sys
-
 
 from github import Github
 
