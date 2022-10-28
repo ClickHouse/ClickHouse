@@ -9,7 +9,7 @@ INSERT INTO test_without_merge SELECT 1;
 INSERT INTO test_without_merge SELECT 2;
 INSERT INTO test_without_merge SELECT 3;
 
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_without_merge' AND active;
 
 DROP TABLE test_without_merge;
@@ -22,7 +22,7 @@ INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 3;
 
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 
 DROP TABLE test_with_merge;
@@ -35,7 +35,7 @@ INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
 INSERT INTO test_with_merge SELECT 3;
 
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 
 DROP TABLE test_with_merge;
@@ -48,7 +48,7 @@ INSERT INTO test_replicated SELECT 1;
 INSERT INTO test_replicated SELECT 2;
 INSERT INTO test_replicated SELECT 3;
 
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;
@@ -61,7 +61,7 @@ INSERT INTO test_replicated SELECT 1;
 INSERT INTO test_replicated SELECT 2;
 INSERT INTO test_replicated SELECT 3;
 
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;
@@ -74,7 +74,7 @@ SYSTEM STOP MERGES test_with_merge;
 -- These three parts will have min_age=6 at the time of merge
 INSERT INTO test_with_merge SELECT 1;
 INSERT INTO test_with_merge SELECT 2;
-SELECT sleepEachRow(1) FROM numbers(6) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 -- These three parts will have min_age=0 at the time of merge
 -- and so, nothing will be merged.
 INSERT INTO test_with_merge SELECT 3;
