@@ -627,7 +627,7 @@ void ReplicatedMergeTreeSink::commitPart(
             part_committed_locally_but_zookeeper = true;
 
             /// if all retries will be exhausted by accessing zookeeper on fresh retry -> we'll add committed part to queue in the action
-            /// here lambda capture part name, it's ok since we'll not generate new one for this insert, 
+            /// here lambda capture part name, it's ok since we'll not generate new one for this insert,
             /// see comments around 'part_committed_locally_but_zookeeper' flag
             retries_ctl.actionAfterLastFailedRetry(
                 [&storage = storage, part_name = part->name]()
