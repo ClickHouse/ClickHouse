@@ -403,7 +403,8 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
         filter_original = filter;
 
         /// Check if const 1 after shrink
-        if (allow_filter_columns && filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule)
+        if (num_rows == filter.size() &&
+            allow_filter_columns && filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule)
         {
             total_rows_per_granule = total_rows_per_granule - total_zero_rows_in_tails;
             num_rows = total_rows_per_granule;
