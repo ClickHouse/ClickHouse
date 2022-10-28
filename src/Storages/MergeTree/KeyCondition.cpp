@@ -1447,6 +1447,7 @@ public:
             ColumnsWithTypeAndName new_arguments;
             new_arguments.reserve(arguments.size() + 1);
             new_arguments.push_back(const_arg);
+            new_arguments.front().column = new_arguments.front().column->cloneResized(input_rows_count);
             for (const auto & arg : arguments)
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
@@ -1455,6 +1456,7 @@ public:
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
+            new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
         else
