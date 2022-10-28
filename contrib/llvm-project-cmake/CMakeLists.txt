@@ -1,4 +1,4 @@
-if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined" OR NOT USE_STATIC_LIBRARIES)
+if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
@@ -6,15 +6,16 @@ endif()
 
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
+# If USE_STATIC_LIBRARIES=0 was passed to CMake, we'll still build LLVM statically to keep complexity minimal.
+
 if (NOT ENABLE_EMBEDDED_COMPILER)
     message(STATUS "Not using LLVM")
     return()
 endif()
 
-# TODO: Enable shared library build
 # TODO: Enable compilation on AArch64
 
-set (LLVM_VERSION "14.0.0bundled")
+set (LLVM_VERSION "15.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
@@ -62,9 +63,6 @@ set (REQUIRED_LLVM_LIBRARIES
 #     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
 # endif ()
 
-# ld: unknown option: --color-diagnostics
-# set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
-
 set (CMAKE_INSTALL_RPATH "ON") # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selection
 set (LLVM_ENABLE_EH 1 CACHE INTERNAL "") # With exception handling
@@ -80,6 +78,7 @@ set(LLVM_ENABLE_LIBXML2 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_LIBEDIT 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_LIBPFM 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_ZLIB 0 CACHE INTERNAL "")
+set(LLVM_ENABLE_ZSTD 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_Z3_SOLVER 0 CACHE INTERNAL "")
 set(LLVM_INCLUDE_TOOLS 0 CACHE INTERNAL "")
 set(LLVM_BUILD_TOOLS 0 CACHE INTERNAL "")
@@ -95,9 +94,6 @@ set(LLVM_INCLUDE_BENCHMARKS 0 CACHE INTERNAL "")
 set(LLVM_INCLUDE_DOCS 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_OCAMLDOC 0 CACHE INTERNAL "")
 set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
-
-# C++20 is currently not supported due to ambiguous operator != etc.
-set (CMAKE_CXX_STANDARD 17)
 
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")

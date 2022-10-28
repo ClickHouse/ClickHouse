@@ -453,7 +453,7 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     /// Must create new state of aggregate function and take ownership of it,
     ///  because ownership of states of aggregate function cannot be shared for individual rows,
     ///  (only as a whole, see comment above).
-    ensureOwnership();
+    /// ensureOwnership() will execute in insertDefault()
     insertDefault();
     insertMergeFrom(from, n);
 }
@@ -465,7 +465,7 @@ void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
-    ensureOwnership();
+    /// ensureOwnership() will execute in insertDefault()
     insertDefault();
     insertMergeFrom(place);
 }

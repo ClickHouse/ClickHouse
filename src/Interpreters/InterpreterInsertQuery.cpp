@@ -292,11 +292,12 @@ Chain InterpreterInsertQuery::buildChainImpl(
         out.addSource(std::make_shared<SquashingChunksTransform>(
             out.getInputHeader(),
             table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
+            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
     }
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
+    counting->setProgressCallback(context_ptr->getProgressCallback());
     out.addSource(std::move(counting));
 
     return out;
@@ -331,7 +332,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && settings.parallel_distributed_insert_select)
+    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 

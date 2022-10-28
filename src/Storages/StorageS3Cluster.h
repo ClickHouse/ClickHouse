@@ -10,7 +10,6 @@
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/StorageS3.h>
 
 namespace DB
@@ -18,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorageCluster
+class StorageS3Cluster : public IStorage
 {
 public:
     StorageS3Cluster(
@@ -31,18 +30,16 @@ public:
     std::string getName() const override { return "S3Cluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
-    ClusterPtr getCluster(ContextPtr context) const override;
-
 private:
     StorageS3::S3Configuration s3_configuration;
+
     String filename;
     String cluster_name;
     String format_name;

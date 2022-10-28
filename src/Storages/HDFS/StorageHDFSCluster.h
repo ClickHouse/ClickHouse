@@ -9,7 +9,6 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
 
 namespace DB
@@ -17,7 +16,7 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorageCluster
+class StorageHDFSCluster : public IStorage
 {
 public:
     StorageHDFSCluster(
@@ -33,15 +32,12 @@ public:
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    ClusterPtr getCluster(ContextPtr context) const override;
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
 
 private:
     String cluster_name;
