@@ -48,6 +48,49 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #include <arm_acle.h>
 #endif
 
+#if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+//CRC32 Implementation for POWER
+inline uint32_t ppc_crc32_u8(uint32_t crc, uint8_t v)
+{
+    uint32_t _crc = crc;
+    _crc ^= v;
+    for (int bit = 0 ; bit < 8 ; bit++)
+    {
+       if (_crc & 1)
+          _crc = (_crc >> 1) ^ UINT32_C(0x82f63b78);
+       else
+          _crc = (_crc >> 1);
+    }
+    return _crc;
+}
+
+inline uint32_t ppc_crc32_u16(uint32_t crc, uint16_t v)
+{
+    uint32_t _crc = crc;
+    _crc = ppc_crc32_u8(_crc, v & 0xff);
+    _crc = ppc_crc32_u8(_crc, (v >> 8) & 0xff);
+    return _crc;
+}
+
+inline uint32_t ppc_crc32_u32(uint32_t crc, uint32_t v)
+{
+    uint32_t _crc = crc;
+    _crc = ppc_crc32_u16(_crc, v & 0xffff);
+    _crc = ppc_crc32_u16(_crc, (v >> 16) & 0xffff);
+    return _crc;
+}
+
+inline uint64_t ppc_crc32_u64(uint64_t crc, uint64_t v)
+{
+    uint64_t _crc = crc;
+    _crc = ppc_crc32_u32(static_cast<uint32_t>(_crc), v & 0xffffffff);
+    _crc = ppc_crc32_u32(static_cast<uint32_t>(_crc), (v >> 32) & 0xffffffff);
+    return _crc;
+}
+
+#endif
+
+
 /// NOTE: Intel intrinsic can be confusing.
 /// - https://code.google.com/archive/p/sse-intrinsics/wikis/PmovIntrinsicBug.wiki
 /// - https://stackoverflow.com/questions/15752770/mm-crc32-u64-poorly-defined
@@ -57,6 +100,8 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
     return _mm_crc32_u64(-1ULL, x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     return __crc32cd(-1U, x);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    return ppc_crc32_u64(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -69,6 +114,8 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
     return _mm_crc32_u64(updated_value, x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     return __crc32cd(static_cast<UInt32>(updated_value), x);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    return ppc_crc32_u64(updated_value, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x) ^ updated_value;

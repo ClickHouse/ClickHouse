@@ -36,6 +36,8 @@ struct Hash
         return _mm_crc32_u64(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cd(static_cast<UInt32>(crc), val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return ppc_crc32_u64(crc, val);
 #else
         throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
@@ -47,6 +49,8 @@ struct Hash
         return _mm_crc32_u32(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cw(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return ppc_crc32_u32(crc,val);
 #else
         throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
@@ -58,6 +62,8 @@ struct Hash
         return _mm_crc32_u16(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32ch(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return ppc_crc32_u16(crc,val);
 #else
         throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
@@ -69,6 +75,8 @@ struct Hash
         return _mm_crc32_u8(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cb(crc, val);
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return ppc_crc32_u8(crc,val);
 #else
         throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif

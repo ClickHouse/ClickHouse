@@ -70,6 +70,8 @@ struct NgramDistanceImpl
         return _mm_crc32_u64(code_points[2], combined) & 0xFFFFu;
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cd(code_points[2], combined) & 0xFFFFu;
+#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        return ppc_crc32_u64(code_points[2], combined) & 0xFFFFu ;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
