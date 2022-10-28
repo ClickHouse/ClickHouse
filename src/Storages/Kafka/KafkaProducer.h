@@ -1,8 +1,7 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
-
+#include <Storages/IMessageProducer.h>
 #include <cppkafka/cppkafka.h>
 
 #include <list>
@@ -14,45 +13,49 @@ namespace CurrentMetrics
     extern const Metric KafkaProducers;
 }
 
-
 namespace DB
 {
 class Block;
 using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 
-class WriteBufferToKafkaProducer : public WriteBuffer
+class KafkaProducer : public ConcurrentMessageProducer
 {
 public:
-    WriteBufferToKafkaProducer(
+    KafkaProducer(
         ProducerPtr producer_,
         const std::string & topic_,
-        std::optional<char> delimiter,
-        size_t rows_per_message,
-        size_t chunk_size_,
         std::chrono::milliseconds poll_timeout,
+        std::atomic<bool> & shutdown_called_,
         const Block & header);
-    ~WriteBufferToKafkaProducer() override;
 
-    void countRow(const Columns & columns, size_t row);
-    void flush();
+    void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
 
 private:
-    void nextImpl() override;
-    void addChunk();
-    void reinitializeChunks();
+    void stopProducingTask() override;
+    void finishImpl() override;
+
+    String getProducingTaskName() const override { return "KafkaProducingTask"; }
+
+    void producingTask() override;
+
+    struct Payload
+    {
+        String message;
+        std::optional<String> key;
+        std::optional<std::chrono::milliseconds> timestamp;
+    };
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};
 
     ProducerPtr producer;
     const std::string topic;
-    const std::optional<char> delim;
-    const size_t max_rows;
-    const size_t chunk_size;
     const std::chrono::milliseconds timeout;
 
-    size_t rows = 0;
-    std::list<std::string> chunks;
+    std::atomic<bool> & shutdown_called;
+
     std::optional<size_t> key_column_index;
     std::optional<size_t> timestamp_column_index;
+    ConcurrentBoundedQueue<Payload> payloads;
 };
 
 }

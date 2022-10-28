@@ -46,8 +46,6 @@ public:
     void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
     void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
-    WriteBuffer & getWriteBuffer() const override { return *ostr; }
-
 protected:
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
@@ -55,6 +53,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeChunkStart() override;
     void writeChunkEnd() override;

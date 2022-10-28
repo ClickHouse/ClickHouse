@@ -2,9 +2,8 @@
 #include <chrono>
 #include <memory>
 #include <utility>
-#include <Storages/NATS/ReadBufferFromNATSConsumer.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/bind.hpp>
+#include <Storages/NATS/NATSConsumer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include "Poco/Timer.h"
 #include <Common/logger_useful.h>
 
@@ -17,28 +16,25 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_NATS;
 }
 
-ReadBufferFromNATSConsumer::ReadBufferFromNATSConsumer(
+NATSConsumer::NATSConsumer(
     std::shared_ptr<NATSConnectionManager> connection_,
     StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     Poco::Logger * log_,
-    char row_delimiter_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
-    : ReadBuffer(nullptr, 0)
-    , connection(connection_)
+    : connection(connection_)
     , storage(storage_)
     , subjects(subjects_)
     , log(log_)
-    , row_delimiter(row_delimiter_)
     , stopped(stopped_)
     , queue_name(subscribe_queue_name)
     , received(queue_size_)
 {
 }
 
-void ReadBufferFromNATSConsumer::subscribe()
+void NATSConsumer::subscribe()
 {
     if (subscribed)
         return;
@@ -62,49 +58,38 @@ void ReadBufferFromNATSConsumer::subscribe()
     subscribed = true;
 }
 
-void ReadBufferFromNATSConsumer::unsubscribe()
+void NATSConsumer::unsubscribe()
 {
     for (const auto & subscription : subscriptions)
         natsSubscription_Unsubscribe(subscription.get());
 }
 
-bool ReadBufferFromNATSConsumer::nextImpl()
+ReadBufferPtr NATSConsumer::consume()
 {
-    if (stopped || !allowed)
-        return false;
+    if (stopped || !received.tryPop(current))
+        return nullptr;
 
-    if (received.tryPop(current))
-    {
-        auto * new_position = const_cast<char *>(current.message.data());
-        BufferBase::set(new_position, current.message.size(), 0);
-        allowed = false;
-
-        return true;
-    }
-
-    return false;
+    return std::make_shared<ReadBufferFromMemory>(current.message.data(), current.message.size());
 }
 
-void ReadBufferFromNATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
+void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
 {
-    auto * buffer = static_cast<ReadBufferFromNATSConsumer *>(consumer);
+    auto * nats_consumer = static_cast<NATSConsumer *>(consumer);
     const int msg_length = natsMsg_GetDataLength(msg);
 
     if (msg_length)
     {
         String message_received = std::string(natsMsg_GetData(msg), msg_length);
         String subject = natsMsg_GetSubject(msg);
-        if (buffer->row_delimiter != '\0')
-            message_received += buffer->row_delimiter;
 
         MessageData data = {
             .message = message_received,
             .subject = subject,
         };
-        if (!buffer->received.push(std::move(data)))
+        if (!nats_consumer->received.push(std::move(data)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
 
-        buffer->storage.startStreaming();
+        nats_consumer->storage.startStreaming();
     }
 
     natsMsg_Destroy(msg);

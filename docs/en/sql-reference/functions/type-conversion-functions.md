@@ -1393,7 +1393,7 @@ formatRow(format, x, y, ...)
 
 **Returned value**
 
--   A formatted string.
+-   A formatted string. (for text formats it's usually terminated with the new line character).
 
 **Example**
 
@@ -1415,6 +1415,74 @@ Result:
 │ 2,"good"
                          │
 └──────────────────────────────────┘
+```
+
+**Note**: If format contains suffix/prefix, it will be written in each row.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CustomSeparated', number, 'good')
+FROM numbers(3)
+SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
+```
+
+Result:
+
+``` text
+┌─formatRow('CustomSeparated', number, 'good')─┐
+│ <prefix>
+0	good
+<suffix>                   │
+│ <prefix>
+1	good
+<suffix>                   │
+│ <prefix>
+2	good
+<suffix>                   │
+└──────────────────────────────────────────────┘
+```
+
+Note: Only row-based formats are supported in this function.
+
+## formatRowNoNewline
+
+Converts arbitrary expressions into a string via given format. Differs from formatRow in that this function trims the last `\n` if any.
+
+**Syntax**
+
+``` sql
+formatRowNoNewline(format, x, y, ...)
+```
+
+**Arguments**
+
+-   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — Expressions.
+
+**Returned value**
+
+-   A formatted string.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3);
+```
+
+Result:
+
+``` text
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
 ```
 
 ## snowflakeToDateTime

@@ -176,6 +176,7 @@
 "tan"
 "substring"
 "formatRow"
+"formatRowNoNewline"
 "dictGetHierarchy"
 "notEmpty"
 "format"

@@ -126,6 +126,7 @@ void IOutputFormat::finalize()
     writePrefixIfNot();
     writeSuffixIfNot();
     finalizeImpl();
+    finalizeBuffers();
     finalized = true;
 }
 

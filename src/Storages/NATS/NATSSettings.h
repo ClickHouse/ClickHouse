@@ -26,6 +26,7 @@ class ASTStorage;
     M(String, nats_password, "", "NATS password", 0) \
     M(String, nats_token, "", "NATS token", 0) \
     M(UInt64, nats_startup_connect_tries, 5, "Number of connect tries at startup", 0) \
+    M(UInt64, nats_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
 
 #define LIST_OF_NATS_SETTINGS(M) \
     NATS_RELATED_SETTINGS(M) \

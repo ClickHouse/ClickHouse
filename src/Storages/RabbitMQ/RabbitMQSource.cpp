@@ -3,7 +3,8 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
+#include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <IO/EmptyReadBuffer.h>
 
 namespace DB
 {
@@ -70,31 +71,31 @@ RabbitMQSource::~RabbitMQSource()
 {
     storage.decrementReader();
 
-    if (!buffer)
+    if (!consumer)
         return;
 
-    storage.pushReadBuffer(buffer);
+    storage.pushConsumer(consumer);
 }
 
 
 bool RabbitMQSource::needChannelUpdate()
 {
-    if (!buffer)
+    if (!consumer)
         return false;
 
-    return buffer->needChannelUpdate();
+    return consumer->needChannelUpdate();
 }
 
 
 void RabbitMQSource::updateChannel()
 {
-    if (!buffer)
+    if (!consumer)
         return;
 
-    buffer->updateAckTracker();
+    consumer->updateAckTracker();
 
-    if (storage.updateChannel(buffer->getChannel()))
-        buffer->setupChannel();
+    if (storage.updateChannel(consumer->getChannel()))
+        consumer->setupChannel();
 }
 
 Chunk RabbitMQSource::generate()
@@ -121,20 +122,21 @@ bool RabbitMQSource::checkTimeLimit() const
 
 Chunk RabbitMQSource::generateImpl()
 {
-    if (!buffer)
+    if (!consumer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
-        buffer = storage.popReadBuffer(timeout);
+        consumer = storage.popConsumer(timeout);
     }
 
-    if (!buffer || is_finished)
+    if (!consumer || is_finished)
         return {};
 
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
+    EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+            storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
 
@@ -142,21 +144,23 @@ Chunk RabbitMQSource::generateImpl()
 
     while (true)
     {
-        if (buffer->queueEmpty())
+        if (consumer->queueEmpty())
             break;
 
-        auto new_rows = executor.execute();
+        size_t new_rows = 0;
+        if (auto buf = consumer->consume())
+            new_rows = executor.execute(*buf);
 
         if (new_rows)
         {
             auto exchange_name = storage.getExchange();
-            auto channel_id = buffer->getChannelID();
-            auto delivery_tag = buffer->getDeliveryTag();
-            auto redelivered = buffer->getRedelivered();
-            auto message_id = buffer->getMessageID();
-            auto timestamp = buffer->getTimestamp();
+            auto channel_id = consumer->getChannelID();
+            auto delivery_tag = consumer->getDeliveryTag();
+            auto redelivered = consumer->getRedelivered();
+            auto message_id = consumer->getMessageID();
+            auto timestamp = consumer->getTimestamp();
 
-            buffer->updateAckTracker({delivery_tag, channel_id});
+            consumer->updateAckTracker({delivery_tag, channel_id});
 
             for (size_t i = 0; i < new_rows; ++i)
             {
@@ -171,9 +175,7 @@ Chunk RabbitMQSource::generateImpl()
             total_rows = total_rows + new_rows;
         }
 
-        buffer->allowNext();
-
-        if (total_rows >= max_block_size || buffer->queueEmpty() || buffer->isConsumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
             break;
     }
 
@@ -190,10 +192,10 @@ Chunk RabbitMQSource::generateImpl()
 
 bool RabbitMQSource::sendAck()
 {
-    if (!buffer)
+    if (!consumer)
         return false;
 
-    if (!buffer->ackMessages())
+    if (!consumer->ackMessages())
         return false;
 
     return true;

@@ -277,6 +277,7 @@ void JSONEachRowRowInputFormat::resetParser()
     read_columns.clear();
     seen_columns.clear();
     prev_positions.clear();
+    allow_new_rows = true;
 }
 
 void JSONEachRowRowInputFormat::readPrefix()
