@@ -344,7 +344,7 @@ def main():
         update_contributors()
         return
 
-    version = get_version_from_repo(args.version_path)
+    version = get_version_from_repo(args.version_path, Git(True))
 
     if args.update:
         version = version.update(args.update)

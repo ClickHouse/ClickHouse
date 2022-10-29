@@ -91,7 +91,7 @@ static void insertSignedInteger(IColumn & column, const DataTypePtr & column_typ
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Int64:
             assert_cast<ColumnInt64 &>(column).insertValue(value);
@@ -117,7 +117,7 @@ static void insertUnsignedInteger(IColumn & column, const DataTypePtr & column_t
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);

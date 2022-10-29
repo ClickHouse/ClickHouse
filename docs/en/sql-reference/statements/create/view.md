@@ -166,23 +166,6 @@ SELECT * FROM [db.]live_view WHERE ...
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
-### WITH TIMEOUT Clause
-
-When a live view is created with a `WITH TIMEOUT` clause then the live view will be dropped automatically after the specified number of seconds elapse since the end of the last [WATCH](../../../sql-reference/statements/watch.md) query that was watching the live view.
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
-```
-
-If the timeout value is not specified then the value specified by the [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout) setting is used.
-
-**Example:**
-
-```sql
-CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AS SELECT sum(x) FROM mt;
-```
-
 ### WITH REFRESH Clause
 
 When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
@@ -211,20 +194,6 @@ WATCH lv
 │ 2021-02-21 08:47:15 │        3 │
 └─────────────────────┴──────────┘
 ```
-
-You can combine `WITH TIMEOUT` and `WITH REFRESH` clauses using an `AND` clause.
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
-```
-
-**Example:**
-
-```sql
-CREATE LIVE VIEW lv WITH TIMEOUT 15 AND REFRESH 5 AS SELECT now();
-```
-
-After 15 sec the live view will be automatically dropped if there are no active `WATCH` queries.
 
 ```sql
 WATCH lv
