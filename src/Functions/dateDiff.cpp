@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -44,7 +45,6 @@ namespace
   */
 class FunctionDateDiff : public IFunction
 {
-    using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
     static constexpr auto name = "dateDiff";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
@@ -141,19 +141,19 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
-        if (const auto * x_vec_16 = checkAndGetColumn<ColumnUInt16>(&x))
+        if (const auto * x_vec_16 = checkAndGetColumn<ColumnDate>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
-        else if (const auto * x_vec_32 = checkAndGetColumn<ColumnUInt32>(&x))
+        else if (const auto * x_vec_32 = checkAndGetColumn<ColumnDateTime>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
-        else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnInt32>(&x))
+        else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnDate32>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_32_s, y, timezone_x, timezone_y, result);
         else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
-        else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnUInt16>(&x))
+        else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnDate>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
-        else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnUInt32>(&x))
+        else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnDateTime>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
-        else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnInt32>(&x))
+        else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnDate32>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), y, timezone_x, timezone_y, result);
         else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
             dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
@@ -169,19 +169,19 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
-        if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
+        if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
+        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
             vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
             vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
-        else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
+        else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnDate>(&y))
             vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
-        else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
+        else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnDateTime>(&y))
             vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
-        else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnInt32>(&y))
+        else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnDate32>(&y))
             vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
         else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
             vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
@@ -197,11 +197,11 @@ private:
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result) const
     {
-        if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
+        if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
+        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
             constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
-        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnInt32>(&y))
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
             constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
         else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
             constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);

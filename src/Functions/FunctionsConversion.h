@@ -2173,6 +2173,10 @@ struct ToNumberMonotonicity
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
+        /// Do not support 128 bit integers and decimals for now.
+        if (size_of_from > sizeof(Int64))
+            return {};
+
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
             : (left.get<Int64>() >= 0);
