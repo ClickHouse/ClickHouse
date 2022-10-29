@@ -6,7 +6,7 @@ sidebar_label: format
 
 # format
 
-Extracts table structure from data and parse it according to specified input format.
+Extracts table structure from data and parses it according to specified input format.
 
 **Syntax**
 
