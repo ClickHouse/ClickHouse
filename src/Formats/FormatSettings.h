@@ -158,6 +158,11 @@ struct FormatSettings
 
     struct
     {
+        String column_for_object_name;
+    } json_object_each_row;
+
+    struct
+    {
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;

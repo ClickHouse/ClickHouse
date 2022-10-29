@@ -1502,6 +1502,21 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 - Policy should have exactly one volume with local disks.
 :::
 
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
+
+Limit the amount of disk space consumed by temporary files in `tmp_path` for the server.
+Queries that exceed this limit will fail with an exception.
+
+Default value: `0`.
+
+**See also**
+
+-   [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
+-   [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
+-   [tmp_path](#tmp-path)
+-   [tmp_policy](#tmp-policy)
+-   [max_server_memory_usage](#max_server_memory_usage)
+
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
