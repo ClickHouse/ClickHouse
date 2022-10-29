@@ -13,30 +13,24 @@ namespace ErrorCodes
 
 class ReadOnlyMetadataStorage;
 
-/// Readonly, throws NOT_IMPLEMENTED error.
+/// Transaction for read-only storage, throws NOT_IMPLEMENTED error.
 /// Can be used to add limited read-only support of MergeTree.
 class ReadOnlyMetadataTransaction : public IMetadataTransaction
 {
 public:
-    ///
-    /// Noop
-    ///
     void commit() override
     {
         /// Noop, nothing to commit.
     }
+
     void createEmptyMetadataFile(const std::string & /* path */) override
     {
-        /// No metadata, no need to create anything.
+        throwNotAllowed();
     }
     void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
     {
-        /// Noop
+        throwNotAllowed();
     }
-
-    ///
-    /// Throws
-    ///
     void writeStringToFile(const std::string & /* path */, const std::string & /* data */) override
     {
         throwNotAllowed();
@@ -98,68 +92,54 @@ public:
         throwNotAllowed();
     }
 
-
-    ///
-    /// Others
-    ///
     bool supportsChmod() const override { return false; }
 
 private:
     [[noreturn]] static void throwNotAllowed()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only transaction operations are supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transaction for read-only storage is not supported");
     }
 };
 
-/// Readonly, throws NOT_IMPLEMENTED error.
+/// Readonly storage, throws NOT_IMPLEMENTED error.
 /// Can be used to add limited read-only support of MergeTree.
 class ReadOnlyMetadataStorage : public IMetadataStorage
 {
 public:
-    ///
-    /// Noop
-    ///
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree
         return {};
     }
-
     uint32_t getHardlinkCount(const std::string & /* path */) const override
     {
         return 1;
     }
 
-    ///
-    /// Throw
-    ///
     struct stat stat(const String & /* path */) const override
     {
-        throwNotAllowed();
+        throwNotImplemented();
     }
     time_t getLastChanged(const std::string & /* path */) const override
     {
-        throwNotAllowed();
+        throwNotImplemented();
     }
     std::string readFileToString(const std::string & /* path */) const override
     {
-        throwNotAllowed();
+        throwNotImplemented();
     }
     std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & /* file_paths */) const override
     {
-        throwNotAllowed();
+        throwNotImplemented();
     }
 
-    ///
-    /// Others
-    ///
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
 
 private:
-    [[noreturn]] static void throwNotAllowed()
+    [[noreturn]] static void throwNotImplemented()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only metadata operations are supported");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is ont implemented");
     }
 };
 

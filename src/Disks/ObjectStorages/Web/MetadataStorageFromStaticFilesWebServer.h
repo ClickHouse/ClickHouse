@@ -64,6 +64,16 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
+    void createEmptyMetadataFile(const std::string & /* path */) override
+    {
+        /// No metadata, no need to create anything.
+    }
+
+    void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
+    {
+        /// Noop
+    }
+
     void createDirectory(const std::string & path) override;
 
     void createDirectoryRecursive(const std::string & path) override;
