@@ -37,8 +37,8 @@ if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; 
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 # There could be many disks declared in config
-readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
 readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
+readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
@@ -51,8 +51,8 @@ for dir in "$DATA_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
   "$FORMAT_SCHEMA_PATH" \
-  "${FILESYSTEM_CACHE_PATHS[@]}" \
-  "${DISKS_PATHS[@]}"
+  "${DISKS_PATHS[@]}" \
+  "${DISKS_METADATA_PATHS[@]}"
 do
     # check if variable not empty
     [ -z "$dir" ] && continue
@@ -106,9 +106,9 @@ fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # port is needed to check if clickhouse-server is ready for connections
-    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
-    HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port)"
-    
+    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
+    HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
+
     if [ -n "$HTTP_PORT" ]; then
         URL="http://127.0.0.1:$HTTP_PORT/ping"
     else

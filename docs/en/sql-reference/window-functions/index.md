@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/window-functions/
 sidebar_position: 62
 sidebar_label: Window Functions
+title: Window Functions
 ---
-
-# Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
@@ -430,9 +430,9 @@ FROM
 ### Cumulative sum.
 
 ```sql
-CREATE TABLE events
+CREATE TABLE warehouse
 (
-    `metric` String,
+    `item` String,
     `ts` DateTime,
     `value` Float
 )

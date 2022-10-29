@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/json-functions
 sidebar_position: 56
 sidebar_label: JSON
 ---

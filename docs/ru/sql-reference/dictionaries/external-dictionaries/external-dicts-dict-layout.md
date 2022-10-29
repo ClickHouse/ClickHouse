@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 sidebar_position: 41
 sidebar_label: "Хранение словарей в памяти"
 ---
@@ -406,7 +407,7 @@ RANGE(MIN StartDate MAX EndDate);
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются все виды источников.
 
 Пример настройки:
 

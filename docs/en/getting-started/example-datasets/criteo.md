@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/criteo
 sidebar_label: Terabyte Click Logs from Criteo
 ---
 
@@ -64,7 +65,9 @@ CREATE TABLE criteo
     icat24 UInt32,
     icat25 UInt32,
     icat26 UInt32
-) ENGINE = MergeTree(date, intHash32(icat1), (date, intHash32(icat1)), 8192)
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(date)
+ORDER BY (date, icat1)
 ```
 
 Transform data from the raw log and put it in the second table:

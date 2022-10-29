@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/aggregatingmergetree
 sidebar_position: 60
 sidebar_label:  AggregatingMergeTree
 ---

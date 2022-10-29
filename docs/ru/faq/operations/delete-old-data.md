@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/operations/delete-old-data
 title: Возможно ли удалить старые записи из таблицы ClickHouse?
 sidebar_position: 20
 ---

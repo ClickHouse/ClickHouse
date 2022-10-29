@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/string
 sidebar_position: 44
 sidebar_label: String
 ---

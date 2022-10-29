@@ -110,6 +110,20 @@ def started_cluster():
             main_configs=["configs/defaultS3.xml"],
             user_configs=["configs/s3_max_redirects.xml"],
         )
+        cluster.add_instance(
+            "s3_non_default",
+            with_minio=True,
+        )
+        cluster.add_instance(
+            "s3_with_environment_credentials",
+            with_minio=True,
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "minio123",
+            },
+            main_configs=["configs/use_environment_credentials.xml"],
+        )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -1493,16 +1507,12 @@ def test_wrong_format_usage(started_cluster):
 def check_profile_event_for_query(instance, query, profile_event, amount):
     instance.query("system flush logs")
     query = query.replace("'", "\\'")
-    attempt = 0
-    res = 0
-    while attempt < 10:
-        res = int(
-            instance.query(
-                f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
-            )
+    res = int(
+        instance.query(
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
         )
-        if res == amount:
-            break
+    )
+
     assert res == amount
 
 
@@ -1693,3 +1703,38 @@ def test_schema_inference_cache(started_cluster):
 
     test("s3")
     test("url")
+
+
+def test_ast_auth_headers(started_cluster):
+    bucket = started_cluster.minio_restricted_bucket
+    instance = started_cluster.instances["s3_non_default"]  # type: ClickHouseInstance
+    filename = "test.csv"
+
+    result = instance.query_and_get_error(
+        f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
+    )
+
+    assert "Forbidden Error" in result
+    assert "S3_ERROR" in result
+
+    result = instance.query(
+        f"select * from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', headers(Authorization=`Bearer TOKEN`))"
+    )
+
+    assert result.strip() == "1\t2\t3"
+
+
+def test_environment_credentials(started_cluster):
+    filename = "test.csv"
+    bucket = started_cluster.minio_restricted_bucket
+
+    instance = started_cluster.instances["s3_with_environment_credentials"]
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
+    )
+    assert (
+        "100"
+        == instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
+        ).strip()
+    )

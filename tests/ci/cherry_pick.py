@@ -44,11 +44,11 @@ from ssh import SSHKey
 
 
 class Labels:
-    LABEL_MUST_BACKPORT = "pr-must-backport"
-    LABEL_BACKPORT = "pr-backport"
-    LABEL_BACKPORTED = "pr-backported"
-    LABEL_CHERRYPICK = "pr-cherrypick"
-    LABEL_DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    BACKPORT = "pr-backport"
+    BACKPORTS_CREATED = "pr-backports-created"
+    CHERRYPICK = "pr-cherrypick"
+    DO_NOT_TEST = "do not test"
 
 
 class ReleaseBranch:
@@ -204,16 +204,9 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
-        self.cherrypick_pr.add_to_labels(Labels.LABEL_CHERRYPICK)
-        self.cherrypick_pr.add_to_labels(Labels.LABEL_DO_NOT_TEST)
-        if self.pr.assignees:
-            logging.info(
-                "Assing to assignees of the original PR: %s",
-                ", ".join(user.login for user in self.pr.assignees),
-            )
-            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
-        logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
-        self.cherrypick_pr.add_to_assignees(self.pr.user)
+        self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
+        self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
+        self._assign_new_pr(self.cherrypick_pr)
 
     def create_backport(self):
         # Checkout the backport branch from the remote and make all changes to
@@ -243,15 +236,22 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.name,
             head=self.backport_branch,
         )
-        self.backport_pr.add_to_labels(Labels.LABEL_BACKPORT)
+        self.backport_pr.add_to_labels(Labels.BACKPORT)
+        self._assign_new_pr(self.backport_pr)
+
+    def _assign_new_pr(self, new_pr: PullRequest):
+        """Assign `new_pr` to author, merger and assignees of an original PR"""
+        # It looks there some race when multiple .add_to_assignees are executed,
+        # so we'll add all at once
+        assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
-            logging.info(
-                "Assing to assignees of the original PR: %s",
-                ", ".join(user.login for user in self.pr.assignees),
-            )
-            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
-        logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
-        self.backport_pr.add_to_assignees(self.pr.user)
+            assignees.extend(self.pr.assignees)
+        logging.info(
+            "Assing #%s to author and assignees of the original PR: %s",
+            new_pr.number,
+            ", ".join(user.login for user in assignees),
+        )
+        new_pr.add_to_assignees(*assignees)
 
     @property
     def backported(self) -> bool:
@@ -321,8 +321,8 @@ class Backport:
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
         self.prs_for_backport = self.gh.get_pulls_from_search(
-            query=f"{self._query} -label:pr-backported",
-            label=",".join(self.labels_to_backport + [Labels.LABEL_MUST_BACKPORT]),
+            query=f"{self._query} -label:{Labels.BACKPORTS_CREATED}",
+            label=",".join(self.labels_to_backport + [Labels.MUST_BACKPORT]),
             merged=[since_date, tomorrow],
         )
         logging.info(
@@ -342,7 +342,7 @@ class Backport:
 
     def process_pr(self, pr: PullRequest):
         pr_labels = [label.name for label in pr.labels]
-        if Labels.LABEL_MUST_BACKPORT in pr_labels:
+        if Labels.MUST_BACKPORT in pr_labels:
             branches = [
                 ReleaseBranch(br, pr) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
@@ -407,11 +407,11 @@ class Backport:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
-        pr.add_to_labels(Labels.LABEL_BACKPORTED)
+        pr.add_to_labels(Labels.BACKPORTS_CREATED)
         logging.info(
             "PR #%s is successfully labeled with `%s`",
             pr.number,
-            Labels.LABEL_BACKPORTED,
+            Labels.BACKPORTS_CREATED,
         )
 
     @property

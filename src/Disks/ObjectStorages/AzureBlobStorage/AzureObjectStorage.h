@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -56,6 +56,8 @@ public:
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);
+
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -128,6 +130,8 @@ private:
     MultiVersion<AzureObjectStorageSettings> settings;
 
     Poco::Logger * log;
+
+    DataSourceDescription data_source_description;
 };
 
 }

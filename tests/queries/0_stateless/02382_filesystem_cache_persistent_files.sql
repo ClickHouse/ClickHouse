@@ -1,4 +1,4 @@
--- Tags: disabled
+-- Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 -- { echo }
 
@@ -14,7 +14,7 @@ INSERT INTO nopers SELECT number, toString(number) FROM numbers(10);
 SELECT * FROM nopers FORMAT Null;
 SELECT sum(size) FROM system.filesystem_cache;
 
-SELECT substring(local_path, 58, 10) as file, substring(cache_path, 53, 20) as cache, size
+SELECT extract(local_path, '.*/([\w.]+)') as file, extract(cache_path, '.*/([\w.]+)') as cache, size
 FROM
 (
     SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
@@ -37,7 +37,7 @@ SELECT sum(size) FROM system.filesystem_cache;
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
 SELECT count() FROM system.filesystem_cache;
 
-SELECT substring(local_path, 58, 10) as file, substring(cache_path, 53, 20) as cache, size
+SELECT extract(local_path, '.*/([\w.]+)') as file, extract(cache_path, '.*/([\w.]+)') as cache, size
 FROM
 (
     SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
@@ -60,7 +60,7 @@ SELECT sum(size) FROM system.filesystem_cache;
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
 SELECT count() FROM system.filesystem_cache;
 
-SELECT substring(local_path, 58, 10) as file, substring(cache_path, 53, 20) as cache, size
+SELECT extract(local_path, '.*/([\w.]+)') as file, extract(cache_path, '.*/([\w.]+)') as cache, size
 FROM
 (
     SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Interpreters/Context.h>
 
 
@@ -37,21 +38,13 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     has_limit_below_one_block(has_limit_below_one_block_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    /// Actually it means that parallel reading from replicas enabled
-    /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, because it will be accounted multiple times.
-    /// Also do not count amount of read rows if we read in order of sorting key,
-    /// because we don't know actual amount of read rows in case when limit is set.
-    if (!extension_.has_value() && !reader_settings.read_in_order)
-        addTotalRowsApprox(total_rows);
-
     ordered_names = header_without_virtual_columns.getNames();
 }
 
 void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
-        storage, storage_snapshot, data_part,
+        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
         required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter

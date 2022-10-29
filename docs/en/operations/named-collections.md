@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/named-collections
 sidebar_position: 69
 sidebar_label: "Named collections"
 ---

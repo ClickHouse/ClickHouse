@@ -48,6 +48,8 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
+    SortColumnDescription() = default;
+
     explicit SortColumnDescription(
         const std::string & column_name_,
         int direction_ = 1,

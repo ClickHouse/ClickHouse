@@ -513,7 +513,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
-        /// If we have remapped columns, then we need to get values from right columns insead of defaults
+        /// If we have remapped columns, then we need to get values from right columns instead of defaults
         const auto & indices = idx_map[0];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();

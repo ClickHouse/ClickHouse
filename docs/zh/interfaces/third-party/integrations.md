@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: 第三方集成库
 ---

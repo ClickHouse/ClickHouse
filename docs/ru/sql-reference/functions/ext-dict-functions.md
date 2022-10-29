@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/ext-dict-functions
 sidebar_position: 58
 sidebar_label: "Функции для работы с внешними словарями"
 ---

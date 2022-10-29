@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/
 sidebar_position: 32
 sidebar_label: Functions
 ---

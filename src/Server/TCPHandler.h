@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "IServer.h"
+#include "Server/TCPProtocolStackData.h"
 #include "base/types.h"
 
 
@@ -137,6 +138,7 @@ public:
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
     TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -151,12 +153,13 @@ private:
     Poco::Logger * log;
 
     String forwarded_for;
+    String certificate;
 
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt64 client_tcp_protocol_version = 0;
+    UInt32 client_tcp_protocol_version = 0;
     String quota_key;
 
     /// Connection settings, which are extracted from a context.

@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/roles
+---
 # system.roles {#system_tables-roles}
 
 包含有关已配置的 [角色](../../operations/access-rights.md#role-management) 信息.

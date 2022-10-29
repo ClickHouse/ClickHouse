@@ -43,7 +43,7 @@
 #include <Interpreters/Context.h>
 
 
-#include "config_functions.h"
+#include "config.h"
 
 
 namespace DB
@@ -231,7 +231,7 @@ private:
             {
                 case MoveType::ConstIndex:
                 {
-                    if (!moveToElementByIndex<JSONParser>(res_element, moves[j].index, key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
                         return false;
                     break;
                 }
@@ -245,7 +245,7 @@ private:
                 case MoveType::Index:
                 {
                     Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
-                    if (!moveToElementByIndex<JSONParser>(res_element, index, key))
+                    if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
                 }
@@ -683,7 +683,7 @@ public:
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
                 /// But it will be more convenient for user to perform conversion.
-                value = element.getDouble();
+                value = static_cast<NumberType>(element.getDouble());
             }
             else if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;

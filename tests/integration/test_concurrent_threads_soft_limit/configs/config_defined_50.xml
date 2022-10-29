@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <concurrent_threads_soft_limit_num>50</concurrent_threads_soft_limit_num>
     <query_log>

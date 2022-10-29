@@ -106,7 +106,7 @@ Pipe StorageXDBC::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -137,7 +137,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         metadata_snapshot->getSampleBlock(),
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        chooseCompressionMethod(uri, compression_method));
+        compression_method);
 }
 
 bool StorageXDBC::supportsSubsetOfColumns() const

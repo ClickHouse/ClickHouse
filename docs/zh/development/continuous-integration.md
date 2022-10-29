@@ -1,4 +1,8 @@
+---
+slug: /zh/development/continuous-integration
+---
 # 持续集成检查 {#continuous-integration-checks}
+
 当你提交一个pull请求时, ClickHouse[持续集成(CI)系统](https://clickhouse.com/docs/en/development/tests/#test-automation)会对您的代码运行一些自动检查.
 
 这在存储库维护者(来自ClickHouse团队的人)筛选了您的代码并将可测试标签添加到您的pull请求之后发生.
