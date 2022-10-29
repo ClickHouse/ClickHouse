@@ -103,6 +103,9 @@ IProcessor::Status LimitTransform::prepare(
     /// All inputs finished
     if (is_negative && num_finished_port_pairs == ports_data.size() && rows_in_queue > offset)
     {
+        if (!queue.front().output_port->canPush())
+            return Status::PortFull;
+
         /// Pop chunk from queue and return
         PortsData pop(queuePop());
         pop.output_port->push(std::move(pop.current_chunk));
