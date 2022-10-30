@@ -328,7 +328,7 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
     uint64_t param = 100;
     String metric_name = "L2Distance";
-    if (index.arguments.size() > 0 && !index.arguments[0].tryGet<uint64_t>(param))
+    if (!index.arguments.empty() && !index.arguments[0].tryGet<uint64_t>(param))
     {
         if (!index.arguments[0].tryGet<String>(metric_name))
         {
@@ -382,7 +382,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         throw Exception("Annoy index must no more than two arguments.", ErrorCodes::INCORRECT_QUERY);
     }
-    if (index.arguments.size() > 0 && index.arguments[0].getType() != Field::Types::UInt64
+    if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
     {
         throw Exception("Annoy index first argument must be UInt64 or String.", ErrorCodes::INCORRECT_QUERY);
