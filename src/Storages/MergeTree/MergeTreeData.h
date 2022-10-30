@@ -584,10 +584,33 @@ public:
     /// Used in REPLACE PARTITION command.
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
+    /// This wrapper is required to restrict access to parts in Deleting state
+    class PartToRemoveFromZooKeeper
+    {
+        DataPartPtr part;
+        bool was_active;
+
+    public:
+        PartToRemoveFromZooKeeper(DataPartPtr && part_, bool was_active_ = true)
+         : part(std::move(part_)), was_active(was_active_)
+        {
+        }
+
+        /// It's s to get name of any part
+        const String & getPartName() const { return part->name; }
+
+        DataPartPtr getPartIfItWasActive() const
+        {
+            return was_active ? part : nullptr;
+        }
+    };
+
+    using PartsToRemoveFromZooKeeper = std::vector<PartToRemoveFromZooKeeper>;
+
     /// Same as above, but also returns list of parts to remove from ZooKeeper.
     /// It includes parts that have been just removed by these method
     /// and Outdated parts covered by drop_range that were removed earlier for any reason.
-    DataPartsVector removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+    PartsToRemoveFromZooKeeper removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     /// Restores Outdated part and adds it to working set
