@@ -978,8 +978,51 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     return ast;
 }
 
+void DatabaseReplicated::dropReplica(
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name)
+{
+    assert(!database || database_zookeeper_path == database->zookeeper_path);
+
+    if (full_replica_name.find('/') != std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name: {}", full_replica_name);
+
+    auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+
+    String database_mark = zookeeper->get(database_zookeeper_path);
+    if (database_mark != REPLICATED_DATABASE_MARK)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
+
+    String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
+    if (!zookeeper->exists(database_replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} does not exist (database path: {})",
+                        full_replica_name, database_zookeeper_path);
+
+    if (zookeeper->exists(database_replica_path + "/active"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} is active, cannot drop it (database path: {})",
+                        full_replica_name, database_zookeeper_path);
+
+    zookeeper->set(database_replica_path, DROPPED_MARK, -1);
+    /// Notify other replicas that cluster configuration was changed (if we can)
+    if (database)
+        database->createEmptyLogEntry(zookeeper);
+
+    zookeeper->tryRemoveRecursive(database_replica_path);
+    if (zookeeper->tryRemove(database_zookeeper_path + "/replicas") == Coordination::Error::ZOK)
+    {
+        /// It was the last replica, remove all metadata
+        zookeeper->tryRemoveRecursive(database_zookeeper_path);
+    }
+}
+
 void DatabaseReplicated::drop(ContextPtr context_)
 {
+    if (is_probably_dropped)
+    {
+        /// Don't need to drop anything from ZooKeeper
+        DatabaseAtomic::drop(context_);
+        return;
+    }
+
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path, DROPPED_MARK, -1);
     createEmptyLogEntry(current_zookeeper);

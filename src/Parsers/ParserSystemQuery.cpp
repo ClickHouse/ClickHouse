@@ -150,6 +150,48 @@ static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IPars
     return true;
 }
 
+static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+{
+    parseQueryWithOnCluster(res, pos, expected);
+
+    ASTPtr ast;
+    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+        return false;
+    res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+    if (ParserKeyword{"FROM"}.ignore(pos, expected))
+    {
+        // way 1. parse replica database
+        // way 2. parse replica table
+        // way 3. parse replica zkpath
+        if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
+        {
+            ParserIdentifier database_parser;
+            if (!database_parser.parse(pos, res->database, expected))
+                return false;
+        }
+        else if (!database && ParserKeyword{"TABLE"}.ignore(pos, expected))
+        {
+            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+        }
+        else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
+        {
+            ASTPtr path_ast;
+            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                return false;
+            String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+            if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
+                zk_path.pop_back();
+            res->replica_zk_path = zk_path;
+        }
+        else
+            return false;
+    }
+    else
+        res->is_drop_whole_replica = true;
+
+    return true;
+}
+
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected))
@@ -196,43 +238,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
-            ASTPtr ast;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            if (!parseDropReplica(res, pos, expected, /* database */ false))
                 return false;
-            res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (ParserKeyword{"FROM"}.ignore(pos, expected))
-            {
-                // way 1. parse replica database
-                // way 2. parse replica tables
-                // way 3. parse replica zkpath
-                if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
-                {
-                    ParserIdentifier database_parser;
-                    if (!database_parser.parse(pos, res->database, expected))
-                        return false;
-                }
-                else if (ParserKeyword{"TABLE"}.ignore(pos, expected))
-                {
-                    parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
-                }
-                else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
-                {
-                    ASTPtr path_ast;
-                    if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
-                        return false;
-                    String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-                    if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
-                        zk_path.pop_back();
-                    res->replica_zk_path = zk_path;
-                }
-                else
-                    return false;
-            }
-            else
-                res->is_drop_whole_replica = true;
+            break;
+        }
 
+        case Type::DROP_DATABASE_REPLICA:
+        {
+            if (!parseDropReplica(res, pos, expected, /* database */ true))
+                return false;
             break;
         }
 
