@@ -37,7 +37,7 @@ public:
 
         std::unordered_map<QueryTreeNodePtr, Array> identifier_to_patterns;
         FunctionNodes match_functions;
-        for (auto & arg : function_node->getArguments().getNodes())
+        for (auto & arg : function_node->getArguments())
         {
             unique_elems.push_back(arg);
 
@@ -71,7 +71,7 @@ public:
             if (it == identifier_to_patterns.end())
             {
                 it = identifier_to_patterns.insert({identifier, Array{}}).first;
-                /// The second argument will be added when all patters are known.
+                /// The second argument will be added when all patterns are known.
                 auto match_function = std::make_shared<FunctionNode>("multiMatchAny");
                 match_function->getArguments().getNodes().push_back(identifier);
                 match_function->resolveAsFunction(match_function_ref->build(match_function->getArgumentTypes()));
