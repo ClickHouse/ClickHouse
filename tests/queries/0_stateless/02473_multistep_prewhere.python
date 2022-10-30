@@ -93,10 +93,10 @@ def main():
         tester = Tester(session, url, index_granularity, total_rows)
         # Test combinations of ranges of various size masked by lightweight DELETES
         # along with ranges of various size masked by row-level policies
-        for delete_range_start in range(0, total_rows, step):
-            for delete_range_end in range(delete_range_start + 3 * step, total_rows, step):
-                for row_level_policy_range_start in range(0, total_rows, step):
-                    for row_level_policy_range_end in range(row_level_policy_range_start + 3 * step, total_rows, step):
+        for delete_range_start in range(0, total_rows, 3 * step):
+            for delete_range_end in range(delete_range_start + 3 * step, total_rows, 2 * step):
+                for row_level_policy_range_start in range(0, total_rows, 3 * step):
+                    for row_level_policy_range_end in range(row_level_policy_range_start + 3 * step, total_rows, 2 * step):
                         tester.run_test(delete_range_start, delete_range_end, row_level_policy_range_start, row_level_policy_range_end)
 
 
