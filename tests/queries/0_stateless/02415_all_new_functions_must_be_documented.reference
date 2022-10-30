@@ -51,9 +51,11 @@ LpNormalize
 MACNumToString
 MACStringToNum
 MACStringToOUI
+TimeDiff
 URLHash
 URLHierarchy
 URLPathHierarchy
+UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 _CAST
