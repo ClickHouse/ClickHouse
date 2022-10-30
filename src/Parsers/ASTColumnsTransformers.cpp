@@ -270,6 +270,11 @@ void ASTColumnsExceptTransformer::setPattern(String pattern)
             DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 }
 
+const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
+{
+    return column_matcher;
+}
+
 bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
 {
     return RE2::PartialMatch(column_name, *column_matcher);
