@@ -10,6 +10,8 @@
 
 #include <Parsers/ASTWithAlias.h>
 
+#include <magic_enum.hpp>
+
 namespace DB
 {
 
@@ -20,26 +22,7 @@ namespace ErrorCodes
 
 const char * toString(QueryTreeNodeType type)
 {
-    switch (type)
-    {
-        case QueryTreeNodeType::IDENTIFIER: return "IDENTIFIER";
-        case QueryTreeNodeType::MATCHER: return "MATCHER";
-        case QueryTreeNodeType::TRANSFORMER: return "TRANSFORMER";
-        case QueryTreeNodeType::LIST: return "LIST";
-        case QueryTreeNodeType::CONSTANT: return "CONSTANT";
-        case QueryTreeNodeType::FUNCTION: return "FUNCTION";
-        case QueryTreeNodeType::COLUMN: return "COLUMN";
-        case QueryTreeNodeType::LAMBDA: return "LAMBDA";
-        case QueryTreeNodeType::SORT: return "SORT";
-        case QueryTreeNodeType::INTERPOLATE: return "INTERPOLATE";
-        case QueryTreeNodeType::WINDOW: return "WINDOW";
-        case QueryTreeNodeType::TABLE: return "TABLE";
-        case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
-        case QueryTreeNodeType::QUERY: return "QUERY";
-        case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
-        case QueryTreeNodeType::JOIN: return "JOIN";
-        case QueryTreeNodeType::UNION: return "UNION";
-    }
+    return magic_enum::enum_name(type).data();
 }
 
 IQueryTreeNode::IQueryTreeNode(size_t children_size, size_t weak_pointers_size)
