@@ -129,7 +129,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
     }
     else
     {
-        return getColumnNameWithoutAlias(*dag_node, true);
+        return getColumnNameWithoutAlias(*dag_node, true /*legacy*/);
     }
 }
 
@@ -203,7 +203,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
         String column_name = ast_node->getColumnName();
         const auto & block_with_constants = tree_context.getBlockWithConstants();
 
-        if (const auto * lit = ast_node->as<ASTLiteral>())
+        if (const auto * literal = ast_node->as<ASTLiteral>())
         {
             /// By default block_with_constants has only one column named "_dummy".
             /// If block contains only constants it's may not be preprocessed by
@@ -212,7 +212,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
                 column_name = "_dummy";
 
             /// Simple literal
-            output_value = lit->value;
+            output_value = literal->value;
             output_type = block_with_constants.getByName(column_name).type;
 
             /// If constant is not Null, we can assume it's type is not Nullable as well.
@@ -225,9 +225,9 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
             isColumnConst(*block_with_constants.getByName(column_name).column))
         {
             /// An expression which is dependent on constants only
-            const auto & expr_info = block_with_constants.getByName(column_name);
-            output_value = (*expr_info.column)[0];
-            output_type = expr_info.type;
+            const auto & constant_column = block_with_constants.getByName(column_name);
+            output_value = (*constant_column.column)[0];
+            output_type = constant_column.type;
 
             if (!output_value.isNull())
                 output_type = removeNullable(output_type);
@@ -260,13 +260,13 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     if (!dag_node->column)
         return {};
 
-    const IColumn * col = dag_node->column.get();
-    if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
-        col = &col_const->getDataColumn();
+    const IColumn * column = dag_node->column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
 
-    if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
+    if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
     {
-        auto set = col_set->getData();
+        auto set = column_set->getData();
 
         if (set->isCreated())
             return set;
@@ -362,6 +362,17 @@ RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
 {
     if (!isFunction())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a function");
+
+    if (this->ast_node)
+        return RPNBuilderFunctionTreeNode(this->ast_node, tree_context);
+    else
+        return RPNBuilderFunctionTreeNode(this->dag_node, tree_context);
+}
+
+std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNull() const
+{
+    if (!isFunction())
+        return {};
 
     if (this->ast_node)
         return RPNBuilderFunctionTreeNode(this->ast_node, tree_context);

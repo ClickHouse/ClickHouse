@@ -12,7 +12,7 @@ namespace DB
 
 /** Context of RPNBuilderTree.
   *
-  * For AST tree context, precalculated block with constansts and prepared sets are required for index analysis.
+  * For AST tree context, precalculated block with constants and prepared sets are required for index analysis.
   * For DAG tree precalculated block with constants and prepared sets are not required, because constants and sets already
   * calculated inside COLUMN actions dag node.
   */
@@ -112,6 +112,9 @@ public:
       */
     RPNBuilderFunctionTreeNode toFunctionNode() const;
 
+    /// Convert node to function node or null optional
+    std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
+
     /// Get tree context
     const RPNBuilderTreeContext & getTreeContext() const
     {
@@ -136,16 +139,16 @@ protected:
 class RPNBuilderFunctionTreeNode : public RPNBuilderTreeNode
 {
 public:
+    using RPNBuilderTreeNode::RPNBuilderTreeNode;
+
     /// Get function name
     std::string getFunctionName() const;
 
     /// Get function arguments size
     size_t getArgumentsSize() const;
 
-    /// Get argument at index
+    /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
-
-    using RPNBuilderTreeNode::RPNBuilderTreeNode;
 };
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
@@ -240,9 +243,10 @@ private:
 
     bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
     {
-        /// Functions AND, OR, NOT.
-        /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-        /// (or, the same thing - calling the function `and` from one argument).
+        /** Functions AND, OR, NOT.
+          * Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+          * (or, the same thing - calling the function `and` from one argument).
+          */
 
         auto function_name = function_node.getFunctionName();
         if (function_name == "not")
