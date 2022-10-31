@@ -36,156 +36,157 @@ namespace
 
 class DateDiffImpl
 {
-using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
-explicit DateDiffImpl(const String& name_) : name(name_) {}
+    using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-template <typename Transform>
-void dispatchForColumns(
-    const IColumn & x, const IColumn & y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    if (const auto * x_vec_16 = checkAndGetColumn<ColumnDate>(&x))
-        dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
-    else if (const auto * x_vec_32 = checkAndGetColumn<ColumnDateTime>(&x))
-        dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
-    else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnDate32>(&x))
-        dispatchForSecondColumn<Transform>(*x_vec_32_s, y, timezone_x, timezone_y, result);
-    else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
-        dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
-    else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnDate>(&x))
-        dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
-    else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnDateTime>(&x))
-        dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
-    else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnDate32>(&x))
-        dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), y, timezone_x, timezone_y, result);
-    else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
-        dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
-    else
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64",
-            name);
-}
+    explicit DateDiffImpl(const String & name_) : name(name_) {}
 
-template <typename Transform, typename LeftColumnType>
-void dispatchForSecondColumn(
-    const LeftColumnType & x, const IColumn & y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
-        vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
-        vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
-        vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
-        vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
-    else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnDate>(&y))
-        vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
-    else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnDateTime>(&y))
-        vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
-    else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnDate32>(&y))
-        vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
-    else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
-        vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
-    else
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-            name);
-}
+    template <typename Transform>
+    void dispatchForColumns(
+        const IColumn & x, const IColumn & y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        if (const auto * x_vec_16 = checkAndGetColumn<ColumnDate>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_32 = checkAndGetColumn<ColumnDateTime>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_32, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_32_s = checkAndGetColumn<ColumnDate32>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_32_s, y, timezone_x, timezone_y, result);
+        else if (const auto * x_vec_64 = checkAndGetColumn<ColumnDateTime64>(&x))
+            dispatchForSecondColumn<Transform>(*x_vec_64, y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_16 = checkAndGetColumnConst<ColumnDate>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_16->getValue<UInt16>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_32 = checkAndGetColumnConst<ColumnDateTime>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_32->getValue<UInt32>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_32_s = checkAndGetColumnConst<ColumnDate32>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_32_s->getValue<Int32>(), y, timezone_x, timezone_y, result);
+        else if (const auto * x_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&x))
+            dispatchConstForSecondColumn<Transform>(x_const_64->getValue<DecimalField<DateTime64>>(), y, timezone_x, timezone_y, result);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                name);
+    }
 
-template <typename Transform, typename T1>
-void dispatchConstForSecondColumn(
-    T1 x, const IColumn & y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
-        constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
-        constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
-        constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
-    else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
-        constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
-    else
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-            name);
-}
+    template <typename Transform, typename LeftColumnType>
+    void dispatchForSecondColumn(
+        const LeftColumnType & x, const IColumn & y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
+            vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
+            vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
+            vectorVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
+            vectorVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
+        else if (const auto * y_const_16 = checkAndGetColumnConst<ColumnDate>(&y))
+            vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_32 = checkAndGetColumnConst<ColumnDateTime>(&y))
+            vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_32_s = checkAndGetColumnConst<ColumnDate32>(&y))
+            vectorConstant<Transform>(x, y_const_32_s->getValue<Int32>(), timezone_x, timezone_y, result);
+        else if (const auto * y_const_64 = checkAndGetColumnConst<ColumnDateTime64>(&y))
+            vectorConstant<Transform>(x, y_const_64->getValue<DecimalField<DateTime64>>(), timezone_x, timezone_y, result);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                name);
+    }
 
-template <typename Transform, typename LeftColumnType, typename RightColumnType>
-void vectorVector(
-    const LeftColumnType & x, const RightColumnType & y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    const auto & x_data = x.getData();
-    const auto & y_data = y.getData();
+    template <typename Transform, typename T1>
+    void dispatchConstForSecondColumn(
+        T1 x, const IColumn & y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        if (const auto * y_vec_16 = checkAndGetColumn<ColumnDate>(&y))
+            constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32 = checkAndGetColumn<ColumnDateTime>(&y))
+            constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_32_s = checkAndGetColumn<ColumnDate32>(&y))
+            constantVector<Transform>(x, *y_vec_32_s, timezone_x, timezone_y, result);
+        else if (const auto * y_vec_64 = checkAndGetColumn<ColumnDateTime64>(&y))
+            constantVector<Transform>(x, *y_vec_64, timezone_x, timezone_y, result);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
+                name);
+    }
 
-    const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-    const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-    for (size_t i = 0, size = x.size(); i < size; ++i)
-            result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
-}
+    template <typename Transform, typename LeftColumnType, typename RightColumnType>
+    void vectorVector(
+        const LeftColumnType & x, const RightColumnType & y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        const auto & x_data = x.getData();
+        const auto & y_data = y.getData();
 
-template <typename Transform, typename LeftColumnType, typename T2>
-void vectorConstant(
-    const LeftColumnType & x, T2 y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    const auto & x_data = x.getData();
-    const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-    const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-    const auto y_value = stripDecimalFieldValue(y);
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        for (size_t i = 0, size = x.size(); i < size; ++i)
+                result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
+    }
 
-    for (size_t i = 0, size = x.size(); i < size; ++i)
-        result[i] = calculate(transform_x, transform_y, x_data[i], y_value, timezone_x, timezone_y);
-}
+    template <typename Transform, typename LeftColumnType, typename T2>
+    void vectorConstant(
+        const LeftColumnType & x, T2 y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        const auto & x_data = x.getData();
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto y_value = stripDecimalFieldValue(y);
 
-template <typename Transform, typename T1, typename RightColumnType>
-void constantVector(
-    T1 x, const RightColumnType & y,
-    const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-    ColumnInt64::Container & result) const
-{
-    const auto & y_data = y.getData();
-    const auto transform_x = TransformDateTime64<Transform>(getScale(x));
-    const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-    const auto x_value = stripDecimalFieldValue(x);
+        for (size_t i = 0, size = x.size(); i < size; ++i)
+            result[i] = calculate(transform_x, transform_y, x_data[i], y_value, timezone_x, timezone_y);
+    }
 
-    for (size_t i = 0, size = y.size(); i < size; ++i)
-        result[i] = calculate(transform_x, transform_y, x_value, y_data[i], timezone_x, timezone_y);
-}
+    template <typename Transform, typename T1, typename RightColumnType>
+    void constantVector(
+        T1 x, const RightColumnType & y,
+        const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
+        ColumnInt64::Container & result) const
+    {
+        const auto & y_data = y.getData();
+        const auto transform_x = TransformDateTime64<Transform>(getScale(x));
+        const auto transform_y = TransformDateTime64<Transform>(getScale(y));
+        const auto x_value = stripDecimalFieldValue(x);
 
-template <typename TransformX, typename TransformY, typename T1, typename T2>
-Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
-{
-    return static_cast<Int64>(transform_y.execute(y, timezone_y))
-            - static_cast<Int64>(transform_x.execute(x, timezone_x));
-}
+        for (size_t i = 0, size = y.size(); i < size; ++i)
+            result[i] = calculate(transform_x, transform_y, x_value, y_data[i], timezone_x, timezone_y);
+    }
 
-template <typename T>
-static UInt32 getScale(const T & v)
-{
-    if constexpr (std::is_same_v<T, ColumnDateTime64>)
-        return v.getScale();
-    else if constexpr (std::is_same_v<T, DecimalField<DateTime64>>)
-        return v.getScale();
+    template <typename TransformX, typename TransformY, typename T1, typename T2>
+    Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
+    {
+        return static_cast<Int64>(transform_y.execute(y, timezone_y))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+    }
 
-    return 0;
-}
-template <typename T>
-static auto stripDecimalFieldValue(T && v)
-{
-    if constexpr (std::is_same_v<std::decay_t<T>, DecimalField<DateTime64>>)
-        return v.getValue();
-    else
-        return v;
-}
+    template <typename T>
+    static UInt32 getScale(const T & v)
+    {
+        if constexpr (std::is_same_v<T, ColumnDateTime64>)
+            return v.getScale();
+        else if constexpr (std::is_same_v<T, DecimalField<DateTime64>>)
+            return v.getScale();
+
+        return 0;
+    }
+    template <typename T>
+    static auto stripDecimalFieldValue(T && v)
+    {
+        if constexpr (std::is_same_v<std::decay_t<T>, DecimalField<DateTime64>>)
+            return v.getValue();
+        else
+            return v;
+    }
 private:
     String name;
 };
@@ -321,13 +322,16 @@ public:
                 + toString(arguments.size()) + ", should be 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isDate(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[1]))
-            throw Exception("First argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName());
 
-        if (!isDate(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[2]))
-            throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName()
+                );
 
         return std::make_shared<DataTypeInt64>();
     }
