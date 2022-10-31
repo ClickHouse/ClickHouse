@@ -673,23 +673,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
                 if (table_expression_modifiers)
                 {
-                    String table_expression_modifiers_error_message;
-
-                    if (table_expression_modifiers->hasFinal())
-                    {
-                        table_expression_modifiers_error_message += "FINAL";
-
-                        if (table_expression_modifiers->hasSampleSizeRatio())
-                            table_expression_modifiers_error_message += ", SAMPLE";
-                    }
-                    else if (table_expression_modifiers->hasSampleSizeRatio())
-                    {
-                        table_expression_modifiers_error_message += "SAMPLE";
-                    }
-
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "Table expression modifiers {} are not supported for subquery {}",
-                        table_expression_modifiers_error_message,
+                        table_expression_modifiers->formatForErrorMessage(),
                         node->formatASTForErrorMessage());
                 }
 

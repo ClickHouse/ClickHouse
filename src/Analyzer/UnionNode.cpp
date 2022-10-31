@@ -40,7 +40,7 @@ UnionNode::UnionNode(SelectUnionMode union_mode_)
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
         union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
         union_mode == SelectUnionMode::INTERSECT_DEFAULT)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode must be normalized");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
 }
