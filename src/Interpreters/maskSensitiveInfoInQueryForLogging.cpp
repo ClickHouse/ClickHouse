@@ -41,6 +41,7 @@ namespace
         struct Data
         {
             bool can_contain_password = false;
+            bool password_was_hidden = false;
             bool is_create_table_query = false;
             bool is_create_database_query = false;
             bool is_create_dictionary_query = false;
@@ -103,12 +104,22 @@ namespace
     private:
         static void visitCreateUserQuery(ASTCreateUserQuery & query, Data & data)
         {
+            if (!query.auth_data)
+                return;
+
+            auto auth_type = query.auth_data->getType();
+            if (auth_type == AuthenticationType::NO_PASSWORD || auth_type == AuthenticationType::LDAP
+                || auth_type == AuthenticationType::KERBEROS || auth_type == AuthenticationType::SSL_CERTIFICATE)
+                return; /// No password, nothing to hide.
+
             if constexpr (check_only)
             {
                 data.can_contain_password = true;
                 return;
             }
+
             query.show_password = false;
+            data.password_was_hidden = true;
         }
 
         static void visitCreateQuery(ASTCreateQuery & query, Data & data)
@@ -162,12 +173,6 @@ namespace
 
         static void wipePasswordFromS3TableEngineArguments(ASTFunction & engine, Data & data)
         {
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return;
-            }
-
             /// We replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
@@ -243,12 +248,6 @@ namespace
 
         static void wipePasswordFromS3FunctionArguments(ASTFunction & function, Data & data, bool is_cluster_function)
         {
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return;
-            }
-
             /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
             size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
@@ -273,7 +272,7 @@ namespace
                 /// We need to distinguish that from s3('url', 'format', 'structure' [, 'compression_method']).
                 /// So we will check whether the argument after 'url' is a format.
                 String format;
-                if (!tryGetEvaluatedConstStringFromArgument(function, url_arg_idx + 1, data.context, &format))
+                if (!tryGetEvaluatedConstStringFromArgument(function, data, url_arg_idx + 1, &format))
                     return;
 
                 if (FormatFactory::instance().getAllFormats().contains(format))
@@ -287,12 +286,6 @@ namespace
 
         static void wipePasswordFromRemoteFunctionArguments(ASTFunction & function, Data & data)
         {
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return;
-            }
-
             /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
             /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
             /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
@@ -316,7 +309,7 @@ namespace
             else
             {
                 String database;
-                if (!tryGetEvaluatedConstDatabaseNameFromArgument(function, arg_num, data.context, &database))
+                if (!tryGetEvaluatedConstDatabaseNameFromArgument(function, data, arg_num, &database))
                     return;
                 ++arg_num;
 
@@ -341,23 +334,10 @@ namespace
 
         static void wipePasswordFromEncryptionFunctionArguments(ASTFunction & function, Data & data)
         {
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return;
-            }
-
             /// We replace all arguments after 'mode' with '[HIDDEN]':
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
-
-            size_t num_arguments;
-            if (!tryGetNumArguments(function, &num_arguments) || (num_arguments < 2))
-                return;
-
             wipePasswordFromArgument(function, data, 1);
-
-            auto & arguments = assert_cast<ASTExpressionList &>(*function.arguments).children;
-            arguments.resize(2);
+            removeArgumentsAfter(function, data, 2);
         }
 
         static void visitBackupQuery(ASTBackupQuery & query, Data & data)
@@ -386,12 +366,6 @@ namespace
 
         static void wipePasswordFromArgument(ASTFunction & function, Data & data, size_t arg_idx)
         {
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return;
-            }
-
             if (!function.arguments)
                 return;
 
@@ -403,7 +377,37 @@ namespace
             if (arg_idx >= arguments.size())
                 return;
 
+            if constexpr (check_only)
+            {
+                data.can_contain_password = true;
+                return;
+            }
+
             arguments[arg_idx] = std::make_shared<ASTLiteral>("[HIDDEN]");
+            data.password_was_hidden = true;
+        }
+
+        static void removeArgumentsAfter(ASTFunction & function, Data & data, size_t new_num_arguments)
+        {
+            if (!function.arguments)
+                return;
+
+            auto * expr_list = function.arguments->as<ASTExpressionList>();
+            if (!expr_list)
+                return; /// return because we don't want to validate query here
+
+            auto & arguments = expr_list->children;
+            if (new_num_arguments >= arguments.size())
+                return;
+
+            if constexpr (check_only)
+            {
+                data.can_contain_password = true;
+                return;
+            }
+
+            arguments.resize(new_num_arguments);
+            data.password_was_hidden = true;
         }
 
         static bool tryGetNumArguments(const ASTFunction & function, size_t * num_arguments)
@@ -441,8 +445,7 @@ namespace
             return true;
         }
 
-        static bool
-        tryGetEvaluatedConstStringFromArgument(const ASTFunction & function, size_t arg_idx, const ContextPtr & context, String * value)
+        static bool tryGetEvaluatedConstStringFromArgument(const ASTFunction & function, Data & data, size_t arg_idx, String * value)
         {
             if (!function.arguments)
                 return false;
@@ -455,10 +458,16 @@ namespace
             if (arg_idx >= arguments.size())
                 return false;
 
+            if constexpr (check_only)
+            {
+                data.can_contain_password = true;
+                return false;
+            }
+
             ASTPtr argument = arguments[arg_idx];
             try
             {
-                argument = evaluateConstantExpressionOrIdentifierAsLiteral(argument, context);
+                argument = evaluateConstantExpressionOrIdentifierAsLiteral(argument, data.context);
             }
             catch (...)
             {
@@ -473,8 +482,7 @@ namespace
             return true;
         }
 
-        static bool tryGetEvaluatedConstDatabaseNameFromArgument(
-            const ASTFunction & function, size_t arg_idx, const ContextPtr & context, String * value)
+        static bool tryGetEvaluatedConstDatabaseNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx, String * value)
         {
             if (!function.arguments)
                 return false;
@@ -487,10 +495,16 @@ namespace
             if (arg_idx >= arguments.size())
                 return false;
 
+            if constexpr (check_only)
+            {
+                data.can_contain_password = true;
+                return false;
+            }
+
             ASTPtr argument = arguments[arg_idx];
             try
             {
-                argument = evaluateConstantExpressionForDatabaseName(argument, context);
+                argument = evaluateConstantExpressionForDatabaseName(argument, data.context);
             }
             catch (...)
             {
@@ -533,6 +547,7 @@ namespace
                         return;
                     }
                     pair->set(pair->second, std::make_shared<ASTLiteral>("[HIDDEN]"));
+                    data.password_was_hidden = true;
                 }
             }
         }
@@ -552,7 +567,7 @@ namespace
 
     /// Removes a password or its hash from a query if it's specified there or replaces it with some placeholder.
     /// This function is used to prepare a query for storing in logs (we don't want logs to contain sensitive information).
-    void wipePasswordFromQuery(ASTPtr ast, PasswordWipingMode mode, const ContextPtr & context)
+    bool wipePasswordFromQuery(ASTPtr ast, PasswordWipingMode mode, const ContextPtr & context)
     {
         using WipingVisitor = PasswordWipingVisitor</*check_only= */ false>;
         WipingVisitor::Data data;
@@ -560,6 +575,7 @@ namespace
         data.mode = mode;
         WipingVisitor::Visitor visitor{data};
         visitor.visit(ast);
+        return data.password_was_hidden;
     }
 
     /// Common utility for masking sensitive information.
@@ -571,8 +587,8 @@ namespace
         if (parsed_query && canContainPassword(*parsed_query, mode))
         {
             ASTPtr ast_without_password = parsed_query->clone();
-            wipePasswordFromQuery(ast_without_password, mode, context);
-            res = serializeAST(*ast_without_password);
+            if (wipePasswordFromQuery(ast_without_password, mode, context))
+                res = serializeAST(*ast_without_password);
         }
 
         // Wiping sensitive data before cropping query by log_queries_cut_to_length,

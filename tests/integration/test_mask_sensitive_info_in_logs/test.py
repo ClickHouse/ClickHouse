@@ -121,9 +121,9 @@ def test_create_table():
             "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
             "CREATE TABLE table1 (`x` int) ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
             "CREATE TABLE table2 (`x` int) ENGINE = MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]')",
-            "CREATE TABLE table3 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test1.csv')",
-            "CREATE TABLE table4 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
-            "CREATE TABLE table5 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
+            "CREATE TABLE table3 (x int) ENGINE = S3('http://minio1:9001/root/data/test1.csv')",
+            "CREATE TABLE table4 (x int) ENGINE = S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+            "CREATE TABLE table5 (x int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
             "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
             "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
         ],
@@ -138,8 +138,8 @@ def test_create_database():
     password = new_password()
 
     database_engines = [
-        f"MySQL('mysql57:3306', 'mysql_db', 'mysql_user', '{password}')",
-        f"PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_user', '{password}')",
+        f"MySQL('localhost:3306', 'mysql_db', 'mysql_user', '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
+        # f"PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '{password}')",
     ]
 
     for i, database_engine in enumerate(database_engines):
@@ -151,8 +151,8 @@ def test_create_database():
 
     check_logs(
         must_contain=[
-            "CREATE DATABASE database0 ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
-            "CREATE DATABASE database1 ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
+            "CREATE DATABASE database0 ENGINE = MySQL('localhost:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
+            # "CREATE DATABASE database1 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -200,28 +200,28 @@ def test_table_functions():
             "CREATE TABLE tablefunc0 (`x` int) AS mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc1 (`x` int) AS postgresql('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc2 (`x` int) AS mongodb('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]', 'x int')",
-            "CREATE TABLE tablefunc3 (`x` int) AS s3('http://minio1:9001/root/data/test1.csv')",
-            "CREATE TABLE tablefunc4 (`x` int) AS s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+            "CREATE TABLE tablefunc3 (x int) AS s3('http://minio1:9001/root/data/test1.csv')",
+            "CREATE TABLE tablefunc4 (x int) AS s3('http://minio1:9001/root/data/test2.csv', 'CSV')",
             "CREATE TABLE tablefunc5 (`x` int) AS s3('http://minio1:9001/root/data/test3.csv', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc6 (`x` int) AS s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
-            "CREATE TABLE tablefunc7 (`x` int) AS s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
+            "CREATE TABLE tablefunc6 (x int) AS s3('http://minio1:9001/root/data/test4.csv', 'CSV', 'x int')",
+            "CREATE TABLE tablefunc7 (x int) AS s3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', 'x int', 'gzip')",
             "CREATE TABLE tablefunc8 (`x` int) AS s3('http://minio1:9001/root/data/test6.csv', 'minio', '[HIDDEN]', 'CSV')",
             "CREATE TABLE tablefunc9 (`x` int) AS s3('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]', 'CSV', 'x int')",
             "CREATE TABLE tablefunc10 (`x` int) AS s3('http://minio1:9001/root/data/test8.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'x int', 'gzip')",
             "CREATE TABLE tablefunc11 (`x` int) AS s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test1.csv', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc12 (`x` int) AS s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
+            "CREATE TABLE tablefunc12 (x int) AS s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test2.csv', 'CSV', 'x int')",
             "CREATE TABLE tablefunc13 (`x` int) AS s3Cluster('test_shard_localhost', 'http://minio1:9001/root/data/test3.csv', 'minio', '[HIDDEN]', 'CSV')",
-            "CREATE TABLE tablefunc14 (`x` int) AS remote('127.{2..11}', default.remote_table)",
-            "CREATE TABLE tablefunc15 (`x` int) AS remote('127.{2..11}', default.remote_table, rand())",
-            "CREATE TABLE tablefunc16 (`x` int) AS remote('127.{2..11}', default.remote_table, 'remote_user')",
+            "CREATE TABLE tablefunc14 (x int) AS remote('127.{2..11}', default.remote_table)",
+            "CREATE TABLE tablefunc15 (x int) AS remote('127.{2..11}', default.remote_table, rand())",
+            "CREATE TABLE tablefunc16 (x int) AS remote('127.{2..11}', default.remote_table, 'remote_user')",
             "CREATE TABLE tablefunc17 (`x` int) AS remote('127.{2..11}', default.remote_table, 'remote_user', '[HIDDEN]')",
-            "CREATE TABLE tablefunc18 (`x` int) AS remote('127.{2..11}', default.remote_table, 'remote_user', rand())",
+            "CREATE TABLE tablefunc18 (x int) AS remote('127.{2..11}', default.remote_table, 'remote_user', rand())",
             "CREATE TABLE tablefunc19 (`x` int) AS remote('127.{2..11}', default.remote_table, 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc20 (`x` int) AS remote('127.{2..11}', 'default.remote_table', 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc21 (`x` int) AS remote('127.{2..11}', 'default', 'remote_table', 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc22 (`x` int) AS remote('127.{2..11}', numbers(10), 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc23 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', '[HIDDEN]')",
-            "CREATE TABLE tablefunc24 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
+            "CREATE TABLE tablefunc24 (x int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
         ],
         must_not_contain=[password],
     )
