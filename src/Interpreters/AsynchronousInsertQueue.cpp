@@ -102,6 +102,8 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 {
     std::lock_guard lock(mutex);
     finished = true;
+    if (exception_)
+        ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
     exception = exception_;
     cv.notify_all();
 }
@@ -590,7 +592,6 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, entries.size());
     tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
 
     for (const auto & entry : entries)
