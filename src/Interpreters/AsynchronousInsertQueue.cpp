@@ -37,6 +37,8 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
+    extern const Event FailedInsertQuery;
+    extern const Event FailedAsyncInsertQuery;
 }
 
 namespace DB
@@ -589,8 +591,10 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
+    ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, entries.size());
     tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
-
+    
+    
     for (const auto & entry : entries)
     {
         if (!entry->isFinished())
