@@ -94,7 +94,7 @@ public:
 private:
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,
-        DataPartStorageBuilderPtr & data_part_storage_builder,
+        const MutableDataPartStoragePtr & data_part_storage,
         bool sync,
         PooledReadWriteBufferFromHTTP & in,
         MergeTreeData::DataPart::Checksums & checksums,
@@ -102,11 +102,10 @@ private:
 
     void downloadBasePartOrProjectionPartToDiskRemoteMeta(
         const String & replica_path,
-        DataPartStorageBuilderPtr & data_part_storage_builder,
+        const MutableDataPartStoragePtr & data_part_storage,
         PooledReadWriteBufferFromHTTP & in,
         MergeTreeData::DataPart::Checksums & checksums,
         ThrottlerPtr throttler) const;
-
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
         const String & part_name,

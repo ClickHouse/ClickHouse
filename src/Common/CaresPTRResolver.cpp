@@ -128,7 +128,7 @@ namespace DB
             int number_of_fds_ready = 0;
             if (!readable_sockets.empty())
             {
-                number_of_fds_ready = poll(readable_sockets.data(), readable_sockets.size(), timeout);
+                number_of_fds_ready = poll(readable_sockets.data(), static_cast<nfds_t>(readable_sockets.size()), static_cast<int>(timeout));
             }
 
             if (number_of_fds_ready > 0)
