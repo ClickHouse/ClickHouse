@@ -592,7 +592,7 @@ void AsynchronousInsertQueue::finishWithException(
 {
     ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, entries.size());
     tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
-    
+
     for (const auto & entry : entries)
     {
         if (!entry->isFinished())
