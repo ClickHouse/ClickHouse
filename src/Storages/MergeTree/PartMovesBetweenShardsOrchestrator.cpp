@@ -5,7 +5,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {

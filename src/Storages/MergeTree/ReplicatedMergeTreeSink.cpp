@@ -737,7 +737,6 @@ void ReplicatedMergeTreeSink::onStart()
 void ReplicatedMergeTreeSink::onFinish()
 {
     auto zookeeper = storage.getZooKeeper();
-    /// todo: check this place, afaiu, it can be called after Generate apart of Consume
     assertSessionIsNotExpired(zookeeper);
     finishDelayedChunk(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper));
 }

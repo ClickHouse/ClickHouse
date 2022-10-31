@@ -498,6 +498,7 @@ private:
                     e.code,
                     e.message());
 
+            /// save valid pointer to clean up ephemeral nodes later if necessary
             if (keeper)
                 keeper_prev = keeper;
             keeper.reset();
@@ -508,16 +509,16 @@ private:
 
             if constexpr (std::is_same_v<Coordination::Error, Result>)
             {
-                /// try*() methods throws at least on hardware error and return only on logical errors
-                /// todo: the methods return only on subset of logical errors, and throw on another errors
+                /// try*() methods throws at least on hardware error and return only on user errors
+                /// todo: the methods return only on subset of user errors, and throw on another errors
                 ///       to mimic the methods exactly - we need to specify errors on which to return for each such method
                 if (Coordination::isHardwareError(e.code))
                     throw;
 
                 return e.code;
             }
-            else
-                throw;
+
+            throw;
         }
     }
 };
