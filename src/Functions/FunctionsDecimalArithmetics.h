@@ -29,10 +29,11 @@ namespace ErrorCodes
 
 struct DecimalOpHerpers
 {
+//    constexpr const static UInt256 MAX_INT256 = UInt256(-1) >> 1;
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
-        int len1 = num1.size();
-        int len2 = num2.size();
+        int const len1 = static_cast<int>(num1.size());
+        int const len2 = static_cast<int>(num2.size());
         if (len1 == 0 || len2 == 0)
             return {0};
 
@@ -40,13 +41,15 @@ struct DecimalOpHerpers
         int i_n1 = 0;
         int i_n2;
 
-        for (int i = len1 - 1; i >= 0; --i)
+        for (auto i = len1 - 1; i >= 0; --i)
         {
             int carry = 0;
             i_n2 = 0;
-            for (int j = len2 - 1; j >= 0; --j)
+            for (auto j = len2 - 1; j >= 0; --j)
             {
-                int sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
+                if (unlikely(i_n1 + i_n2 >= 76))
+                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+                int const sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
                 ++i_n2;
@@ -58,7 +61,7 @@ struct DecimalOpHerpers
             ++i_n1;
         }
 
-        int i = result.size() - 1;
+        int i = static_cast<int>(result.size()) - 1;
         while (i >= 0 && result[i] == 0)
         {
             result.pop_back();
@@ -76,7 +79,7 @@ struct DecimalOpHerpers
         std::vector<UInt8> result;
 
         int idx = 0;
-        Int256 temp = number[idx];
+        UInt256 temp = number[idx];
         while (temp < divisor)
             temp = temp * 10 + (number[++idx]);
 
@@ -102,7 +105,7 @@ struct DecimalOpHerpers
         return result;
     }
 
-    static Int256 fromDigits(const std::vector<UInt8> & digits)
+    static UInt256 fromDigits(const std::vector<UInt8> & digits)
     {
         Int256 result = 0;
         Int256 scale = 0;
@@ -132,14 +135,15 @@ struct DivideDecimalsImpl
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(sign_a * a.value);
+        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(a.value * sign_a);
 
-        while (scale_a < scale_b + result_scale) {
+        while (scale_a < scale_b + result_scale)
+        {
             a_digits.push_back(0);
             ++scale_a;
         }
 
-        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value);
+        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value * sign_b);
 
         while (scale_a > + scale_b + result_scale)
         {
@@ -162,38 +166,31 @@ struct MultiplyDecimalsImpl
     static inline NO_SANITIZE_UNDEFINED Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
+        if (a.value == 0 || b.value == 0)
+            return Decimal256(0);
+
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
         std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(a.value * sign_a);
         std::vector<UInt8> b_digits = DecimalOpHerpers::toDigits(b.value * sign_b);
 
-        for (int i = a_digits.size() - 1; a_digits[i] == 0; --i)
+        std::vector<UInt8> multiplied = DecimalOpHerpers::multiply(a_digits, b_digits);
+
+        UInt16 product_scale = scale_a + scale_b;
+        while (product_scale < result_scale)
         {
-            a_digits.pop_back();
-            --scale_a;
+            multiplied.push_back(0);
+            ++product_scale;
         }
 
-        for (int i = b_digits.size() - 1; b_digits[i] == 0; --i)
+        while (product_scale > result_scale)
         {
-            b_digits.pop_back();
-            --scale_b;
+            multiplied.pop_back();
+            --product_scale;
         }
 
-        auto multiplied = DecimalOpHerpers::multiply(a_digits, b_digits);
-
-        auto product_scale = scale_a + scale_b;
-        for (int i = product_scale; i < result_scale; ++i)
-        {
-            a_digits.push_back(0);
-        }
-
-        for (int i = product_scale; i > result_scale; --i)
-        {
-            a_digits.pop_back();
-        }
-
-//        if (multiplied.size() > 76)
-//            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+        if (multiplied.size() > 76)
+            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
         return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(multiplied));
     }
