@@ -230,16 +230,6 @@ private:
 
                 while (src < expected_end)
                     toCase(src, expected_end, dst);
-
-                /// adjust src_end_sse by pushing it forward or backward
-                const auto diff = src - expected_end;
-                if (diff != 0)
-                {
-                    if (src_end_sse + diff < src_end)
-                        src_end_sse += diff;
-                    else
-                        src_end_sse -= bytes_sse - diff;
-                }
             }
         }
 
