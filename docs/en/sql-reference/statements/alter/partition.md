@@ -39,7 +39,7 @@ ALTER TABLE mt DETACH PARTITION '2020-11-21';
 ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
-Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
@@ -53,7 +53,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
 
-Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 The query is replicated – it deletes data on all replicas.
 
@@ -71,7 +71,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partiti
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.
-Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 ## ATTACH PARTITION\|PART
 
@@ -86,7 +86,7 @@ ALTER TABLE visits ATTACH PARTITION 201901;
 ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ```
 
-Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
@@ -166,7 +166,7 @@ This query creates a local backup of a specified partition. If the `PARTITION` c
 The entire backup process is performed without stopping the server.
 :::
 
-Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
