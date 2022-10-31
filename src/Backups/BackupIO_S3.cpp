@@ -126,6 +126,7 @@ BackupWriterS3::BackupWriterS3(
     , max_single_read_retries(context_->getSettingsRef().s3_max_single_read_retries)
     , read_settings(context_->getReadSettings())
     , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
+    , log(&Poco::Logger::get("BackupWriterS3"))
 {
     rw_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
 }
@@ -146,9 +147,12 @@ void BackupWriterS3::copyObjectImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
-    std::optional<ObjectAttributes> metadata) const
+    const Aws::S3::Model::HeadObjectResult & head,
+    const std::optional<ObjectAttributes> & metadata) const
 {
+    size_t size = head.GetContentLength();
+    LOG_TRACE(log, "Copying {} bytes using single-operation copy", size);
+
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -186,13 +190,11 @@ void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
-    std::optional<ObjectAttributes> metadata) const
+    const Aws::S3::Model::HeadObjectResult & head,
+    const std::optional<ObjectAttributes> & metadata) const
 {
-    if (!head)
-        head = requestObjectHeadData(src_bucket, src_key).GetResult();
-
-    size_t size = head->GetContentLength();
+    size_t size = head.GetContentLength();
+    LOG_TRACE(log, "Copying {} bytes using multipart upload copy", size);
 
     String multipart_upload_id;
 
@@ -289,15 +291,14 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
         auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
-        static constexpr int64_t multipart_upload_threashold = 5UL * 1024 * 1024 * 1024;
-        if (head.GetContentLength() >= multipart_upload_threashold)
+        if (static_cast<size_t>(head.GetContentLength()) < rw_settings.max_single_operation_copy_size)
         {
-            copyObjectMultipartImpl(
+            copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
         else
         {
-            copyObjectImpl(
+            copyObjectMultipartImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
     }
