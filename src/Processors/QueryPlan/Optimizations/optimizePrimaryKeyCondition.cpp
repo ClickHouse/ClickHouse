@@ -9,7 +9,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void optimizePrimaryKeyCondition(QueryPlan::Node & root)
+void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     struct Frame
     {
@@ -33,7 +33,8 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
             continue;
         }
 
-        optimizeReadInOrder(*frame.node);
+        if (optimization_settings.read_in_order)
+            optimizeReadInOrder(*frame.node);
 
         auto add_filter = [&](auto & storage)
         {

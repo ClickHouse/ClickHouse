@@ -448,7 +448,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
+    QueryPlanOptimizations::optimizePrimaryKeyCondition(optimization_settings, *root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

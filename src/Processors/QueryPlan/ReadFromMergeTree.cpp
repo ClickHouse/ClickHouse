@@ -1067,14 +1067,14 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             break;
         sort_description.emplace_back(column_name, sort_direction);
     }
-    if (sort_description.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort description can't be empty when reading in order");
-
-    const size_t used_prefix_of_sorting_key_size = order_info->used_prefix_of_sorting_key_size;
-    if (sort_description.size() > used_prefix_of_sorting_key_size)
-        sort_description.resize(used_prefix_of_sorting_key_size);
-    output_stream->sort_description = std::move(sort_description);
-    output_stream->sort_scope = DataStream::SortScope::Stream;
+    if (!sort_description.empty())
+    {
+        const size_t used_prefix_of_sorting_key_size = order_info->used_prefix_of_sorting_key_size;
+        if (sort_description.size() > used_prefix_of_sorting_key_size)
+            sort_description.resize(used_prefix_of_sorting_key_size);
+        output_stream->sort_description = std::move(sort_description);
+        output_stream->sort_scope = DataStream::SortScope::Stream;
+    }
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
