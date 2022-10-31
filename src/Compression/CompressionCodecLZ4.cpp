@@ -41,7 +41,6 @@ private:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    mutable LZ4::PerformanceStatistics lz4_stat;
     ASTPtr codec_desc;
 };
 
@@ -94,9 +93,7 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
 
 void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
-
-    if (!success)
+    if (unlikely(LZ4_decompress_safe(source, dest, source_size, uncompressed_size) < 0))
         throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
