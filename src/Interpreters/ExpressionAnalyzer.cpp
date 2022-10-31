@@ -1944,7 +1944,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         optimize_read_in_order =
-            settings.optimize_read_in_order
+            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
             && storage
             && query.orderBy()
             && !query_analyzer.hasAggregation()

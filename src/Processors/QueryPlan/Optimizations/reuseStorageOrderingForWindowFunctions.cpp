@@ -73,7 +73,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                 {
                     if (!child->column)
                     {
-                        if (maybe_fixed_column)
+                        if (!maybe_fixed_column)
                             maybe_fixed_column = child;
                         else
                             is_singe = false;
@@ -81,7 +81,10 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                 }
 
                 if (maybe_fixed_column && is_singe)
+                {
+                    std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fiexd_columns.insert(maybe_fixed_column);
+                }
             }
         }
     }
@@ -402,8 +405,21 @@ InputOrderInfoPtr buildInputOrderInfo(
     order_key_prefix_descr.reserve(description.size());
 
     MatchedTrees::Matches matches;
+    FixedColumns fixed_key_columns;
+
     if (dag)
+    {
         matches = matchTrees(sorting_key_dag, *dag);
+
+        for (const auto & [node, match] : matches)
+        {
+            if (!match.monotonicity || match.monotonicity->strict)
+            {
+                if (match.node && fixed_columns.contains(node))
+                    fixed_key_columns.insert(match.node);
+            }
+        }
+    }
 
     /// This is a result direction we will read from MergeTree
     ///  1 - in order,
@@ -453,22 +469,32 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             const auto & match = matches[sort_node];
 
-            if (match.node)
+            // std::cerr << "====== Finding match for " << sort_node->result_name << ' ' << static_cast<const void *>(sort_node) << std::endl;
+
+            if (match.node && match.node == sort_column_node)
             {
+                // std::cerr << "====== Found direct match" << std::endl;
+
                 /// We try to find the match first even if column is fixed. In this case, potentially more keys will match.
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
 
-                current_direction = 1;
+                current_direction = descr.direction;
                 if (match.monotonicity)
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
                 }
             }
+            else if (fixed_key_columns.contains(sort_column_node))
+            {
+                // std::cerr << "+++++++++ Found fixed key by match" << std::endl;
+            }
             else
             {
+
+                // std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
                 bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
                 if (!is_fixed_column)
                     break;
@@ -506,6 +532,9 @@ void optimizeReadInOrder(QueryPlan::Node & node)
 
     auto * sorting = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting)
+        return;
+
+    if (sorting->getType() != SortingStep::Type::Full)
         return;
 
     ReadFromMergeTree * reading = findReadingStep(node.children.front());

@@ -11,6 +11,13 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
+    enum class Type
+    {
+        Full,
+        FinishSorting,
+        MergingSorted,
+    };
+
     /// Full
     SortingStep(
         const DataStream & input_stream,
@@ -55,6 +62,8 @@ public:
 
     void convertToFinishSorting(SortDescription prefix_description);
 
+    Type getType() const { return type; }
+
 private:
     void updateOutputStream() override;
 
@@ -67,13 +76,6 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false);
-
-    enum class Type
-    {
-        Full,
-        FinishSorting,
-        MergingSorted,
-    };
 
     Type type;
 

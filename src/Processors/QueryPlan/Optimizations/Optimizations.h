@@ -13,7 +13,7 @@ namespace QueryPlanOptimizations
 void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 void optimizeReadInOrder(QueryPlan::Node & node);
-void optimizePrimaryKeyCondition(QueryPlan::Node & root);
+void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Optimization is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
