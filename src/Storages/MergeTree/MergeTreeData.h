@@ -596,7 +596,7 @@ public:
         {
         }
 
-        /// It's s to get name of any part
+        /// It's safe to get name of any part
         const String & getPartName() const { return part->name; }
 
         DataPartPtr getPartIfItWasActive() const
