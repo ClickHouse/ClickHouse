@@ -6,7 +6,7 @@
 #include <limits>
 #include <type_traits>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB

@@ -195,15 +195,31 @@ public:
         return std::make_shared<DataTypeArray>(nested_function->getReturnType());
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+        {
+            if constexpr (merge)
+                nested_function->insertMergeResultInto(place + i * size_of_data, col.getData(), arena);
+            else
+                nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+        }
 
         col_offsets.getData().push_back(col.getData().size());
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

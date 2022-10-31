@@ -139,7 +139,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    int result = 0;
+    Int64 result = 0;
 
     if constexpr (std::is_same_v<T, double>)
     {
@@ -624,9 +624,6 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
-void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)

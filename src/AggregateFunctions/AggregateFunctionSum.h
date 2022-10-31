@@ -13,7 +13,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -407,7 +407,7 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)
@@ -559,7 +559,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, getReturnType());
-        auto * aggregate_sum_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * aggregate_sum_ptr = aggregate_data_ptr;
 
         b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
@@ -570,7 +570,7 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * sum_value_ptr = aggregate_data_ptr;
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
 
         const auto & argument_type = arguments_types[0];
@@ -588,10 +588,10 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * sum_value_dst_ptr = aggregate_data_dst_ptr;
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
 
-        auto * sum_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * sum_value_src_ptr = aggregate_data_src_ptr;
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
 
         auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
@@ -603,7 +603,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, getReturnType());
-        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * sum_value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, sum_value_ptr);
     }
