@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
-    const DataPartInMemoryPtr & part_,
+    const MutableDataPartInMemoryPtr & part_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeWriterSettings & settings_)

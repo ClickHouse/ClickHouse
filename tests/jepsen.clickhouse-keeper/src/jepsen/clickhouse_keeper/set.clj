@@ -44,7 +44,9 @@
   "A generator, client, and checker for a set test."
   [opts]
   {:client    (SetClient. "/a-set" nil nil)
-   :checker   (checker/set)
+   :checker   (checker/compose
+                {:set (checker/set)
+                 :perf (checker/perf)})
    :generator (->> (range)
                    (map (fn [x] {:type :invoke, :f :add, :value x})))
    :final-generator (gen/once {:type :invoke, :f :read, :value nil})})

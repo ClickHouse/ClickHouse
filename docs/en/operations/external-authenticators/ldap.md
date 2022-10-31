@@ -1,4 +1,10 @@
-# LDAP {#external-authenticators-ldap}
+---
+slug: /en/operations/external-authenticators/ldap
+title: "LDAP"
+---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+
+<SelfManaged />
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 

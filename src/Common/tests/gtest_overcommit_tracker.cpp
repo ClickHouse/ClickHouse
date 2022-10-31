@@ -40,15 +40,17 @@ static constexpr UInt64 WAIT_TIME = 4'000'000;
 template <typename T>
 void free_not_continue_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
+
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -56,7 +58,7 @@ void free_not_continue_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -96,15 +98,16 @@ TEST(OvercommitTracker, GlobalFreeNotContinue)
 template <typename T>
 void free_continue_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -112,7 +115,7 @@ void free_continue_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -152,15 +155,16 @@ TEST(OvercommitTracker, GlobalFreeContinue)
 template <typename T>
 void free_continue_and_alloc_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -168,7 +172,7 @@ void free_continue_and_alloc_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -179,9 +183,10 @@ void free_continue_and_alloc_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
+            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ).join();
 
@@ -212,15 +217,16 @@ TEST(OvercommitTracker, GlobalFreeContinueAndAlloc)
 template <typename T>
 void free_continue_and_alloc_2_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -228,7 +234,7 @@ void free_continue_and_alloc_2_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -239,9 +245,10 @@ void free_continue_and_alloc_2_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
+            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ));
 
@@ -280,15 +287,16 @@ TEST(OvercommitTracker, GlobalFreeContinueAndAlloc2)
 template <typename T>
 void free_continue_and_alloc_3_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -296,7 +304,7 @@ void free_continue_and_alloc_3_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -307,9 +315,10 @@ void free_continue_and_alloc_3_test(T & overcommit_tracker)
         [&]()
         {
             MemoryTracker failed;
+            failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100);
+            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ));
 
@@ -348,15 +357,16 @@ TEST(OvercommitTracker, GlobalFreeContinueAndAlloc3)
 template <typename T>
 void free_continue_2_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     static constexpr size_t THREADS = 5;
     std::vector<MemoryTracker> trackers(THREADS);
+    for (auto & tracker : trackers)
+        tracker.setOvercommitWaitingTime(WAIT_TIME);
     std::atomic<int> need_to_stop = 0;
     std::vector<std::thread> threads;
     threads.reserve(THREADS);
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     for (size_t i = 0; i < THREADS; ++i)
@@ -364,7 +374,7 @@ void free_continue_2_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100))
+                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -404,18 +414,18 @@ TEST(OvercommitTracker, GlobalFreeContinue2)
 template <typename T>
 void query_stop_not_continue_test(T & overcommit_tracker)
 {
-    overcommit_tracker.setMaxWaitTime(WAIT_TIME);
-
     std::atomic<int> need_to_stop = 0;
 
     MemoryTracker picked;
+    picked.setOvercommitWaitingTime(WAIT_TIME);
     overcommit_tracker.setCandidate(&picked);
 
     MemoryTracker another;
+    another.setOvercommitWaitingTime(WAIT_TIME);
     auto thread = std::thread(
         [&]()
         {
-            if (overcommit_tracker.needToStopQuery(&another, 100))
+            if (overcommit_tracker.needToStopQuery(&another, 100) != OvercommitResult::MEMORY_FREED)
                 ++need_to_stop;
         }
     );

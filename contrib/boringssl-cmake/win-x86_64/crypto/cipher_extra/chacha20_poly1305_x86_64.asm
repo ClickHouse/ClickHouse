@@ -9,6 +9,8 @@ default	rel
 %ifdef BORINGSSL_PREFIX
 %include "boringssl_prefix_symbols_nasm.inc"
 %endif
+section	.text code align=64
+
 global	dummy_chacha20_poly1305_asm
 
 dummy_chacha20_poly1305_asm:

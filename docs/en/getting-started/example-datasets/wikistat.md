@@ -1,4 +1,5 @@
 ---
+slug: /en/getting-started/example-datasets/wikistat
 sidebar_label: WikiStat
 ---
 

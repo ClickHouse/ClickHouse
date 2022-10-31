@@ -48,14 +48,13 @@ struct ClearableHashTableCell : public BaseCell
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSet
+    : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
@@ -68,14 +67,17 @@ public:
     }
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSetWithSavedHash: public HashTable<Key, ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSetWithSavedHash : public HashTable<
+                                          Key,
+                                          ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>,
+                                          Hash,
+                                          Grower,
+                                          Allocator>
 {
 public:
     void clear()
@@ -91,8 +93,4 @@ using ClearableHashSetWithStackMemory = ClearableHashSet<
     Hash,
     HashTableGrower<initial_size_degree>,
     HashTableAllocatorWithStackMemory<
-        (1ULL << initial_size_degree)
-        * sizeof(
-            ClearableHashTableCell<
-                Key,
-                HashTableCell<Key, Hash, ClearableHashSetState>>)>>;
+        (1ULL << initial_size_degree) * sizeof(ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>)>>;

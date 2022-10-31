@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <sqlite3.h>
 
@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class SQLiteSource : public SourceWithProgress
+class SQLiteSource : public ISource
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -33,7 +33,7 @@ private:
 
     Chunk generate() override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx);
+    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx);
 
     String query_str;
     UInt64 max_block_size;

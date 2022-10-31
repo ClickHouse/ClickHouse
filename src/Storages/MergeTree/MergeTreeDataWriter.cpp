@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
@@ -228,7 +229,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -243,7 +244,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     };
 
     auto merging_algorithm = get_merging_algorithm();
@@ -320,6 +321,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     else
         part_name = new_part_info.getPartName();
 
+    String part_dir = TMP_PREFIX + part_name;
+    temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
@@ -367,13 +371,20 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
+    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
+
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        data_part_volume,
+        data.relative_data_path,
+        TMP_PREFIX + part_name);
+
+    data_part_storage->beginTransaction();
 
     auto new_data_part = data.createPart(
         part_name,
         data.choosePartType(expected_size, block.rows()),
         new_part_info,
-        createVolumeFromReservation(reservation, volume),
-        TMP_PREFIX + part_name);
+        data_part_storage);
 
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -384,8 +395,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns);
-    new_data_part->setSerializationInfos(infos);
+    new_data_part->setColumns(columns, infos);
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -395,19 +405,21 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->getFullRelativePath();
+        String full_path = new_data_part->getDataPartStorage().getFullPath();
 
-        if (new_data_part->volume->getDisk()->exists(full_path))
+        if (new_data_part->getDataPartStorage().exists())
         {
-            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
-            new_data_part->volume->getDisk()->removeRecursive(full_path);
+            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
+            data_part_storage->removeRecursive();
         }
 
-        const auto disk = new_data_part->volume->getDisk();
-        disk->createDirectories(full_path);
+        data_part_storage->createDirectories();
 
         if (data.getSettings()->fsync_part_directory)
+        {
+            const auto disk = data_part_volume->getDisk();
             sync_guard = disk->getDirectorySyncGuard(full_path);
+        }
     }
 
     if (metadata_snapshot->hasRowsTTL())
@@ -437,7 +449,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
         context->getCurrentTransaction(), false, false, context->getWriteSettings());
 
-
     out->writeWithPermutation(block, perm_ptr);
 
     for (const auto & projection : metadata_snapshot->getProjections())
@@ -451,16 +462,14 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
+
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         data_settings->fsync_after_insert,
-        nullptr, nullptr,
-        context->getWriteSettings());
+        nullptr, nullptr);
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    /// out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
@@ -469,22 +478,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     return temp_part;
 }
 
-void MergeTreeDataWriter::deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
-{
-    if (!storage_snapshot->object_columns.empty())
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-        auto storage_columns = storage_snapshot->getColumns(options);
-        convertObjectsToTuples(block, storage_columns);
-    }
-}
-
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     MergeTreeDataPartType part_type,
     const String & relative_path,
     bool is_temp,
-    const IMergeTreeDataPart * parent_part,
+    IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,
@@ -493,13 +492,15 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     TemporaryPart temp_part;
     const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
+
+    auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path);
     auto new_data_part = data.createPart(
         part_name,
         part_type,
         new_part_info,
-        parent_part->volume,
-        relative_path,
+        projection_part_storage,
         parent_part);
+
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
@@ -507,21 +508,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns);
-    new_data_part->setSerializationInfos(infos);
+    new_data_part->setColumns(columns, infos);
 
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->getFullRelativePath();
-
-        if (new_data_part->volume->getDisk()->exists(full_path))
+        if (projection_part_storage->exists())
         {
-            LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
-            new_data_part->volume->getDisk()->removeRecursive(full_path);
+            LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
+            projection_part_storage->removeRecursive();
         }
 
-        new_data_part->volume->getDisk()->createDirectories(full_path);
+        projection_part_storage->createDirectories();
     }
 
     /// If we need to calculate some columns to sort.
@@ -569,14 +567,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         columns,
         MergeTreeIndices{},
         compression_codec,
-        NO_TRANSACTION_PTR);
+        NO_TRANSACTION_PTR,
+        false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    // out.finish(new_data_part, std::move(written_files), false);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());
@@ -586,20 +583,24 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
-    MergeTreeData & data, Poco::Logger * log, Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part)
+    MergeTreeData & data,
+    Poco::Logger * log,
+    Block block,
+    const ProjectionDescription & projection,
+    IMergeTreeDataPart * parent_part)
 {
     String part_name = projection.name;
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
         /// Size of part would not be greater than block.bytes() + epsilon
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->volume);
+        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
         part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
     }
 
@@ -622,21 +623,21 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    const IMergeTreeDataPart * parent_part,
+    IMergeTreeDataPart * parent_part,
     size_t block_num)
 {
     String part_name = fmt::format("{}_{}", projection.name, block_num);
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
     {
-        part_type = MergeTreeDataPartType::IN_MEMORY;
+        part_type = MergeTreeDataPartType::InMemory;
     }
     else
     {
         /// Size of part would not be greater than block.bytes() + epsilon
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->volume);
+        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
         part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
     }
 
@@ -657,11 +658,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    const IMergeTreeDataPart * parent_part)
+    IMergeTreeDataPart * parent_part)
 {
     return writeProjectionPartImpl(
         projection.name,
-        MergeTreeDataPartType::IN_MEMORY,
+        MergeTreeDataPartType::InMemory,
         projection.name + ".proj" /* relative_path */,
         false /* is_temp */,
         parent_part,

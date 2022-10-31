@@ -6,9 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Common/SipHash.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -71,43 +68,6 @@ UInt128 PathInData::getPartsHash(const Parts & parts_)
     UInt128 res;
     hash.get128(res);
     return res;
-}
-
-void PathInData::writeBinary(WriteBuffer & out) const
-{
-    writeVarUInt(parts.size(), out);
-    for (const auto & part : parts)
-    {
-        writeStringBinary(part.key, out);
-        writeIntBinary(part.is_nested, out);
-        writeIntBinary(part.anonymous_array_level, out);
-    }
-}
-
-void PathInData::readBinary(ReadBuffer & in)
-{
-    size_t num_parts;
-    readVarUInt(num_parts, in);
-
-    Arena arena;
-    Parts temp_parts;
-    temp_parts.reserve(num_parts);
-
-    for (size_t i = 0; i < num_parts; ++i)
-    {
-        bool is_nested;
-        UInt8 anonymous_array_level;
-
-        auto ref = readStringBinaryInto(arena, in);
-        readIntBinary(is_nested, in);
-        readIntBinary(anonymous_array_level, in);
-
-        temp_parts.emplace_back(static_cast<std::string_view>(ref), is_nested, anonymous_array_level);
-    }
-
-    /// Recreate path and parts.
-    buildPath(temp_parts);
-    buildParts(temp_parts);
 }
 
 void PathInData::buildPath(const Parts & other_parts)

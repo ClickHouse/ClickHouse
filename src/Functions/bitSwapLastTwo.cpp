@@ -62,7 +62,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
     }
 };
 
-void registerFunctionBitSwapLastTwo(FunctionFactory & factory)
+REGISTER_FUNCTION(BitSwapLastTwo)
 {
     factory.registerFunction<FunctionBitSwapLastTwo>();
 }

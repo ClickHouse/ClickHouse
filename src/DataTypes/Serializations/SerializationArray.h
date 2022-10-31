@@ -36,7 +36,7 @@ public:
       */
 
     void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
@@ -78,7 +78,5 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 };
-
-ColumnPtr arrayOffsetsToSizes(const IColumn & column);
 
 }

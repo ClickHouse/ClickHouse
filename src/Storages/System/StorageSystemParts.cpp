@@ -13,6 +13,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -85,9 +86,12 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"visible",                                     std::make_shared<DataTypeUInt8>()},
         {"creation_tid",                                getTransactionIDDataType()},
+        {"removal_tid_lock",                            std::make_shared<DataTypeUInt64>()},
         {"removal_tid",                                 getTransactionIDDataType()},
         {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
+
+        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
     }
     )
 {
@@ -96,7 +100,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 void StorageSystemParts::processNextStorage(
     ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
-    using State = IMergeTreeDataPart::State;
+    using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
@@ -194,9 +198,9 @@ void StorageSystemParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
         }
         else
         {
@@ -296,11 +300,15 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
         if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->version.removal_tid_lock.load(std::memory_order_relaxed));
+        if (columns_mask[src_index++])
             columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->hasLightweightDelete());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

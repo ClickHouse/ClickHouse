@@ -27,7 +27,7 @@ DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const DataTypes & argum
     return std::make_shared<DataTypeString>();
 }
 
-void registerFunctionsStringArray(FunctionFactory & factory)
+REGISTER_FUNCTION(StringArray)
 {
     factory.registerFunction<FunctionExtractAll>();
     factory.registerFunction<FunctionAlphaTokens>();

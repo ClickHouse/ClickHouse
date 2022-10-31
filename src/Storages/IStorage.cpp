@@ -1,18 +1,19 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Backups/IBackup.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
+    extern const int CANNOT_RESTORE_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -56,6 +58,18 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
         auto table_id = getStorageID();
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
     }
+    return result;
+}
+
+TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+{
+    TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
+
+    if (is_dropped)
+    {
+        // Table was dropped while acquiring the lock
+        result = nullptr;
+    }
 
     return result;
 }
@@ -88,6 +102,17 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+Pipe IStorage::watch(
+    const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
+    ContextPtr /*context*/,
+    QueryProcessingStage::Enum & /*processed_stage*/,
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
+{
+    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -95,7 +120,7 @@ Pipe IStorage::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -108,9 +133,21 @@ void IStorage::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+}
+
+void IStorage::readFromPipe(
+    QueryPlan & query_plan,
+    Pipe pipe,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    std::string storage_name)
+{
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -118,9 +155,16 @@ void IStorage::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+std::optional<QueryPipeline> IStorage::distributedWrite(
+    const ASTInsertQuery & /*query*/,
+    ContextPtr /*context*/)
+{
+    return {};
 }
 
 Pipe IStorage::alterPartition(
@@ -216,14 +260,21 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-BackupEntries IStorage::backupData(ContextPtr, const ASTs &)
+void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
-    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-RestoreTaskPtr IStorage::restoreData(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
+void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
 {
-    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
+{
+    /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    if (!filenames.empty())
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
+                        getStorageID().getFullTableName(), data_path_in_backup);
 }
 
 std::string PrewhereInfo::dump() const
@@ -231,9 +282,9 @@ std::string PrewhereInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
-    if (alias_actions)
+    if (row_level_filter)
     {
-        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
+        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
     if (prewhere_actions)

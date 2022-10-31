@@ -11,7 +11,7 @@ namespace DB
 
 class IStorage;
 struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 struct SelectQueryInfo;
 struct TreeRewriterResult;
 class ASTSelectQuery;

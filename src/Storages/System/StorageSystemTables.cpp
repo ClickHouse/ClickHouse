@@ -16,18 +16,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
@@ -124,7 +119,7 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public SourceWithProgress
+class TablesBlockSource : public ISource
 {
 public:
     TablesBlockSource(
@@ -134,7 +129,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         ContextPtr context_)
-        : SourceWithProgress(std::move(header))
+        : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -303,15 +298,13 @@ protected:
                         // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
                     }
-                    try
+
+                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+                    if (lock == nullptr)
                     {
-                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                            continue;
-                        throw;
+                        // Table was dropped while acquiring the lock, skipping table
+                        continue;
                     }
                 }
 
@@ -581,7 +574,7 @@ Pipe StorageSystemTables::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

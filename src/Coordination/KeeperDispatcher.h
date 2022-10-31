@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-#include "config_core.h"
+#include "config.h"
 
 #if USE_NURAFT
 
@@ -15,6 +14,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 
 namespace DB
 {
@@ -76,6 +76,8 @@ private:
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
+
+    KeeperSnapshotManagerS3 snapshot_s3;
 
     /// Thread put requests to raft
     void requestThread();
@@ -148,6 +150,11 @@ public:
     bool isLeader() const
     {
         return server->isLeader();
+    }
+
+    bool isFollower() const
+    {
+        return server->isFollower();
     }
 
     bool hasLeader() const

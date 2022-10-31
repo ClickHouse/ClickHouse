@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
 import time
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from kazoo.client import KazooClient, KazooState
 
@@ -49,6 +49,7 @@ def started_cluster():
 
 def start(node):
     node.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
 
 
 def delete_with_retry(node_name, path):
@@ -139,6 +140,7 @@ def test_restart_third_node(started_cluster):
     node1_zk.create("/test_restart", b"aaaa")
 
     node3.restart_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node3)
 
     assert node3.contains_in_log(
         "Connected to ZooKeeper (or Keeper) before internal Keeper start"

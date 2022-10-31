@@ -8,12 +8,12 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
@@ -32,6 +32,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -203,7 +204,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp");
+    global_context->setTemporaryStorage(path + "tmp", "", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
@@ -226,6 +227,8 @@ void LocalServer::cleanup()
             global_context->shutdown();
             global_context.reset();
         }
+
+        /// thread status should be destructed before shared context because it relies on process list.
 
         status.reset();
 
@@ -323,12 +326,28 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-        ConfigProcessor config_processor(users_config_path);
-        const auto loaded_config = config_processor.loadConfig();
-        users_config = loaded_config.configuration;
+        String config_path = config().getString("config-file", "");
+        bool has_user_directories = config().has("user_directories");
+        const auto config_dir = fs::path{config_path}.remove_filename().string();
+        String users_config_path = config().getString("users_config", "");
+
+        if (users_config_path.empty() && has_user_directories)
+        {
+            users_config_path = config().getString("user_directories.users_xml.path");
+            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+                users_config_path = fs::path(config_dir) / users_config_path;
+        }
+
+        if (users_config_path.empty())
+            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+        else
+        {
+            ConfigProcessor config_processor(users_config_path);
+            const auto loaded_config = config_processor.loadConfig();
+            users_config = loaded_config.configuration;
+        }
     }
     else
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -337,7 +356,6 @@ void LocalServer::setupUsers()
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
-
 
 void LocalServer::connect()
 {
@@ -351,7 +369,10 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    ThreadStatus thread_status;
+    thread_status.emplace();
+
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -526,9 +547,14 @@ void LocalServer::processConfig()
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -540,23 +566,23 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    /// Specify default value for mark_cache_size explicitly!
+    /// Size of cache for marks (index of MergeTree family of tables).
+    String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
-    /// Specify default value for index_mark_cache_size explicitly!
+    /// Size of cache for index marks (index of MergeTree skip indices).
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -565,6 +591,18 @@ void LocalServer::processConfig()
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
+
+#if USE_EMBEDDED_COMPILER
+    /// 128 MB
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size
+        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+#endif
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -582,8 +620,6 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
-    bool enable_objects_loader = false;
-
     if (config().has("path"))
     {
         String path = global_context->getPath();
@@ -591,20 +627,21 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-        enable_objects_loader = true;
-        LOG_DEBUG(log, "Loaded user defined objects.");
-
         LOG_DEBUG(log, "Loading metadata from {}", path);
         loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        loadMetadata(global_context);
         startupSystemTables();
-        DatabaseCatalog::instance().loadDatabases();
+
+        if (!config().has("only-system-tables"))
+        {
+            loadMetadata(global_context);
+            DatabaseCatalog::instance().loadDatabases();
+        }
+
+        /// For ClickHouse local if path is not set the loader will be disabled.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -615,9 +652,6 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
 
-    /// Persist SQL user defined objects only if user_defined folder was created
-    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
-
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
     std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
@@ -626,6 +660,7 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
+    client_info.query_kind = query_kind;
 }
 
 
@@ -694,6 +729,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
+        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
@@ -722,6 +758,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-structure", options["structure"].as<std::string>());
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
+    if (options.count("only-system-tables"))
+        config().setBool("only-system-tables", true);
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());
@@ -736,6 +774,15 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("send_logs_level"))
         config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
+}
+
+void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
+{
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        const char * arg = argv[arg_num];
+        common_arguments.emplace_back(arg);
+    }
 }
 
 }

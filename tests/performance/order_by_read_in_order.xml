@@ -1,9 +1,9 @@
 <test>
 
 <!-- Some queries are almost instantaneous index lookups, so we mark them as short. -->
-<query short="1">SELECT * FROM hits_100m_single ORDER BY CounterID, EventDate LIMIT 100</query>
+<query short="1">SELECT * FROM hits_100m_single ORDER BY (CounterID, EventDate) LIMIT 100</query>
 <query short="1">SELECT * FROM hits_100m_single ORDER BY CounterID DESC, toStartOfWeek(EventDate) DESC LIMIT 100</query>
-<query>SELECT * FROM hits_100m_single ORDER BY CounterID, EventDate, URL LIMIT 100</query>
+<query>SELECT * FROM hits_100m_single ORDER BY (CounterID, EventDate, URL) LIMIT 100</query>
 <query short="1">SELECT * FROM hits_100m_single WHERE CounterID IN (152220, 168777, 149234, 149234) ORDER BY CounterID DESC, EventDate DESC LIMIT 100</query>
 <query>SELECT * FROM hits_100m_single WHERE UserID=1988954671305023629 ORDER BY CounterID, EventDate LIMIT 100</query>
 

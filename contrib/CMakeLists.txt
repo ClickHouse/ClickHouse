@@ -37,6 +37,8 @@ function(add_contrib cmake_folder)
 
         file(GLOB contrib_files "${base_folder}/*")
         if (NOT contrib_files)
+            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
+            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
             message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
             message(STATUS "    git submodule update --init")
             return()
@@ -56,7 +58,7 @@ add_contrib (boost-cmake boost)
 add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
 add_contrib (dragonbox-cmake dragonbox)
-add_contrib (hyperscan-cmake hyperscan)
+add_contrib (vectorscan-cmake vectorscan)
 add_contrib (jemalloc-cmake jemalloc)
 add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide)
@@ -72,7 +74,11 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
-add_contrib (boringssl-cmake boringssl)
+if (NOT ENABLE_EXTERNAL_OPENSSL)
+    add_contrib (boringssl-cmake boringssl)
+else ()
+    add_contrib (openssl-cmake openssl)
+endif ()
 add_contrib (poco-cmake poco)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
@@ -90,10 +96,13 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
+add_contrib (corrosion-cmake corrosion)
+
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
+add_contrib (wyhash-cmake wyhash)
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
 add_contrib (icu-cmake icu)
@@ -104,7 +113,8 @@ if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-cmake llvm)
+add_contrib (llvm-project-cmake llvm-project)
+add_contrib (libfuzzer-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 add_contrib (aws-s3-cmake
     aws
@@ -131,6 +141,7 @@ add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
 add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
+add_contrib (nats-io-cmake nats-io)
 add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
@@ -139,6 +150,7 @@ add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
+add_contrib (hashidsxx-cmake hashidsxx)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -151,6 +163,11 @@ endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
+add_contrib (c-ares-cmake c-ares)
+add_contrib (qpl-cmake qpl)
+add_contrib (morton-nd-cmake morton-nd)
+
+add_contrib(annoy-cmake annoy)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

@@ -36,7 +36,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        unsigned keep_alive_timeout_,
+        size_t keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
@@ -66,11 +66,16 @@ public:
         add_cors_header = enable_cors;
     }
 
+    /// Send progress
+    void setSendProgress(bool send_progress_) { send_progress = send_progress_; }
+
     /// Don't send HTTP headers with progress more frequently.
     void setSendProgressInterval(size_t send_progress_interval_ms_)
     {
         send_progress_interval_ms = send_progress_interval_ms_;
     }
+
+    void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.
@@ -88,6 +93,8 @@ private:
     void writeHeaderProgress();
     // Used for write the header X-ClickHouse-Summary
     void writeHeaderSummary();
+    // Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
+    void writeExceptionCode();
 
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();
@@ -98,7 +105,7 @@ private:
 
     bool is_http_method_head;
     bool add_cors_header = false;
-    unsigned keep_alive_timeout = 0;
+    size_t keep_alive_timeout = 0;
     bool compress = false;
     CompressionMethod compression_method;
     int compression_level = 1;
@@ -113,8 +120,11 @@ private:
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
     Progress accumulated_progress;
+    bool send_progress = false;
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;
+
+    int exception_code = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

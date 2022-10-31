@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/argmax
 sidebar_position: 106
 ---
 

@@ -1,4 +1,7 @@
-# users {#system_tables-users}
+---
+slug: /en/operations/system-tables/users
+---
+# users
 
 Contains a list of [user accounts](../../operations/access-rights.md#user-account-management) configured at the server.
 

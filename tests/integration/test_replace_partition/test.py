@@ -20,13 +20,13 @@ def _fill_nodes(nodes, shard):
                 CREATE DATABASE test;
 
                 CREATE TABLE real_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = MergeTree(date, id, 8192);
+                ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id;
 
                 CREATE TABLE other_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = MergeTree(date, id, 8192);
+                ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id;
 
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
             """.format(
                 shard=shard, replica=node.name
             )

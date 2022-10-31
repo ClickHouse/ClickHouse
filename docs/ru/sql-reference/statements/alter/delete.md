@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/delete
 sidebar_position: 39
 sidebar_label: DELETE
 ---

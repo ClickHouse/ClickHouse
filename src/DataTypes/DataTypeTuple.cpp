@@ -2,6 +2,7 @@
 #include <base/range.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -214,6 +215,19 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
     throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 }
 
+std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) const
+{
+    size_t size = elems.size();
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (names[i] == name)
+        {
+            return std::optional<size_t>(i);
+        }
+    }
+    return std::nullopt;
+}
+
 String DataTypeTuple::getNameByPosition(size_t i) const
 {
     if (i == 0 || i > names.size())
@@ -257,6 +271,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = have_explicit_names ? names[i] : toString(i + 1);
@@ -289,7 +304,27 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     for (const auto & elem : elems)
         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+}
+
+SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
+{
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn());
+
+    MutableSerializationInfos infos;
+    infos.reserve(elems.size());
+
+    const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
+    assert(elems.size() == column_tuple.getColumns().size());
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
+        infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
+    }
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
 }
 
 

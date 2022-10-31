@@ -55,6 +55,7 @@
                (checker/compose
                 {:linear   (checker/linearizable {:model     (model/cas-register)
                                                   :algorithm :linear})
+                 :perf     (checker/perf)
                  :timeline (timeline/html)}))
    :generator (independent/concurrent-generator
                10

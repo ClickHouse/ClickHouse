@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
 	<logger>
 		<level>information</level>
@@ -19,7 +18,6 @@
     </openSSL>
 
     <max_concurrent_queries>500</max_concurrent_queries>
-    <mark_cache_size>5368709120</mark_cache_size>
     <users_config>users.xml</users_config>
 
     <dictionaries_config>/etc/clickhouse-server/config.d/*.xml</dictionaries_config>

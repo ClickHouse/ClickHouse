@@ -2,6 +2,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/User.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -58,8 +60,11 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
 
 void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_USERS);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_USERS);
+
     std::vector<UUID> ids = access_control.findAll<User>();
 
     size_t column_index = 0;
@@ -210,6 +215,20 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
                 user->default_roles, user->grantees, user->default_database);
     }
+}
+
+void StorageSystemUsers::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
+    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::USER);
+}
+
+void StorageSystemUsers::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+{
+    auto & access_control = restorer.getContext()->getAccessControl();
+    access_control.restoreFromBackup(restorer);
 }
 
 }

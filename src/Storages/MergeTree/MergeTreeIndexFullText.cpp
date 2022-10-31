@@ -146,7 +146,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , token_extractor(token_extactor_)
-    , prepared_sets(query_info.sets)
+    , prepared_sets(query_info.prepared_sets)
 {
     rpn = std::move(
             RPNBuilder<RPNElement>(
@@ -609,11 +609,10 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
 
-    auto set_it = prepared_sets.find(set_key);
-    if (set_it == prepared_sets.end())
+    auto prepared_set = prepared_sets->get(set_key);
+    if (!prepared_set)
         return false;
 
-    const SetPtr & prepared_set = set_it->second;
     if (!prepared_set->hasExplicitSetElements())
         return false;
 
@@ -660,7 +659,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
-};
+}
 
 bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {

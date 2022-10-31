@@ -35,7 +35,8 @@ public:
             bool exchange,
             bool dictionary) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;
@@ -47,11 +48,11 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;
@@ -70,9 +71,9 @@ protected:
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context) override;
 
-    void assertDetachedTableNotInUse(const UUID & uuid);
+    void assertDetachedTableNotInUse(const UUID & uuid) TSA_REQUIRES(mutex);
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
-    [[nodiscard]] DetachedTables cleanupDetachedTables();
+    [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
 
     void tryCreateMetadataSymlink();
 
@@ -80,9 +81,9 @@ protected:
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
-    NameToPathMap table_name_to_path;
+    NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
-    DetachedTables detached_tables;
+    DetachedTables detached_tables TSA_GUARDED_BY(mutex);
     String path_to_table_symlinks;
     String path_to_metadata_symlink;
     const UUID db_uuid;

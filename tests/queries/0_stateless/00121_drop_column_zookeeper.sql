@@ -2,6 +2,7 @@
 -- Tag no-replicated-database: Old syntax is not allowed
 
 DROP TABLE IF EXISTS alter_00121;
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE alter_00121 (d Date, x UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/alter_00121/t1', 'r1', d, (d), 8192);
 
 INSERT INTO alter_00121 VALUES ('2014-01-01', 1);

@@ -1,0 +1,49 @@
+-- Tags: long
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS tn1;
+DROP TABLE IF EXISTS tn2;
+
+CREATE TABLE t1 (key UInt32, s String) engine = TinyLog;
+CREATE TABLE tn1 (key Nullable(UInt32), s String) engine = TinyLog;
+CREATE TABLE t2 (key UInt32, s String) engine = TinyLog;
+CREATE TABLE tn2 (key Nullable(UInt32), s String) engine = TinyLog;
+
+INSERT INTO t1 VALUES (1, 'val1'), (2, 'val21'), (2, 'val22'), (2, 'val23'), (2, 'val24'), (2, 'val25'), (2, 'val26'), (2, 'val27'), (3, 'val3');
+INSERT INTO tn1 VALUES (1, 'val1'), (NULL, 'val21'), (NULL, 'val22'), (NULL, 'val23'), (NULL, 'val24'), (NULL, 'val25'), (NULL, 'val26'), (NULL, 'val27'), (3, 'val3');
+INSERT INTO t2 VALUES (1, 'val11'), (1, 'val12'), (2, 'val22'), (2, 'val23'), (2, 'val24'), (2, 'val25'), (2, 'val26'), (2, 'val27'), (2, 'val28'), (3, 'val3');
+INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val23'), (NULL, 'val24'), (NULL, 'val25'), (NULL, 'val26'), (NULL, 'val27'), (NULL, 'val28'), (3, 'val3');
+
+SET join_algorithm = 'full_sorting_merge';
+
+{% for block_size in range(1, 11) -%}
+SET max_block_size = {{ block_size }};
+
+{% for t1, t2 in [('t1', 't2'), ('t1', 'tn2'), ('tn1', 't2'), ('tn1', 'tn2')]  -%}
+{% for kind in ['ALL', 'ANY']  -%}
+
+SELECT '{{ t1 }} {{ kind }} INNER JOIN {{ t2 }} | bs = {{ block_size }}';
+SELECT t1.key, t2.key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 {{ kind }} INNER JOIN {{ t2 }} AS t2 ON t1.key == t2.key ORDER BY t1.key, t2.key;
+
+SELECT '{{ t1 }} {{ kind }} LEFT JOIN {{ t2 }} | bs = {{ block_size }}';
+SELECT t1.key, t2.key, t1.s, length(t2.s) FROM {{ t1 }} AS t1 {{ kind }} LEFT JOIN {{ t2 }} AS t2 ON t1.key == t2.key ORDER BY t1.key, t2.key, t1.s;
+
+SELECT '{{ t1 }} {{ kind }} RIGHT JOIN {{ t2 }} | bs = {{ block_size }}';
+SELECT t1.key, t2.key, length(t1.s), t2.s FROM {{ t1 }} AS t1 {{ kind }} RIGHT JOIN {{ t2 }} AS t2 ON t1.key == t2.key ORDER BY t1.key, t2.key, t2.s;
+
+{% endfor -%}
+
+SELECT '{{ t1 }} ALL FULL JOIN {{ t2 }} | bs = {{ block_size }}';
+SELECT t1.key, t2.key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 {{ kind }} FULL JOIN {{ t2 }} AS t2 ON t1.key == t2.key ORDER BY t1.key, t2.key, length(t1.s), length(t2.s);
+
+SELECT '{{ t1 }} ALL FULL JOIN USING {{ t2 }} | bs = {{ block_size }}';
+SELECT key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 ALL FULL JOIN {{ t2 }} AS t2 USING (key) ORDER BY key, length(t1.s), length(t2.s);
+
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS tn1;
+DROP TABLE IF EXISTS tn2;

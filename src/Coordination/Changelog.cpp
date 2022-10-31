@@ -36,21 +36,20 @@ std::string formatChangelogPath(const std::string & prefix, const ChangelogFileD
     return path;
 }
 
-ChangelogFileDescription getChangelogFileDescription(const std::string & path_str)
+ChangelogFileDescription getChangelogFileDescription(const std::filesystem::path & path)
 {
-    std::filesystem::path path(path_str);
     std::string filename = path.stem();
     Strings filename_parts;
     boost::split(filename_parts, filename, boost::is_any_of("_"));
     if (filename_parts.size() < 3)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path_str);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
 
     ChangelogFileDescription result;
     result.prefix = filename_parts[0];
     result.from_log_index = parse<uint64_t>(filename_parts[1]);
     result.to_log_index = parse<uint64_t>(filename_parts[2]);
     result.extension = path.extension();
-    result.path = path_str;
+    result.path = path.generic_string();
     return result;
 }
 
@@ -276,6 +275,7 @@ Changelog::Changelog(
     Poco::Logger * log_,
     bool compress_logs_)
     : changelogs_dir(changelogs_dir_)
+    , changelogs_detached_dir(changelogs_dir / "detached")
     , rotate_interval(rotate_interval_)
     , force_sync(force_sync_)
     , log(log_)
@@ -288,12 +288,15 @@ Changelog::Changelog(
 
     for (const auto & p : fs::directory_iterator(changelogs_dir))
     {
+        if (p == changelogs_detached_dir)
+            continue;
+
         auto file_description = getChangelogFileDescription(p.path());
         existing_changelogs[file_description.from_log_index] = file_description;
     }
 
     if (existing_changelogs.empty())
-        LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
+        LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir.generic_string());
 
     clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
 }
@@ -328,7 +331,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                 /// entries from leader.
                 if (changelog_description.from_log_index > last_commited_log_index && (changelog_description.from_log_index - last_commited_log_index) > 1)
                 {
-                    LOG_ERROR(log, "Some records was lost, last committed log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
+                    LOG_ERROR(log, "Some records were lost, last committed log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
                     /// Nothing to do with our more fresh log, leader will overwrite them, so remove everything and just start from last_commited_index
                     removeAllLogs();
                     min_log_id = last_commited_log_index;
@@ -341,6 +344,12 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
                 }
+            }
+            else if ((changelog_description.from_log_index - last_log_read_result->last_read_index) > 1)
+            {
+                LOG_ERROR(log, "Some records were lost, last found log index {}, while the next log index on disk is {}. Hopefully will receive missing records from leader.", last_log_read_result->last_read_index, changelog_description.from_log_index);
+                removeAllLogsAfter(last_log_read_result->log_start_index);
+                break;
             }
 
             ChangelogReader reader(changelog_description.path);
@@ -405,7 +414,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
         if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
         {
-            LOG_INFO(log, "Removing log {} because it's empty or read finished with error", description.path);
+            LOG_INFO(log, "Removing chagelog {} because it's empty or read finished with error", description.path);
             std::filesystem::remove(description.path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
             std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
@@ -431,6 +440,44 @@ void Changelog::initWriter(const ChangelogFileDescription & description)
     current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_index);
 }
 
+namespace
+{
+
+std::string getCurrentTimestampFolder()
+{
+    const auto timestamp = LocalDateTime{std::time(nullptr)};
+    return fmt::format(
+        "{:02}{:02}{:02}T{:02}{:02}{:02}",
+        timestamp.year(),
+        timestamp.month(),
+        timestamp.day(),
+        timestamp.hour(),
+        timestamp.minute(),
+        timestamp.second());
+}
+
+}
+
+void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
+{
+    const auto timestamp_folder = changelogs_detached_dir / getCurrentTimestampFolder();
+
+    for (auto itr = begin; itr != end;)
+    {
+        if (!std::filesystem::exists(timestamp_folder))
+        {
+            LOG_WARNING(log, "Moving broken logs to {}", timestamp_folder.generic_string());
+            std::filesystem::create_directories(timestamp_folder);
+        }
+
+        LOG_WARNING(log, "Removing changelog {}", itr->second.path);
+        const std::filesystem::path path = itr->second.path;
+        const auto new_path = timestamp_folder / path.filename();
+        std::filesystem::rename(path, new_path);
+        itr = existing_changelogs.erase(itr);
+    }
+}
+
 void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 {
     auto start_to_remove_from_itr = existing_changelogs.upper_bound(remove_after_log_start_index);
@@ -440,12 +487,8 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
     size_t start_to_remove_from_log_id = start_to_remove_from_itr->first;
 
     /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
-    for (auto itr = start_to_remove_from_itr; itr != existing_changelogs.end();)
-    {
-        LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
-        std::filesystem::remove(itr->second.path);
-        itr = existing_changelogs.erase(itr);
-    }
+    LOG_WARNING(log, "Removing changelogs that go after broken changelog entry");
+    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end());
 
     std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
 }
@@ -453,12 +496,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 void Changelog::removeAllLogs()
 {
     LOG_WARNING(log, "Removing all changelogs");
-    for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
-    {
-        LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
-        std::filesystem::remove(itr->second.path);
-        itr = existing_changelogs.erase(itr);
-    }
+    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end());
     logs.clear();
 }
 

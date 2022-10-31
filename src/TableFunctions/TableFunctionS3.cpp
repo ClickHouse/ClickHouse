@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -7,9 +7,12 @@
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
+#include <Storages/StorageURL.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -38,6 +41,10 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
+        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        if (header_it != args.end())
+            args.erase(header_it);
+
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
@@ -56,7 +63,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         if (args.size() == 4)
         {
-            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
             if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
 
@@ -68,7 +75,8 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         else if (args.size() == 3)
         {
-            auto second_arg = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
             if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
@@ -80,22 +88,22 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         }
 
         /// This argument is always the first
-        s3_configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        s3_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
 
         if (args_to_idx.contains("format"))
-            s3_configuration.format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
 
         if (args_to_idx.contains("structure"))
-            s3_configuration.structure = args[args_to_idx["structure"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
 
         if (args_to_idx.contains("compression_method"))
-            s3_configuration.compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
 
         if (args_to_idx.contains("access_key_id"))
-            s3_configuration.auth_settings.access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
 
         if (args_to_idx.contains("secret_access_key"))
-            s3_configuration.auth_settings.secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
+            s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
     }
 
     if (s3_configuration.format == "auto")
@@ -131,15 +139,8 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
 {
     if (configuration.structure == "auto")
     {
-        return StorageS3::getTableStructureFromData(
-            configuration.format,
-            S3::URI(Poco::URI(configuration.url)),
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            configuration.compression_method,
-            false,
-            std::nullopt,
-            context);
+        context->checkAccess(getSourceAccessType());
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -157,19 +158,14 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         columns = structure_hint;
 
     StoragePtr storage = std::make_shared<StorageS3>(
-        s3_uri,
-        configuration.auth_settings.access_key_id,
-        configuration.auth_settings.secret_access_key,
+        configuration,
         StorageID(getDatabaseName(), table_name),
-        configuration.format,
-        configuration.rw_settings,
         columns,
         ConstraintsDescription{},
         String{},
         context,
         /// No format_settings for table function S3
-        std::nullopt,
-        configuration.compression_method);
+        std::nullopt);
 
     storage->startup();
 

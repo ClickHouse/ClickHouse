@@ -48,15 +48,34 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), in_), params(params_)
+    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
-    const auto & port_header = getPort().getHeader();
-    size_t num_columns = port_header.columns();
-    serializations.resize(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = port_header.getByPosition(i).type->getDefaultSerialization();
 }
 
+void IRowInputFormat::logError()
+{
+    String diagnostic;
+    String raw_data;
+    try
+    {
+        std::tie(diagnostic, raw_data) = getDiagnosticAndRawData();
+    }
+    catch (const Exception & exception)
+    {
+        diagnostic = "Cannot get diagnostic: " + exception.message();
+        raw_data = "Cannot get raw data: " + exception.message();
+    }
+    catch (...)
+    {
+        /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+    }
+    trimLeft(diagnostic, '\n');
+    trimRight(diagnostic, '\n');
+
+    auto now_time = time(nullptr);
+
+    errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
+}
 
 Chunk IRowInputFormat::generate()
 {
@@ -68,7 +87,6 @@ Chunk IRowInputFormat::generate()
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
     size_t num_rows = 0;
@@ -119,6 +137,9 @@ Chunk IRowInputFormat::generate()
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
 
+                if (errors_logger)
+                    logError();
+
                 ++num_errors;
                 Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
 
@@ -167,7 +188,7 @@ Chunk IRowInputFormat::generate()
         }
 
         e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(total_rows);
+        e.setLineNumber(static_cast<int>(total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
     }
@@ -213,7 +234,6 @@ Chunk IRowInputFormat::generate()
 
     finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

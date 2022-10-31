@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/stack_trace
+---
 # system.stack_trace {#system-tables_stack_trace}
 
 Содержит трассировки стека всех серверных потоков. Позволяет разработчикам анализировать состояние сервера.

@@ -77,7 +77,7 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 
     while (true)
     {
-        res = poll(&pfd, 1, timeout_milliseconds);
+        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
@@ -244,7 +244,7 @@ namespace
     *
     * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
     */
-    class ShellCommandSource final : public SourceWithProgress
+    class ShellCommandSource final : public ISource
     {
     public:
 
@@ -260,7 +260,7 @@ namespace
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : SourceWithProgress(sample_block_)
+            : ISource(sample_block_)
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
@@ -373,7 +373,7 @@ namespace
 
         Status prepare() override
         {
-            auto status = SourceWithProgress::prepare();
+            auto status = ISource::prepare();
 
             if (status == Status::Finished)
             {
@@ -527,7 +527,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
         else
         {
-            auto descriptor = i + 2;
+            int descriptor = static_cast<int>(i) + 2;
             auto it = process->write_fds.find(descriptor);
             if (it == process->write_fds.end())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Process does not contain descriptor to write {}", descriptor);
@@ -578,9 +578,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         source_configuration,
         std::move(process_holder),
         process_pool);
-    auto pipe = Pipe(std::move(source));
 
-    return pipe;
+    return Pipe(std::move(source));
 }
 
 }

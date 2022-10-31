@@ -216,7 +216,7 @@ public:
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
                 auto value = value_column[values_vec_offset + i];
-                auto key = key_column[keys_vec_offset + i].get<T>();
+                T key = static_cast<T>(key_column[keys_vec_offset + i].get<T>());
 
                 if (!keepKey(key))
                     continue;
@@ -519,7 +519,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -554,7 +554,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;
