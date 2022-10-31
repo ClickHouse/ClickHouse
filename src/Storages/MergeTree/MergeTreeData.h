@@ -591,7 +591,7 @@ public:
         bool was_active;
 
     public:
-        PartToRemoveFromZooKeeper(DataPartPtr && part_, bool was_active_ = true)
+        explicit PartToRemoveFromZooKeeper(DataPartPtr && part_, bool was_active_ = true)
          : part(std::move(part_)), was_active(was_active_)
         {
         }
