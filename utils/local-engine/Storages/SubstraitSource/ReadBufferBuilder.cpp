@@ -69,8 +69,11 @@ public:
         {
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Not found hdfs.libhdfs3_conf");
         }
+        std::string uriPath = "hdfs://" + file_uri.getHost();
+        if (file_uri.getPort())
+            uriPath += ":" + std::to_string(file_uri.getPort());
         read_buffer = std::make_unique<DB::ReadBufferFromHDFS>(
-            "hdfs://" + file_uri.getHost(), file_uri.getPath(), context->getGlobalContext()->getConfigRef());
+            uriPath, file_uri.getPath(), context->getGlobalContext()->getConfigRef());
         return read_buffer;
     }
 };
