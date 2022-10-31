@@ -253,3 +253,4 @@ e
 u
 v
 --show error: type should be const string
+--show error: index type should be integer

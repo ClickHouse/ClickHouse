@@ -191,7 +191,7 @@ private:
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
             const auto & column = columns[i];
-            if (!isString(column.type) && !isInteger(column.type))
+            if (!isString(column.type) && !isNativeInteger(column.type))
                 throw Exception{"The argument " + std::to_string(i + 1) + " of function " + String(function_name)
                                     + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
