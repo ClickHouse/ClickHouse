@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Core/Block.h>
 #include <Core/Types.h>
 #include <Storages/SubstraitSource/FormatFile.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -23,7 +24,7 @@
 #include <Poco/Logger.h>
 #include <base/logger_useful.h>
 #include <magic_enum.hpp>
-
+#include <Common/CHUtil.h>
 namespace DB
 {
 namespace ErrorCodes
@@ -34,16 +35,22 @@ namespace ErrorCodes
 }
 namespace local_engine
 {
+
+// When run query "select count(*) from t", there is no any column to be read.
+// The number of rows is the only needed information. To handle these cases, we
+// build blocks with a const virtual column to indicate how many rows is in it.
+static DB::Block getRealHeader(const DB::Block & header)
+{
+    if (header.columns())
+        return header;
+    return BlockUtil::buildRowCountHeader();
+}
+
 SubstraitFileSource::SubstraitFileSource(DB::ContextPtr context_, const DB::Block & header_, const substrait::ReadRel::LocalFiles & file_infos)
-    : DB::SourceWithProgress(header_, false)
+    : DB::SourceWithProgress(getRealHeader(header_), false)
     , context(context_)
     , output_header(header_)
 {
-    if (!output_header.columns())
-    {
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Empty columns to read. Maybe use count(col) instead of count(1)/count(*)");
-    }
-
     to_read_header = output_header;
     if (file_infos.items_size())
     {
@@ -218,21 +225,29 @@ bool ConstColumnsFileReader::pull(DB::Chunk & chunk)
     }
     DB::Columns res_columns;
     size_t columns_num = header.columns();
-    res_columns.reserve(columns_num);
-    const auto & partition_values = file->getFilePartitionValues();
-    for (size_t pos = 0; pos < columns_num; ++pos)
+    if (columns_num)
     {
-        auto col_with_name_and_type = header.getByPosition(pos);
-        auto type = col_with_name_and_type.type;
-        const auto & name = col_with_name_and_type.name;
-        auto it = partition_values.find(name);
-        if (it == partition_values.end()) [[unlikely]]
+        res_columns.reserve(columns_num);
+        const auto & partition_values = file->getFilePartitionValues();
+        for (size_t pos = 0; pos < columns_num; ++pos)
         {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknow partition column : {}", name);
+            auto col_with_name_and_type = header.getByPosition(pos);
+            auto type = col_with_name_and_type.type;
+            const auto & name = col_with_name_and_type.name;
+            auto it = partition_values.find(name);
+            if (it == partition_values.end()) [[unlikely]]
+            {
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknow partition column : {}", name);
+            }
+            auto field = buildFieldFromString(it->second, type);
+            auto column = createConstColumn(type, field, to_read_rows);
+            res_columns.emplace_back(column);
         }
-        auto field = buildFieldFromString(it->second, type);
-        auto column = createConstColumn(type, field, to_read_rows);
-        res_columns.emplace_back(column);
+    }
+    else
+    {
+        // the original header is empty, build a block to represent the row count.
+        res_columns = BlockUtil::buildRowCountChunk(to_read_rows).detachColumns();
     }
 
     chunk = DB::Chunk(std::move(res_columns), to_read_rows);

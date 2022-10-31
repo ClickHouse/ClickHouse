@@ -48,6 +48,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include "SerializedPlanParser.h"
 #include <Storages/IStorage.h>
+#include <Common/CHUtil.h>
 
 namespace DB
 {
@@ -235,10 +236,27 @@ QueryPlanPtr SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel 
     Stopwatch watch;
     watch.start();
     assert(rel.has_extension_table());
-    assert(rel.has_base_schema());
     std::string table = rel.extension_table().detail().value();
     auto merge_tree_table = local_engine::parseMergeTreeTableString(table);
-    auto header = parseNameStruct(rel.base_schema());
+    DB::Block header;
+    if (rel.has_base_schema() && rel.base_schema().names_size())
+    {
+        header = parseNameStruct(rel.base_schema());
+    }
+    else
+    {
+        // For count(*) case, there will be an empty base_schema, so we try to read at least once column
+        auto all_parts_dir = MergeTreeUtil::getAllMergeTreeParts( std::filesystem::path("/") / merge_tree_table.relative_path);
+        if (all_parts_dir.empty())
+        {
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Empty mergetree directory: {}", merge_tree_table.relative_path);
+        }
+        auto part_names_types_list = MergeTreeUtil::getSchemaFromMergeTreePart(all_parts_dir[0]);
+        NamesAndTypesList one_column_name_type;
+        one_column_name_type.push_back(part_names_types_list.front());
+        header = BlockUtil::buildHeader(one_column_name_type);
+        LOG_DEBUG(&Poco::Logger::get("SerializedPlanParser"), "Try to read ({}) instead of empty header", header.dumpNames());
+    }
     auto names_and_types_list = header.getNamesAndTypesList();
     auto storage_factory = StorageMergeTreeFactory::instance();
     auto metadata = buildMetaData(names_and_types_list, this->context);
@@ -417,17 +435,20 @@ QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
         }
 
         auto query_plan = parseOp(root_rel.root().input());
-        ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(query_plan->getCurrentDataStream().header));
-        NamesWithAliases aliases;
-        auto cols = query_plan->getCurrentDataStream().header.getNamesAndTypesList();
-        for (int i = 0; i < root_rel.root().names_size(); i++)
+        if (root_rel.root().names_size())
         {
-            aliases.emplace_back(NameWithAlias(cols.getNames()[i], root_rel.root().names(i)));
+            ActionsDAGPtr actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(query_plan->getCurrentDataStream().header));
+            NamesWithAliases aliases;
+            auto cols = query_plan->getCurrentDataStream().header.getNamesAndTypesList();
+            for (int i = 0; i < root_rel.root().names_size(); i++)
+            {
+                aliases.emplace_back(NameWithAlias(cols.getNames()[i], root_rel.root().names(i)));
+            }
+            actions_dag->project(aliases);
+            auto expression_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), actions_dag);
+            expression_step->setStepDescription("Rename Output");
+            query_plan->addStep(std::move(expression_step));
         }
-        actions_dag->project(aliases);
-        auto expression_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), actions_dag);
-        expression_step->setStepDescription("Rename Output");
-        query_plan->addStep(std::move(expression_step));
 
         if (logger->trace())
         {
@@ -1661,10 +1682,11 @@ SharedContextHolder SerializedPlanParser::shared_context;
 
 void LocalExecutor::execute(QueryPlanPtr query_plan)
 {
+    current_query_plan = std::move(query_plan);
     Stopwatch stopwatch;
     stopwatch.start();
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = true};
-    auto pipeline_builder = query_plan->buildQueryPipeline(
+    auto pipeline_builder = current_query_plan->buildQueryPipeline(
         optimization_settings,
         BuildQueryPipelineSettings{
             .actions_settings = ExpressionActionsSettings{
@@ -1679,7 +1701,7 @@ void LocalExecutor::execute(QueryPlanPtr query_plan)
         "build pipeline {} ms; create executor {} ms;",
         t_pipeline / 1000.0,
         t_executor / 1000.0);
-    this->header = query_plan->getCurrentDataStream().header.cloneEmpty();
+    this->header = current_query_plan->getCurrentDataStream().header.cloneEmpty();
     this->ch_column_to_spark_row = std::make_unique<CHColumnToSparkRow>();
 }
 std::unique_ptr<SparkRowInfo> LocalExecutor::writeBlockToSparkRow(Block & block)
@@ -1689,16 +1711,25 @@ std::unique_ptr<SparkRowInfo> LocalExecutor::writeBlockToSparkRow(Block & block)
 bool LocalExecutor::hasNext()
 {
     bool has_next;
-    if (currentBlock().columns() == 0 || isConsumed())
+    try
     {
-        auto empty_block = header.cloneEmpty();
-        setCurrentBlock(empty_block);
-        has_next = this->executor->pull(currentBlock());
-        produce();
+        if (currentBlock().columns() == 0 || isConsumed())
+        {
+            auto empty_block = header.cloneEmpty();
+            setCurrentBlock(empty_block);
+            has_next = this->executor->pull(currentBlock());
+            produce();
+        }
+        else
+        {
+            has_next = true;
+        }
     }
-    else
+    catch (DB::Exception & e)
     {
-        has_next = true;
+        LOG_ERROR(
+            &Poco::Logger::get("LocalExecutor"), "run query plan failed. {}\n{}", e.message(), PlanUtil::explainPlan(*current_query_plan));
+        throw e;
     }
     return has_next;
 }
@@ -1740,7 +1771,8 @@ Block & LocalExecutor::getHeader()
 {
     return header;
 }
-LocalExecutor::LocalExecutor(QueryContext & _query_context) : query_context(_query_context)
+LocalExecutor::LocalExecutor(QueryContext & _query_context)
+    : query_context(_query_context)
 {
 }
 }

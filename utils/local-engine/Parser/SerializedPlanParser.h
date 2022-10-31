@@ -17,7 +17,7 @@
 #include <arrow/ipc/writer.h>
 #include <substrait/plan.pb.h>
 #include <Common/BlockIterator.h>
-#include "Core/SortDescription.h"
+#include <Core/SortDescription.h>
 
 namespace local_engine
 {
@@ -204,5 +204,6 @@ private:
     Block header;
     std::unique_ptr<CHColumnToSparkRow> ch_column_to_spark_row;
     std::unique_ptr<SparkBuffer> spark_buffer;
+    DB::QueryPlanPtr current_query_plan;
 };
 }

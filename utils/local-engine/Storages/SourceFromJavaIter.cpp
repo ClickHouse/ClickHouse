@@ -1,9 +1,14 @@
 #include "SourceFromJavaIter.h"
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <jni/jni_common.h>
+#include <Common/Exception.h>
 #include <Common/DebugUtils.h>
 #include <Common/JNIUtils.h>
+#include <Columns/ColumnNullable.h>
+#include <jni/jni_common.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/CHUtil.h>
 
 namespace local_engine
 {
@@ -11,6 +16,19 @@ jclass SourceFromJavaIter::serialized_record_batch_iterator_class = nullptr;
 jmethodID SourceFromJavaIter::serialized_record_batch_iterator_hasNext = nullptr;
 jmethodID SourceFromJavaIter::serialized_record_batch_iterator_next = nullptr;
 
+
+static DB::Block getRealHeader(const DB::Block & header)
+{
+    if (header.columns())
+        return header;
+    return BlockUtil::buildRowCountHeader();
+}
+SourceFromJavaIter::SourceFromJavaIter(DB::Block header, jobject java_iter_)
+    : DB::ISource(getRealHeader(header))
+    , java_iter(java_iter_)
+    , original_header(header)
+{
+}
 DB::Chunk SourceFromJavaIter::generate()
 {
     GET_JNIENV(env)
@@ -23,12 +41,19 @@ DB::Chunk SourceFromJavaIter::generate()
         if (data->rows() > 0)
         {
             size_t rows = data->rows();
-            result.setColumns(data->mutateColumns(), rows);
-            convertNullable(result);
-            auto info = std::make_shared<DB::AggregatedChunkInfo>();
-            info->is_overflows = data->info.is_overflows;
-            info->bucket_num = data->info.bucket_num;
-            result.setChunkInfo(info);
+            if (original_header.columns())
+            {
+                result.setColumns(data->mutateColumns(), rows);
+                convertNullable(result);
+                auto info = std::make_shared<DB::AggregatedChunkInfo>();
+                info->is_overflows = data->info.is_overflows;
+                info->bucket_num = data->info.bucket_num;
+                result.setChunkInfo(info);
+            }
+            else
+            {
+                result = BlockUtil::buildRowCountChunk(rows);
+            }
         }
     }
     CLEAN_JNIENV
@@ -53,9 +78,9 @@ Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv * env, jbyteArray arr)
 }
 void SourceFromJavaIter::convertNullable(DB::Chunk & chunk)
 {
+    auto output = this->getOutputs().front().getHeader();
     auto rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    auto output = this->getOutputs().front().getHeader();
     for (size_t i = 0; i < columns.size(); ++i)
     {
         DB::WhichDataType which(columns.at(i)->getDataType());
