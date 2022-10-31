@@ -118,7 +118,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             }
         }
         else
-            ast = alias_node;
+            ast = alias_node->clone();
     }
 }
 
