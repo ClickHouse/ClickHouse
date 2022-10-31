@@ -280,6 +280,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         auto arguments_size = function.getArgumentsSize();
         auto function_name = function.getFunctionName();
 
+        for (size_t i = 0; i < arguments_size; ++i)
+        {
+            auto argument = function.getArgumentAt(i);
+            if (traverseFunction(argument, out, &node))
+                maybe_useful = true;
+        }
+
         if (arguments_size != 2)
             return false;
 
