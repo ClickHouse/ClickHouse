@@ -434,7 +434,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
-            const auto & map_column_name = first_argument.getColumnName();
+            const auto map_column_name = first_argument.getColumnName();
 
             size_t map_keys_key_column_num = 0;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
@@ -588,23 +588,20 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
     DataTypes data_types;
 
-    if (left_argument.isFunction())
+    auto left_argument_function_node_optional = left_argument.toFunctionNodeOrNull();
+
+    if (left_argument_function_node_optional && left_argument_function_node_optional->getFunctionName() == "tuple")
     {
-        auto left_argument_function_node = left_argument.toFunctionNode();
-        auto left_argument_function_node_name = left_argument_function_node.getFunctionName();
+        const auto & left_argument_function_node = *left_argument_function_node_optional;
+        size_t left_argument_function_node_arguments_size = left_argument_function_node.getArgumentsSize();
 
-        if (left_argument_function_node_name == "tuple")
+        for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            size_t left_argument_function_node_arguments_size = left_argument_function_node.getArgumentsSize();
-
-            for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
+            size_t key = 0;
+            if (getKey(left_argument_function_node.getArgumentAt(i).getColumnName(), key))
             {
-                size_t key = 0;
-                if (getKey(left_argument_function_node.getArgumentAt(i).getColumnName(), key))
-                {
-                    key_tuple_mapping.emplace_back(i, key);
-                    data_types.push_back(index_data_types[key]);
-                }
+                key_tuple_mapping.emplace_back(i, key);
+                data_types.push_back(index_data_types[key]);
             }
         }
     }

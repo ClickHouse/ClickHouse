@@ -293,8 +293,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        auto lhs_argument_column_name = lhs_argument.getColumnName();
-
         if (functionIsInOrGlobalInOperator(function_name))
         {
             ConstSetPtr prepared_set = rhs_argument.tryGetPreparedSet();
@@ -407,20 +405,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             if (set_contain_default_value)
                 return false;
 
-            const auto & col_name = key_node_function.getArgumentAt(0).getColumnName();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
+            auto first_argument = key_node_function.getArgumentAt(0);
+            const auto column_name = first_argument.getColumnName();
+            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
+            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
 
             if (header.has(map_keys_index_column_name))
             {
                 /// For mapKeys we serialize key argument with bloom filter
 
-                auto first_argument = key_node_function.getArgumentAt(1);
+                auto second_argument = key_node_function.getArgumentAt(1);
 
                 Field constant_value;
                 DataTypePtr constant_type;
 
-                if (first_argument.tryGetConstant(constant_value, constant_type))
+                if (second_argument.tryGetConstant(constant_value, constant_type))
                 {
                     size_t position = header.getPositionByName(map_keys_index_column_name);
                     const DataTypePtr & index_type = header.getByPosition(position).type;
@@ -688,10 +687,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             auto first_argument = key_node_function.getArgumentAt(0);
-            const auto col_name = first_argument.getColumnName();
+            const auto column_name = first_argument.getColumnName();
 
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
+            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
+            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
 
             size_t position = 0;
             Field const_value = value_field;
