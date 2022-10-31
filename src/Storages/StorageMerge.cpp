@@ -398,10 +398,6 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         const auto & storage = std::get<1>(table);
 
-        /// If sampling requested, then check that table supports it.
-        if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
-
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
@@ -532,65 +528,28 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
     auto storage_stage
         = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, storage_snapshot, modified_query_info);
-    if (processed_stage <= storage_stage)
+    modified_select.replaceDatabaseAndTable(database_name, table_name);
+    /// Intercept the settings
+    modified_context->setSetting("max_threads", streams_num);
+    modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+    modified_context->setSetting("max_block_size", max_block_size);
+
+    QueryPlan plan;
+    InterpreterSelectQuery(
+        modified_query_info.query, modified_context, storage, storage->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage).ignoreProjections()).buildQueryPlan(plan);
+
+    if (!plan.isInitialized())
+        return {};
+
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
+        read_from_merge_tree->addFilterNodes(added_filter_nodes);
+
+    builder = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(modified_context),
+        BuildQueryPipelineSettings::fromContext(modified_context));
+
+    if (processed_stage > storage_stage)
     {
-        /// If there are only virtual columns in query, you must request at least one other column.
-        if (real_column_names.empty())
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
-
-        QueryPlan plan;
-        if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
-        {
-            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
-            /// The most intuitive way is to use InterpreterSelectQuery.
-
-            /// Intercept the settings
-            modified_context->setSetting("max_threads", streams_num);
-            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-            modified_context->setSetting("max_block_size", max_block_size);
-
-            InterpreterSelectQuery(
-                modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
-                .buildQueryPlan(plan);
-        }
-        else
-        {
-            storage->read(
-                plan,
-                real_column_names,
-                storage_snapshot,
-                modified_query_info,
-                modified_context,
-                processed_stage,
-                max_block_size,
-                UInt32(streams_num));
-
-        }
-
-        if (!plan.isInitialized())
-            return {};
-
-        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-            read_from_merge_tree->addFilterNodes(added_filter_nodes);
-
-        builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(modified_context),
-            BuildQueryPipelineSettings::fromContext(modified_context));
-    }
-    else if (processed_stage > storage_stage)
-    {
-        modified_select.replaceDatabaseAndTable(database_name, table_name);
-
-        /// Maximum permissible parallelism is streams_num
-        modified_context->setSetting("max_threads", streams_num);
-        modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-
-        /// TODO: Find a way to support projections for StorageMerge
-        InterpreterSelectQuery interpreter{
-            modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
-
-        builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
-
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
