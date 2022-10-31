@@ -46,7 +46,7 @@ public:
     explicit FilterWithCachedCount() = default;
 
     explicit FilterWithCachedCount(const ColumnPtr & column_)
-        : column(column_->convertToFullColumnIfConst()) // TODO: is this optimal?
+        : column(column_->convertToFullIfNeeded()) // TODO: is this optimal?
         , data(&typeid_cast<const ColumnUInt8 *>(column.get())->getData())
     {
     }
