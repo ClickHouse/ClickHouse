@@ -1,8 +1,8 @@
 #pragma once
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
-#include "Columns/ColumnsCommon.h"
-#include "Columns/IColumn.h"
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -35,7 +35,6 @@ struct PrewhereExprInfo
 
     std::string dump() const;
 };
-
 
 class FilterWithCachedCount
 {
@@ -208,16 +207,12 @@ public:
 
         using RangesInfo = std::vector<RangeInfo>;
 
-        const RangesInfo & startedRanges() const { return started_ranges; }
-        const NumRows & rowsPerGranule() const { return rows_per_granule; }
+        explicit ReadResult(Poco::Logger * log_) : log(log_) {}
 
         static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
-        /// The number of rows were read at LAST iteration in chain. <= num_added_rows + num_filtered_rows.
-        size_t totalRowsPerGranule() const { return total_rows_per_granule; }
-        size_t numRowsToSkipInLastGranule() const { return num_rows_to_skip_in_last_granule; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
-        const FilterWithCachedCount & getFilterOriginal() const { return filter_original.present() ? filter_original : filter; }
+//        const ColumnUInt8 * getFilterOriginal() const { assert(!filter_original); return filter_original ? filter_original : filter; }
 
         void addGranule(size_t num_rows_);
         void adjustLastGranule();
@@ -227,7 +222,7 @@ public:
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(bool can_read_incomplete_granules, bool allow_filter_columns);
+        void optimize(bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
         void clearFilter();
@@ -237,7 +232,12 @@ public:
 
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
-        void shrink(Columns & old_columns);
+        /// Shrinks columns according to the diff between current and previous rows_per_granule.
+        void shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const;
+
+        /// Verifies that columns and filter sizes match.
+        /// The checks might be non-trivial so it make sense to have the only in debug builds.
+        void checkInternalConsistency() const;
 
         /// If this flag is false than filtering form PREWHERE can be delayed and done in WHERE
         /// to reduce memory copies and applying heavy filters multiple times
@@ -250,7 +250,6 @@ public:
         /// Granule here is not number of rows between two marks
         /// It's amount of rows per single reading act
         NumRows rows_per_granule;
-        NumRows rows_per_granule_original;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
@@ -261,13 +260,15 @@ public:
         size_t num_bytes_read = 0;
         /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
         FilterWithCachedCount filter;
-        FilterWithCachedCount filter_original;
 
-        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter);
+        /// Builds updated filter by cutting zeros in granules tails
+        void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         Names extra_columns_filled;
+
+        Poco::Logger * log;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
@@ -292,6 +293,8 @@ private:
     bool last_reader_in_chain = false;
     bool is_initialized = false;
     Names non_const_virtual_column_names;
+
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeRangeReader");
 };
 
 }
