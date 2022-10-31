@@ -62,13 +62,13 @@ INSERT INTO 02354_annoy_cosine VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5
 
 SELECT *
 FROM 02354_annoy_cosine
-WHERE L2Distance(embedding, [0.0, 0.0, 10.0]) < 1.0
+WHERE cosineDistance(embedding, [0.0, 0.0, 10.0]) < 1.0
 LIMIT 5;
 
 SELECT *
 FROM 02354_annoy_cosine
-ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
-LIMIT 3;
+ORDER BY cosineDistance(embedding, [0.0, 0.0, 10.0])
+LIMIT 5;
 
 DROP TABLE IF EXISTS 02354_annoy_cosine;
 
