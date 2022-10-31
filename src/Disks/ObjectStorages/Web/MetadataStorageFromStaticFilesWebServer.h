@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/ReadOnlyMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/IDisk.h>
@@ -10,7 +9,7 @@
 namespace DB
 {
 
-class MetadataStorageFromStaticFilesWebServer final : public ReadOnlyMetadataStorage
+class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
@@ -46,9 +45,22 @@ public:
     std::string getObjectStorageRootPath() const override { return ""; }
 
     struct stat stat(const String & /* path */) const override { return {}; }
+
+    Poco::Timestamp getLastModified(const std::string & /* path */) const override
+    {
+        /// Required by MergeTree
+        return {};
+    }
+    uint32_t getHardlinkCount(const std::string & /* path */) const override
+    {
+        return 1;
+    }
+
+    bool supportsChmod() const override { return false; }
+    bool supportsStat() const override { return false; }
 };
 
-class MetadataStorageFromStaticFilesWebServerTransaction final : public ReadOnlyMetadataTransaction
+class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
 {
 private:
     DiskPtr disk;
@@ -59,8 +71,6 @@ public:
         const MetadataStorageFromStaticFilesWebServer & metadata_storage_)
         : metadata_storage(metadata_storage_)
     {}
-
-    ~MetadataStorageFromStaticFilesWebServerTransaction() override = default;
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
@@ -77,6 +87,13 @@ public:
     void createDirectory(const std::string & path) override;
 
     void createDirectoryRecursive(const std::string & path) override;
+
+    void commit() override
+    {
+        /// Nothing to commit.
+    }
+
+    bool supportsChmod() const override { return false; }
 };
 
 }

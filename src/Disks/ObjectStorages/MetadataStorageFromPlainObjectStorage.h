@@ -2,7 +2,6 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/ReadOnlyMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 
@@ -21,10 +20,7 @@ namespace DB
 /// It is used to allow BACKUP/RESTORE to ObjectStorage (S3/...) with the same
 /// structure as on disk MergeTree, and does not requires metadata from local
 /// disk to restore.
-///
-/// NOTE: Inheritance from ReadOnlyMetadataStorage is used here to throw
-/// NOT_IMPLEMENTED error for lost of unsupported methods (mtime/move/stat/...)
-class MetadataStorageFromPlainObjectStorage final : public ReadOnlyMetadataStorage
+class MetadataStorageFromPlainObjectStorage final : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
@@ -59,11 +55,25 @@ public:
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 
+    Poco::Timestamp getLastModified(const std::string & /* path */) const override
+    {
+        /// Required by MergeTree
+        return {};
+    }
+
+    uint32_t getHardlinkCount(const std::string & /* path */) const override
+    {
+        return 1;
+    }
+
+    bool supportsChmod() const override { return false; }
+    bool supportsStat() const override { return false; }
+
 private:
     std::filesystem::path getAbsolutePath(const std::string & path) const;
 };
 
-class MetadataStorageFromPlainObjectStorageTransaction final : public ReadOnlyMetadataTransaction
+class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction
 {
 private:
     const MetadataStorageFromPlainObjectStorage & metadata_storage;
@@ -74,9 +84,7 @@ public:
         : metadata_storage(metadata_storage_)
     {}
 
-    ~MetadataStorageFromPlainObjectStorageTransaction() override = default;
-
-    const IMetadataStorage & getStorageForNonTransactionalReads() const final;
+    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
 
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
@@ -97,6 +105,13 @@ public:
     void unlinkFile(const std::string & path) override;
 
     void unlinkMetadata(const std::string & path) override;
+
+    void commit() override
+    {
+        /// Nothing to commit.
+    }
+
+    bool supportsChmod() const override { return false; }
 };
 
 }
