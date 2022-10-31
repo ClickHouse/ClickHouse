@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/safe_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -336,7 +337,7 @@ private:
                     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
                         onError("Failed to initialize encryption context with cipher");
 
-                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr) != 1)
                         onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
 
                     if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
@@ -350,7 +351,7 @@ private:
                         const auto aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
-                                reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
+                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)) != 1)
                             onError("Failed to set AAD data");
                     }
                 }
@@ -636,7 +637,7 @@ private:
                         onError("Failed to initialize cipher context 1");
 
                     // 1.a.1 : Set custom IV length
-                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, iv_value.size, nullptr) != 1)
+                    if (EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_AEAD_SET_IVLEN, safe_cast<int>(iv_value.size), nullptr) != 1)
                         onError("Failed to set custom IV length to " + std::to_string(iv_value.size));
 
                     // 1.a.1 : Init CTX with key and IV
@@ -651,7 +652,7 @@ private:
                         StringRef aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
-                                reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
+                                reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)) != 1)
                             onError("Failed to sed AAD data");
                     }
                 }

@@ -109,7 +109,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = intHashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }

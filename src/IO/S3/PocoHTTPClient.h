@@ -2,19 +2,21 @@
 
 #include "config.h"
 
+#include <string>
+#include <vector>
+
 #if USE_AWS_S3
 
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <Storages/StorageS3Settings.h>
+#include <Storages/HeaderCollection.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
-
 
 namespace Aws::Http::Standard
 {
@@ -23,6 +25,7 @@ class StandardHttpResponse;
 
 namespace DB
 {
+
 class Context;
 }
 

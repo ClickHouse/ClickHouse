@@ -541,7 +541,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context);
-            context->setProcessListElement(&process_list_entry->get());
+            context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         /// Load external tables if they were provided
@@ -717,9 +717,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if ((*process_list_entry)->isKilled())
-                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
-                    ErrorCodes::QUERY_WAS_CANCELLED);
+            if (process_list_entry->getQueryStatus()->isKilled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
         }
 
         /// Hold element of process list till end of query execution.
@@ -863,7 +863,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                QueryStatus * process_list_elem = context->getProcessListElement();
+                QueryStatusPtr process_list_elem = context->getProcessListElement();
 
                 if (process_list_elem)
                 {
@@ -948,9 +948,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                                 processor_elem.processor_name = processor->getName();
 
-                                processor_elem.elapsed_us = processor->getElapsedUs();
-                                processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
-                                processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+                                /// NOTE: convert this to UInt64
+                                processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
+                                processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
+                                processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                                 auto stats = processor->getProcessorDataStats();
                                 processor_elem.input_rows = stats.input_rows;
@@ -1029,7 +1030,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
 
-                QueryStatus * process_list_elem = context->getProcessListElement();
+                QueryStatusPtr process_list_elem = context->getProcessListElement();
                 const Settings & current_settings = context->getSettingsRef();
 
                 /// Update performance counters before logging to query_log
