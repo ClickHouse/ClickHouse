@@ -117,7 +117,7 @@ private:
     struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
+    void finishDelayedChunk();
 };
 
 }

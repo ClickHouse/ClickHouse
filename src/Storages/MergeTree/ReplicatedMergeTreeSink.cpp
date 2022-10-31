@@ -48,6 +48,8 @@ struct ReplicatedMergeTreeSink::DelayedChunk
     size_t replicas_num = 0;
 
     std::vector<Partition> partitions;
+
+    zkutil::ZooKeeperPtr zookeeper;
 };
 
 ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
@@ -224,10 +226,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         streams += temp_part.streams.size();
         if (streams > max_insert_delayed_streams_for_parallel_write)
         {
-            finishDelayedChunk(zookeeper);
+            finishDelayedChunk();
             delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>(replicas_num);
             delayed_chunk->partitions = std::move(partitions);
-            finishDelayedChunk(zookeeper);
+            delayed_chunk->zookeeper = zookeeper;
+            finishDelayedChunk();
 
             streams = 0;
             support_parallel_write = false;
@@ -241,19 +244,20 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         });
     }
 
-    finishDelayedChunk(zookeeper);
+    finishDelayedChunk();
     delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    delayed_chunk->zookeeper = zookeeper;
 
     /// If deduplicated data should not be inserted into MV, we need to set proper
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
     if (!settings.deduplicate_blocks_in_dependent_materialized_views)
-        finishDelayedChunk(zookeeper);
+        finishDelayedChunk();
 }
 
-void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeSink::finishDelayedChunk()
 {
     if (!delayed_chunk)
         return;
@@ -268,7 +272,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
+            commitPart(delayed_chunk->zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -633,9 +637,7 @@ void ReplicatedMergeTreeSink::onStart()
 
 void ReplicatedMergeTreeSink::onFinish()
 {
-    auto zookeeper = storage.getZooKeeper();
-    assertSessionIsNotExpired(zookeeper);
-    finishDelayedChunk(zookeeper);
+    finishDelayedChunk();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(
