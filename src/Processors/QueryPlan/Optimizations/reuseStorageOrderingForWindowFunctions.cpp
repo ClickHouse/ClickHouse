@@ -82,7 +82,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && is_singe)
                 {
-                    // std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
+                    //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fiexd_columns.insert(maybe_fixed_column);
                 }
             }
@@ -136,7 +136,7 @@ void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, FixedColumns &
     }
 }
 
-void enreachFixedColumns(ActionsDAGPtr & dag, FixedColumns & fixed_columns)
+void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
     struct Frame
     {
@@ -146,7 +146,7 @@ void enreachFixedColumns(ActionsDAGPtr & dag, FixedColumns & fixed_columns)
 
     std::stack<Frame> stack;
     std::unordered_set<const ActionsDAG::Node *> visited;
-    for (const auto & node : dag->getNodes())
+    for (const auto & node : dag.getNodes())
     {
         if (visited.contains(&node))
             continue;
@@ -181,16 +181,27 @@ void enreachFixedColumns(ActionsDAGPtr & dag, FixedColumns & fixed_columns)
                     {
                         if (frame.node->function_base->isDeterministicInScopeOfQuery())
                         {
+                            //std::cerr << "*** enreachFixedColumns check " << frame.node->result_name << std::endl;
                             bool all_args_fixed_or_const = true;
                             for (const auto * child : frame.node->children)
-                                if (!child->column || !fixed_columns.contains(child))
+                            {
+                                if (!child->column && !fixed_columns.contains(child))
+                                {
+                                    //std::cerr << "*** enreachFixedColumns fail " << child->result_name <<  ' ' << static_cast<const void *>(child) << std::endl;
                                     all_args_fixed_or_const = false;
+                                }
+                            }
 
                             if (all_args_fixed_or_const)
+                            {
+                                //std::cerr << "*** enreachFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
                                 fixed_columns.insert(frame.node);
+                            }
                         }
                     }
                 }
+
+                stack.pop();
             }
         }
     }
@@ -256,10 +267,13 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
 
     MatchedTrees::Matches matches;
 
-    for (const auto * out : outer_dag.getOutputs())
+    for (const auto & node : outer_dag.getNodes())
     {
+        if (matches.contains(&node))
+            continue;
+
         std::stack<Frame> stack;
-        stack.push(Frame{out, {}});
+        stack.push(Frame{&node, {}});
         while (!stack.empty())
         {
             auto & frame = stack.top();
@@ -280,21 +294,24 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
             if (frame.mapped_children.size() < frame.node->children.size())
                 continue;
 
+            auto & match = matches[frame.node];
+
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
             {
                 const ActionsDAG::Node * mapped = nullptr;
                 if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
                     mapped = it->second;
 
-                matches.emplace(frame.node, MatchedTrees::Match{.node = mapped});
+                match.node = mapped;
             }
             else if (frame.node->type == ActionsDAG::ActionType::ALIAS)
             {
-                matches.emplace(frame.node, matches[frame.node->children.at(0)]);
+                match = matches[frame.node->children.at(0)];
             }
             else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
             {
-                auto & match = matches[frame.node];
+
+                //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
 
                 bool found_all_children = true;
                 for (const auto * child : frame.mapped_children)
@@ -332,15 +349,30 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                         intersection = &container;
                     }
 
+                    //std::cerr << ".. Candidate parents " << intersection->size() << std::endl;
+
                     if (!intersection->empty())
                     {
                         auto func_name = frame.node->function_base->getName();
                         for (const auto * parent : *intersection)
                         {
+                            //std::cerr << ".. candidate " << parent->result_name << std::endl;
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
-                                match.node = parent;
-                                break;
+                                const auto & childern = parent->children;
+                                size_t num_children = childern.size();
+                                if (frame.mapped_children.size() == num_children)
+                                {
+                                    bool all_children_matched = true;
+                                    for (size_t i = 0; all_children_matched && i < num_children; ++i)
+                                        all_children_matched = frame.mapped_children[i] == childern[i];
+
+                                    if (all_children_matched)
+                                    {
+                                        match.node = parent;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -366,8 +398,6 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                             auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
                             if (info.is_always_monotonic)
                             {
-                                match.node = child_match.node;
-
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
                                 monotonicity.strict = info.is_strict;
@@ -379,6 +409,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                                         monotonicity.strict = false;
                                 }
 
+                                match.node = child_match.node;
                                 match.monotonicity = monotonicity;
                             }
                         }
@@ -413,12 +444,16 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         for (const auto & [node, match] : matches)
         {
+            //std::cerr << "------- matching " << static_cast<const void *>(node) << " " << node->result_name
+            //    << " to " << static_cast<const void *>(match.node) << " " << (match.node ? match.node->result_name : "") << std::endl;
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
                     fixed_key_columns.insert(match.node);
             }
         }
+
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -431,7 +466,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     size_t next_descr_column = 0;
     size_t next_sort_key = 0;
 
-    for (; next_descr_column < description.size() && next_sort_key < sorting_key_columns.size(); ++next_sort_key)
+    while (next_descr_column < description.size() && next_sort_key < sorting_key_columns.size())
     {
         const auto & sorting_key_column = sorting_key_columns[next_sort_key];
         const auto & descr = description[next_descr_column];
@@ -459,6 +494,9 @@ InputOrderInfoPtr buildInputOrderInfo(
                 break;
 
             current_direction = descr.direction;
+
+            ++next_descr_column;
+            ++next_sort_key;
         }
         else
         {
@@ -469,11 +507,11 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             const auto & match = matches[sort_node];
 
-            // std::cerr << "====== Finding match for " << sort_node->result_name << ' ' << static_cast<const void *>(sort_node) << std::endl;
+            //std::cerr << "====== Finding match for " << sort_column_node->result_name << ' ' << static_cast<const void *>(sort_column_node) << std::endl;
 
             if (match.node && match.node == sort_column_node)
             {
-                // std::cerr << "====== Found direct match" << std::endl;
+                //std::cerr << "====== Found direct match" << std::endl;
 
                 /// We try to find the match first even if column is fixed. In this case, potentially more keys will match.
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
@@ -486,18 +524,25 @@ InputOrderInfoPtr buildInputOrderInfo(
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
                 }
+
+                ++next_descr_column;
+                ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // std::cerr << "+++++++++ Found fixed key by match" << std::endl;
+                //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
+                ++next_sort_key;
             }
             else
             {
 
-                // std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
+                //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
                 bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
                 if (!is_fixed_column)
                     break;
+
+                order_key_prefix_descr.push_back(descr);
+                ++next_descr_column;
             }
         }
 
@@ -510,13 +555,10 @@ InputOrderInfoPtr buildInputOrderInfo(
             read_direction = current_direction;
 
         if (current_direction)
-        {
-            order_key_prefix_descr.push_back(description[next_descr_column]);
-            ++next_descr_column;
+            order_key_prefix_descr.push_back(descr);
 
-            if (!strict_monotonic)
-                break;
-        }
+        if (current_direction && !strict_monotonic)
+            break;
     }
 
     if (read_direction == 0 || order_key_prefix_descr.empty())
@@ -548,6 +590,9 @@ void optimizeReadInOrder(QueryPlan::Node & node)
     ActionsDAGPtr dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node.children.front(), dag, fixed_columns);
+
+    if (dag && !fixed_columns.empty())
+        enreachFixedColumns(*dag, fixed_columns);
 
     const auto & description = sorting->getSortDescription();
     auto limit = sorting->getLimit();
