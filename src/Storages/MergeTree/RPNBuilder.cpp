@@ -361,7 +361,7 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
 RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
 {
     if (!isFunction())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a constant");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RPNBuilderTree node is not a function");
 
     if (this->ast_node)
         return RPNBuilderFunctionTreeNode(this->ast_node, tree_context);
