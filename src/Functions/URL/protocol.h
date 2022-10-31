@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Extracts scheme from given url.
-inline StringRef getURLScheme(const char * data, size_t size)
+inline std::string_view getURLScheme(const char * data, size_t size)
 {
     // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
     const char * pos = data;
@@ -24,7 +24,7 @@ inline StringRef getURLScheme(const char * data, size_t size)
             }
         }
 
-        return StringRef(data, pos - data);
+        return std::string_view(data, pos - data);
     }
 
     return {};
@@ -42,10 +42,10 @@ struct ExtractProtocol
         res_data = data;
         res_size = 0;
 
-        StringRef scheme = getURLScheme(data, size);
-        Pos pos = data + scheme.size;
+        std::string_view scheme = getURLScheme(data, size);
+        Pos pos = data + scheme.size();
 
-        if (scheme.size == 0 || (data + size) - pos < 4)
+        if (scheme.empty() || (data + size) - pos < 4)
             return;
 
         if (pos[0] == ':')

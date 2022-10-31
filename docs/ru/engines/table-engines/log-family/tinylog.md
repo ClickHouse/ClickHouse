@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/log-family/tinylog
 sidebar_position: 34
 sidebar_label: TinyLog
 ---

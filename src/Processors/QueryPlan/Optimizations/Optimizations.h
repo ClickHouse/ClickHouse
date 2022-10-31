@@ -12,6 +12,8 @@ namespace QueryPlanOptimizations
 /// This is the main function which optimizes the whole QueryPlan tree.
 void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
+void optimizePrimaryKeyCondition(QueryPlan::Node & root);
+
 /// Optimization is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.
@@ -48,15 +50,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
+/// Utilize storage sorting when sorting for window functions.
+/// Update information about prefix sort description in SortingStep.
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
+/// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
+size_t tryDistinctReadInOrder(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 6> optimizations = {{
+    static const std::array<Optimization, 8> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
     }};
 
     return optimizations;

@@ -9,7 +9,7 @@
 
 #include <Poco/Version.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -74,8 +74,12 @@ namespace
         if (https)
         {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
+            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            if (resolve_host)
+                https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
+
+            session = std::move(https_session);
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
@@ -138,7 +142,7 @@ namespace
                 bool proxy_https_,
                 size_t max_pool_size_,
                 bool resolve_host_ = true)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
+            : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
             , https(https_)
@@ -208,7 +212,7 @@ namespace
             size_t max_connections_per_endpoint,
             bool resolve_host = true)
         {
-            std::unique_lock lock(mutex);
+            std::lock_guard lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
@@ -251,10 +255,13 @@ namespace
                         {
                             session->reset();
                             session->setHost(ip);
-                            session->attachSessionData({});
                         }
                     }
                 }
+                /// Reset the message, once it has been printed,
+                /// otherwise you will get report for failed parts on and on,
+                /// even for different tables (since they uses the same session).
+                session->attachSessionData({});
             }
 
             setTimeouts(*session, timeouts);
@@ -264,7 +271,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;

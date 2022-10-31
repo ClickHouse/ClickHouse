@@ -33,7 +33,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
@@ -75,6 +75,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setCurrentUnitNumber(current_ticket_number);
+        input_format->setErrorsLogger(errors_logger);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -88,10 +89,10 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
+        while (!parsing_finished && (chunk = parser.getChunk()))
         {
             /// Variable chunk is moved, but it is not really used in the next iteration.
-            /// NOLINTNEXTLINE(bugprone-use-after-move)
+            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
             unit.chunk_ext.chunk.emplace_back(std::move(chunk));
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
@@ -121,14 +122,15 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
+            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
             if (e->getLineNumber() != -1)
-                e->setLineNumber(e->getLineNumber() + offset);
+                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
 
             auto file_name = getFileNameFromReadBuffer(getReadBuffer());
             if (!file_name.empty())
@@ -233,7 +235,7 @@ Chunk ParallelParsingInputFormat::generate()
         else
         {
             // Pass the unit back to the segmentator.
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

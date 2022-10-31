@@ -116,7 +116,7 @@ struct NameArrayReverseSplit { static constexpr auto name = "arrayReverseSplit";
 using FunctionArraySplit = FunctionArrayMapped<ArraySplitImpl<false>, NameArraySplit>;
 using FunctionArrayReverseSplit = FunctionArrayMapped<ArraySplitImpl<true>, NameArrayReverseSplit>;
 
-void registerFunctionsArraySplit(FunctionFactory & factory)
+REGISTER_FUNCTION(ArraySplit)
 {
     factory.registerFunction<FunctionArraySplit>();
     factory.registerFunction<FunctionArrayReverseSplit>();

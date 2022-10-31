@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-s3-storage
+# Because parallel parts removal disabled for s3 storage
 
 # NOTE: this done as not .sql since we need to Ordinary database
 # (to account threads in query_log for DROP TABLE query)
@@ -10,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
+$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm -q "create database ordinary_$CLICKHOUSE_DATABASE engine=Ordinary"
 
 # MergeTree
 $CLICKHOUSE_CLIENT -nm -q """

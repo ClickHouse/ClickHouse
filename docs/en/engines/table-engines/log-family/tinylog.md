@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: TinyLog
 ---
 
-# TinyLog {#tinylog}
+# TinyLog
 
 The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 

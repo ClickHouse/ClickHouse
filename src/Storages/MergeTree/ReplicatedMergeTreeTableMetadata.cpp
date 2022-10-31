@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB
@@ -23,6 +25,17 @@ static String formattedAST(const ASTPtr & ast)
     return buf.str();
 }
 
+static String formattedASTNormalized(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    auto ast_normalized = ast->clone();
+    FunctionNameNormalizer().visit(ast_normalized.get());
+    WriteBufferFromOwnString buf;
+    formatAST(*ast_normalized, buf, false, true);
+    return buf.str();
+}
+
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
 {
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -32,7 +45,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     }
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedAST(metadata_snapshot->getSamplingKeyAST());
+    sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -44,7 +57,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
 
-    primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
+    primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
     {
         /// We don't use preparsed AST `sorting_key.expression_list_ast` because
@@ -53,15 +66,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         /// compatible way is just to convert definition_ast to list and
         /// serialize it. In all other places key.expression_list_ast should be
         /// used.
-        sorting_key = formattedAST(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+        sorting_key = formattedASTNormalized(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(metadata_snapshot->getPartitionKey().expression_list_ast);
+        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedAST(metadata_snapshot->getTableTTLs().definition_ast);
+    ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
     skip_indices = metadata_snapshot->getSecondaryIndices().toString();
 
@@ -351,6 +364,125 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     }
 
     return diff;
+}
+
+StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
+{
+    StorageInMemoryMetadata new_metadata = old_metadata;
+    new_metadata.columns = new_columns;
+
+    if (!empty())
+    {
+        auto parse_key_expr = [] (const String & key_expr)
+        {
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+            ASTPtr order_by_ast;
+            if (new_sorting_key_expr_list->children.size() == 1)
+                order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                order_by_ast = tuple;
+            }
+            return order_by_ast;
+        };
+
+        if (sorting_key_changed)
+        {
+            auto order_by_ast = parse_key_expr(new_sorting_key);
+
+            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, context);
+
+            if (new_metadata.primary_key.definition_ast == nullptr)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
+                new_metadata.primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, context);
+            }
+        }
+
+        if (sampling_expression_changed)
+        {
+            if (!new_sampling_expression.empty())
+            {
+                auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, context);
+            }
+            else /// SAMPLE BY was removed
+            {
+                new_metadata.sampling_key = {};
+            }
+        }
+
+        if (skip_indices_changed)
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
+
+        if (constraints_changed)
+            new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
+
+        if (projections_changed)
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, context);
+
+        if (ttl_table_changed)
+        {
+            if (!new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
+        }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    new_metadata.column_ttls_by_name.clear();
+    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key);
+        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (new_metadata.partition_key.definition_ast != nullptr)
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!sorting_key_changed) /// otherwise already updated
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    /// Primary key is special, it exists even if not defined
+    if (new_metadata.primary_key.definition_ast != nullptr)
+    {
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+    else
+    {
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!skip_indices_changed) /// otherwise already updated
+    {
+        for (auto & index : new_metadata.secondary_indices)
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+
+    if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key);
+
+    return new_metadata;
 }
 
 }

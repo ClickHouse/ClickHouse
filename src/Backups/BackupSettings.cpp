@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -15,19 +16,62 @@ namespace ErrorCodes
     extern const int WRONG_BACKUP_SETTINGS;
 }
 
+
+namespace
+{
+    struct SettingFieldOptionalUUID
+    {
+        std::optional<UUID> value;
+
+        explicit SettingFieldOptionalUUID(const std::optional<UUID> & value_) : value(value_) {}
+
+        explicit SettingFieldOptionalUUID(const Field & field)
+        {
+            if (field.getType() == Field::Types::Null)
+            {
+                value = std::nullopt;
+                return;
+            }
+
+            if (field.getType() == Field::Types::String)
+            {
+                const String & str = field.get<const String &>();
+                if (str.empty())
+                {
+                    value = std::nullopt;
+                    return;
+                }
+
+                UUID id;
+                if (tryParse(id, str))
+                {
+                    value = id;
+                    return;
+                }
+            }
+
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse uuid from {}", field);
+        }
+
+        explicit operator Field() const { return Field(value ? toString(*value) : ""); }
+    };
+}
+
+
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
+    M(String, id) \
     M(String, compression_method) \
-    M(Int64, compression_level) \
     M(String, password) \
     M(Bool, structure_only) \
     M(Bool, async) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
-    M(Bool, allow_storing_multiple_replicas) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path)
+    M(String, coordination_zk_path) \
+    M(OptionalUUID, backup_uuid)
+    /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {
@@ -38,6 +82,9 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
+            if (setting.name == "compression_level")
+                res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
+            else
 #define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
             if (setting.name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \

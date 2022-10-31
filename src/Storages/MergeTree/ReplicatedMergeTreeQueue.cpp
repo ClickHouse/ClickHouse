@@ -41,7 +41,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
-    assert(future_parts.empty());
+    chassert(future_parts.empty());
     current_parts.clear();
     virtual_parts.clear();
     queue.clear();
@@ -62,6 +62,7 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
 
 void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {
+    clear();
     std::lock_guard lock(state_mutex);
 
     LOG_TRACE(log, "Initializing parts in queue");
@@ -153,17 +154,19 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         ::sort(children.begin(), children.end());
 
-        zkutil::AsyncResponses<Coordination::GetResponse> futures;
-        futures.reserve(children.size());
+        auto children_num = children.size();
+        std::vector<std::string> paths;
+        paths.reserve(children_num);
 
         for (const String & child : children)
-            futures.emplace_back(child, zookeeper->asyncGet(fs::path(queue_path) / child));
+            paths.emplace_back(fs::path(queue_path) / child);
 
-        for (auto & future : futures)
+        auto results = zookeeper->get(paths);
+        for (size_t i = 0; i < children_num; ++i)
         {
-            Coordination::GetResponse res = future.second.get();
+            auto res = results[i];
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
-            entry->znode_name = future.first;
+            entry->znode_name = children[i];
 
             std::lock_guard lock(state_mutex);
 
@@ -641,11 +644,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             LOG_DEBUG(log, "Pulling {} entries to queue: {} - {}", (end - begin), *begin, *last);
 
-            zkutil::AsyncResponses<Coordination::GetResponse> futures;
-            futures.reserve(end - begin);
+            Strings get_paths;
+            get_paths.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                futures.emplace_back(*it, zookeeper->asyncGet(fs::path(zookeeper_path) / "log" / *it));
+                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -655,9 +658,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             std::optional<time_t> min_unprocessed_insert_time_changed;
 
-            for (auto & future : futures)
+            auto get_results = zookeeper->get(get_paths);
+            auto get_num = get_results.size();
+            for (size_t i = 0; i < get_num; ++i)
             {
-                Coordination::GetResponse res = future.second.get();
+                auto res = get_results[i];
 
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
@@ -1024,7 +1029,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_or_replace_range || called_from_alter_query_directly || called_for_broken_part);
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
@@ -1066,8 +1071,9 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
 }
 
 
-bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const LogEntry & entry, const String & new_part_name,
-                                                             String & out_reason, std::lock_guard<std::mutex> & /* queue_lock */) const
+bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry, const String & new_part_name,
+                                                          String & out_reason, std::unique_lock<std::mutex> & /* queue_lock */,
+                                                          std::vector<LogEntryPtr> * covered_entries_to_wait) const
 {
     /// Let's check if the same part is now being created by another action.
     auto entry_for_same_part_it = future_parts.find(new_part_name);
@@ -1080,7 +1086,7 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const LogEntry & en
             entry.znode_name, entry.type, entry.new_part_name,
             another_entry.znode_name, another_entry.type, another_entry.new_part_name);
         LOG_INFO(log, fmt::runtime(out_reason));
-        return false;
+        return true;
 
         /** When the corresponding action is completed, then `isNotCoveredByFuturePart` next time, will succeed,
             *  and queue element will be processed.
@@ -1098,24 +1104,51 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const LogEntry & en
     {
         auto future_part = MergeTreePartInfo::fromPartName(future_part_elem.first, format_version);
 
-        if (future_part.contains(result_part))
+        if (future_part.isDisjoint(result_part))
+            continue;
+
+        /// Parts are not disjoint. They can be even intersecting and it's not a problem,
+        /// because we may have two queue entries producing intersecting parts if there's DROP_RANGE between them (so virtual_parts are ok).
+
+        /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
+        /// while any covered or covering parts are processed.
+        /// But we also cannot simply return true and postpone entry processing, because it may lead to kind of livelock.
+        /// Since queue is processed in multiple threads, it's likely that there will be at least one thread
+        /// executing faulty entry for some small part, so bigger covering part will never be processed.
+        /// That's why it's better to wait for covered entry to be executed (does not matter successfully or not)
+        /// instead of exiting and postponing covering entry.
+
+        if (covered_entries_to_wait)
         {
-            out_reason = fmt::format(
-                "Not executing log entry {} for part {} "
-                "because it is covered by part {} that is currently executing.",
-                entry.znode_name, new_part_name, future_part_elem.first);
-            LOG_TRACE(log, fmt::runtime(out_reason));
-            return false;
+            if (entry.znode_name < future_part_elem.second->znode_name)
+            {
+                out_reason = fmt::format(
+                    "Not executing log entry {} for part {} "
+                    "because it is not disjoint with part {} that is currently executing and another entry {} is newer.",
+                    entry.znode_name, new_part_name, future_part_elem.first, future_part_elem.second->znode_name);
+                LOG_TRACE(log, fmt::runtime(out_reason));
+                return true;
+            }
+
+            covered_entries_to_wait->push_back(future_part_elem.second);
+            continue;
         }
+
+        out_reason = fmt::format(
+            "Not executing log entry {} for part {} "
+            "because it is not disjoint with part {} that is currently executing.",
+            entry.znode_name, new_part_name, future_part_elem.first);
+        LOG_TRACE(log, fmt::runtime(out_reason));
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason)
 {
     /// We have found `part_name` on some replica and are going to fetch it instead of covered `entry->new_part_name`.
-    std::lock_guard lock(state_mutex);
+    std::unique_lock lock(state_mutex);
 
     if (virtual_parts.getContainingPart(part_name).empty())
     {
@@ -1137,13 +1170,13 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
     if (drop_ranges.isAffectedByDropRange(part_name, reject_reason))
         return false;
 
-    if (isNotCoveredByFuturePartsImpl(entry, part_name, reject_reason, lock))
-    {
-        CurrentlyExecuting::setActualPartName(entry, part_name, *this, lock);
-        return true;
-    }
+    std::vector<LogEntryPtr> covered_entries_to_wait;
+    if (isCoveredByFuturePartsImpl(entry, part_name, reject_reason, lock, &covered_entries_to_wait))
+        return false;
 
-    return false;
+    CurrentlyExecuting::setActualPartName(entry, part_name, *this, lock, covered_entries_to_wait);
+    return true;
+
 }
 
 
@@ -1152,13 +1185,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     String & out_postpone_reason,
     MergeTreeDataMergerMutator & merger_mutator,
     MergeTreeData & data,
-    std::lock_guard<std::mutex> & state_lock) const
+    std::unique_lock<std::mutex> & state_lock) const
 {
     /// If our entry produce part which is already covered by
     /// some other entry which is currently executing, then we can postpone this entry.
     for (const String & new_part_name : entry.getVirtualPartNames(format_version))
     {
-        if (!isNotCoveredByFuturePartsImpl(entry, new_part_name, out_postpone_reason, state_lock))
+        /// Do not wait for any entries here, because we have only one thread that scheduling queue entries.
+        /// We can wait in worker threads, but not in scheduler.
+        if (isCoveredByFuturePartsImpl(entry, new_part_name, out_postpone_reason, state_lock, /* covered_entries_to_wait */ nullptr))
             return false;
     }
 
@@ -1219,7 +1254,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto disks = storage.getDisks();
             bool only_s3_storage = true;
             for (const auto & disk : disks)
-                if (disk->getType() != DB::DiskType::S3)
+                if (!disk->supportZeroCopyReplication())
                     only_s3_storage = false;
 
             if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0]))
@@ -1337,15 +1372,26 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// DROP_RANGE and REPLACE_RANGE entries remove other entries, which produce parts in the range.
         /// If such part producing operations are currently executing, then DROP/REPLACE RANGE wait them to finish.
         /// Deadlock is possible if multiple DROP/REPLACE RANGE entries are executing in parallel and wait each other.
+        /// But it should not happen if ranges are disjoint.
         /// See also removePartProducingOpsInRange(...) and ReplicatedMergeTreeQueue::CurrentlyExecuting.
-        if (currently_executing_drop_or_replace_range)
+
+        if (auto drop_range = entry.getDropRange(format_version))
         {
-            out_postpone_reason = fmt::format(
-                "Not executing log entry {} of type {} for part {} "
-                "because another DROP_RANGE or REPLACE_RANGE entry are currently executing.",
-                entry.znode_name, entry.typeToString(), entry.new_part_name);
-            LOG_TRACE(log, fmt::runtime(out_postpone_reason));
-            return false;
+            auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, format_version);
+            for (const auto & info : currently_executing_drop_replace_ranges)
+            {
+                if (drop_range_info.isDisjoint(info))
+                    continue;
+                out_postpone_reason = fmt::format(
+                    "Not executing log entry {} of type {} for part {} "
+                    "because another DROP_RANGE or REPLACE_RANGE entry with not disjoint range {} is currently executing.",
+                    entry.znode_name,
+                    entry.typeToString(),
+                    entry.new_part_name,
+                    info.getPartName());
+                LOG_TRACE(log, fmt::runtime(out_postpone_reason));
+                return false;
+            }
         }
 
         if (entry.isDropPart(format_version))
@@ -1409,13 +1455,14 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partiti
 
 
 ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
-    const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_, std::lock_guard<std::mutex> & /* state_lock */)
+    const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_, std::unique_lock<std::mutex> & /* state_lock */)
     : entry(entry_), queue(queue_)
 {
-    if (entry->type == ReplicatedMergeTreeLogEntry::DROP_RANGE || entry->type == ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
+    if (auto drop_range = entry->getDropRange(queue.format_version))
     {
-        assert(!queue.currently_executing_drop_or_replace_range);
-        queue.currently_executing_drop_or_replace_range = true;
+        auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, queue.format_version);
+        [[maybe_unused]] bool inserted = queue.currently_executing_drop_replace_ranges.emplace(drop_range_info).second;
+        assert(inserted);
     }
     entry->currently_executing = true;
     ++entry->num_tries;
@@ -1435,7 +1482,8 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
     ReplicatedMergeTreeQueue::LogEntry & entry,
     const String & actual_part_name,
     ReplicatedMergeTreeQueue & queue,
-    std::lock_guard<std::mutex> & /* state_lock */)
+    std::unique_lock<std::mutex> & state_lock,
+    std::vector<LogEntryPtr> & covered_entries_to_wait)
 {
     if (!entry.actual_new_part_name.empty())
         throw Exception("Entry actual part isn't empty yet. This is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -1450,6 +1498,15 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attaching already existing future part {}. This is a bug. "
                                                    "It happened on attempt to execute {}: {}",
                                                    entry.actual_new_part_name, entry.znode_name, entry.toString());
+
+    for (LogEntryPtr & covered_entry : covered_entries_to_wait)
+    {
+        if (&entry == covered_entry.get())
+            continue;
+        LOG_TRACE(queue.log, "Waiting for {} producing {} to finish before executing {} producing not disjoint part {}",
+                  covered_entry->znode_name, covered_entry->new_part_name, entry.znode_name, entry.new_part_name);
+        covered_entry->execution_complete.wait(state_lock, [&covered_entry] { return !covered_entry->currently_executing; });
+    }
 }
 
 
@@ -1457,10 +1514,11 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 {
     std::lock_guard lock(queue.state_mutex);
 
-    if (entry->type == ReplicatedMergeTreeLogEntry::DROP_RANGE || entry->type == ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
+    if (auto drop_range = entry->getDropRange(queue.format_version))
     {
-        assert(queue.currently_executing_drop_or_replace_range);
-        queue.currently_executing_drop_or_replace_range = false;
+        auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, queue.format_version);
+        [[maybe_unused]] bool removed = queue.currently_executing_drop_replace_ranges.erase(drop_range_info);
+        assert(removed);
     }
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
@@ -1491,7 +1549,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
 {
     LogEntryPtr entry;
 
-    std::lock_guard lock(state_mutex);
+    std::unique_lock lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {
@@ -1751,9 +1809,9 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     Status res;
 
-    res.future_parts = future_parts.size();
-    res.queue_size = queue.size();
-    res.last_queue_update = last_queue_update;
+    res.future_parts = static_cast<UInt32>(future_parts.size());
+    res.queue_size = static_cast<UInt32>(queue.size());
+    res.last_queue_update = static_cast<UInt32>(last_queue_update);
 
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
@@ -1766,7 +1824,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
     for (const LogEntryPtr & entry : queue)
     {
         if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
-            res.queue_oldest_time = entry->create_time;
+            res.queue_oldest_time = static_cast<UInt32>(entry->create_time);
 
         if (entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART)
         {
@@ -1774,7 +1832,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
             {
-                res.inserts_oldest_time = entry->create_time;
+                res.inserts_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_get = entry->new_part_name;
             }
         }
@@ -1785,7 +1843,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
             {
-                res.merges_oldest_time = entry->create_time;
+                res.merges_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_merge_to = entry->new_part_name;
             }
         }
@@ -1796,7 +1854,7 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
             if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
             {
-                res.part_mutations_oldest_time = entry->create_time;
+                res.part_mutations_oldest_time = static_cast<UInt32>(entry->create_time);
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
         }
@@ -1924,9 +1982,12 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-        std::vector<std::future<Coordination::ListResponse>> lock_futures;
+        std::vector<std::string> paths;
+        paths.reserve(partitions.size());
         for (const String & partition : partitions)
-            lock_futures.push_back(zookeeper->asyncGetChildren(fs::path(queue.zookeeper_path) / "block_numbers" / partition));
+            paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
+
+        auto locks_children = zookeeper->getChildren(paths);
 
         struct BlockInfoInZooKeeper
         {
@@ -1939,7 +2000,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         std::vector<BlockInfoInZooKeeper> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
-            Strings partition_block_numbers = lock_futures[i].get().names;
+            Strings partition_block_numbers = locks_children[i].names;
             for (const String & entry : partition_block_numbers)
             {
                 /// TODO: cache block numbers that are abandoned.
@@ -2183,6 +2244,29 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
 }
 
 
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    for (const auto & entry : queue.queue)
+    {
+        if (entry->type != ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
+            continue;
+
+        for (const auto & part_name : entry->replace_range_entry->new_part_names)
+        {
+            if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
+                continue;
+
+            if (out_reason)
+                *out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
+
+            return true;
+        }
+    }
+    return false;
+}
+
+
 std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
@@ -2271,6 +2355,12 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
 bool ReplicatedMergeTreeMergePredicate::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
 {
     return queue.hasDropRange(new_drop_range_info);
+}
+
+String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & part_name) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    return queue.virtual_parts.getContainingPart(MergeTreePartInfo::fromPartName(part_name, queue.format_version));
 }
 
 

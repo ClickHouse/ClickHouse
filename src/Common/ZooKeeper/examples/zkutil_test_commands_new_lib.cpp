@@ -40,7 +40,8 @@ try
     }
 
 
-    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000}, nullptr);
+    zkutil::ZooKeeperArgs args;
+    ZooKeeper zk(nodes, args, nullptr);
 
     Poco::Event event(true);
 
@@ -99,6 +100,7 @@ try
     std::cout << "list\n";
 
     zk.list("/",
+        Coordination::ListRequestType::ALL,
         [&](const ListResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)

@@ -112,7 +112,7 @@ public:
 
 }
 
-void registerFunctionRegexpQuoteMeta(FunctionFactory & factory)
+REGISTER_FUNCTION(RegexpQuoteMeta)
 {
     factory.registerFunction<FunctionRegexpQuoteMeta>();
 }

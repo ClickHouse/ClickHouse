@@ -96,7 +96,7 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
-    MergeType merge_type = MergeType::REGULAR;
+    MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;
 

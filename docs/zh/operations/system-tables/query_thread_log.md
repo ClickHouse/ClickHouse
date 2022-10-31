@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/query_thread_log
+---
 # 系统。query_thread_log {#system_tables-query_thread_log}
 
 包含有关执行查询的线程的信息，例如，线程名称、线程开始时间、查询处理的持续时间。

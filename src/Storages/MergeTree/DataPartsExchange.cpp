@@ -1,16 +1,19 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
+#include "config.h"
+
 #include <Formats/NativeWriter.h>
-#include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
 #include <IO/HTTPCommon.h>
+#include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -97,8 +100,10 @@ struct ReplicatedFetchReadCallback
 }
 
 
-Service::Service(StorageReplicatedMergeTree & data_) :
-    data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+Service::Service(StorageReplicatedMergeTree & data_)
+    : data(data_)
+    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Replicated PartsService)"))
+{}
 
 std::string Service::getId(const std::string & node_id) const
 {
@@ -127,12 +132,13 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     {
         if (part && part->isProjectionPart())
         {
-            data.reportBrokenPart(part->getParentPart()->name);
+            auto parent_part = part->getParentPart()->shared_from_this();
+            data.reportBrokenPart(parent_part);
         }
+        else if (part)
+            data.reportBrokenPart(part);
         else
-        {
-            data.reportBrokenPart(part_name);
-        }
+            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
     };
 
     try
@@ -140,6 +146,17 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
+
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
+        {
+            UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
+            if (revision)
+                part->getDataPartStorage().syncRevision(revision);
+
+            revision = part->getDataPartStorage().getRevision();
+            if (revision)
+                response.addCookie({"disk_revision", toString(revision)});
+        }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(part->checksums.getTotalSizeOnDisk(), out);
@@ -164,15 +181,22 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             std::sregex_token_iterator());
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
-            auto disk = part->volume->getDisk();
-            auto disk_type = toString(disk->getType());
-            if (disk->supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
+            auto disk_type = part->getDataPartStorage().getDiskType();
+            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
-                sendPartFromDiskRemoteMeta(part, out);
+                if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
+                {
+                    const auto & projections = part->getProjectionParts();
+                    writeBinary(projections.size(), out);
+                }
+
+                sendPartFromDiskRemoteMeta(part, out, true, part->getProjectionParts());
                 return;
             }
         }
@@ -259,7 +283,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         checksums.files[file_name] = {};
     }
 
-    auto disk = part->volume->getDisk();
     MergeTreeData::DataPart::Checksums data_checksums;
     for (const auto & [name, projection] : part->getProjectionParts())
     {
@@ -285,14 +308,12 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     {
         String file_name = it.first;
 
-        String path = fs::path(part->getFullRelativePath()) / file_name;
-
-        UInt64 size = disk->getFileSize(path);
+        UInt64 size = part->getDataPartStorage().getFileSize(file_name);
 
         writeStringBinary(it.first, out);
         writeBinary(size, out);
 
-        auto file_in = disk->readFile(path);
+        auto file_in = part->getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
@@ -300,7 +321,11 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
         if (hashing_out.count() != size)
-            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}, expected {} got {}", path, hashing_out.count(), size);
+            throw Exception(
+                ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                "Unexpected size of file {}, expected {} got {}",
+                std::string(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
+                hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
 
@@ -312,11 +337,18 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
+MergeTreeData::DataPart::Checksums Service::sendPartFromDiskRemoteMeta(
+    const MergeTreeData::DataPartPtr & part,
+    WriteBuffer & out,
+    bool send_part_id,
+    const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & projections)
 {
-    auto disk = part->volume->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", disk->getName());
+    const auto * data_part_storage_on_disk = dynamic_cast<const DataPartStorageOnDisk *>(&part->getDataPartStorage());
+    if (!data_part_storage_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage '{}' doesn't support zero-copy replication", part->getDataPartStorage().getDiskName());
+
+    if (!data_part_storage_on_disk->supportZeroCopyReplication())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk '{}' doesn't support zero-copy replication", data_part_storage_on_disk->getDiskName());
 
     /// We'll take a list of files from the list of checksums.
     MergeTreeData::DataPart::Checksums checksums = part->checksums;
@@ -325,25 +357,53 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
     for (const auto & file_name : file_names_without_checksums)
         checksums.files[file_name] = {};
 
+    for (const auto & [name, projection] : part->getProjectionParts())
+    {
+        // Get rid of projection files
+        checksums.files.erase(name + ".proj");
+    }
+
     std::vector<std::string> paths;
     paths.reserve(checksums.files.size());
     for (const auto & it : checksums.files)
-        paths.push_back(fs::path(part->getFullRelativePath()) / it.first);
+        paths.push_back(fs::path(part->getDataPartStorage().getRelativePath()) / it.first);
 
     /// Serialized metadatadatas with zero ref counts.
-    auto metadatas = disk->getSerializedMetadata(paths);
+    auto metadatas = data_part_storage_on_disk->getSerializedMetadata(paths);
 
-    String part_id = part->getUniqueId();
-    writeStringBinary(part_id, out);
+    if (send_part_id)
+    {
+        String part_id = data_part_storage_on_disk->getUniqueId();
+        writeStringBinary(part_id, out);
+    }
+
+    MergeTreeData::DataPart::Checksums data_checksums;
+    for (const auto & [name, projection] : part->getProjectionParts())
+    {
+        auto it = projections.find(name);
+        if (it != projections.end())
+        {
+
+            writeStringBinary(name, out);
+            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDiskRemoteMeta(it->second, out, false);
+            data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
+        }
+        else if (part->checksums.has(name + ".proj"))
+        {
+            // We don't send this projection, just add out checksum to bypass the following check
+            const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
+            data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
+        }
+    }
 
     writeBinary(checksums.files.size(), out);
     for (const auto & it : checksums.files)
     {
         const String & file_name = it.first;
-        String file_path_prefix = fs::path(part->getFullRelativePath()) / file_name;
+        String file_path_prefix = fs::path(part->getDataPartStorage().getRelativePath()) / file_name;
 
         /// Just some additional checks
-        String metadata_file_path = fs::path(disk->getPath()) / file_path_prefix;
+        String metadata_file_path = fs::path(data_part_storage_on_disk->getDiskPath()) / file_path_prefix;
         fs::path metadata(metadata_file_path);
         if (!fs::exists(metadata))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not exists", file_name);
@@ -367,7 +427,12 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
             throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}", metadata_file_path);
 
         writePODBinary(hashing_out.getHash(), out);
+
+        if (!file_names_without_checksums.contains(file_name))
+            data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
+
+    return data_checksums;
 }
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
@@ -382,7 +447,12 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
+Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
+    : data(data_)
+    , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
+{}
+
+MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const String & part_name,
@@ -403,9 +473,20 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
+    const auto data_settings = data.getSettings();
+
+    if (data.canUseZeroCopyReplication() && !try_zero_copy)
+        LOG_INFO(log, "Zero copy replication enabled, but trying to fetch part {} without zero copy", part_name);
+
+    /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
+    /// but detached part name prefix should not contain underscore.
+    static const String TMP_PREFIX = "tmp-fetch_";
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    String part_dir = tmp_prefix + part_name;
+    auto temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
+
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
@@ -419,21 +500,38 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress",                "false"}
     });
 
+    if (disk)
+    {
+        LOG_TRACE(log, "Will fetch to disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        UInt64 revision = disk->getRevision();
+        if (revision)
+            uri.addQueryParameter("disk_revision", toString(revision));
+    }
+
     Strings capability;
     if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
     {
         if (!disk)
         {
+            LOG_TRACE(log, "Trying to fetch with zero-copy replication, but disk is not provided, will try to select");
             Disks disks = data.getDisks();
             for (const auto & data_disk : disks)
+            {
+                LOG_TRACE(log, "Checking disk {} with type {}", data_disk->getName(), toString(data_disk->getDataSourceDescription().type));
                 if (data_disk->supportZeroCopyReplication())
-                    capability.push_back(toString(data_disk->getType()));
+                {
+                    LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), toString(data_disk->getDataSourceDescription().type));
+                    capability.push_back(toString(data_disk->getDataSourceDescription().type));
+                }
+            }
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(toString(disk->getType()));
+            LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+            capability.push_back(toString(disk->getDataSourceDescription().type));
         }
     }
+
     if (!capability.empty())
     {
         ::sort(capability.begin(), capability.end());
@@ -443,6 +541,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     else
     {
+        if (data.canUseZeroCopyReplication())
+            LOG_INFO(log, "Cannot select any zero-copy disk for {}", part_name);
+
         try_zero_copy = false;
     }
 
@@ -453,68 +554,95 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         creds.setPassword(password);
     }
 
-    PooledReadWriteBufferFromHTTP in{
+    std::unique_ptr<PooledReadWriteBufferFromHTTP> in = std::make_unique<PooledReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
-        {},
+        nullptr,
         timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
         0, /* no redirects */
-        data_settings->replicated_max_parallel_fetches_for_host
-    };
+        static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
 
-    int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
+    int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
 
     ReservationPtr reservation;
     size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
-        readBinary(sum_files_size, in);
+        readBinary(sum_files_size, *in);
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
             IMergeTreeDataPart::TTLInfos ttl_infos;
             String ttl_infos_string;
-            readBinary(ttl_infos_string, in);
+            readBinary(ttl_infos_string, *in);
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
+
             if (!disk)
             {
+                LOG_TRACE(log, "Disk for fetch is not provided, reserving space using storage balanced reservation");
                 reservation
                     = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
                 if (!reservation)
+                {
+                    LOG_TRACE(log, "Disk for fetch is not provided, reserving space using TTL rules");
                     reservation
                         = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+                }
             }
         }
         else if (!disk)
         {
+            LOG_TRACE(log, "Making balanced reservation");
             reservation = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, nullptr);
             if (!reservation)
+            {
+                LOG_TRACE(log, "Making simple reservation");
                 reservation = data.reserveSpace(sum_files_size);
+            }
         }
     }
     else if (!disk)
     {
+        LOG_TRACE(log, "Making reservation on the largest disk");
         /// We don't know real size of part because sender server version is too old
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
+
     if (!disk)
+    {
         disk = reservation->getDisk();
+        LOG_INFO(log, "Disk for fetch is not provided, getting disk from reservation {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+    }
+    else
+    {
+        LOG_INFO(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+    }
+
+    UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
+    if (revision)
+        disk->syncRevision(revision);
 
     bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
                     && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
 
     String part_type = "Wide";
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
-        readStringBinary(part_type, in);
+        readStringBinary(part_type, *in);
 
     UUID part_uuid = UUIDHelpers::Nil;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
-        readUUIDText(part_uuid, in);
+        readUUIDText(part_uuid, *in);
 
-    String remote_fs_metadata = parse<String>(in.getResponseCookie("remote_fs_metadata", ""));
+    String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
+
+    size_t projections = 0;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
+        readBinary(projections, *in);
+
+    MergeTreeData::DataPart::Checksums checksums;
     if (!remote_fs_metadata.empty())
     {
         if (!try_zero_copy)
@@ -528,17 +656,45 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix_, disk, in, throttler);
+            return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix, disk, *in, projections, checksums, throttler);
         }
+
         catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
 
+
+#if USE_AWS_S3
+            if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
+            {
+                /// It doesn't make sense to retry Access Denied or No Such Key
+                if (!s3_exception->isRetryableError())
+                {
+                    tryLogCurrentException(log, fmt::format("while fetching part: {}", part_name));
+                    throw;
+                }
+            }
+#endif
+
             LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
+
+            /// It's important to release session from HTTP pool. Otherwise it's possible to get deadlock
+            /// on http pool.
+            try
+            {
+                in.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+            }
+
+            temporary_directory_lock = {};
+
             /// Try again but without zero-copy
-            return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
-                user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false, disk);
+            return fetchSelectedPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
+                user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
 
@@ -549,16 +705,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         part_info.partition_id, part_name, new_part_path,
         replica_path, uri, to_detached, sum_files_size);
 
-    in.setNextCallback(ReplicatedFetchReadCallback(*entry));
+    in->setNextCallback(ReplicatedFetchReadCallback(*entry));
 
-    size_t projections = 0;
-    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
-        readBinary(projections, in);
-
-    MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
-        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, disk, in, projections, throttler)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, disk, in, projections, checksums, throttler);
+        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, disk, *in, projections, throttler)
+        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, sync, disk, *in, projections, checksums, throttler);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -572,8 +723,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     ThrottlerPtr throttler)
 {
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
+
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        volume,
+        data.getRelativeDataPath(),
+        part_name);
+
     MergeTreeData::MutableDataPartPtr new_data_part =
-        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
+        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, data_part_storage);
+
     new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
 
     for (auto i = 0ul; i < projections; ++i)
@@ -588,12 +746,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         auto block = block_in.read();
         throttler->add(block.bytes());
 
+        auto projection_part_storage = data_part_storage->getProjection(projection_name + ".proj");
+
         MergeTreePartInfo new_part_info("all", 0, 0, 0);
         MergeTreeData::MutableDataPartPtr new_projection_part =
-            std::make_shared<MergeTreeDataPartInMemory>(data, projection_name, new_part_info, volume, projection_name, new_data_part.get());
+            std::make_shared<MergeTreeDataPartInMemory>(data, projection_name, new_part_info, projection_part_storage, new_data_part.get());
 
         new_projection_part->is_temp = false;
-        new_projection_part->setColumns(block.getNamesAndTypesList());
+        new_projection_part->setColumns(block.getNamesAndTypesList(), {});
         MergeTreePartition partition{};
         new_projection_part->partition = std::move(partition);
         new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -622,7 +782,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
-    new_data_part->setColumns(block.getNamesAndTypesList());
+    new_data_part->setColumns(block.getNamesAndTypesList(), {});
     new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
@@ -637,11 +797,67 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     return new_data_part;
 }
 
+void Fetcher::downloadBasePartOrProjectionPartToDiskRemoteMeta(
+    const String & replica_path,
+    const MutableDataPartStoragePtr & data_part_storage,
+    PooledReadWriteBufferFromHTTP & in,
+    MergeTreeData::DataPart::Checksums & checksums,
+    ThrottlerPtr throttler) const
+{
+    size_t files;
+    readBinary(files, in);
+
+    for (size_t i = 0; i < files; ++i)
+    {
+        String file_name;
+        UInt64 file_size;
+
+        readStringBinary(file_name, in);
+        readBinary(file_size, in);
+
+        String metadata_file = fs::path(data_part_storage->getFullPath()) / file_name;
+
+        {
+            auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
+
+            HashingWriteBuffer hashing_out(*file_out);
+
+            copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
+
+            if (blocker.isCancelled())
+            {
+                /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
+                /// performing a poll with a not very large timeout.
+                /// And now we check it only between read chunks (in the `copyData` function).
+                data_part_storage->removeSharedRecursive(true);
+                data_part_storage->commitTransaction();
+                throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+            }
+
+            MergeTreeDataPartChecksum::uint128 expected_hash;
+            readPODBinary(expected_hash, in);
+
+            if (expected_hash != hashing_out.getHash())
+            {
+                throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
+                    "Checksum mismatch for file {} transferred from {}",
+                    metadata_file, replica_path);
+            }
+
+            if (file_name != "checksums.txt" &&
+                file_name != "columns.txt" &&
+                file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+                checksums.addFile(file_name, file_size, expected_hash);
+        }
+    }
+
+}
+
+
 void Fetcher::downloadBaseOrProjectionPartToDisk(
     const String & replica_path,
-    const String & part_download_path,
+    const MutableDataPartStoragePtr & data_part_storage,
     bool sync,
-    DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler) const
@@ -659,14 +875,14 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         /// File must be inside "absolute_part_path" directory.
         /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
-        String absolute_file_path = fs::weakly_canonical(fs::path(part_download_path) / file_name);
-        if (!startsWith(absolute_file_path, fs::weakly_canonical(part_download_path).string()))
+        String absolute_file_path = fs::weakly_canonical(fs::path(data_part_storage->getRelativePath()) / file_name);
+        if (!startsWith(absolute_file_path, fs::weakly_canonical(data_part_storage->getRelativePath()).string()))
             throw Exception(ErrorCodes::INSECURE_PATH,
                 "File path ({}) doesn't appear to be inside part path ({}). "
                 "This may happen if we are trying to download part from malicious replica or logical error.",
-                absolute_file_path, part_download_path);
+                absolute_file_path, data_part_storage->getRelativePath());
 
-        auto file_out = disk->writeFile(fs::path(part_download_path) / file_name);
+        auto file_out = data_part_storage->writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
         HashingWriteBuffer hashing_out(*file_out);
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
@@ -675,7 +891,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
             /// performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
-            disk->removeRecursive(part_download_path);
+            data_part_storage->removeRecursive();
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
         }
 
@@ -685,7 +901,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
         if (expected_hash != hashing_out.getHash())
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
                 "Checksum mismatch for file {} transferred from {}",
-                fullPath(disk, (fs::path(part_download_path) / file_name).string()),
+                (fs::path(data_part_storage->getFullPath()) / file_name).string(),
                 replica_path);
 
         if (file_name != "checksums.txt" &&
@@ -702,7 +918,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
-    const String & tmp_prefix_,
+    const String & tmp_prefix,
     bool sync,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
@@ -710,8 +926,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler)
 {
-    static const String TMP_PREFIX = "tmp-fetch_";
-    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    assert(!tmp_prefix.empty());
+    const auto data_settings = data.getSettings();
 
     /// We will remove directory if it's already exists. Make precautions.
     if (tmp_prefix.empty() //-V560
@@ -720,21 +936,37 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         || std::string::npos != part_name.find_first_of("/."))
         throw Exception("Logical error: tmp_prefix and part_name cannot be empty or contain '.' or '/' characters.", ErrorCodes::LOGICAL_ERROR);
 
-    String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
+    String part_dir = tmp_prefix + part_name;
+    String part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
 
-    if (disk->exists(part_download_path))
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
+
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        volume,
+        part_relative_path,
+        part_dir);
+
+    data_part_storage->beginTransaction();
+
+    if (data_part_storage->exists())
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
-            fullPath(disk, part_download_path));
-        disk->removeRecursive(part_download_path);
+            data_part_storage->getFullPath());
+
+        /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
+        /// is executed as a callback.
+        ///
+        /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
+        /// or not. So we are not doing it
+        bool keep_shared = disk->supportZeroCopyReplication() && data_settings->allow_remote_fs_zero_copy_replication;
+        data_part_storage->removeSharedRecursive(keep_shared);
     }
 
-    disk->createDirectories(part_download_path);
+    data_part_storage->createDirectories();
 
     SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(part_download_path);
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getRelativePath());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
@@ -743,19 +975,21 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         String projection_name;
         readStringBinary(projection_name, in);
         MergeTreeData::DataPart::Checksums projection_checksum;
-        disk->createDirectories(part_download_path + projection_name + ".proj/");
+
+        auto projection_part_storage = data_part_storage->getProjection(projection_name + ".proj");
+        projection_part_storage->createDirectories();
         downloadBaseOrProjectionPartToDisk(
-            replica_path, part_download_path + projection_name + ".proj/", sync, disk, in, projection_checksum, throttler);
+            replica_path, projection_part_storage, sync, in, projection_checksum, throttler);
         checksums.addFile(
             projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
     }
 
     // Download the base part
-    downloadBaseOrProjectionPartToDisk(replica_path, part_download_path, sync, disk, in, checksums, throttler);
+    downloadBaseOrProjectionPartToDisk(replica_path, data_part_storage, sync, in, checksums, throttler);
 
     assertEOF(in);
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
+    data_part_storage->commitTransaction();
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, data_part_storage);
     new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);
@@ -768,9 +1002,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
-    const String & tmp_prefix_,
+    const String & tmp_prefix,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
+    size_t projections,
+    MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler)
 {
     String part_id;
@@ -778,7 +1014,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
     if (!disk->supportZeroCopyReplication() || !disk->checkUniqueId(part_id))
     {
-        throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {}.", part_name, part_id, disk->getName());
+        throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
     }
 
     LOG_DEBUG(log, "Downloading Part {} unique id {} metadata onto disk {}.",
@@ -786,70 +1022,72 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
     data.lockSharedDataTemporary(part_name, part_id, disk);
 
-    static const String TMP_PREFIX = "tmp-fetch_";
-    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    assert(!tmp_prefix.empty());
 
-    String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String part_download_path = fs::path(data.getRelativeDataPath()) / part_relative_path / "";
-
-    if (disk->exists(part_download_path))
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists.", fullPath(disk, part_download_path));
-
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
-
-    disk->createDirectories(part_download_path);
-
-    size_t files;
-    readBinary(files, in);
+    String part_dir = tmp_prefix + part_name;
+    String part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
 
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    for (size_t i = 0; i < files; ++i)
+    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
+        volume,
+        part_relative_path,
+        part_dir);
+
+    data_part_storage->beginTransaction();
+
+    if (data_part_storage->exists())
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists.", data_part_storage->getFullPath());
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
+
+    data_part_storage->createDirectories();
+
+    for (auto i = 0ul; i < projections; ++i)
     {
-        String file_name;
-        UInt64 file_size;
+        String projection_name;
+        readStringBinary(projection_name, in);
+        MergeTreeData::DataPart::Checksums projection_checksum;
 
-        readStringBinary(file_name, in);
-        readBinary(file_size, in);
+        auto projection_part_storage = data_part_storage->getProjection(projection_name + ".proj");
+        projection_part_storage->createDirectories();
+        downloadBasePartOrProjectionPartToDiskRemoteMeta(
+            replica_path, projection_part_storage, in, projection_checksum, throttler);
 
-        String data_path = fs::path(part_download_path) / file_name;
-        String metadata_file = fullPath(disk, data_path);
-
-        {
-            auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
-
-            HashingWriteBuffer hashing_out(*file_out);
-
-            copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
-
-            if (blocker.isCancelled())
-            {
-                /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
-                /// performing a poll with a not very large timeout.
-                /// And now we check it only between read chunks (in the `copyData` function).
-                disk->removeSharedRecursive(part_download_path, true, {});
-                throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
-            }
-
-            MergeTreeDataPartChecksum::uint128 expected_hash;
-            readPODBinary(expected_hash, in);
-
-            if (expected_hash != hashing_out.getHash())
-            {
-                throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                    "Checksum mismatch for file {} transferred from {}",
-                    metadata_file, replica_path);
-            }
-        }
+        checksums.addFile(
+            projection_name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
     }
 
-    assertEOF(in);
+    downloadBasePartOrProjectionPartToDiskRemoteMeta(
+        replica_path, data_part_storage, in, checksums, throttler);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
-    new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-    new_data_part->is_temp = true;
-    new_data_part->modification_time = time(nullptr);
-    new_data_part->loadColumnsChecksumsIndexes(true, false);
+    assertEOF(in);
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    try
+    {
+        data_part_storage->commitTransaction();
+
+        new_data_part = data.createPart(part_name, data_part_storage);
+        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->is_temp = true;
+        new_data_part->modification_time = time(nullptr);
+
+        new_data_part->loadColumnsChecksumsIndexes(true, false);
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & ex)
+    {
+        if (ex.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            throw Exception(ErrorCodes::S3_ERROR, "Cannot fetch part {} because we lost lock and it was concurrently removed", part_name);
+        }
+        throw;
+    }
+#endif
+    catch (...) /// Redundant catch, just to be able to add first one with #if
+    {
+        throw;
+    }
 
     data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
 

@@ -20,6 +20,10 @@
 #    include <nmmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+#    include <arm_acle.h>
+#endif
+
 namespace DB
 {
 /** Distance function implementation.
@@ -64,6 +68,8 @@ struct NgramDistanceImpl
         UInt64 combined = (static_cast<UInt64>(code_points[0]) << 32) | code_points[1];
 #ifdef __SSE4_2__
         return _mm_crc32_u64(code_points[2], combined) & 0xFFFFu;
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+        return __crc32cd(code_points[2], combined) & 0xFFFFu;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
@@ -524,7 +530,7 @@ using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, U
 using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
 
 
-void registerFunctionsStringSimilarity(FunctionFactory & factory)
+REGISTER_FUNCTION(StringSimilarity)
 {
     factory.registerFunction<FunctionNgramDistance>();
     factory.registerFunction<FunctionNgramDistanceCaseInsensitive>();

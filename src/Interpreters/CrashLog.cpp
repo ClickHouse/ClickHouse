@@ -8,7 +8,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Stopwatch.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 
 namespace DB
@@ -51,7 +51,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     String build_id_hex;
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id_hex = SymbolIndex::instance()->getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);

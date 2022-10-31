@@ -13,6 +13,7 @@ drop table defaulted;
 
 create table defaulted (col1 Int8, col2 UInt64 default (SELECT dummy+99 from system.one)) engine=Memory; --{serverError 116}
 
+set allow_deprecated_syntax_for_merge_tree=1;
 create table defaulted (payload String, date materialized today(), key materialized 0 * rand()) engine=MergeTree(date, key, 8192);
 desc table defaulted;
 insert into defaulted (payload) values ('hello clickhouse');

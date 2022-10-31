@@ -51,7 +51,13 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
         settings.ostr << func_name;
 
         if (parameters)
-            parameters->formatImpl(settings, state, frame);
+        {
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            settings.ostr << "(";
+            parameters->formatImpl(settings, state, nested_frame);
+            settings.ostr << ")";
+        }
     }
 
     if (!column_name_prefix.empty())
@@ -262,6 +268,11 @@ void ASTColumnsExceptTransformer::setPattern(String pattern)
         throw DB::Exception(
             "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
             DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+}
+
+const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
+{
+    return column_matcher;
 }
 
 bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const

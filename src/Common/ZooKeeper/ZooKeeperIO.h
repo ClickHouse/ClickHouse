@@ -16,12 +16,13 @@ using namespace DB;
 void write(size_t x, WriteBuffer & out);
 
 /// uint64_t != size_t on darwin
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 void write(uint64_t x, WriteBuffer & out);
 #endif
 
 void write(int64_t x, WriteBuffer & out);
 void write(int32_t x, WriteBuffer & out);
+void write(uint8_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
 void write(bool x, WriteBuffer & out);
 void write(const std::string & s, WriteBuffer & out);
@@ -45,11 +46,12 @@ void write(const std::vector<T> & arr, WriteBuffer & out)
 }
 
 void read(size_t & x, ReadBuffer & in);
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 void read(uint64_t & x, ReadBuffer & in);
 #endif
 void read(int64_t & x, ReadBuffer & in);
 void read(int32_t & x, ReadBuffer & in);
+void read(uint8_t & x, ReadBuffer & in);
 void read(OpNum & x, ReadBuffer & in);
 void read(bool & x, ReadBuffer & in);
 void read(int8_t & x, ReadBuffer & in);

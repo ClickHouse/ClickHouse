@@ -1,7 +1,7 @@
 #include <pthread.h>
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
-#elif defined(__FreeBSD__)
+#if defined(OS_DARWIN) || defined(OS_SUNOS)
+#elif defined(OS_FREEBSD)
     #include <pthread_np.h>
 #else
     #include <sys/prctl.h>
@@ -55,10 +55,10 @@ const char * getThreadName()
     if (thread_name[0])
         return thread_name;
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
+#if defined(OS_DARWIN) || defined(OS_SUNOS)
     if (pthread_getname_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
         throw DB::Exception("Cannot get thread name with pthread_getname_np()", DB::ErrorCodes::PTHREAD_ERROR);
-#elif defined(__FreeBSD__)
+#elif defined(OS_FREEBSD)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
 //    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
 //        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);

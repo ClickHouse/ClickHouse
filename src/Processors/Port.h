@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 class Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
     friend class IProcessor;
 
 public:
@@ -254,6 +254,10 @@ protected:
         if (likely(update_info))
             update_info->update();
     }
+
+    /// For processors_profile_log
+    size_t rows = 0;
+    size_t bytes = 0;
 };
 
 /// Invariants:
@@ -263,7 +267,7 @@ protected:
 ///   * You can pull only if port hasData().
 class InputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
 
 private:
     OutputPort * output_port = nullptr;
@@ -299,6 +303,9 @@ public:
                 header.dumpStructure(),
                 chunk.dumpStructure());
         }
+
+        rows += data->chunk.getNumRows();
+        bytes += data->chunk.bytes();
 
         return std::move(*data);
     }
@@ -383,7 +390,7 @@ public:
 ///   * You can push only if port doesn't hasData().
 class OutputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &);
+    friend void connect(OutputPort &, InputPort &, bool);
 
 private:
     InputPort * input_port = nullptr;
@@ -422,6 +429,10 @@ public:
 
         std::uintptr_t flags = 0;
         *data = std::move(data_);
+
+        rows += data->chunk.getNumRows();
+        bytes += data->chunk.bytes();
+
         state->push(data, flags);
     }
 
@@ -472,6 +483,6 @@ using InputPorts = std::list<InputPort>;
 using OutputPorts = std::list<OutputPort>;
 
 
-void connect(OutputPort & output, InputPort & input);
+void connect(OutputPort & output, InputPort & input, bool reconnect = false);
 
 }

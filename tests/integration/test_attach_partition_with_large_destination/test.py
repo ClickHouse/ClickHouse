@@ -34,7 +34,10 @@ def create_force_drop_flag(node):
 @pytest.mark.parametrize("engine", ["Ordinary", "Atomic"])
 def test_attach_partition_with_large_destination(started_cluster, engine):
     # Initialize
-    node.query("CREATE DATABASE db ENGINE={}".format(engine))
+    node.query(
+        "CREATE DATABASE db ENGINE={}".format(engine),
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
     node.query(
         "CREATE TABLE db.destination (n UInt64) ENGINE=ReplicatedMergeTree('/test/destination', 'r1') ORDER BY n PARTITION BY n % 2"
     )

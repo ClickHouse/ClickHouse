@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerFunctionRunningDifference(FunctionFactory & factory)
+REGISTER_FUNCTION(RunningDifference)
 {
     factory.registerFunction<FunctionRunningDifferenceImpl<true>>();
 }

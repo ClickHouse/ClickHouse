@@ -1,10 +1,12 @@
 #include <Processors/Formats/Impl/PrometheusTextOutputFormat.h>
 
 #include <optional>
+#include <algorithm>
 #include <type_traits>
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <base/sort.h>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/IColumn.h>
@@ -107,17 +109,25 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
 {
     String bucket_label = metric.type == "histogram" ? "le" : "quantile";
 
-    std::sort(metric.values.begin(), metric.values.end(),
+    ::sort(metric.values.begin(), metric.values.end(),
         [&bucket_label](const auto & lhs, const auto & rhs)
         {
+            bool lhs_labels_contain_sum = lhs.labels.contains("sum");
+            bool lhs_labels_contain_count = lhs.labels.contains("count");
+            bool lhs_labels_contain_sum_or_count = lhs_labels_contain_sum || lhs_labels_contain_count;
+
+            bool rhs_labels_contain_sum = rhs.labels.contains("sum");
+            bool rhs_labels_contain_count = rhs.labels.contains("count");
+            bool rhs_labels_contain_sum_or_count = rhs_labels_contain_sum || rhs_labels_contain_count;
+
             /// rows with labels at the beginning and then `_sum` and `_count`
-            if (lhs.labels.contains("sum") && rhs.labels.contains("count"))
+            if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            if (lhs.labels.contains("count") && rhs.labels.contains("sum"))
+            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            if (rhs.labels.contains("sum") || rhs.labels.contains("count"))
+            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            if (lhs.labels.contains("sum") || lhs.labels.contains("count"))
+            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
@@ -297,7 +307,10 @@ void PrometheusTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num) && current_metric.help.empty())
+    {
         current_metric.help = getString(columns, row_num, *pos.help);
+        std::replace(current_metric.help.begin(), current_metric.help.end(), '\n', ' ');
+    }
 
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
         current_metric.type = getString(columns, row_num, *pos.type);

@@ -81,7 +81,6 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           BUILD_NAME=coverity
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           TEMP_PATH=${{runner.temp}}/build_check
@@ -99,13 +98,15 @@ jobs:
         id: coverity-checkout
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload Coverity Analysis
         if: ${{ success() || failure() }}
         run: |
@@ -118,6 +119,58 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+  SonarCloud:
+    runs-on: [self-hosted, builder]
+    env:
+      SONAR_SCANNER_VERSION: 4.7.0.2747
+      SONAR_SERVER_URL: "https://sonarcloud.io"
+      BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          submodules: true
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: Download and set up sonar-scanner
+        env:
+          SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip
+        run: |
+          mkdir -p "$HOME/.sonar"
+          curl -sSLo "$HOME/.sonar/sonar-scanner.zip" "${{ env.SONAR_SCANNER_DOWNLOAD_URL }}"
+          unzip -o "$HOME/.sonar/sonar-scanner.zip" -d "$HOME/.sonar/"
+          echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux/bin" >> "$GITHUB_PATH"
+      - name: Download and set up build-wrapper
+        env:
+          BUILD_WRAPPER_DOWNLOAD_URL: ${{ env.SONAR_SERVER_URL }}/static/cpp/build-wrapper-linux-x86.zip
+        run: |
+          curl -sSLo "$HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}"
+          unzip -o "$HOME/.sonar/build-wrapper-linux-x86.zip" -d "$HOME/.sonar/"
+          echo "$HOME/.sonar/build-wrapper-linux-x86" >> "$GITHUB_PATH"
+      - name: Set Up Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -yq git cmake ccache python3 ninja-build
+          sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+      - name: Run build-wrapper
+        run: |
+          mkdir build
+          cd build
+          cmake ..
+          cd ..
+          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/
+      - name: Run sonar-scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          sonar-scanner \
+            --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" \
+            --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
+            --define sonar.projectKey="ClickHouse_ClickHouse" \
+            --define sonar.organization="clickhouse-java"

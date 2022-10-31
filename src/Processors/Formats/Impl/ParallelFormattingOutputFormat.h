@@ -236,7 +236,7 @@ private:
 
     void onBackgroundException()
     {
-        std::unique_lock<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         if (!background_exception)
         {
             background_exception = std::current_exception();

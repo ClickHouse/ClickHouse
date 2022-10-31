@@ -43,13 +43,21 @@ struct ParallelReadBuffer::ReadWorker
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers_)
+    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
 {
-    addReaders();
+    try
+    {
+        addReaders();
+    }
+    catch (const Exception &)
+    {
+        finishAndWait();
+        throw;
+    }
 }
 
 bool ParallelReadBuffer::addReaderToPool()
@@ -63,7 +71,7 @@ bool ParallelReadBuffer::addReaderToPool()
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
 
     ++active_working_reader;
-    schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); });
+    schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); }, 0);
 
     return true;
 }
@@ -142,7 +150,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-std::optional<size_t> ParallelReadBuffer::getFileSize()
+size_t ParallelReadBuffer::getFileSize()
 {
     return reader_factory->getFileSize();
 }

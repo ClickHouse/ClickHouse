@@ -3,34 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define FOR_BASIC_NUMERIC_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Float32) \
-    M(Float64)
-
-#define FOR_NUMERIC_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Int128) \
-    M(Int256) \
-    M(Float32) \
-    M(Float64)
-
 namespace DB
 {
 struct Settings;

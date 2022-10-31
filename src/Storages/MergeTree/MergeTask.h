@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Common/filesystemHelpers.h>
 
@@ -58,7 +59,7 @@ public:
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
-        const IMergeTreeDataPart * parent_part_,
+        IMergeTreeDataPart * parent_part_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -133,7 +134,7 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
-        const IMergeTreeDataPart * parent_part{nullptr};
+        IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
@@ -160,6 +161,8 @@ private:
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
 
+        /// If lightweight delete mask is present then some input rows are filtered out right after reading.
+        std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
@@ -168,6 +171,8 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
+
+        scope_guard temporary_directory_lock;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

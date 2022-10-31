@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <errno.h>
+#include <cerrno>
 #include <cassert>
 #include <sys/stat.h>
 
@@ -18,6 +18,8 @@ namespace ProfileEvents
     extern const Event WriteBufferFromFileDescriptorWriteFailed;
     extern const Event WriteBufferFromFileDescriptorWriteBytes;
     extern const Event DiskWriteElapsedMicroseconds;
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -113,12 +115,18 @@ void WriteBufferFromFileDescriptor::sync()
     /// If buffer has pending data - write it.
     next();
 
+    ProfileEvents::increment(ProfileEvents::FileSync);
+
+    Stopwatch watch;
+
     /// Request OS to sync data with storage medium.
 #if defined(OS_DARWIN)
     int res = ::fsync(fd);
 #else
     int res = ::fdatasync(fd);
 #endif
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
     if (-1 == res)
         throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }

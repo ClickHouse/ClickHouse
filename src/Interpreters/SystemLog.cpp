@@ -13,6 +13,7 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -208,6 +209,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     transactions_info_log = createSystemLog<TransactionsInfoLog>(
         global_context, "system", "transactions_info_log", config, "transactions_info_log");
     processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
+    asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -232,13 +234,18 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (zookeeper_log)
         logs.emplace_back(zookeeper_log.get());
     if (session_log)
+    {
         logs.emplace_back(session_log.get());
+        global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
+    }
     if (transactions_info_log)
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
     if (cache_log)
         logs.emplace_back(cache_log.get());
+    if (asynchronous_insert_log)
+        logs.emplace_back(asynchronous_insert_log.get());
 
     try
     {

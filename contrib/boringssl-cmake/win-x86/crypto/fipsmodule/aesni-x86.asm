@@ -21,14 +21,14 @@ section	.text	code align=64
 section	.text	code
 %endif
 ;extern	_OPENSSL_ia32cap_P
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 extern	_BORINGSSL_function_hit
 %endif
 global	_aes_hw_encrypt
 align	16
 _aes_hw_encrypt:
 L$_aes_hw_encrypt_begin:
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 	push	ebx
 	push	edx
 	call	L$000pic
@@ -820,7 +820,7 @@ L$_aes_hw_ctr32_encrypt_blocks_begin:
 	push	ebx
 	push	esi
 	push	edi
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 	push	ebx
 	push	edx
 	call	L$038pic
@@ -2400,7 +2400,7 @@ global	_aes_hw_set_encrypt_key
 align	16
 _aes_hw_set_encrypt_key:
 L$_aes_hw_set_encrypt_key_begin:
-%ifndef NDEBUG
+%ifdef BORINGSSL_DISPATCH_TEST
 	push	ebx
 	push	edx
 	call	L$116pic

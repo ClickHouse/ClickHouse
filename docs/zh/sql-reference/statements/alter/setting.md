@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/alter/setting
 sidebar_position: 38
 sidebar_label: SETTING
 ---
@@ -54,4 +55,4 @@ ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 
 **参见**
 
--   [MergeTree settings](../../../operations/settings/merge-tree-settings.md)
+-   [MergeTree settings](../../../operations/settings/merge-tree-settings.mdx)

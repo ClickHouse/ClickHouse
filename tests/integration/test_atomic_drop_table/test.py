@@ -20,7 +20,8 @@ def start_cluster():
     try:
         cluster.start()
         node1.query(
-            "CREATE DATABASE zktest ENGINE=Ordinary;"
+            "CREATE DATABASE zktest ENGINE=Ordinary;",
+            settings={"allow_deprecated_database_ordinary": 1},
         )  # Different behaviour with Atomic
         node1.query(
             """

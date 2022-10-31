@@ -65,10 +65,8 @@ Chunk ORCBlockInputFormat::generate()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
-        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
-            for (const auto & column_idx : missing_columns)
-                block_missing_values.setBit(column_idx, row_idx);
-
+        for (const auto & column_idx : missing_columns)
+            block_missing_values.setBits(column_idx, res.getNumRows());
     return res;
 }
 
@@ -138,7 +136,7 @@ void ORCBlockInputFormat::prepareReader()
     if (is_stopped)
         return;
 
-    stripe_total = file_reader->NumberOfStripes();
+    stripe_total = static_cast<int>(file_reader->NumberOfStripes());
     stripe_current = 0;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
@@ -161,7 +159,7 @@ void ORCBlockInputFormat::prepareReader()
     {
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
+        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {
@@ -200,7 +198,7 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatAsColumnOriented("ORC");
+    factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
 void registerORCSchemaReader(FormatFactory & factory)

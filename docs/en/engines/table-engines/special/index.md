@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/special/
 sidebar_position: 50
 sidebar_label: Special
 ---
 
-# Special Table Engines {#special-table-engines}
+# Special Table Engines
 
 There are three main categories of table engines:
 

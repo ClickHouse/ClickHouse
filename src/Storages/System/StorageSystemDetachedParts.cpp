@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ Pipe StorageSystemDetachedParts::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     StoragesInfoStream stream(query_info, context);
 

@@ -25,6 +25,7 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/ios.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.instantiations.cpp"
 "${LIBCXX_SOURCE_DIR}/src/iostream.cpp"
+"${LIBCXX_SOURCE_DIR}/src/legacy_debug_handler.cpp"
 "${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
 "${LIBCXX_SOURCE_DIR}/src/locale.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory.cpp"
@@ -49,14 +50,14 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/valarray.cpp"
 "${LIBCXX_SOURCE_DIR}/src/variant.cpp"
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
+"${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
 
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
 
-target_include_directories(cxx SYSTEM BEFORE PUBLIC
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}>/src)
+target_include_directories(cxx SYSTEM BEFORE PRIVATE $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/src>)
+target_include_directories(cxx SYSTEM BEFORE PUBLIC  $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
 # Enable capturing stack traces for all exceptions.
@@ -77,6 +78,9 @@ target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.
 target_compile_options(cxx PRIVATE -w)
+
+# Enable support for Clang-Thread-Safety-Analysis in libcxx
+target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 
 target_link_libraries(cxx PUBLIC cxxabi)
 

@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/playground
 sidebar_position: 14
 sidebar_label: Playground
 ---

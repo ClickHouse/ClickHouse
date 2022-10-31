@@ -49,11 +49,8 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
 {
-    serializations.resize(types.size());
-    for (size_t i = 0; i < types.size(); ++i)
-        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -353,7 +350,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf->position(), buf->buffer().end());
-    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
+    IParser::Pos token_iterator(tokens, static_cast<unsigned>(settings.max_parser_depth));
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -516,7 +513,7 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
@@ -570,7 +567,7 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 
@@ -599,7 +596,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
             skipWhitespaceIfAny(buf);
         }
 
-        readQuotedFieldIntoString(value, buf);
+        readQuotedField(value, buf);
         auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
@@ -636,6 +633,10 @@ void registerValuesSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

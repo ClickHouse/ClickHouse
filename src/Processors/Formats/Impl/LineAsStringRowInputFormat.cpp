@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnString.h>

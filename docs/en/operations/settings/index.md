@@ -2,6 +2,7 @@
 sidebar_label: Settings
 sidebar_position: 51
 slug: /en/operations/settings/
+pagination_next: en/operations/settings/settings
 ---
 
 # Settings Overview

@@ -19,6 +19,6 @@ Check the bug causing situation: the special Australia/Lord_Howe time zone. toDa
 1554569400	2019-04-07 03:20:00	2019-04-07 03:20:00
 1554570000	2019-04-07 03:30:00	2019-04-07 03:30:00
 1554570600	2019-04-07 03:40:00	2019-04-07 03:40:00
-4 days test in batch comparing with manually computation result for Europe/Moscow whose timezone epoc is of whole hour:
+4 days test in batch comparing with manually computation result for Asia/Istanbul whose timezone epoc is of whole hour:
 4 days test in batch comparing with manually computation result for Asia/Tehran whose timezone epoc is of half hour:
 4 days test in batch comparing with manually computation result for Australia/Lord_Howe whose timezone epoc is of half hour and also its DST offset is half hour:

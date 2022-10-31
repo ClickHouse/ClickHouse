@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/alter/column
 sidebar_position: 37
 sidebar_label: COLUMN
+title: "Column Manipulations"
 ---
-
-# Column Manipulations {#column-manipulations}
 
 A set of queries that allow changing the table structure.
 
@@ -18,18 +18,18 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
--   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
--   [DROP COLUMN](#alter_drop-column) — Deletes the column.
--   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
--   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
--   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
+-   [ADD COLUMN](#add-column) — Adds a new column to the table.
+-   [DROP COLUMN](#drop-column) — Deletes the column.
+-   [RENAME COLUMN](#rename-column) — Renames an existing column.
+-   [CLEAR COLUMN](#clear-column) — Resets column values.
+-   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
+-   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 -   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
-## ADD COLUMN {#alter_add-column}
+## ADD COLUMN
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
@@ -65,7 +65,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-## DROP COLUMN {#alter_drop-column}
+## DROP COLUMN
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
@@ -85,7 +85,7 @@ Example:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-## RENAME COLUMN {#alter_rename-column}
+## RENAME COLUMN
 
 ``` sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -101,7 +101,7 @@ Example:
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-## CLEAR COLUMN {#alter_clear-column}
+## CLEAR COLUMN
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -117,7 +117,7 @@ Example:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-## COMMENT COLUMN {#alter_comment-column}
+## COMMENT COLUMN
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -127,7 +127,7 @@ Adds a comment to the column. If the `IF EXISTS` clause is specified, the query 
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](../../../sql-reference/statements/misc.md#misc-describe-table) query.
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](../../../sql-reference/statements/describe-table.md) query.
 
 Example:
 
@@ -135,7 +135,7 @@ Example:
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-## MODIFY COLUMN {#alter_modify-column}
+## MODIFY COLUMN
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
@@ -174,7 +174,7 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-## MODIFY COLUMN REMOVE {#modify-remove}
+## MODIFY COLUMN REMOVE
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
 
@@ -196,7 +196,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
-## MATERIALIZE COLUMN {#materialize-column}
+## MATERIALIZE COLUMN
 
 Materializes or updates a column with an expression for a default value (`DEFAULT` or `MATERIALIZED`).
 It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
@@ -204,8 +204,9 @@ It is used if it is necessary to add or update a column with a complicated expre
 Syntax:
 
 ```sql
-ALTER TABLE table MATERIALIZE COLUMN col;
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
 ```
+- If you specify a PARTITION, a column will be materialized with only the specified partition.
 
 **Example**
 
@@ -247,13 +248,13 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 - [MATERIALIZED](../../statements/create/table.md#materialized).
 
-## Limitations {#alter-query-limitations}
+## Limitations
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](../../../sql-reference/statements/insert-into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](../../../sql-reference/statements/misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../../../operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](../../../sql-reference/statements/insert-into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](../../../sql-reference/statements/rename.md#rename-table) query and delete the old table. You can use the [clickhouse-copier](../../../operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
