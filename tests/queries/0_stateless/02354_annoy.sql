@@ -52,7 +52,7 @@ CREATE TABLE 02354_annoy_cosine
 (
     id Int32,
     embedding Array(Float32),
-    INDEX annoy_index embedding TYPE annoy(100, 'L2Distance') GRANULARITY 1
+    INDEX annoy_index embedding TYPE annoy(100, 'cosineDistance') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id
