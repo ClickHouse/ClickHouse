@@ -134,105 +134,6 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
     using Op = ModuloLegacyImpl<A, B>;
 };
 
-/*
-template <typename A, typename B>
-struct PositiveModuloByConstantImpl : ModuloByConstantImpl<A, B>
-{
-    using Op = PositiveModuloImpl<A, B>;
-    using ResultType = typename Op::ResultType;
-
-    template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
-    {
-        if constexpr (op_case == OpCase::RightConstant)
-        {
-            if (right_nullmap && (*right_nullmap)[0])
-                return;
-            vectorConstant(a, *b, c, size);
-        }
-        else
-        {
-            if (right_nullmap)
-            {
-                for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        apply<op_case>(a, b, c, i);
-            }
-            else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
-        }
-    }
-
-    static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
-    {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-        /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = 0;
-            return;
-        }
-
-        /// Modulo with too large divisor.
-        if (unlikely(b > std::numeric_limits<A>::max()
-            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
-        {
-            for (size_t i = 0; i < size; ++i)
-            {
-                dst[i] = static_cast<ResultType>(src[i]);
-                if constexpr (is_signed_v<A>)
-                    if (src[i] < 0)
-                        dst[i] += static_cast<ResultType>(b);
-            }
-            return;
-        }
-
-#pragma GCC diagnostic pop
-
-        if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
-
-        /// Division by min negative value.
-        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
-
-        /// Modulo of division by negative number is the same as the positive number.
-        if (b < 0)
-            b = -b;
-
-        /// Here we failed to make the SSE variant from libdivide give an advantage.
-
-        if (b & (b - 1))
-        {
-            libdivide::divider<A> divider(static_cast<A>(b));
-            for (size_t i = 0; i < size; ++i)
-                /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
-                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-        }
-        else
-        {
-            // gcc libdivide doesn't work well for pow2 division
-            auto mask = b - 1;
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
-        }
-
-        if constexpr (is_signed_v<A>)
-        {
-            for (size_t i = 0; i < size; ++i)
-                if (src[i] < 0)
-                    dst[i] += static_cast<ResultType>(b);
-        }
-    }
-};
-*/
-
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -287,7 +188,14 @@ using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloIm
 
 REGISTER_FUNCTION(PositiveModulo)
 {
-    factory.registerFunction<FunctionPositiveModulo>();
+    factory.registerFunction<FunctionPositiveModulo>(
+        {
+            R"(
+Calculates the remainder when dividing `a` by `b`. Similiar to function `modulo` except that `positive_modulo` always return non-negative number.
+        )",
+            Documentation::Examples{{"positive_modulo", "SELECT positive_modulo(-1000, 32);"}},
+            Documentation::Categories{"Arithmetic"}},
+        FunctionFactory::CaseInsensitive);
 }
 
 }
