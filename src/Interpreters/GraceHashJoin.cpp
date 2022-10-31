@@ -404,8 +404,8 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 
 void GraceHashJoin::setTotals(const Block & block)
 {
-    if (block)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin");
+    if (block.rows() > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin, got '{}'", block.dumpStructure());
 }
 
 size_t GraceHashJoin::getTotalRowCount() const
