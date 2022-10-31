@@ -1,4 +1,5 @@
 #include "StorageMergeTree.h"
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 #include <optional>
 
@@ -378,7 +379,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
-        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->data_part_storage);
+    {
+        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->getDataPartStorage());
+    }
     else
     {
         IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -386,7 +389,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         for (auto & part_ptr : future_part->parts)
         {
             ttl_infos.update(part_ptr->ttl_infos);
-            max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
+            auto disk_name = part_ptr->getDataPartStorage().getDiskName();
+            size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
+            max_volume_index = std::max(max_volume_index, volume_index);
         }
 
         reserved_space = storage.balancedReservation(
@@ -1474,7 +1479,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->data_part_storage->getPartDirectory());
+            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
             part->makeCloneInDetached("", metadata_snapshot);
         }
     }
@@ -1519,9 +1524,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
-            auto builder = loaded_parts[i]->data_part_storage->getBuilder();
             fillNewPartName(loaded_parts[i], lock);
-            renameTempPartAndAdd(loaded_parts[i], transaction, builder, lock);
+            renameTempPartAndAdd(loaded_parts[i], transaction, lock);
             transaction.commit(&lock);
         }
 
@@ -1604,9 +1608,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             for (auto part : dst_parts)
             {
                 fillNewPartName(part, data_parts_lock);
-
-                auto builder = part->data_part_storage->getBuilder();
-                renameTempPartAndReplaceUnlocked(part, transaction, builder, data_parts_lock);
+                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
             }
             /// Populate transaction
             transaction.commit(&data_parts_lock);
@@ -1685,9 +1687,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
             for (auto & part : dst_parts)
             {
-                auto builder = part->data_part_storage->getBuilder();
                 dest_table_storage->fillNewPartName(part, dest_data_parts_lock);
-                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, builder, dest_data_parts_lock);
+                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock);
             }
 
 
@@ -1741,16 +1742,16 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     for (auto & part : data_parts)
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
-        String checksums_path = "checksums.txt";
-        String tmp_checksums_path = "checksums.txt.tmp";
-        if (part->isStoredOnDisk() && !part->data_part_storage->exists(checksums_path))
+        static constexpr auto checksums_path = "checksums.txt";
+        if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
         {
             try
             {
                 auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
 
-                part->data_part_storage->writeChecksums(part->checksums, local_context->getWriteSettings());
+                auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
+                part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
@@ -1810,17 +1811,15 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
-
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        auto builder = part->data_part_storage->getBuilder();
         {
             auto lock = lockParts();
             fillNewPartName(part, lock);
-            renameTempPartAndAdd(part, transaction, builder, lock);
+            renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }
     }
