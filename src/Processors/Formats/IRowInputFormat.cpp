@@ -188,7 +188,7 @@ Chunk IRowInputFormat::generate()
         }
 
         e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(total_rows);
+        e.setLineNumber(static_cast<int>(total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
     }

@@ -1,6 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -97,7 +97,7 @@ Pipe StorageS3Cluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
 

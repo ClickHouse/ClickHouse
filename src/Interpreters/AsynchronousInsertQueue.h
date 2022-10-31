@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 
+#include <atomic>
 #include <unordered_map>
 
 
@@ -18,14 +19,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
-    struct Timeout
-    {
-        Milliseconds busy;
-        Milliseconds stale;
-    };
-
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, Milliseconds cleanup_timeout);
     ~AsynchronousInsertQueue();
 
     void push(ASTPtr query, ContextPtr query_context);
@@ -53,6 +47,7 @@ private:
         public:
             const String bytes;
             const String query_id;
+            std::chrono::time_point<std::chrono::system_clock> create_time;
 
             Entry(String && bytes_, String && query_id_);
 
@@ -69,6 +64,10 @@ private:
             std::exception_ptr exception;
         };
 
+        explicit InsertData(std::chrono::steady_clock::time_point now)
+            : first_update(now)
+        {}
+
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
@@ -76,11 +75,7 @@ private:
 
         /// Timestamp of the first insert into queue, or after the last queue dump.
         /// Used to detect for how long the queue is active, so we can dump it by timer.
-        std::chrono::time_point<std::chrono::steady_clock> first_update = std::chrono::steady_clock::now();
-
-        /// Timestamp of the last insert into queue.
-        /// Used to detect for how long the queue is stale, so we can dump it by another timer.
-        std::chrono::time_point<std::chrono::steady_clock> last_update;
+        std::chrono::time_point<std::chrono::steady_clock> first_update;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -96,9 +91,20 @@ private:
 
     using Queue = std::unordered_map<InsertQuery, std::shared_ptr<Container>, InsertQuery::Hash>;
     using QueueIterator = Queue::iterator;
+    /// Ordered container
+    using DeadlineQueue = std::map<std::chrono::steady_clock::time_point, QueueIterator>;
+
 
     mutable std::shared_mutex rwlock;
     Queue queue;
+
+    /// This is needed only for using inside cleanup() function and correct signaling about shutdown
+    mutable std::mutex cleanup_mutex;
+    mutable std::condition_variable cleanup_can_run;
+
+    mutable std::mutex deadline_mutex;
+    mutable std::condition_variable are_tasks_available;
+    DeadlineQueue deadline_queue;
 
     using QueryIdToEntry = std::unordered_map<String, InsertData::EntryPtr>;
     mutable std::mutex currently_processing_mutex;
@@ -109,25 +115,21 @@ private:
     ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
     ///  - stale_timeout:  if queue is stale for too long, then we dump the data too, so that users will be able to select the last
     ///                    piece of inserted data.
-    ///  - max_data_size:  if the maximum size of data is reached, then again we dump the data.
+    ///
+    /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached (async_insert_max_data_size setting)
+    /// If so, then again we dump the data.
 
-    const size_t max_data_size;  /// in bytes
-    const Milliseconds busy_timeout;
-    const Milliseconds stale_timeout;
+    const Milliseconds cleanup_timeout;
 
-    std::mutex shutdown_mutex;
-    std::condition_variable shutdown_cv;
-    bool shutdown{false};
+    std::atomic<bool> shutdown{false};
 
     ThreadPool pool;  /// dump the data only inside this pool.
     ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
-    ThreadFromGlobalPool dump_by_last_update_thread;   /// uses stale_timeout and staleCheck()
     ThreadFromGlobalPool cleanup_thread;               /// uses busy_timeout and cleanup()
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
     void busyCheck();
-    void staleCheck();
     void cleanup();
 
     /// Should be called with shared or exclusively locked 'rwlock'.

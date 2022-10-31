@@ -82,7 +82,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -161,7 +161,7 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+            added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }
 
