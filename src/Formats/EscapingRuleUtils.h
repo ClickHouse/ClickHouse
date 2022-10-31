@@ -77,6 +77,8 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings = nullptr);
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
-String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings,FormatSettings::EscapingRule escaping_rule);
+String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule);
+
+void checkSupportedDelimiterAfterField(FormatSettings::EscapingRule escaping_rule, const String & delimiter, const DataTypePtr & type);
 
 }

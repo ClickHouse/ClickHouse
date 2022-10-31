@@ -164,7 +164,7 @@ public:
         /// 2. Create ASTPtr
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
-        uint32_t parse_depth = getContext()->getSettingsRef().max_parser_depth;
+        unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);

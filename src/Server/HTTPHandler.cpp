@@ -622,8 +622,10 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str), context->getSettingsRef().zstd_window_log_max);
+        wrapReadBufferReference(request.getStream()),
+        chooseCompressionMethod({}, http_request_compression_method_str), zstd_window_log_max);
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -749,7 +751,7 @@ void HTTPHandler::processQuery(
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
     used_output.out->setCompression(client_supports_http_compression && settings.enable_http_compression);
     if (client_supports_http_compression)
-        used_output.out->setCompressionLevel(settings.http_zlib_compression_level);
+        used_output.out->setCompressionLevel(static_cast<int>(settings.http_zlib_compression_level));
 
     used_output.out->setSendProgress(settings.send_progress_in_http_headers);
     used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
