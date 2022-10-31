@@ -213,16 +213,20 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
+    size_t position = 0;
     size_t upload_part_size = rw_settings.min_upload_part_size;
-    for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
+
+    for (size_t part_number = 1; position < size; ++part_number)
     {
+        size_t next_position = std::min(position + upload_part_size, size);
+
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
         part_request.SetPartNumber(static_cast<int>(part_number));
-        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
+        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, next_position - 1));
 
         auto outcome = client->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
@@ -239,6 +243,11 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
         auto etag = outcome.GetResult().GetCopyPartResult().GetETag();
         part_tags.push_back(etag);
+
+        position = next_position;
+
+        if (part_number % rw_settings.upload_part_size_multiply_parts_count_threshold == 0)
+            upload_part_size *= rw_settings.upload_part_size_multiply_factor;
     }
 
     {
