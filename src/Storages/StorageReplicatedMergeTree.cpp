@@ -4462,9 +4462,16 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 
 SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    const auto storage_settings_ptr = getSettings();
-    assertNotReadonly();
+    /// If table is read-only because it doesn't have metadata in zk yet, then it's not possible to insert into it
+    /// Without this check, we'll write data parts on disk, and afterwards will remove them since we'll fail to commit them into zk
+    /// In case of remote storage like s3, it'll generate unnecessary PUT requests
+    if (is_readonly && (!has_metadata_in_zookeeper.has_value() || false == has_metadata_in_zookeeper.value()))
+        throw Exception(
+            ErrorCodes::TABLE_IS_READ_ONLY,
+            "Table is in readonly mode since table metadata was not found in zookeeper: replica_path={}",
+            replica_path);
 
+    const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 

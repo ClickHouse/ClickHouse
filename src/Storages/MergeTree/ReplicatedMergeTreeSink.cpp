@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_DATA_PART;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 struct ReplicatedMergeTreeSink::DelayedChunk
@@ -367,6 +368,16 @@ void ReplicatedMergeTreeSink::commitPart(
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
+        if (storage.is_readonly)
+        {
+            /// stop retries if in shutdown
+            if (storage.shutdown_called)
+                throw Exception(
+                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
+            retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+            return;
+        }
 
         if (retries_ctl.isRetry())
         {
