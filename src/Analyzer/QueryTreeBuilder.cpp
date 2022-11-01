@@ -145,12 +145,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(const ASTPtr &
     if (select_lists.children.size() == 1)
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_name);
 
-    auto union_node = std::make_shared<UnionNode>();
+    auto union_node = std::make_shared<UnionNode>(select_with_union_query_typed.union_mode);
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_name.empty());
     union_node->setCTEName(cte_name);
-    union_node->setUnionMode(select_with_union_query_typed.union_mode);
-    union_node->setUnionModes(select_with_union_query_typed.list_of_modes);
     union_node->setOriginalAST(select_with_union_query);
 
     size_t select_lists_children_size = select_lists.children.size();
@@ -173,23 +171,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(const ASTPtr 
     if (select_lists.size() == 1)
         return buildSelectExpression(select_lists[0], is_subquery, cte_name);
 
-    auto union_node = std::make_shared<UnionNode>();
-    union_node->setIsSubquery(is_subquery);
-    union_node->setIsCTE(!cte_name.empty());
-    union_node->setCTEName(cte_name);
-
+    SelectUnionMode union_mode;
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
-        union_node->setUnionMode(SelectUnionMode::INTERSECT_ALL);
+        union_mode = SelectUnionMode::INTERSECT_ALL;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)
-        union_node->setUnionMode(SelectUnionMode::INTERSECT_DISTINCT);
+        union_mode = SelectUnionMode::INTERSECT_DISTINCT;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL)
-        union_node->setUnionMode(SelectUnionMode::EXCEPT_ALL);
+        union_mode = SelectUnionMode::EXCEPT_ALL;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
-        union_node->setUnionMode(SelectUnionMode::EXCEPT_DISTINCT);
+        union_mode = SelectUnionMode::EXCEPT_DISTINCT;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    union_node->setUnionModes(SelectUnionModes(select_lists.size() - 1, union_node->getUnionMode()));
+    auto union_node = std::make_shared<UnionNode>(union_mode);
+    union_node->setIsSubquery(is_subquery);
+    union_node->setIsCTE(!cte_name.empty());
+    union_node->setCTEName(cte_name);
     union_node->setOriginalAST(select_intersect_except_query);
 
     size_t select_lists_size = select_lists.size();
@@ -677,14 +674,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 
                 if (table_expression_modifiers)
                 {
-                    if (auto * query_node = node->as<QueryNode>())
-                        query_node->setTableExpressionModifiers(*table_expression_modifiers);
-                    else if (auto * union_node = node->as<UnionNode>())
-                        union_node->setTableExpressionModifiers(*table_expression_modifiers);
-                    else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected table expression subquery node. Expected union or query. Actual {}",
-                            node->formatASTForErrorMessage());
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Table expression modifiers {} are not supported for subquery {}",
+                        table_expression_modifiers->formatForErrorMessage(),
+                        node->formatASTForErrorMessage());
                 }
 
                 table_expressions.push_back(std::move(node));

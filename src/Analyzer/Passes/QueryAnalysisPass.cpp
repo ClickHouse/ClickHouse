@@ -1627,34 +1627,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
-    if (query_node || union_node)
-    {
-        auto table_expression_modifiers = query_node ? query_node->getTableExpressionModifiers() : union_node->getTableExpressionModifiers();
-
-        if (table_expression_modifiers.has_value())
-        {
-            String table_expression_modifiers_error_message;
-
-            if (table_expression_modifiers->hasFinal())
-            {
-                table_expression_modifiers_error_message += "FINAL";
-
-                if (table_expression_modifiers->hasSampleSizeRatio())
-                    table_expression_modifiers_error_message += ", SAMPLE";
-            }
-            else if (table_expression_modifiers->hasSampleSizeRatio())
-            {
-                table_expression_modifiers_error_message += "SAMPLE";
-            }
-
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Table expression modifiers {} are not supported for subquery {}. In scope {}",
-                table_expression_modifiers_error_message,
-                table_expression_node->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-        }
-    }
-    else if (table_node || table_function_node)
+    if (table_node || table_function_node)
     {
         auto table_expression_modifiers = table_node ? table_node->getTableExpressionModifiers() : table_function_node->getTableExpressionModifiers();
 
@@ -4729,17 +4702,23 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
 
-                if (auto * resolved_identifier_query_node = resolved_identifier->as<QueryNode>())
+                auto * resolved_identifier_query_node = resolved_identifier->as<QueryNode>();
+                auto * resolved_identifier_union_node = resolved_identifier->as<UnionNode>();
+
+                if (resolved_identifier_query_node || resolved_identifier_union_node)
                 {
-                    resolved_identifier_query_node->setIsCTE(false);
+                    if (resolved_identifier_query_node)
+                        resolved_identifier_query_node->setIsCTE(false);
+                    else
+                        resolved_identifier_union_node->setIsCTE(false);
+
                     if (table_expression_modifiers.has_value())
-                        resolved_identifier_query_node->setTableExpressionModifiers(*table_expression_modifiers);
-                }
-                else if (auto * resolved_identifier_union_node = resolved_identifier->as<UnionNode>())
-                {
-                    resolved_identifier_union_node->setIsCTE(false);
-                    if (table_expression_modifiers.has_value())
-                        resolved_identifier_union_node->setTableExpressionModifiers(*table_expression_modifiers);
+                    {
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Table expression modifiers {} are not supported for subquery {}",
+                            table_expression_modifiers->formatForErrorMessage(),
+                            resolved_identifier->formatASTForErrorMessage());
+                    }
                 }
                 else if (auto * resolved_identifier_table_node = resolved_identifier->as<TableNode>())
                 {
