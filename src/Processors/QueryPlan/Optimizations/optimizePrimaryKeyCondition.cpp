@@ -9,7 +9,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     struct Frame
     {
@@ -27,7 +27,7 @@ void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimizat
         if (frame.next_child == 0)
         {
             if (optimization_settings.read_in_order)
-                optimizeReadInOrder(*frame.node);
+                optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.distinct_in_order)
                 tryDistinctReadInOrder(frame.node);

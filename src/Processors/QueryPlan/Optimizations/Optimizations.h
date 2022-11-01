@@ -12,8 +12,8 @@ namespace QueryPlanOptimizations
 /// This is the main function which optimizes the whole QueryPlan tree.
 void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-void optimizeReadInOrder(QueryPlan::Node & node);
-void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -58,9 +58,12 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 /// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
 size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
+/// Put some steps under union, so that plan optimisation could be applied to union parts separately.
+size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 7> optimizations = {{
+    static const std::array<Optimization, 8> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
@@ -68,6 +71,7 @@ inline const auto & getOptimizations()
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
         //{tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
     }};
 
