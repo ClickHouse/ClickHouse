@@ -5,8 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 
-#include <time.h>
-
 
 namespace DB
 {
@@ -86,7 +84,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 0)
+        if (!arguments.empty())
         {
             throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
@@ -96,7 +94,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        if (arguments.size() > 0)
+        if (!arguments.empty())
         {
             throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
@@ -110,7 +108,17 @@ public:
 /// UTC_timestamp for MySQL interface support
 REGISTER_FUNCTION(UTCTimestamp)
 {
-    factory.registerFunction<UTCTimestampOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<UTCTimestampOverloadResolver>({
+        R"(
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
+Same as `now('UTC')`. Was added only for MySQL support. `now` is prefered.
+
+Example:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT UTCTimestamp();"}},
+    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::CaseInsensitive);
 }
 

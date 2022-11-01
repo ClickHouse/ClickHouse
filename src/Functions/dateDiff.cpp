@@ -364,7 +364,16 @@ REGISTER_FUNCTION(DateDiff)
 
 REGISTER_FUNCTION(TimeDiff)
 {
-    factory.registerFunction<FunctionTimeDiff>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTimeDiff>({R"(
+Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
+It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is prefered.
+
+Example:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());"}},
+    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
 }
 
 }
