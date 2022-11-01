@@ -18,18 +18,23 @@ public:
         MergingSorted,
     };
 
+    struct Settings
+    {
+        size_t max_block_size;
+        SizeLimits size_limits;
+        size_t max_bytes_before_remerge = 0;
+        double remerge_lowered_memory_bytes_ratio = 0;
+        size_t max_bytes_before_external_sort = 0;
+        TemporaryDataOnDiskScopePtr tmp_data = nullptr;
+        size_t min_free_disk_space = 0;
+    };
+
     /// Full
     SortingStep(
         const DataStream & input_stream,
         SortDescription description_,
-        size_t max_block_size_,
         UInt64 limit_,
-        SizeLimits size_limits_,
-        size_t max_bytes_before_remerge_,
-        double remerge_lowered_memory_bytes_ratio_,
-        size_t max_bytes_before_external_sort_,
-        TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t min_free_disk_space_,
+        const Settings & settings_,
         bool optimize_sorting_by_input_stream_properties_);
 
     /// FinishSorting
@@ -63,6 +68,7 @@ public:
     void convertToFinishSorting(SortDescription prefix_description);
 
     Type getType() const { return type; }
+    const Settings & getSettings() const { return sort_settings; }
 
 private:
     void updateOutputStream() override;
@@ -81,16 +87,10 @@ private:
 
     SortDescription prefix_description;
     const SortDescription result_description;
-    const size_t max_block_size;
     UInt64 limit;
-    SizeLimits size_limits;
 
-    size_t max_bytes_before_remerge = 0;
-    double remerge_lowered_memory_bytes_ratio = 0;
-    size_t max_bytes_before_external_sort = 0;
-    TemporaryDataOnDiskScopePtr tmp_data = nullptr;
+    Settings sort_settings;
 
-    size_t min_free_disk_space = 0;
     const bool optimize_sorting_by_input_stream_properties = false;
 };
 

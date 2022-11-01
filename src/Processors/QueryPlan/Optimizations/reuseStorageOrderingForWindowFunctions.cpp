@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
+#include <Storages/StorageMerge.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/IColumn.h>
@@ -27,11 +28,46 @@
 namespace DB::QueryPlanOptimizations
 {
 
-ReadFromMergeTree * findReadingStep(QueryPlan::Node * node)
+ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
+{
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    {
+        /// Already read-in-order, skip.
+        if (reading->getQueryInfo().input_order_info)
+            return nullptr;
+
+        const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+        if (sorting_key.column_names.empty())
+            return nullptr;
+
+        return reading;
+    }
+
+    if (auto * merge = typeid_cast<ReadFromMerge *>(step))
+    {
+        const auto & tables = merge->getSelectedTables();
+        if (tables.empty())
+            return nullptr;
+
+        for (const auto & table : tables)
+        {
+            auto storage = std::get<StoragePtr>(table);
+            const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+            if (sorting_key.column_names.empty())
+                return nullptr;
+        }
+
+        return merge;
+    }
+
+    return nullptr;
+}
+
+QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 {
     IQueryPlanStep * step = node->step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-        return reading;
+    if (auto * reading = checkSupportedReadingStep(step))
+        return node;
 
     if (node->children.size() != 1)
         return nullptr;
@@ -570,7 +606,112 @@ InputOrderInfoPtr buildInputOrderInfo(
     return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(
+    ReadFromMergeTree * reading,
+    const FixedColumns & fixed_columns,
+    const ActionsDAGPtr & dag,
+    const SortDescription & description,
+    size_t limit)
+{
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & sorting_key_columns = sorting_key.column_names;
+
+    return buildInputOrderInfo(
+        fixed_columns,
+        dag, description,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns,
+        limit);
+}
+
+InputOrderInfoPtr buildInputOrderInfo(
+    ReadFromMerge * merge,
+    const FixedColumns & fixed_columns,
+    const ActionsDAGPtr & dag,
+    const SortDescription & description,
+    size_t limit)
+{
+    const auto & tables = merge->getSelectedTables();
+
+    InputOrderInfoPtr order_info;
+    for (const auto & table : tables)
+    {
+        auto storage = std::get<StoragePtr>(table);
+        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto & sorting_key_columns = sorting_key.column_names;
+
+        if (sorting_key_columns.empty())
+            return nullptr;
+
+        auto table_order_info = buildInputOrderInfo(
+            fixed_columns,
+            dag, description,
+            sorting_key.expression->getActionsDAG(), sorting_key_columns,
+            limit);
+
+        if (!table_order_info)
+            return nullptr;
+
+        if (!order_info)
+            order_info = table_order_info;
+        else if (*order_info != *table_order_info)
+            return nullptr;
+    }
+
+    return order_info;
+}
+
+InputOrderInfoPtr buildInputOrderInfo(
+    SortingStep & sorting,
+    QueryPlan::Node & node)
+{
+    if (node.children.size() != 1)
+        return nullptr;
+
+    QueryPlan::Node * reading_node = findReadingStep(node.children.front());
+    if (!reading_node)
+        return nullptr;
+
+    const auto & description = sorting.getSortDescription();
+    auto limit = sorting.getLimit();
+
+    ActionsDAGPtr dag;
+    FixedColumns fixed_columns;
+    buildSortingDAG(node.children.front(), dag, fixed_columns);
+
+    if (dag && !fixed_columns.empty())
+        enreachFixedColumns(*dag, fixed_columns);
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderInfo(
+            reading,
+            fixed_columns,
+            dag, description,
+            limit);
+
+        if (order_info)
+            reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+
+        return order_info;
+    }
+    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderInfo(
+            merge,
+            fixed_columns,
+            dag, description,
+            limit);
+
+        if (order_info)
+            merge->requestReadingInOrder(order_info);
+
+        return order_info;
+    }
+
+    return nullptr;
+}
+
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
         return;
@@ -582,40 +723,69 @@ void optimizeReadInOrder(QueryPlan::Node & node)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
-    ReadFromMergeTree * reading = findReadingStep(node.children.front());
-    if (!reading)
-        return;
+    if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
+    {
+        auto & union_node = node.children.front();
 
-    /// Already read-in-order, skip.
-    if (reading->getQueryInfo().input_order_info)
-        return;
+        std::vector<InputOrderInfoPtr> infos;
+        const SortDescription * max_sort_descr = nullptr;
+        infos.reserve(node.children.size());
+        for (auto * child : union_node->children)
+        {
+            infos.push_back(buildInputOrderInfo(*sorting, *child));
 
-    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-    if (sorting_key.column_names.empty())
-        return;
+            if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
+                max_sort_descr = &infos.back()->sort_description_for_merging;
+        }
 
-    ActionsDAGPtr dag;
-    FixedColumns fixed_columns;
-    buildSortingDAG(node.children.front(), dag, fixed_columns);
+        if (!max_sort_descr || max_sort_descr->empty())
+            return;
 
-    if (dag && !fixed_columns.empty())
-        enreachFixedColumns(*dag, fixed_columns);
+        for (size_t i = 0; i < infos.size(); ++i)
+        {
+            const auto & info = infos[i];
+            auto & child = union_node->children[i];
 
-    const auto & description = sorting->getSortDescription();
-    auto limit = sorting->getLimit();
-    const auto & sorting_key_columns = sorting_key.column_names;
+            QueryPlanStepPtr additional_sorting;
 
-    auto order_info = buildInputOrderInfo(
-        fixed_columns,
-        dag, description,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns,
-        limit);
+            if (!info)
+            {
+                auto limit = sorting->getLimit();
+                /// If we have limit, it's better to sort up to full description and apply limit.
+                /// We cannot sort up to partial read-in-order description with limit cause result set can be wrong.
+                const auto & descr = limit ? sorting->getSortDescription() : *max_sort_descr;
+                additional_sorting = std::make_unique<SortingStep>(
+                    child->step->getOutputStream(),
+                    descr,
+                    limit, /// TODO: support limit with ties
+                    sorting->getSettings(),
+                    false);
+            }
+            else if (info->sort_description_for_merging.size() < max_sort_descr->size())
+            {
+                additional_sorting = std::make_unique<SortingStep>(
+                    child->step->getOutputStream(),
+                    info->sort_description_for_merging,
+                    *max_sort_descr,
+                    sorting->getSettings().max_block_size,
+                    0); /// TODO: support limit with ties
+            }
 
-    if (!order_info)
-        return;
+            if (additional_sorting)
+            {
+                auto & sort_node = nodes.emplace_back();
+                sort_node.step = std::move(additional_sorting);
+                sort_node.children.push_back(child);
+                child = &sort_node;
+            }
+        }
 
-    reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
-    sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        sorting->convertToFinishSorting(*max_sort_descr);
+    }
+    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
+    {
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+    }
 }
 
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
