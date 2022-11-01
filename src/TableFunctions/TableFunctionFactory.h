@@ -47,15 +47,16 @@ public:
     /// No locking, you must register all functions before usage of get.
     void registerFunction(
         const std::string & name,
-        TableFunctionCreator creator,
-        Documentation doc = {},
+        Value value,
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
     void registerFunction(Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
-        registerFunction(Function::name, std::move(creator), std::move(doc), case_sensitiveness);
+        registerFunction(Function::name,
+                         TableFunctionFactoryData{std::move(creator), {std::move(doc), table_functions_allowed_in_readonly_mode.contains(Function::name)}} ,
+                         case_sensitiveness);
     }
 
     /// Throws an exception if not found.
@@ -81,6 +82,10 @@ private:
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;
+
+    inline static const NameSet table_functions_allowed_in_readonly_mode = {
+            "null", "view", "viewIfPermitted", "numbers", "numbers_mt", "generateRandom", "values", "cluster", "clusterAllReplicas"
+    };
 };
 
 }
