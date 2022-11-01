@@ -26,19 +26,23 @@ def test_failed_async_inserts(started_cluster):
     node = started_cluster.instances["node"]
 
     node.query(
-        "CREATE TABLE async_insert_30_10_2022 (id UInt32, s String) ENGINE = Memory")
+        "CREATE TABLE async_insert_30_10_2022 (id UInt32, s String) ENGINE = Memory"
+    )
 
     try:
         node.query("SET async_insert = 1")
         node.query("INSERT INTO async_insert_30_10_2022 VALUES ()")
         node.query("INSERT INTO async_insert_30_10_2022 VALUES ([1,2,3], 1)")
         node.query(
-            'INSERT INTO async_insert_30_10_2022 format JSONEachRow {"id" : 1} {"x"}')
+            'INSERT INTO async_insert_30_10_2022 format JSONEachRow {"id" : 1} {"x"}'
+        )
         node.query("INSERT INTO async_insert_30_10_2022 Values (throwIf(4),'')")
     except Exception:
         return None
 
-    select_query = "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery'"
+    select_query = (
+        "SELECT value FROM system.events WHERE event == 'FailedAsyncInsertQuery'"
+    )
 
     assert node.query(select_query) == "4\n"
 
