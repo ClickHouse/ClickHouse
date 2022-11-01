@@ -56,11 +56,11 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
-size_t tryDistinctReadInOrder(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 8> optimizations = {{
+    static const std::array<Optimization, 7> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
@@ -68,7 +68,7 @@ inline const auto & getOptimizations()
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
+        //{tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
     }};
 
     return optimizations;

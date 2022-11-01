@@ -1055,6 +1055,8 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     else
         query_info.input_order_info = order_info;
 
+    reader_settings.read_in_order = true;
+
     /// update sort info for output stream
     SortDescription sort_description;
     const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();

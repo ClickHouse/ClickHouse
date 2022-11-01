@@ -24,6 +24,15 @@ void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimizat
     {
         auto & frame = stack.back();
 
+        if (frame.next_child == 0)
+        {
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node);
+
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
+
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
@@ -33,8 +42,6 @@ void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimizat
             continue;
         }
 
-        if (optimization_settings.read_in_order)
-            optimizeReadInOrder(*frame.node);
 
         auto add_filter = [&](auto & storage)
         {

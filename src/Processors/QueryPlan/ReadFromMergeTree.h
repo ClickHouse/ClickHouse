@@ -163,7 +163,7 @@ private:
         return 1;
     }
 
-    const MergeTreeReaderSettings reader_settings;
+    MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;
