@@ -2911,16 +2911,29 @@ void InterpreterSelectQuery::initSettings()
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
 
     auto & client_info = context->getClientInfo();
-    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
-    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    const auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    const auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
         std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
     {
-        /// Disable two-level aggregation due to version incompatibility.
-        context->setSetting("group_by_two_level_threshold", Field(0));
-        context->setSetting("group_by_two_level_threshold_bytes", Field(0));
-
+        auto group_by_two_level_threshold = context->getSettings().group_by_two_level_threshold;
+        auto group_by_two_level_threshold_bytes = context->getSettings().group_by_two_level_threshold_bytes;
+        if (group_by_two_level_threshold != 0 || group_by_two_level_threshold_bytes != 0)
+        {
+            /// Disable two-level aggregation due to version incompatibility.
+            context->setSetting("group_by_two_level_threshold", Field(0));
+            context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+            LOG_WARNING(
+                log,
+                "Two-level aggregation has been disabled for current query due to incompatibility of ClickHouse versions: query initiator "
+                "version {}.{}, min compatible version {}.{}. See group_by_two_level_threshold, group_by_two_level_threshold_bytes "
+                "settings",
+                client_info.connection_client_version_major,
+                client_info.connection_client_version_minor,
+                min_major,
+                min_minor);
+        }
     }
 }
 
