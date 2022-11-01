@@ -76,13 +76,13 @@ if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
 fi
 
 # shellcheck disable=SC2046
-docker kill $(docker ps -q) ||:
+docker ps --quiet | xargs --no-run-if-empty docker kill ||:
 # shellcheck disable=SC2046
-docker rm -f $(docker ps -a -q) ||:
+docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
 
 # If we have hanged containers after the previous commands, than we have a hanged one
 # and should restart the daemon
-if [ "$(docker ps -a -q)" ]; then
+if [ "$(docker ps --all --quiet)" ]; then
   # Systemd service of docker has StartLimitBurst=3 and StartLimitInterval=60s,
   # that's why we try restarting it for long
   for i in {1..25};

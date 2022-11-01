@@ -90,7 +90,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = hashCRC32(*begin, *hash_data);
+        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -487,7 +487,7 @@ static inline UInt64 blsr(UInt64 mask)
 }
 
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     while (filt_pos < filt_end_aligned)
@@ -496,7 +496,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xffffffffffffffff == mask)
         {
-            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+            res_data.insert(data_pos, data_pos + SIMD_ELEMENTS);
         }
         else
         {
@@ -508,8 +508,8 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
 }
 )
@@ -542,7 +542,7 @@ inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
         _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
 }
 
-template <typename T, typename Container, size_t SIMD_BYTES>
+template <typename T, typename Container, size_t SIMD_ELEMENTS>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
@@ -552,12 +552,12 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
-    size_t alloc_size = SIMD_BYTES * 2;
+    size_t alloc_size = SIMD_ELEMENTS * 2;
 
     while (filt_pos < filt_end_aligned)
     {
         /// to avoid calling resize too frequently, resize to reserve buffer.
-        if (reserve_size - current_offset < SIMD_BYTES)
+        if (reserve_size - current_offset < SIMD_ELEMENTS)
         {
             reserve_size += alloc_size;
             resize<T>(res_data, reserve_size);
@@ -568,16 +568,16 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xffffffffffffffff == mask)
         {
-            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
                         _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_BYTES;
+            current_offset += SIMD_ELEMENTS;
         }
         else
         {
             if (mask)
             {
-                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
+                for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                 {
                     compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
                             reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
@@ -591,8 +591,8 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             }
         }
 
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
+        filt_pos += SIMD_ELEMENTS;
+        data_pos += SIMD_ELEMENTS;
     }
     /// resize to the real size.
     res_data.resize(current_offset);
@@ -619,18 +619,18 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     /** A slightly more optimized version.
       * Based on the assumption that often pieces of consecutive values
       *  completely pass or do not pass the filter.
-      * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
       */
-    static constexpr size_t SIMD_BYTES = 64;
-    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
 
 #if USE_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
     if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
-        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
 
     while (filt_pos < filt_end)
     {
@@ -918,7 +918,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = default_field.safeGet<T>();
+    T default_value = static_cast<T>(default_field.safeGet<T>());
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];

@@ -86,7 +86,7 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
-        self.release_pr = ""
+        self.release_pr = 0
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
@@ -132,9 +132,13 @@ class PRInfo:
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
+            # master or backport/xx.x/xxxxx - where the PR will be merged
             self.base_ref = github_event["pull_request"]["base"]["ref"]
+            # ClickHouse/ClickHouse
             self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
+            # any_branch-name - the name of working branch name
             self.head_ref = github_event["pull_request"]["head"]["ref"]
+            # UserName/ClickHouse or ClickHouse/ClickHouse
             self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {

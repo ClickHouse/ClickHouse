@@ -168,7 +168,8 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker kill $(docker ps -q)", shell=True
+            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            shell=True,
         )
     except subprocess.CalledProcessError as err:
         logging.info("docker kill excepted: " + str(err))
@@ -176,7 +177,8 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker rm $(docker ps -a -q) --force", shell=True
+            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            shell=True,
         )
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))

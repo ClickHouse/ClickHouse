@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 #include <string>
@@ -24,7 +24,7 @@ class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBu
 {
 public:
     AsynchronousReadBufferFromHDFS(
-        AsynchronousReaderPtr reader_,
+        IAsynchronousReader & reader_,
         const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromHDFS> impl_);
 
@@ -51,8 +51,8 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
-    Int32 priority;
+    IAsynchronousReader & reader;
+    size_t priority;
     std::shared_ptr<ReadBufferFromHDFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
     Memory<> prefetch_buffer;

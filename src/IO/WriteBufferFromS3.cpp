@@ -1,4 +1,5 @@
-#include <Common/config.h>
+#include "config.h"
+#include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
 
@@ -24,6 +25,19 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
+    extern const Event S3WriteBytes;
+
+    extern const Event S3HeadObject;
+    extern const Event S3CreateMultipartUpload;
+    extern const Event S3CompleteMultipartUpload;
+    extern const Event S3UploadPart;
+    extern const Event S3PutObject;
+
+    extern const Event DiskS3HeadObject;
+    extern const Event DiskS3CreateMultipartUpload;
+    extern const Event DiskS3CompleteMultipartUpload;
+    extern const Event DiskS3UploadPart;
+    extern const Event DiskS3PutObject;
 }
 
 namespace DB
@@ -60,7 +74,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::ReadWriteSettings & s3_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ScheduleFunc schedule_,
+    ThreadPoolCallbackRunner<void> schedule_,
     const WriteSettings & write_settings_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -167,9 +181,14 @@ void WriteBufferFromS3::finalizeImpl()
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
 
+
         Aws::S3::Model::HeadObjectRequest request;
         request.SetBucket(bucket);
         request.SetKey(key);
+
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
         auto response = client_ptr->HeadObject(request);
 
@@ -191,6 +210,10 @@ void WriteBufferFromS3::createMultipartUpload()
 
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
+
+    ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
     auto outcome = client_ptr->CreateMultipartUpload(req);
 
@@ -269,7 +292,7 @@ void WriteBufferFromS3::writePart()
                 }
 
                 task_finish_notify();
-            });
+            }, 0);
         }
         catch (...)
         {
@@ -282,7 +305,7 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        fillUploadRequest(task.req, tags.size() + 1);
+        fillUploadRequest(task.req, static_cast<int>(tags.size() + 1));
         processUploadRequest(task);
         tags.push_back(task.tag);
     }
@@ -303,6 +326,10 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
 
 void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 {
+    ProfileEvents::increment(ProfileEvents::S3UploadPart);
+    if (write_settings.for_object_storage)
+        ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
+
     auto outcome = client_ptr->UploadPart(task.req);
 
     if (outcome.IsSuccess())
@@ -335,21 +362,38 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(i + 1));
+        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(static_cast<int>(i + 1)));
     }
 
     req.SetMultipartUpload(multipart_upload);
 
-    auto outcome = client_ptr->CompleteMultipartUpload(req);
-
-    if (outcome.IsSuccess())
-        LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-    else
+    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    for (size_t i = 0; i < max_retry; ++i)
     {
-        throw S3Exception(
-            outcome.GetError().GetErrorType(),
-            "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-            outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+        ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
+
+        auto outcome = client_ptr->CompleteMultipartUpload(req);
+
+        if (outcome.IsSuccess())
+        {
+            LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
+            break;
+        }
+        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+        }
+        else
+        {
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
+                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+        }
     }
 }
 
@@ -398,7 +442,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 }
 
                 task_notify_finish();
-            });
+            }, 0);
         }
         catch (...)
         {
@@ -429,15 +473,30 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 
 void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 {
-    auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = static_cast<bool>(schedule);
-    if (outcome.IsSuccess())
-        LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
-    else
-        throw S3Exception(
-            outcome.GetError().GetErrorType(),
-            "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
-            outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+    size_t max_retry = std::max(s3_settings.max_unexpected_write_error_retries, 1UL);
+    for (size_t i = 0; i < max_retry; ++i)
+    {
+        ProfileEvents::increment(ProfileEvents::S3PutObject);
+        if (write_settings.for_object_storage)
+            ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
+        auto outcome = client_ptr->PutObject(task.req);
+        bool with_pool = static_cast<bool>(schedule);
+        if (outcome.IsSuccess())
+        {
+            LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
+            break;
+        }
+        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        {
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+        }
+        else
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
+                "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+                outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+    }
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()

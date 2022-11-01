@@ -8,7 +8,7 @@ DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set max_
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set max_threads=1"
 MAKE_OUTPUT_STABLE="set optimize_read_in_order=1"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
-GREP_SORTMODE="grep 'Sorting'"
+GREP_SORTMODE="grep 'Sorting ('"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 FIND_SORTING="$GREP_SORTING | $TRIM_LEADING_SPACES"
 FIND_SORTMODE="$GREP_SORTMODE | $TRIM_LEADING_SPACES"
@@ -71,5 +71,8 @@ explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=
 
 echo "-- actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)"
 explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1"
+
+echo "-- check that correct sorting info is provided in case of only prefix of sorting key is in ORDER BY clause but all sorting key columns returned by query"
+explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sorting=1 SELECT a, b FROM optimize_sorting ORDER BY a"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"

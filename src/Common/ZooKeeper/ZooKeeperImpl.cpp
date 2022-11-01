@@ -1,18 +1,22 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
+#include <Common/EventNotifier.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 
-#include <Common/config.h>
+#include "Coordination/KeeperConstants.h"
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -542,7 +546,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     if (read_xid != AUTH_XID)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected event received in reply to auth request: {}", read_xid);
 
-    int32_t actual_length = in->count() - count_before_event;
+    int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
     if (length != actual_length)
         throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
@@ -817,7 +821,7 @@ void ZooKeeper::receiveEvent()
             }
         }
 
-        int32_t actual_length = in->count() - count_before_event;
+        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
         if (length != actual_length)
             throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
@@ -874,7 +878,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         /// No new requests will appear in queue after finish()
         bool was_already_finished = requests_queue.finish();
         if (!was_already_finished)
+        {
             active_session_metric_increment.destroy();
+            /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
+            EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
+        }
     };
 
     try
@@ -1292,6 +1300,9 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     ZooKeeperMultiRequest request(requests, default_acls);
+
+    if (request.getOpNum() == OpNum::MultiRead && keeper_api_version < Coordination::KeeperApiVersion::WITH_MULTI_READ)
+            throw Exception(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
