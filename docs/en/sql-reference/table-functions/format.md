@@ -17,7 +17,7 @@ format(format_name, data)
 **Parameters**
 
 -   `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
--   `data` — String literal containing data in specified format
+-   `data` — String literal or constant expression that returns a string containing data in specified format
 
 **Returned value**
 
