@@ -72,15 +72,27 @@ IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_po
         process_pair(pos);
 
     /// All inputs finished
-    if (is_negative && num_finished_port_pairs == ports_data.size() && rows_in_queue > offset)
+    if (is_negative && num_finished_port_pairs == ports_data.size())
     {
-        if (!queue.front().output_port->canPush())
-            return Status::PortFull;
+        /// skip finished output port
+        while (!queue.empty() && rows_in_queue > offset && queue.front().output_port->isFinished())
+        {
+            PortsData pop(std::move(queue.front()));
+            queue.pop_front();
+            rows_in_queue -= pop.current_chunk.getNumRows();
+            pop.current_chunk.clear();
+        }
 
-        /// Pop chunk from queue and return
-        PortsData pop(queuePop());
-        pop.output_port->push(std::move(pop.current_chunk));
-        return Status::PortFull;
+        if (!queue.empty() && rows_in_queue > offset)
+        {
+            if (!queue.front().output_port->canPush())
+                return Status::PortFull;
+
+            /// Pop chunk from queue and return
+            PortsData pop(queuePop());
+            pop.output_port->push(std::move(pop.current_chunk));
+            return Status::PortFull;
+        }
     }
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
