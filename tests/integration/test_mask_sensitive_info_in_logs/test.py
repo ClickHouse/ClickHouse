@@ -20,10 +20,12 @@ def check_logs(must_contain=[], must_not_contain=[]):
     node.query("SYSTEM FLUSH LOGS")
 
     for str in must_contain:
-        assert node.contains_in_log(str)
+        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        assert node.contains_in_log(escaped_str)
 
     for str in must_not_contain:
-        assert not node.contains_in_log(str)
+        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        assert not node.contains_in_log(escaped_str)
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
@@ -44,14 +46,6 @@ def system_query_log_contains_search_pattern(search_pattern):
         )
         >= 1
     )
-
-
-# Returns true if the file "clickhouse-server.log" has at least one line containing all specified parts.
-def logs_contain_multipart_string(parts):
-    lines = node.grep_in_log(parts[0]).split("\n")
-    for i in range(1, len(parts)):
-        lines = [line for line in lines if parts[i] in line]
-    return len(lines) >= 1
 
 
 # Generates a random string.
@@ -327,36 +321,20 @@ def test_on_cluster():
     )
 
     # Check logs of DDLWorker during executing of this query.
-    assert logs_contain_multipart_string(
-        [
-            "DDLWorker: Processing task ",
-            "CREATE TABLE default.table_oncl UUID",
-            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-        ]
+    assert node.contains_in_log(
+        "DDLWorker: Processing task .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
-    assert logs_contain_multipart_string(
-        [
-            "DDLWorker: Executing query: ",
-            "CREATE TABLE default.table_oncl UUID",
-            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-        ]
+    assert node.contains_in_log(
+        "DDLWorker: Executing query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
-    assert logs_contain_multipart_string(
-        [
-            "executeQuery: ",
-            "CREATE TABLE default.table_oncl UUID",
-            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-        ]
+    assert node.contains_in_log(
+        "executeQuery: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
-    assert logs_contain_multipart_string(
-        [
-            "DDLWorker: Executed query: ",
-            "CREATE TABLE default.table_oncl UUID",
-            "(`x` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-        ]
+    assert node.contains_in_log(
+        "DDLWorker: Executed query: .*CREATE TABLE default\\.table_oncl UUID '[0-9a-fA-F-]*' (\\`x\\` Int32) ENGINE = MySQL('mysql57:3307', 'mysql_db', 'mysql_table', 'mysql_user', '\\[HIDDEN\\]')"
     )
     assert system_query_log_contains_search_pattern(
-        "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql57:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\'"
+        "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql57:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
 
     node.query(f"DROP TABLE table_oncl")
