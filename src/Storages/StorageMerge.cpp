@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
