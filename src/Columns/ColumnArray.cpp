@@ -151,23 +151,24 @@ void ColumnArray::get(size_t n, Field & res) const
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
+    assert(n < size());
+
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
-      * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
-      *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t offset_of_first_elem = offsetAt(n);
-    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+    /// We are using pointer arithmetic on the addresses of the array elements.
+    if (!data->isFixedAndContiguous())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 
     size_t array_size = sizeAt(n);
     if (array_size == 0)
-        return StringRef(first.data, 0);
+        return StringRef(nullptr, 0);
 
-    size_t offset_of_last_elem = getOffsets()[n] - 1;
-    StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
+    size_t offset_of_first_elem = offsetAt(n);
+    StringRef first = getData().getDataAt(offset_of_first_elem);
 
-    return StringRef(first.data, last.data + last.size - first.data);
+    return StringRef(first.data, first.size * array_size);
 }
 
 
@@ -183,7 +184,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     if (!data->isFixedAndContiguous())
-        throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
 
@@ -276,13 +277,13 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     {
         /// This row improves hash a little bit according to integration tests.
         /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = intHashCRC32(hash_data[i]);
+        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
 
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
             /// It is probably not the best way to combine hashes.
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
             /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
+            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
 
         prev_offset = offsets_data[i];
     }
@@ -568,8 +569,8 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)

@@ -1,13 +1,20 @@
 #include <Coordination/KeeperDispatcher.h>
+
+#include <Poco/Path.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
+#include <Common/hex.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <future>
-#include <chrono>
-#include <Poco/Path.h>
-#include <Common/hex.h>
-#include <filesystem>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
+
+
+#include <future>
+#include <chrono>
+#include <filesystem>
+#include <iterator>
+#include <limits>
 
 namespace CurrentMetrics
 {
@@ -32,9 +39,7 @@ KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
     , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
-{
-}
-
+{}
 
 void KeeperDispatcher::requestThread()
 {
@@ -191,7 +196,13 @@ void KeeperDispatcher::snapshotThread()
 
         try
         {
-            task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_path = task.create_snapshot(std::move(task.snapshot));
+
+            if (snapshot_path.empty())
+                continue;
+
+            if (isLeader())
+                snapshot_s3.uploadSnapshot(snapshot_path);
         }
         catch (...)
         {
@@ -285,7 +296,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
+    snapshot_s3.startup(config);
+
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
 
     try
     {
@@ -312,7 +325,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
     update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
-    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -370,7 +382,7 @@ void KeeperDispatcher::shutdown()
             /// Clear all registered sessions
             std::lock_guard lock(session_to_response_callback_mutex);
 
-            if (hasLeader())
+            if (server && hasLeader())
             {
                 close_requests.reserve(session_to_response_callback.size());
                 // send to leader CLOSE requests for active sessions
@@ -394,7 +406,7 @@ void KeeperDispatcher::shutdown()
         }
 
         // if there is no leader, there is no reason to do CLOSE because it's a write request
-        if (hasLeader() && !close_requests.empty())
+        if (server && hasLeader() && !close_requests.empty())
         {
             LOG_INFO(log, "Trying to close {} session(s)", close_requests.size());
             const auto raft_result = server->putRequestBatch(close_requests);
@@ -414,6 +426,8 @@ void KeeperDispatcher::shutdown()
 
         if (server)
             server->shutdown();
+
+        snapshot_s3.shutdown();
 
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
 
@@ -678,6 +692,8 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
         if (!push_result)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
+
+    snapshot_s3.updateS3Configuration(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

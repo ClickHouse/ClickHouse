@@ -564,6 +564,10 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return {};
+
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
     if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
@@ -653,7 +657,7 @@ void StorageDistributed::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
@@ -1325,7 +1329,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res -= shards[i].weight;
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -1368,7 +1372,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     {
         /// Step is 5% of the delay and minimal one second.
         /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
-        const size_t step_ms = std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        const size_t step_ms = static_cast<size_t>(std::min<double>(1., static_cast<double>(distributed_settings.max_delay_to_insert) * 1'000 * 0.05));
         UInt64 delayed_ms = 0;
 
         do {

@@ -68,7 +68,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(size_t offset) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 
@@ -127,7 +127,7 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     size_t first_offset = 0;

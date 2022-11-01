@@ -9,7 +9,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "config_functions.h"
+#include "config.h"
 
 namespace DB
 {

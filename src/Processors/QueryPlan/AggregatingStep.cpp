@@ -177,12 +177,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.group_by_two_level_threshold_bytes,
                     transform_params->params.max_bytes_before_external_group_by,
                     transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_volume,
+                    transform_params->params.tmp_data_scope,
                     transform_params->params.max_threads,
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
                     transform_params->params.max_block_size,
+                    transform_params->params.enable_prefetch,
                     /* only_merge */ false,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);

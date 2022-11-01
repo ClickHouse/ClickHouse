@@ -122,7 +122,7 @@ QuotientAndRemainder<N> static inline split(UnsignedOfSize<N> value)
     constexpr DivisionBy10PowN<N> division;
 
     UnsignedOfSize<N> quotient = (division.multiplier * (UnsignedOfSize<2 * N>(value) + division.add)) >> division.shift;
-    UnsignedOfSize<N / 2> remainder = value - quotient * pow10<UnsignedOfSize<N / 2>>(N);
+    UnsignedOfSize<N / 2> remainder = static_cast<UnsignedOfSize<N / 2>>(value - quotient * pow10<UnsignedOfSize<N / 2>>(N));
 
     return {quotient, remainder};
 }

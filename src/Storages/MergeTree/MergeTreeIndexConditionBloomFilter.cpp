@@ -242,11 +242,21 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
         DataTypePtr const_type;
         if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
         {
-            if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Int64 ||
-                const_value.getType() == Field::Types::Float64)
+            if (const_value.getType() == Field::Types::UInt64)
             {
-                /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.reinterpret<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -532,7 +542,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             {
                 out.function = RPNElement::FUNCTION_HAS;
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                if (converted_field.isNull())
+                    return false;
+
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
@@ -555,7 +568,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                     if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
                         return false;
 
-                    mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
+                    auto converted = convertFieldToType(f, *actual_type);
+                    if (converted.isNull())
+                        return false;
+
+                    mutable_column->insert(converted);
                 }
 
                 column = std::move(mutable_column);
@@ -573,7 +590,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            if (converted_field.isNull())
+                return false;
+
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 
@@ -601,9 +621,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+        if (converted_field.isNull())
+            return false;
 
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         return true;
     }
 

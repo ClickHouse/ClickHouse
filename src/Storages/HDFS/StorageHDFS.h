@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -40,7 +40,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
@@ -86,7 +86,7 @@ private:
         const String & format_name,
         const ContextPtr & ctx);
 
-    std::vector<const String> uris;
+    std::vector<String> uris;
     String format_name;
     String compression_method;
     const bool distributed_processing;
@@ -116,7 +116,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;

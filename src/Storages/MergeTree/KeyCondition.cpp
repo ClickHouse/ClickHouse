@@ -86,6 +86,88 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern)
     return fixed_prefix;
 }
 
+/// for "^prefix..." string it returns "prefix"
+static String extractFixedPrefixFromRegularExpression(const String & regexp)
+{
+    if (regexp.size() <= 1 || regexp[0] != '^')
+        return {};
+
+    String fixed_prefix;
+    const char * begin = regexp.data() + 1;
+    const char * pos = begin;
+    const char * end = regexp.data() + regexp.size();
+
+    while (pos != end)
+    {
+        switch (*pos)
+        {
+            case '\0':
+                pos = end;
+                break;
+
+            case '\\':
+            {
+                ++pos;
+                if (pos == end)
+                    break;
+
+                switch (*pos)
+                {
+                    case '|':
+                    case '(':
+                    case ')':
+                    case '^':
+                    case '$':
+                    case '.':
+                    case '[':
+                    case '?':
+                    case '*':
+                    case '+':
+                    case '{':
+                        fixed_prefix += *pos;
+                        break;
+                    default:
+                        /// all other escape sequences are not supported
+                        pos = end;
+                        break;
+                }
+
+                ++pos;
+                break;
+            }
+
+            /// non-trivial cases
+            case '|':
+                fixed_prefix.clear();
+                [[fallthrough]];
+            case '(':
+            case '[':
+            case '^':
+            case '$':
+            case '.':
+            case '+':
+                pos = end;
+                break;
+
+            /// Quantifiers that allow a zero number of occurrences.
+            case '{':
+            case '?':
+            case '*':
+                if (!fixed_prefix.empty())
+                    fixed_prefix.pop_back();
+
+                pos = end;
+                break;
+            default:
+                fixed_prefix += *pos;
+                pos++;
+                break;
+        }
+    }
+
+    return fixed_prefix;
+}
+
 
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,
   *  or return an empty string if there are no such strings.
@@ -116,10 +198,20 @@ static void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuf
 {
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT): [[fallthrough]];
-        case (ActionsDAG::ActionType::COLUMN):
+        case (ActionsDAG::ActionType::INPUT):
             writeString(node.result_name, out);
             break;
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            /// If it was created from ASTLiteral, then result_name can be an alias.
+            /// We need to convert value back to string here.
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+            /// It may be possible that column is ColumnSet
+            else
+                writeString(node.result_name, out);
+            break;
+        }
         case (ActionsDAG::ActionType::ALIAS):
             appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
             break;
@@ -572,6 +664,27 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
+        "match",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
         "isNotNull",
         [] (RPNElement & out, const Field &)
         {
@@ -838,9 +951,11 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
+    if (syntax_analyzer_result)
+    {
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
+    }
 
     return result;
 }
@@ -877,13 +992,22 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-        array_joined_columns.insert(name);
+    if (syntax_analyzer_result)
+    {
+        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+            array_joined_columns.insert(name);
+    }
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -952,6 +1076,12 @@ KeyCondition::KeyCondition(
         const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
             key_columns[name] = i;
+    }
+
+    if (!syntax_analyzer_result)
+    {
+        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
     }
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
@@ -1170,7 +1300,8 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
             if (is_valid_chain)
             {
-                auto const_type = cur_node->result_type;
+                out_type = removeLowCardinality(out_type);
+                auto const_type = removeLowCardinality(cur_node->result_type);
                 auto const_column = out_type->createColumnConst(1, out_value);
                 auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
 
@@ -1397,6 +1528,7 @@ public:
             ColumnsWithTypeAndName new_arguments;
             new_arguments.reserve(arguments.size() + 1);
             new_arguments.push_back(const_arg);
+            new_arguments.front().column = new_arguments.front().column->cloneResized(input_rows_count);
             for (const auto & arg : arguments)
                 new_arguments.push_back(arg);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
@@ -1405,6 +1537,7 @@ public:
         {
             auto new_arguments = arguments;
             new_arguments.push_back(const_arg);
+            new_arguments.back().column = new_arguments.back().column->cloneResized(input_rows_count);
             return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
         }
         else
@@ -1630,6 +1763,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(1).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
@@ -1653,6 +1793,13 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(0).tryGetConstant(block_with_constants, const_value, const_type))
             {
+                /// If the const operand is null, the atom will be always false
+                if (const_value.isNull())
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
@@ -1694,7 +1841,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
                          func_name == "ilike" || func_name == "notIlike" ||
-                         func_name == "startsWith")
+                         func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
                     return false;
@@ -1794,7 +1941,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
         }
         else if (const_value.getType() == Field::Types::Float64)
         {
-            out.function = const_value.safeGet<Float64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
             return true;
         }
     }
@@ -2557,7 +2704,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             return "true";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
