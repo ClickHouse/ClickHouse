@@ -55,6 +55,9 @@ bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) c
         path,
         [](const auto & file, const std::string & path_) { return file.first < path_; }
     );
+    if (it == object_storage.files.end())
+        return false;
+
     if (startsWith(it->first, path)
         || (it != object_storage.files.begin() && startsWith(std::prev(it)->first, path)))
         return true;
