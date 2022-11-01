@@ -756,6 +756,8 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
+let add_http_cors_header = false;
+
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
         plots[idx].destroy();
@@ -767,6 +769,12 @@ async function draw(idx, chart, url_params, query) {
     password = document.getElementById('password').value;
 
     let url = `${host}?default_format=JSONCompactColumns`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from a browser console
+        url += '&add_http_cors_header=1';
+    }
+
     if (user) {
         url += `&user=${encodeURIComponent(user)}`;
     }
