@@ -54,6 +54,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_group_by_with_totals)
         buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
 
+    if (is_group_by_all)
+        buffer << ", is_group_by_all: " << is_group_by_all;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -211,7 +214,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
-        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets;
+        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
+        is_group_by_all == rhs_typed.is_group_by_all;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -239,6 +243,7 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_rollup);
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
+    state.update(is_group_by_all);
 
     if (constant_value)
     {
@@ -267,6 +272,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
+    result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->constant_value = constant_value;
@@ -284,6 +290,7 @@ ASTPtr QueryNode::toASTImpl() const
     select_query->group_by_with_rollup = is_group_by_with_rollup;
     select_query->group_by_with_cube = is_group_by_with_cube;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
+    select_query->group_by_all = is_group_by_all;
 
     if (hasWith())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
@@ -300,7 +307,7 @@ ASTPtr QueryNode::toASTImpl() const
     if (getWhere())
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST());
 
-    if (hasGroupBy())
+    if (!is_group_by_all && hasGroupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
 
     if (hasHaving())

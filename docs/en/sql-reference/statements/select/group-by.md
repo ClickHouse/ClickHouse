@@ -269,7 +269,7 @@ FROM t
 GROUP BY a * 2, b
 ```
 
-For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `GROUP BY` key will contain the maximum non-aggregate fields we can extract from it.
+For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `GROUP BY` keys will contain the maximum non-aggregate fields we can extract from it.
 
 For example:
 

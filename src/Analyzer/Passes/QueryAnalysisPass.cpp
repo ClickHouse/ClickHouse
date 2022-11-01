@@ -65,6 +65,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <Common/checkStackSize.h>
+
 namespace DB
 {
 
@@ -1066,6 +1068,10 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    static void expandGroupByAll(QueryNode & query_tree_node_typed);
+
+    static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
+
     /// Resolve identifier functions
 
     static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
@@ -1686,6 +1692,68 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             join_node->formatASTForErrorMessage(),
             table_expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
+}
+
+std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
+{
+    checkStackSize();
+
+    if (node->as<ColumnNode>())
+    {
+        into.push_back(node);
+        return {false, 1};
+    }
+
+    auto * function = node->as<FunctionNode>();
+
+    if (!function)
+        return {false, 0};
+
+    if (function->isAggregateFunction())
+        return {true, 0};
+
+    UInt64 pushed_children = 0;
+    bool has_aggregate = false;
+
+    for (auto & child : function->getArguments().getNodes())
+    {
+        auto [child_has_aggregate, child_pushed_children] = recursivelyCollectMaxOrdinaryExpressions(child, into);
+        has_aggregate |= child_has_aggregate;
+        pushed_children += child_pushed_children;
+    }
+
+    /// The current function is not aggregate function and there is no aggregate function in its arguments,
+    /// so use the current function to replace its arguments
+    if (!has_aggregate)
+    {
+        for (UInt64 i = 0; i < pushed_children; i++)
+            into.pop_back();
+
+        into.push_back(node);
+        pushed_children = 1;
+    }
+
+    return {has_aggregate, pushed_children};
+}
+
+/** Expand GROUP BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
+  *
+  * For a special case that if there is a function having both aggregate functions and other fields as its arguments,
+  * the `GROUP BY` keys will contain the maximum non-aggregate fields we can extract from it.
+  *
+  * Example:
+  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t GROUP BY ALL
+  * will expand as
+  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+  */
+void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
+{
+    auto & group_by_nodes = query_tree_node_typed.getGroupBy().getNodes();
+    auto & projection_list = query_tree_node_typed.getProjection();
+
+    for (auto & node : projection_list.getNodes())
+        recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
+
 }
 
 
@@ -5539,6 +5607,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         node->removeAlias();
     }
+
+    if (query_node_typed.isGroupByAll())
+        expandGroupByAll(query_node_typed);
 
     /** Validate aggregates
       *
