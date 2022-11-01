@@ -176,6 +176,18 @@ public:
         is_group_by_with_grouping_sets = is_group_by_with_grouping_sets_value;
     }
 
+    /// Returns true, if query node has GROUP BY ALL modifier, false otherwise
+    bool isGroupByAll() const
+    {
+        return is_group_by_all;
+    }
+
+    /// Set query node GROUP BY ALL modifier value
+    void setIsGroupByAll(bool is_group_by_all_value)
+    {
+        is_group_by_all = is_group_by_all_value;
+    }
+
     /// Return true if query node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
     {
@@ -598,6 +610,7 @@ private:
     bool is_group_by_with_rollup = false;
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
+    bool is_group_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
