@@ -8,6 +8,8 @@
 #include <link.h> // ElfW
 #include <errno.h>
 
+#include "syscall.h"
+
 #define ARRAY_SIZE(a) sizeof((a))/sizeof((a[0]))
 
 /// Suppress TSan since it is possible for this code to be called from multiple threads,
@@ -39,7 +41,9 @@ ssize_t __retry_read(int fd, void * buf, size_t count)
 {
     for (;;)
     {
-        ssize_t ret = read(fd, buf, count);
+        // We cannot use the read syscall as it will be intercept by sanitizers, which aren't
+        // initialized yet. Emit syscall directly.
+        ssize_t ret = __syscall_ret(__syscall(SYS_read, fd, buf, count));
         if (ret == -1)
         {
             if (errno == EINTR)
