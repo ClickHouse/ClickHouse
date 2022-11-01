@@ -163,6 +163,11 @@ Result:
 Performs multiplication/division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 Result scale can be explicitely specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the scale of first argument.
 
+:::note    
+These functions work significantly slower than usual `divide` / `multiply`.
+In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide) or [multiply](#multiply)
+:::
+
 **Syntax**
 
 ```sql
