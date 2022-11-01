@@ -111,7 +111,7 @@ REGISTER_FUNCTION(UTCTimestamp)
     factory.registerFunction<UTCTimestampOverloadResolver>({
         R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
-Same as `now('UTC')`. Was added only for MySQL support. `now` is prefered.
+Same as `now('UTC')`. Was added only for MySQL support. `now` is preferred.
 
 Example:
 [example:typical]

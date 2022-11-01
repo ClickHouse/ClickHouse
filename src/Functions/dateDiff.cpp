@@ -366,7 +366,7 @@ REGISTER_FUNCTION(TimeDiff)
 {
     factory.registerFunction<FunctionTimeDiff>({R"(
 Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
-It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is prefered.
+It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
 
 Example:
 [example:typical]
