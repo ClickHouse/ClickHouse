@@ -129,6 +129,9 @@ def test_incorrect_usage(cluster):
     result = node2.query_and_get_error("TRUNCATE TABLE test0")
     assert "Table is read-only" in result
 
+    result = node2.query_and_get_error("OPTIMIZE TABLE test0 FINAL")
+    assert "Only read-only operations are supported" in result
+
     node2.query("DROP TABLE test0 SYNC")
 
 

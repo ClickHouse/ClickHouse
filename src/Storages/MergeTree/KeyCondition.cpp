@@ -86,6 +86,88 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern)
     return fixed_prefix;
 }
 
+/// for "^prefix..." string it returns "prefix"
+static String extractFixedPrefixFromRegularExpression(const String & regexp)
+{
+    if (regexp.size() <= 1 || regexp[0] != '^')
+        return {};
+
+    String fixed_prefix;
+    const char * begin = regexp.data() + 1;
+    const char * pos = begin;
+    const char * end = regexp.data() + regexp.size();
+
+    while (pos != end)
+    {
+        switch (*pos)
+        {
+            case '\0':
+                pos = end;
+                break;
+
+            case '\\':
+            {
+                ++pos;
+                if (pos == end)
+                    break;
+
+                switch (*pos)
+                {
+                    case '|':
+                    case '(':
+                    case ')':
+                    case '^':
+                    case '$':
+                    case '.':
+                    case '[':
+                    case '?':
+                    case '*':
+                    case '+':
+                    case '{':
+                        fixed_prefix += *pos;
+                        break;
+                    default:
+                        /// all other escape sequences are not supported
+                        pos = end;
+                        break;
+                }
+
+                ++pos;
+                break;
+            }
+
+            /// non-trivial cases
+            case '|':
+                fixed_prefix.clear();
+                [[fallthrough]];
+            case '(':
+            case '[':
+            case '^':
+            case '$':
+            case '.':
+            case '+':
+                pos = end;
+                break;
+
+            /// Quantifiers that allow a zero number of occurrences.
+            case '{':
+            case '?':
+            case '*':
+                if (!fixed_prefix.empty())
+                    fixed_prefix.pop_back();
+
+                pos = end;
+                break;
+            default:
+                fixed_prefix += *pos;
+                pos++;
+                break;
+        }
+    }
+
+    return fixed_prefix;
+}
+
 
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,
   *  or return an empty string if there are no such strings.
@@ -568,6 +650,27 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 return false;
 
             String prefix = value.get<const String &>();
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
+        "match",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
             if (prefix.empty())
                 return false;
 
@@ -1738,7 +1841,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
                          func_name == "ilike" || func_name == "notIlike" ||
-                         func_name == "startsWith")
+                         func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
                     return false;
