@@ -214,11 +214,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     if (settings.optimize_if_transform_strings_to_enum)
         manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
-    if (settings.optimize_or_like_chain
-        && settings.allow_hyperscan
-        && settings.max_hyperscan_regexp_length == 0
-        && settings.max_hyperscan_regexp_total_length == 0)
-        manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
+    manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 }
 
 }

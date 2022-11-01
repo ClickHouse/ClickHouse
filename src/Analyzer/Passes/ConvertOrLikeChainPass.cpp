@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/likePatternToRegexp.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -16,16 +17,26 @@ namespace DB
 namespace
 {
 
-class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>
+class ConvertOrLikeChainImpl
 {
     using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
 
     const FunctionOverloadResolverPtr match_function_ref;
 public:
 
-    explicit ConvertOrLikeChainVisitor(FunctionOverloadResolverPtr _match_function_ref)
+    explicit ConvertOrLikeChainImpl(FunctionOverloadResolverPtr _match_function_ref)
         : match_function_ref(_match_function_ref)
     {}
+
+    bool needVisit(QueryTreeNodePtr &) { return true; }
+
+    bool isEnabled(const Settings & settings)
+    {
+        return settings.optimize_or_like_chain
+            && settings.allow_hyperscan
+            && settings.max_hyperscan_regexp_length == 0
+            && settings.max_hyperscan_regexp_total_length == 0;
+    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
@@ -98,11 +109,13 @@ public:
     }
 };
 
+using ConvertOrLikeChainVisitor = OptionalInDepthQueryTreeVisitor<ConvertOrLikeChainImpl>;
+
 }
 
 void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr  context)
 {
-    ConvertOrLikeChainVisitor visitor(FunctionFactory::instance().get("multiMatchAny", context));
+    ConvertOrLikeChainVisitor visitor(context->getSettingsRef(), FunctionFactory::instance().get("multiMatchAny", context));
     visitor.visit(query_tree_node);
 }
 
