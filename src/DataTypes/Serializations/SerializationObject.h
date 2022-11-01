@@ -8,7 +8,7 @@ namespace DB
 {
 
 /** Serialization for data type Object.
-  * Supported only test serialization/deserialization.
+  * Supported only text serialization/deserialization.
   * and binary bulk serialization/deserialization without position independent
   * encoding, i.e. serialization/deserialization into Native format.
   */
@@ -31,6 +31,7 @@ public:
       */
 
     void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
@@ -104,6 +105,7 @@ private:
     void deserializeTextImpl(IColumn & column, Reader && reader) const;
 
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+    void serializeTextFromSubcolumn(const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     /// Pool of parser objects to make SerializationObject thread safe.
     mutable SimpleObjectPool<Parser> parsers_pool;
