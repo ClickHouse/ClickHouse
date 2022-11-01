@@ -673,11 +673,16 @@ function insertChart(i) {
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
     charts.appendChild(chart);
+    return {chart: chart, textarea: query_editor_textarea};
 };
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
-    insertChart(plots.length);
+
+    const {chart, textarea} = insertChart(plots.length);
+    chart.scrollIntoView();
+    textarea.focus();
+
     plots.push(null);
     resize();
 });
