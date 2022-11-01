@@ -2199,6 +2199,7 @@ void MergeTreeData::dropAllData()
 
         LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
         data_parts_indexes.clear();
+        all_data_dropped = true;
     }
     catch (...)
     {
@@ -3142,7 +3143,7 @@ void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn,
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
@@ -3220,15 +3221,20 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAn
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
+    /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
+    PartsToRemoveFromZooKeeper parts_to_remove_from_zookeeper;
+    for (auto & part : parts_to_remove)
+        parts_to_remove_from_zookeeper.emplace_back(std::move(part));
+
     for (auto & part : inactive_parts_to_remove_immediately)
     {
         if (!drop_range.contains(part->info))
             continue;
         part->remove_time.store(0, std::memory_order_relaxed);
-        parts_to_remove.push_back(std::move(part));
+        parts_to_remove_from_zookeeper.emplace_back(std::move(part), /* was_active */ false);
     }
 
-    return parts_to_remove;
+    return parts_to_remove_from_zookeeper;
 }
 
 void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock)
@@ -5176,9 +5182,27 @@ void MergeTreeData::Transaction::rollback()
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
-        data.removePartsFromWorkingSet(txn,
-            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
-            /* clear_without_timeout = */ true);
+        auto lock = data.lockParts();
+
+        if (data.data_parts_indexes.empty())
+        {
+            /// Table was dropped concurrently and all parts (including PreActive parts) were cleared, so there's nothing to rollback
+            if (!data.all_data_dropped)
+            {
+                Strings part_names;
+                for (const auto & part : precommitted_parts)
+                    part_names.emplace_back(part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "There are some PreActive parts ({}) to rollback, "
+                                "but data parts set is empty and table {} was not dropped. It's a bug",
+                                fmt::join(part_names, ", "), data.getStorageID().getNameForLogs());
+            }
+        }
+        else
+        {
+            data.removePartsFromWorkingSet(txn,
+                DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
+                /* clear_without_timeout = */ true, &lock);
+        }
     }
 
     clear();
