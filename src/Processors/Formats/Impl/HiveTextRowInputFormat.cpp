@@ -38,8 +38,7 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 
 void HiveTextRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    CSVRowInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)

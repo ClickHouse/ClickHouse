@@ -56,7 +56,7 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(NATSConsumerPtr buf);
+    void pushConsumer(NATSConsumerPtr consumer);
     NATSConsumerPtr popConsumer();
     NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 

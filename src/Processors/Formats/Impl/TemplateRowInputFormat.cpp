@@ -266,9 +266,7 @@ void TemplateRowInputFormat::resetParser()
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    format_reader->setReadBuffer(*buf);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 TemplateFormatReader::TemplateFormatReader(

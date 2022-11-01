@@ -371,7 +371,7 @@ ReadBufferPtr KafkaConsumer::consume()
         return nullptr;
 
     if (hasMorePolledMessages())
-        return getNextNonEmptyMessage();
+        return getNextMessage();
 
     if (intermediate_commit)
         commit();
@@ -460,10 +460,10 @@ ReadBufferPtr KafkaConsumer::consume()
     ProfileEvents::increment(ProfileEvents::KafkaMessagesPolled, messages.size());
 
     stalled_status = NOT_STALLED;
-    return getNextNonEmptyMessage();
+    return getNextMessage();
 }
 
-ReadBufferPtr KafkaConsumer::getNextNonEmptyMessage()
+ReadBufferPtr KafkaConsumer::getNextMessage()
 {
     if (current == messages.end())
         return nullptr;
@@ -472,10 +472,10 @@ ReadBufferPtr KafkaConsumer::getNextNonEmptyMessage()
     size_t size = current->get_payload().get_size();
     ++current;
 
-    if (data && size > 0)
+    if (data)
         return std::make_shared<ReadBufferFromMemory>(data, size);
 
-    return getNextNonEmptyMessage();
+    return getNextMessage();
 }
 
 size_t KafkaConsumer::filterMessageErrors()

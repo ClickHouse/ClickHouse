@@ -110,7 +110,7 @@ private:
     void resetIfStopped();
     /// Return number of messages with an error.
     size_t filterMessageErrors();
-    ReadBufferPtr getNextNonEmptyMessage();
+    ReadBufferPtr getNextMessage();
 };
 
 }
