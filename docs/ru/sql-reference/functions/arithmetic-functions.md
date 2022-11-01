@@ -173,6 +173,11 @@ multiplyDecimal(a, b[, result_scale])
 divideDecimal(a, b[, result_scale])
 ```
 
+:::note    
+Эти функции работают гораздт медленнее обычных `divide` / `multiply`.
+В случае, если нет необходимости иметь фиксированную точность и/или нужны быстрые вычисления, следует использовать [divide](#divide) и [multiply](#multiply)
+:::
+
 **Аргументы**
 
 -   `a` — Первый сомножитель/делимое: [Decimal](../../sql-reference/data-types/decimal.md).
