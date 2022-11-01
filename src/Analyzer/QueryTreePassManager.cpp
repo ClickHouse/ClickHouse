@@ -18,6 +18,8 @@
 #include <IO/Operators.h>
 
 #include <Interpreters/Context.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 
 namespace DB
 {
@@ -25,6 +27,28 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+#ifndef NDEBUG
+
+// This visitor checks if Query Tree structure is valid after each pass
+// in debug build.
+class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node) const
+    {
+        auto * column = node->as<ColumnNode>();
+        if (!column)
+            return;
+        column->getColumnSource();
+    }
+};
+#endif
+
 }
 
 /** ClickHouse query tree pass manager.
@@ -61,7 +85,12 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     size_t passes_size = passes.size();
 
     for (size_t i = 0; i < passes_size; ++i)
+    {
         passes[i]->run(query_tree_node, current_context);
+#ifndef NDEBUG
+        ValidationChecker().visit(query_tree_node);
+#endif
+    }
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
@@ -114,38 +143,38 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     auto context = manager.getContext();
     const auto & settings = context->getSettingsRef();
 
-    manager.addPass(std::make_shared<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<QueryAnalysisPass>());
 
     if (settings.optimize_functions_to_subcolumns)
-        manager.addPass(std::make_shared<FunctionToSubcolumnsPass>());
+        manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     if (settings.count_distinct_optimization)
-        manager.addPass(std::make_shared<CountDistinctPass>());
+        manager.addPass(std::make_unique<CountDistinctPass>());
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
-        manager.addPass(std::make_shared<SumIfToCountIfPass>());
+        manager.addPass(std::make_unique<SumIfToCountIfPass>());
 
     if (settings.optimize_normalize_count_variants)
-        manager.addPass(std::make_shared<NormalizeCountVariantsPass>());
+        manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
-    manager.addPass(std::make_shared<CustomizeFunctionsPass>());
+    manager.addPass(std::make_unique<CustomizeFunctionsPass>());
 
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
-        manager.addPass(std::make_shared<AggregateFunctionsArithmericOperationsPass>());
+        manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
 
     if (settings.optimize_injective_functions_inside_uniq)
-        manager.addPass(std::make_shared<UniqInjectiveFunctionsEliminationPass>());
+        manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
 
     if (settings.optimize_multiif_to_if)
-        manager.addPass(std::make_shared<MultiIfToIfPass>());
+        manager.addPass(std::make_unique<MultiIfToIfPass>());
 
-    manager.addPass(std::make_shared<IfConstantConditionPass>());
+    manager.addPass(std::make_unique<IfConstantConditionPass>());
 
     if (settings.optimize_if_chain_to_multiif)
-        manager.addPass(std::make_shared<IfChainToMultiIfPass>());
+        manager.addPass(std::make_unique<IfChainToMultiIfPass>());
 
-    manager.addPass(std::make_shared<OrderByTupleEliminationPass>());
-    manager.addPass(std::make_shared<OrderByLimitByDuplicateEliminationPass>());
+    manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
+    manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 }
 
 }
