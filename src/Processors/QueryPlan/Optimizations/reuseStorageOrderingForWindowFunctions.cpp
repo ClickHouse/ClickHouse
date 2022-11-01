@@ -36,7 +36,7 @@ ReadFromMergeTree * findReadingStep(QueryPlan::Node * node)
     if (node->children.size() != 1)
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step) || typeid_cast<DistinctStep *>(step))
         return findReadingStep(node->children.front());
 
     return nullptr;
@@ -495,6 +495,9 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             current_direction = descr.direction;
 
+
+            std::cerr << "====== (no dag) Found direct match" << std::endl;
+
             ++next_descr_column;
             ++next_sort_key;
         }
@@ -507,11 +510,11 @@ InputOrderInfoPtr buildInputOrderInfo(
 
             const auto & match = matches[sort_node];
 
-            //std::cerr << "====== Finding match for " << sort_column_node->result_name << ' ' << static_cast<const void *>(sort_column_node) << std::endl;
+            std::cerr << "====== Finding match for " << sort_column_node->result_name << ' ' << static_cast<const void *>(sort_column_node) << std::endl;
 
             if (match.node && match.node == sort_column_node)
             {
-                //std::cerr << "====== Found direct match" << std::endl;
+                std::cerr << "====== Found direct match" << std::endl;
 
                 /// We try to find the match first even if column is fixed. In this case, potentially more keys will match.
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
@@ -530,13 +533,13 @@ InputOrderInfoPtr buildInputOrderInfo(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
+                std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
             }
             else
             {
 
-                //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
+                std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
                 bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
                 if (!is_fixed_column)
                     break;
@@ -581,6 +584,10 @@ void optimizeReadInOrder(QueryPlan::Node & node)
 
     ReadFromMergeTree * reading = findReadingStep(node.children.front());
     if (!reading)
+        return;
+
+    /// Already read-in-order, skip.
+    if (reading->getQueryInfo().input_order_info)
         return;
 
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();

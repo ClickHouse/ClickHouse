@@ -7,8 +7,9 @@
 
 namespace DB::QueryPlanOptimizations
 {
-size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 {
+    std::cerr << "&&&&&&&&&&&& tryDistinctReadInOrder\n";
     /// check if it is preliminary distinct node
     DistinctStep * pre_distinct = nullptr;
     if (auto * distinct = typeid_cast<DistinctStep *>(parent_node->step.get()); distinct)
@@ -84,6 +85,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (output_data_stream.sort_scope != DataStream::SortScope::Chunk && number_of_sorted_distinct_columns <= output_sort_desc.size())
         return 0;
 
+    std::cerr << "++++++++ tryDistinctReadInOrder\n";
     /// update input order info in read_from_merge_tree step
     const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
     read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
