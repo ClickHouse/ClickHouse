@@ -438,10 +438,7 @@ UInt64 ColumnVector<T>::get64(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
     {
-        if constexpr (std::endian::native == std::endian::little)
-            return bit_cast<UInt64>(data[n]);
-        else
-            return __builtin_bswap64(bit_cast<UInt64>(data[n]));
+        return bit_cast<UInt64>(data[n]);
     }
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
