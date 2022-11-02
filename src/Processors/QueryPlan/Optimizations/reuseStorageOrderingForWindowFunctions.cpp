@@ -395,13 +395,13 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
-                                const auto & childern = parent->children;
-                                size_t num_children = childern.size();
+                                const auto & children = parent->children;
+                                size_t num_children = children.size();
                                 if (frame.mapped_children.size() == num_children)
                                 {
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched = frame.mapped_children[i] == childern[i];
+                                        all_children_matched = frame.mapped_children[i] == children[i];
 
                                     if (all_children_matched)
                                     {
