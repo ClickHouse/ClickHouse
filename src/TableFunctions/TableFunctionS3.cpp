@@ -64,7 +64,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
 
             else
@@ -77,7 +77,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         {
 
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
