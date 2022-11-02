@@ -6,6 +6,11 @@ sidebar_label: Dictionary Key and Fields
 
 # Dictionary Key and Fields
 
+:::tip
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
+:::
+
 The `structure` clause describes the dictionary key and fields available for queries.
 
 XML description:
