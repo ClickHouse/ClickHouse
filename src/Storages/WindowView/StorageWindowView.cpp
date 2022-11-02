@@ -327,7 +327,10 @@ namespace
     {
         auto fetch_query = std::make_shared<ASTSelectQuery>();
         auto select = std::make_shared<ASTExpressionList>();
-        select->children.push_back(std::make_shared<ASTAsterisk>());
+        auto asterisk = std::make_shared<ASTAsterisk>();
+        asterisk->transformers = std::make_shared<ASTExpressionList>();
+        asterisk->children.push_back(asterisk->transformers);
+        select->children.push_back(asterisk);
         fetch_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
         fetch_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
         auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();

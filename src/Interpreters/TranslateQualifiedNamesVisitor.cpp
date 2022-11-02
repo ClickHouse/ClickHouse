@@ -155,21 +155,19 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
         func_arguments->children.clear();
 }
 
-void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const ASTPtr & ast, Data & data)
+void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
 {
-    if (ast->children.empty())
-        throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
-
-    auto & ident = ast->children[0];
+    if (!node.qualifier)
+        throw Exception("Logical error: qualified asterisk must have a qualifier", ErrorCodes::LOGICAL_ERROR);
 
     /// @note it could contain table alias as table name.
-    DatabaseAndTableWithAlias db_and_table(ident);
+    DatabaseAndTableWithAlias db_and_table(node.qualifier);
 
     for (const auto & known_table : data.tables)
         if (db_and_table.satisfies(known_table.table, true))
             return;
 
-    throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    throw Exception("Unknown qualified identifier: " + node.qualifier->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
@@ -255,7 +253,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
 
-            for (const auto & transformer : asterisk->children)
+            for (const auto & transformer : asterisk->transformers->children)
                 IASTColumnsTransformer::transform(transformer, columns);
         }
         else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
@@ -263,7 +261,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             for (const auto & ident : asterisk_column_list->column_list->children)
                 columns.emplace_back(ident->clone());
 
-            for (const auto & transformer : asterisk_column_list->children)
+            for (const auto & transformer : asterisk_column_list->transformers->children)
                 IASTColumnsTransformer::transform(transformer, columns);
         }
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
@@ -281,12 +279,12 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
 
-            for (const auto & transformer : asterisk_regexp_pattern->children)
+            for (const auto & transformer : asterisk_regexp_pattern->transformers->children)
                 IASTColumnsTransformer::transform(transformer, columns);
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->qualifier);
 
             for (const auto & table : tables_with_columns)
             {
@@ -298,11 +296,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 }
             }
 
-            // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
-            {
-                IASTColumnsTransformer::transform(*it, columns);
-            }
+            for (const auto & transformer : qualified_asterisk->transformers->children)
+                IASTColumnsTransformer::transform(transformer, columns);
         }
         else
             columns.emplace_back(child);
