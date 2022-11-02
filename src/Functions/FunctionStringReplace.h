@@ -24,6 +24,7 @@ class FunctionStringReplace : public IFunction
 public:
     static constexpr auto name = Name::name;
     const bool allow_hyperscan;
+    mutable typename Impl::MatchState match_state;
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -94,13 +95,13 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan);
+            Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan, match_state);
             return col_res;
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan);
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets(), allow_hyperscan, match_state);
             return col_res;
         }
         else

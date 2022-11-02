@@ -21,6 +21,10 @@ struct ReplaceStringTraits
 template <ReplaceStringTraits::Replace replace>
 struct ReplaceStringImpl
 {
+    struct MatchState
+    {
+    };
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -28,7 +32,8 @@ struct ReplaceStringImpl
         const std::string & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        bool /*allow_hyperscan*/)
+        bool /*allow_hyperscan*/,
+        MatchState /*match_state*/)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
@@ -105,7 +110,8 @@ struct ReplaceStringImpl
         const std::string & replacement,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        bool /*allow_hyperscan*/)
+        bool /*allow_hyperscan*/,
+        MatchState /*match_state*/)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
