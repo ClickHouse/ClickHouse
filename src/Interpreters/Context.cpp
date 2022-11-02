@@ -463,6 +463,18 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
+        /// Delete DDLWorker before zookeeper.
+        /// Cause it can call Context::getZooKeeper and resurrect it.
+
+        {
+            auto lock = std::lock_guard(mutex);
+            delete_ddl_worker = std::move(ddl_worker);
+        }
+
+        /// DDLWorker should be deleted without lock, cause its internal thread can
+        /// take it as well, which will cause deadlock.
+        delete_ddl_worker.reset();
+
         {
             auto lock = std::lock_guard(mutex);
 
@@ -499,7 +511,6 @@ struct ContextSharedPart : boost::noncopyable
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_ddl_worker = std::move(ddl_worker);
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -528,7 +539,6 @@ struct ContextSharedPart : boost::noncopyable
         delete_schedule_pool.reset();
         delete_distributed_schedule_pool.reset();
         delete_message_broker_schedule_pool.reset();
-        delete_ddl_worker.reset();
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
@@ -2061,7 +2071,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
     else if (shared->zookeeper->expired())
+    {
+        Stopwatch watch;
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
         shared->zookeeper = shared->zookeeper->startNewSession();
+        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+    }
 
     return shared->zookeeper;
 }
@@ -3632,6 +3647,7 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
 

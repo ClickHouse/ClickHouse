@@ -564,6 +564,10 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return {};
+
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
     if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
@@ -594,7 +598,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    if (!hasObjectColumns(all_columns))
+    if (!hasDynamicSubcolumns(all_columns))
         return false;
 
     if (!query)
@@ -609,7 +613,7 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
         auto name_in_storage = Nested::splitName(required_column).first;
         auto column_in_storage = all_columns.tryGetPhysical(name_in_storage);
 
-        if (column_in_storage && isObject(column_in_storage->type))
+        if (column_in_storage && column_in_storage->type->hasDynamicSubcolumns())
             return true;
     }
 
@@ -636,7 +640,7 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
         metadata_snapshot->getColumns(),
         getContext());
 
-    auto object_columns = DB::getObjectColumns(
+    auto object_columns = DB::getConcreteObjectColumns(
         snapshot_data->objects_by_shard.begin(),
         snapshot_data->objects_by_shard.end(),
         metadata_snapshot->getColumns(),

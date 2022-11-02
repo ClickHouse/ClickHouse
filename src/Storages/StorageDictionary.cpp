@@ -176,6 +176,12 @@ Pipe StorageDictionary::read(
     return dictionary->read(column_names, max_block_size, threads);
 }
 
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+{
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
+}
+
 void StorageDictionary::shutdown()
 {
     removeDictionaryConfigurationFromRepository();
