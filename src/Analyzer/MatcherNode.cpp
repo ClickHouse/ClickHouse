@@ -207,18 +207,32 @@ ASTPtr MatcherNode::toASTImpl() const
 {
     ASTPtr result;
 
+    auto transformers = std::make_shared<ASTExpressionList>();
+
+    for (const auto & child : children)
+        transformers->children.push_back(child->toAST());
+
     if (matcher_type == MatcherNodeType::ASTERISK)
     {
         if (qualified_identifier.empty())
         {
-            result = std::make_shared<ASTAsterisk>();
+            auto asterisk = std::make_shared<ASTAsterisk>();
+
+            asterisk->transformers = std::move(transformers);
+            asterisk->children.push_back(asterisk->transformers);
+
+            result = asterisk;
         }
         else
         {
             auto qualified_asterisk = std::make_shared<ASTQualifiedAsterisk>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            qualified_asterisk->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            qualified_asterisk->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            qualified_asterisk->transformers = std::move(transformers);
+
+            qualified_asterisk->children.push_back(qualified_asterisk->qualifier);
+            qualified_asterisk->children.push_back(qualified_asterisk->transformers);
 
             result = qualified_asterisk;
         }
@@ -229,6 +243,10 @@ ASTPtr MatcherNode::toASTImpl() const
         {
             auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
             regexp_matcher->setPattern(columns_matcher->pattern());
+
+            regexp_matcher->transformers = std::move(transformers);
+            regexp_matcher->children.push_back(regexp_matcher->transformers);
+
             result = regexp_matcher;
         }
         else
@@ -237,7 +255,11 @@ ASTPtr MatcherNode::toASTImpl() const
             regexp_matcher->setPattern(columns_matcher->pattern());
 
             auto identifier_parts = qualified_identifier.getParts();
-            regexp_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            regexp_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            regexp_matcher->transformers = std::move(transformers);
+
+            regexp_matcher->children.push_back(regexp_matcher->qualifier);
+            regexp_matcher->children.push_back(regexp_matcher->transformers);
 
             result = regexp_matcher;
         }
@@ -257,22 +279,29 @@ ASTPtr MatcherNode::toASTImpl() const
         {
             auto columns_list_matcher = std::make_shared<ASTColumnsListMatcher>();
             columns_list_matcher->column_list = std::move(column_list);
+            columns_list_matcher->transformers = std::move(transformers);
+
+            columns_list_matcher->children.push_back(columns_list_matcher->column_list);
+            columns_list_matcher->children.push_back(columns_list_matcher->transformers);
+
             result = columns_list_matcher;
         }
         else
         {
             auto columns_list_matcher = std::make_shared<ASTQualifiedColumnsListMatcher>();
-            columns_list_matcher->column_list = std::move(column_list);
 
             auto identifier_parts = qualified_identifier.getParts();
-            columns_list_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            columns_list_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            columns_list_matcher->column_list = std::move(column_list);
+            columns_list_matcher->transformers = std::move(transformers);
+
+            columns_list_matcher->children.push_back(columns_list_matcher->qualifier);
+            columns_list_matcher->children.push_back(columns_list_matcher->column_list);
+            columns_list_matcher->children.push_back(columns_list_matcher->transformers);
 
             result = columns_list_matcher;
         }
     }
-
-    for (const auto & child : children)
-        result->children.push_back(child->toAST());
 
     return result;
 }

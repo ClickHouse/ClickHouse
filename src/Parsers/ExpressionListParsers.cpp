@@ -4,6 +4,7 @@
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
@@ -193,7 +194,11 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         return false;
 
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
-    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
+    auto asterisk = std::make_shared<ASTAsterisk>();
+    asterisk->transformers = std::make_shared<ASTExpressionList>();
+    asterisk->children.push_back(asterisk->transformers);
+
+    auto aggregate_function = makeASTFunction(aggregate_function_name, std::move(asterisk));
     auto subquery_node = function->children[0]->children[1];
 
     auto table_expression = std::make_shared<ASTTableExpression>();
@@ -2110,7 +2115,7 @@ struct ParserExpressionImpl
     using Layers = std::vector<std::unique_ptr<Layer>>;
 
     Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
-    static Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
+    Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
 };
 
 
@@ -2434,8 +2439,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
 Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
-    ASTPtr tmp;
-
     /// ParserExpression can be called in this part of the query:
     ///  ALTER TABLE partition_all2 CLEAR INDEX [ p ] IN PARTITION ALL
     ///
@@ -2455,17 +2458,17 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (cur_op == operators_table.end())
     {
+        ASTPtr alias;
         ParserAlias alias_parser(layers.back()->allow_alias_without_as_keyword);
-        auto old_pos = pos;
+
         if (layers.back()->allow_alias &&
             !layers.back()->parsed_alias &&
-            alias_parser.parse(pos, tmp, expected) &&
-            layers.back()->insertAlias(tmp))
+            alias_parser.parse(pos, alias, expected) &&
+            layers.back()->insertAlias(alias))
         {
             layers.back()->parsed_alias = true;
             return Action::OPERATOR;
         }
-        pos = old_pos;
         return Action::NONE;
     }
 
@@ -2529,33 +2532,57 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         layers.back()->pushOperand(function);
     }
 
+    /// Dot (TupleElement operator) can be a beginning of a .* or .COLUMNS expressions
+    if (op.type == OperatorType::TupleElement)
+    {
+        ASTPtr tmp;
+        if (asterisk_parser.parse(pos, tmp, expected) ||
+            columns_matcher_parser.parse(pos, tmp, expected))
+        {
+            if (auto * asterisk = tmp->as<ASTAsterisk>())
+            {
+                if (!layers.back()->popOperand(asterisk->expression))
+                    return Action::NONE;
+            }
+            else if (auto * columns_list_matcher = tmp->as<ASTColumnsListMatcher>())
+            {
+                if (!layers.back()->popOperand(columns_list_matcher->expression))
+                    return Action::NONE;
+            }
+            else if (auto * columns_regexp_matcher = tmp->as<ASTColumnsRegexpMatcher>())
+            {
+                if (!layers.back()->popOperand(columns_regexp_matcher->expression))
+                    return Action::NONE;
+            }
+
+            layers.back()->pushOperand(std::move(tmp));
+            return Action::OPERATOR;
+        }
+    }
+
     layers.back()->pushOperator(op);
-
-    if (op.type == OperatorType::ArrayElement)
-        layers.push_back(std::make_unique<ArrayElementLayer>());
-
-
-    Action next = Action::OPERAND;
 
     /// isNull & isNotNull are postfix unary operators
     if (op.type == OperatorType::IsNull)
-        next = Action::OPERATOR;
-
-    if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-        layers.back()->between_counter++;
+        return Action::OPERATOR;
 
     if (op.type == OperatorType::Cast)
     {
-        next = Action::OPERATOR;
-
         ASTPtr type_ast;
         if (!ParserDataType().parse(pos, type_ast, expected))
             return Action::NONE;
 
         layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+        return Action::OPERATOR;
     }
 
-    return next;
+    if (op.type == OperatorType::ArrayElement)
+        layers.push_back(std::make_unique<ArrayElementLayer>());
+
+    if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
+        layers.back()->between_counter++;
+
+    return Action::OPERAND;
 }
 
 }
