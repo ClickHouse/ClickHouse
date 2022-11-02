@@ -5,6 +5,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ThreadFuzzer.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 
@@ -31,6 +32,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_DATA_PART;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 struct ReplicatedMergeTreeSink::DelayedChunk
@@ -344,12 +346,14 @@ void ReplicatedMergeTreeSink::commitPart(
         bool deduplicate_block = !block_id.empty();
         String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
         auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        ThreadFuzzer::maybeInjectSleep();
 
         /// Prepare transaction to ZooKeeper
         /// It will simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
         Coordination::Requests ops;
 
         Int64 block_number = 0;
+        size_t block_unlock_op_idx = std::numeric_limits<size_t>::max();
         String existing_part_name;
         if (block_number_lock)
         {
@@ -393,7 +397,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 zkutil::CreateMode::PersistentSequential));
 
             /// Deletes the information that the block number is used for writing.
-            block_number_lock->getUnlockOps(ops);
+            block_unlock_op_idx = ops.size();
+            block_number_lock->getUnlockOp(ops);
 
             /** If we need a quorum - create a node in which the quorum is monitored.
               * (If such a node already exists, then someone has managed to make another quorum record at the same time,
@@ -520,7 +525,11 @@ void ReplicatedMergeTreeSink::commitPart(
                     part->name);
         }
 
+        ThreadFuzzer::maybeInjectSleep();
+
         storage.lockSharedData(*part, false, {});
+
+        ThreadFuzzer::maybeInjectSleep();
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -533,6 +542,11 @@ void ReplicatedMergeTreeSink::commitPart(
             /// Lock nodes have been already deleted, do not delete them in destructor
             if (block_number_lock)
                 block_number_lock->assumeUnlocked();
+        }
+        else if (multi_code == Coordination::Error::ZNONODE && zkutil::getFailedOpIndex(multi_code, responses) == block_unlock_op_idx)
+        {
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Insert query (for block {}) was cancelled by concurrent ALTER PARTITION", block_number_lock->getPath());
         }
         else if (multi_code == Coordination::Error::ZCONNECTIONLOSS
             || multi_code == Coordination::Error::ZOPERATIONTIMEOUT)

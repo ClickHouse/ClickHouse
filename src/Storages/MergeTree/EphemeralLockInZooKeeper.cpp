@@ -62,12 +62,12 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
 void EphemeralLockInZooKeeper::unlock()
 {
     Coordination::Requests ops;
-    getUnlockOps(ops);
+    getUnlockOp(ops);
     zookeeper->multi(ops);
     zookeeper = nullptr;
 }
 
-void EphemeralLockInZooKeeper::getUnlockOps(Coordination::Requests & ops)
+void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)
 {
     checkCreated();
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
