@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/other-functions
 sidebar_position: 67
 sidebar_label: Other
 ---
@@ -570,7 +571,7 @@ Example:
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -679,6 +680,47 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+## parseTimeDelta
+
+Parse a sequence of numbers followed by something resembling a time unit.
+
+**Syntax**
+
+```sql
+parseTimeDelta(timestr)
+```
+
+**Arguments**
+
+-   `timestr` — A sequence of numbers followed by something resembling a time unit.
+
+
+**Returned value**
+
+-   A floating-point number with the number of seconds.
+
+**Example**
+
+```sql
+SELECT parseTimeDelta('11s+22min')
+```
+
+```text
+┌─parseTimeDelta('11s+22min')─┐
+│                        1331 │
+└─────────────────────────────┘
+```
+
+```sql
+SELECT parseTimeDelta('1yr2mo')
+```
+
+```text
+┌─parseTimeDelta('1yr2mo')─┐
+│                 36806400 │
+└──────────────────────────┘
 ```
 
 ## least(a, b)
@@ -1776,15 +1818,43 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …)
+## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
 
-Evaluate external model.
-Accepts a model name and model arguments. Returns Float64.
+Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.
+Accepts a path to a catboost model and model arguments (features). Returns Float64.
 
-## throwIf(x\[, custom_message\])
+``` sql
+SELECT feat1, ..., feat_n, catboostEvaluate('/path/to/model.bin', feat_1, ..., feat_n) AS prediction
+FROM data_table
+```
+
+**Prerequisites**
+
+1. Build the catboost evaluation library
+
+Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
+
+Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
+
+``` xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+2. Train a catboost model using libcatboost
+
+See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
+
+## throwIf(x\[, message\[, error_code\]\])
 
 Throw an exception if the argument is non zero.
-custom_message - is an optional parameter: a constant string, provides an error message
+`message` - is an optional parameter: a constant string providing a custom error message
+`error_code` - is an optional parameter: a constant integer providing a custom error code
+
+To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

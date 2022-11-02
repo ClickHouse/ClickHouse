@@ -363,7 +363,7 @@ using FunctionToDecimal256OrDefault = FunctionCastOrDefaultTyped<DataTypeDecimal
 
 using FunctionToUUIDOrDefault = FunctionCastOrDefaultTyped<DataTypeUUID, NameToUUIDOrDefault>;
 
-void registerFunctionCastOrDefault(FunctionFactory & factory)
+REGISTER_FUNCTION(CastOrDefault)
 {
     factory.registerFunction<FunctionCastOrDefault>();
 

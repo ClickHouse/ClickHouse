@@ -33,7 +33,7 @@ FROM
     FROM
     (
         WITH
-            extractGroups(version, 'v(\\d+).(\\d+)') AS v,
+            extractGroups(version, 'v(\\d+)\\.(\\d+)') AS v,
             v[1]::UInt8 AS y,
             v[2]::UInt8 AS m
         SELECT

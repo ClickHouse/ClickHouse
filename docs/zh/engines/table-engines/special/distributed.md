@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/special/distributed
 sidebar_position: 33
 sidebar_label: 分布式引擎
 ---
@@ -225,7 +226,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 -   `_shard_num` — 表`system.clusters` 中的  `shard_num` 值 . 数据类型: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
 !!! note "备注"
-    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.md) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
+    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.mdx) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
 
 **详见**
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns) 描述

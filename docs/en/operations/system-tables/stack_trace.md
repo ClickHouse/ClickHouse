@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/stack_trace
+---
 # stack_trace
 
 Contains stack traces of all server threads. Allows developers to introspect the server state.

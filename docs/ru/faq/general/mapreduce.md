@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/general/mapreduce
 title: Why not use something like MapReduce?
 sidebar_position: 110
 ---

@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/grants
+---
 # grants
 
 Privileges granted to ClickHouse user accounts.

@@ -93,13 +93,19 @@
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
-#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
+
+#if defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 14
+#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
+#else
+#    define DISABLE_SANITIZER_INSTRUMENTATION
+#endif
+
 
 #if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
@@ -117,11 +123,15 @@
 ///     - tries to print failed assertion into server log
 /// It can be used for all assertions except heavy ones.
 /// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
+/// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
+/// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
         #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
+        #define UNREACHABLE() abort()
     #else
         #define chassert(x) ((void)0)
+        #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
 
@@ -136,9 +146,11 @@
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
-/// Consider adding a comment before using these macros.
-#   define TSA_SUPPRESS_WARNING_FOR_READ(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
-#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
+/// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
+/// suppressing them in the whole function
+/// Consider adding a comment when using these macros.
+#   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
+#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }())
 
 /// This macro is useful when only one thread writes to a member
 /// and you want to read this member from the same thread without locking a mutex.
@@ -153,9 +165,9 @@
 #    define TSA_REQUIRES_SHARED(...)
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
 
-#    define TSA_SUPPRESS_WARNING_FOR_READ(x)
-#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x)
-#    define TSA_READ_ONE_THREAD(x)
+#    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
+#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)
+#    define TSA_READ_ONE_THREAD(x) TSA_SUPPRESS_WARNING_FOR_READ(x)
 #endif
 
 /// A template function for suppressing warnings about unused variables or function results.

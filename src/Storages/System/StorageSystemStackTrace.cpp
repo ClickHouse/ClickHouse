@@ -90,10 +90,10 @@ namespace
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace = StackTrace(signal_context);
 
-        StringRef query_id = CurrentThread::getQueryId();
-        query_id_size = std::min(query_id.size, max_query_id_size);
-        if (query_id.data && query_id.size)
-            memcpy(query_id_data, query_id.data, query_id_size);
+        std::string_view query_id = CurrentThread::getQueryId();
+        query_id_size = std::min(query_id.size(), max_query_id_size);
+        if (!query_id.empty())
+            memcpy(query_id_data, query_id.data(), query_id_size);
 
         /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
         data_ready_num.store(notification_num, std::memory_order_release);
@@ -206,10 +206,12 @@ namespace
             filtered_thread_names.emplace(thread_name);
         }
 
-        for (const auto & [tid, name] : tid_to_name)
+        for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
         {
-            if (!filtered_thread_names.contains(name))
-                tid_to_name.erase(tid);
+            if (!filtered_thread_names.contains(it->second))
+                it = tid_to_name.erase(it);
+            else
+                ++it;
         }
 
         return tid_to_name;
@@ -256,7 +258,7 @@ Pipe StorageSystemStackTrace::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -302,8 +304,13 @@ Pipe StorageSystemStackTrace::read(
         size_t res_index = 0;
 
         String thread_name;
-        if (auto it = thread_names.find(tid); it != thread_names.end())
-            thread_name = it->second;
+        if (read_thread_names)
+        {
+            if (auto it = thread_names.find(tid); it != thread_names.end())
+                thread_name = it->second;
+            else
+                continue; /// was filtered out by "thread_name" condition
+        }
 
         if (!send_signal)
         {
@@ -317,7 +324,7 @@ Pipe StorageSystemStackTrace::read(
             sigval sig_value{};
 
             sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
-            if (0 != ::sigqueue(tid, sig, sig_value))
+            if (0 != ::sigqueue(static_cast<int>(tid), sig, sig_value))
             {
                 /// The thread may has been already finished.
                 if (ESRCH == errno)

@@ -426,7 +426,7 @@ public:
             return 0;
 
         if (isSmall())
-            return small.find(x) != small.end();
+            return small.find(static_cast<T>(x)) != small.end();
         else
             return rb->contains(static_cast<Value>(x));
     }

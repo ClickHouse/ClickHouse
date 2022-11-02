@@ -419,7 +419,7 @@ public:
 };
 
 
-void registerFunctionBitSlice(FunctionFactory & factory)
+REGISTER_FUNCTION(BitSlice)
 {
     factory.registerFunction<FunctionBitSlice>();
 }

@@ -19,6 +19,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionMongoDB(factory);
 
     registerTableFunctionMeiliSearch(factory);
 
@@ -41,6 +42,7 @@ void registerTableFunctions()
     registerTableFunctionJDBC(factory);
 
     registerTableFunctionView(factory);
+    registerTableFunctionViewIfPermitted(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
@@ -57,6 +59,7 @@ void registerTableFunctions()
     registerTableFunctionDictionary(factory);
 
     registerTableFunctionFormat(factory);
+    registerTableFunctionExplain(factory);
 }
 
 }

@@ -18,11 +18,11 @@ public:
     RestoreCoordinationLocal();
     ~RestoreCoordinationLocal() override;
 
-    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
-    void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    void setErrorStatus(const String & current_host, const Exception & exception) override;
-    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
-    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    void setStage(const String & current_host, const String & new_stage, const String & message) override;
+    void setError(const String & current_host, const Exception & exception) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;

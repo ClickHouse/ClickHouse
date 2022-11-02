@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/conditional-functions
 sidebar_position: 43
 sidebar_label: "Условные функции"
 ---

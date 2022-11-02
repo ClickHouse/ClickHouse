@@ -18,7 +18,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace fs = std::filesystem;
 
@@ -152,12 +152,12 @@ Exception::FramePointers Exception::getStackFramePointers() const
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno);
 }
 
 void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno, path);
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
@@ -176,10 +176,10 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
-    /// And in this case the exception will not be logged, so let's block the
+    /// In this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -189,8 +189,8 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.

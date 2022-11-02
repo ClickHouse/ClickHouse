@@ -38,7 +38,7 @@ private:
     void syncAfterError() override;
 };
 
-class JSONCompactEachRowFormatReader final : public FormatWithNamesAndTypesReader
+class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
 {
 public:
     JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_);
@@ -79,6 +79,8 @@ public:
 
 private:
     DataTypes readRowAndGetDataTypes() override;
+
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
 
     JSONCompactEachRowFormatReader reader;
     bool first_row = true;

@@ -72,6 +72,8 @@ protected:
 
     /// Set quotas to query pipeline.
     void setQuota(QueryPipeline & pipeline) const;
+    /// Add filter from additional_post_filter setting.
+    void addAdditionalPostFilter(QueryPlan & plan) const;
 
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };

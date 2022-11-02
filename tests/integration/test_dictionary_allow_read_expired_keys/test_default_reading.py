@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
 
-cluster = ClickHouseCluster(__file__, name="reading")
+cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance("dictionary_node", stay_alive=True)
 main_node = cluster.add_instance(

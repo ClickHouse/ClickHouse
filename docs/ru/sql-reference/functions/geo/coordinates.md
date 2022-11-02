@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/geo/coordinates
 sidebar_label: "Функции для работы с географическими координатами"
 sidebar_position: 62
 ---

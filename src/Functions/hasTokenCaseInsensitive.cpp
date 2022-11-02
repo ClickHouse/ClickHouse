@@ -19,7 +19,7 @@ using FunctionHasTokenCaseInsensitive
 
 }
 
-void registerFunctionHasTokenCaseInsensitive(FunctionFactory & factory)
+REGISTER_FUNCTION(HasTokenCaseInsensitive)
 {
     factory.registerFunction<FunctionHasTokenCaseInsensitive>();
 }

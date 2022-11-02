@@ -18,11 +18,11 @@ class IBackupCoordination
 public:
     virtual ~IBackupCoordination() = default;
 
-    /// Sets the current status and waits for other hosts to come to this status too.
-    virtual void setStatus(const String & current_host, const String & new_status, const String & message) = 0;
-    virtual void setErrorStatus(const String & current_host, const Exception & exception) = 0;
-    virtual Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) = 0;
-    virtual Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) = 0;
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
+    virtual void setError(const String & current_host, const Exception & exception) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -115,9 +115,6 @@ public:
 
     /// Returns the list of all the archive suffixes which were generated.
     virtual Strings getAllArchiveSuffixes() const = 0;
-
-    /// Removes remotely stored information.
-    virtual void drop() {}
 };
 
 }

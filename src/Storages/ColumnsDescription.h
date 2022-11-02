@@ -60,10 +60,17 @@ struct GetColumnsOptions
         return *this;
     }
 
+    GetColumnsOptions & withSystemColumns(bool value = true)
+    {
+        with_system_columns = value;
+        return *this;
+    }
+
     Kind kind;
     bool with_subcolumns = false;
     bool with_virtuals = false;
     bool with_extended_objects = false;
+    bool with_system_columns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).

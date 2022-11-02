@@ -14,7 +14,7 @@ public:
     using Base::create;
 };
 
-void registerFunctionArrayEnumerateUniqRanked(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayEnumerateUniqRanked)
 {
     factory.registerFunction<FunctionArrayEnumerateUniqRanked>();
 }

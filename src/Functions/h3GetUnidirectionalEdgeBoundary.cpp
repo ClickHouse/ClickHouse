@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -101,7 +101,7 @@ public:
 
 }
 
-void registerFunctionH3GetUnidirectionalEdgeBoundary(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetUnidirectionalEdgeBoundary)
 {
     factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>();
 }

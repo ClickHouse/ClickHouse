@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/HeaderCollection.h>
 
 
 namespace DB
@@ -19,6 +20,7 @@ struct ExternalDataSourceConfiguration
     UInt16 port = 0;
     String username = "default";
     String password;
+    String quota_key;
     String database;
     String table;
     String schema;
@@ -107,7 +109,7 @@ struct URLBasedDataSourceConfiguration
     String user;
     String password;
 
-    std::vector<std::pair<String, Field>> headers;
+    HeaderCollection headers;
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
@@ -115,7 +117,7 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    S3Settings::AuthSettings auth_settings;
+    S3::AuthSettings auth_settings;
     S3Settings::ReadWriteSettings rw_settings;
 };
 

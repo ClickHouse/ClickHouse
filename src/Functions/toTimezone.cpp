@@ -67,7 +67,7 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
     {
         const bool b = is_constant_timezone;
-        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b };
+        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b, .is_strict = b };
     }
 
 private:
@@ -123,7 +123,7 @@ public:
 
 }
 
-void registerFunctionToTimeZone(FunctionFactory & factory)
+REGISTER_FUNCTION(ToTimeZone)
 {
     factory.registerFunction<ToTimeZoneOverloadResolver>();
     factory.registerAlias("toTimeZone", "toTimezone");

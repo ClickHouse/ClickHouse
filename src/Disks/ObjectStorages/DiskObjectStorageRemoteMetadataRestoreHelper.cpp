@@ -390,7 +390,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
     };
 
     RelativePathsWithSize children;
-    source_object_storage->listPrefix(restore_information.source_path, children);
+    source_object_storage->findAllFiles(restore_information.source_path, children);
 
     restore_files(children);
 
@@ -430,6 +430,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
 
         disk->createDirectories(directoryPath(path));
         auto relative_key = shrinkKey(source_path, key);
+        auto full_path = fs::path(disk->object_storage_root_path) / relative_key;
 
         StoredObject object_from{key};
         StoredObject object_to{fs::path(disk->object_storage_root_path) / relative_key};
@@ -539,7 +540,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
     };
 
     RelativePathsWithSize children;
-    source_object_storage->listPrefix(restore_information.source_path + "operations/", children);
+    source_object_storage->findAllFiles(restore_information.source_path + "operations/", children);
     restore_file_operations(children);
 
     if (restore_information.detached)

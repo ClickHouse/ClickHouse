@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/query_views_log
+---
 # system.query_views_log {#system_tables-query_views_log}
 
 Содержит информацию о зависимых представлениях, выполняемых при выполнении запроса, например, тип представления или время выполнения.

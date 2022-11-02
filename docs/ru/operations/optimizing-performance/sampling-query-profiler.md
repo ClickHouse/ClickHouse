@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/optimizing-performance/sampling-query-profiler
 sidebar_position: 54
 sidebar_label: Query Profiling
 ---
