@@ -1827,7 +1827,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// Therefore, we use all data parts.
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    DataPartsVector parts_to_remove;
+    PartsToRemoveFromZooKeeper parts_to_remove;
     {
         auto data_parts_lock = lockParts();
         parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock);
@@ -1849,8 +1849,11 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         /// If DETACH clone parts to detached/ directory
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("", metadata_snapshot);
+            if (auto part_to_detach = part.getPartIfItWasActive())
+            {
+                LOG_INFO(log, "Detaching {}", part_to_detach->getDataPartStorage().getPartDirectory());
+                part_to_detach->makeCloneInDetached("", metadata_snapshot);
+            }
         }
     }
 
@@ -1941,7 +1944,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     PartDescriptions all_parts;
     PartDescriptions parts_to_add;
-    DataPartsVector parts_to_remove;
+    PartsToRemoveFromZooKeeper parts_to_remove;
 
     auto table_lock_holder_dst_table = lockForShare(
             RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -1972,7 +1975,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             String parts_to_remove_str;
             for (const auto & part : parts_to_remove)
             {
-                parts_to_remove_str += part->name;
+                parts_to_remove_str += part.getPartName();
                 parts_to_remove_str += " ";
             }
             LOG_TRACE(log, "Replacing {} parts {}with empty set", parts_to_remove.size(), parts_to_remove_str);
@@ -2248,7 +2251,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 String parts_to_remove_str;
                 for (const auto & part : parts_to_remove)
                 {
-                    parts_to_remove_str += part->name;
+                    parts_to_remove_str += part.getPartName();
                     parts_to_remove_str += " ";
                 }
                 LOG_TRACE(log, "Replacing {} parts {}with {} parts {}", parts_to_remove.size(), parts_to_remove_str,
@@ -6239,11 +6242,11 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 }
 
 
-void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries)
+void StorageReplicatedMergeTree::removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries)
 {
     Strings part_names_to_remove;
     for (const auto & part : parts)
-        part_names_to_remove.emplace_back(part->name);
+        part_names_to_remove.emplace_back(part.getPartName());
 
     return removePartsFromZooKeeperWithRetries(part_names_to_remove, max_retries);
 }
@@ -6570,7 +6573,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
             clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
 
-        DataPartsVector parts_to_remove;
+        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
@@ -6806,7 +6809,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
 
-        DataPartsVector parts_to_remove;
+        PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
 
         try
