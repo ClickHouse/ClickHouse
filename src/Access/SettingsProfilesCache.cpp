@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_PROFILE;
-    extern const int LOGICAL_ERROR;
 }
 
 SettingsProfilesCache::SettingsProfilesCache(const AccessControl & access_control_)
