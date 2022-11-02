@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -34,17 +35,26 @@ namespace
 
 #ifndef NDEBUG
 
-// This visitor checks if Query Tree structure is valid after each pass
-// in debug build.
+/** This visitor checks if Query Tree structure is valid after each pass
+  * in debug build.
+  */
 class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 {
+    String pass_name;
 public:
+    explicit ValidationChecker(String pass_name_)
+        : pass_name(std::move(pass_name_))
+    {}
+
     void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * column = node->as<ColumnNode>();
         if (!column)
             return;
-        column->getColumnSource();
+        if (column->getColumnSourceOrNull() == nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} {} query tree node does not have valid source node after running {} pass",
+                column->getColumnName(), column->getColumnType(), pass_name);
     }
 };
 #endif
@@ -88,7 +98,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     {
         passes[i]->run(query_tree_node, current_context);
 #ifndef NDEBUG
-        ValidationChecker().visit(query_tree_node);
+        ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
     }
 }
@@ -104,7 +114,12 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pa
 
     auto current_context = getContext();
     for (size_t i = 0; i < up_to_pass_index; ++i)
+    {
         passes[i]->run(query_tree_node, current_context);
+#ifndef NDEBUG
+        ValidationChecker(passes[i]->getName()).visit(query_tree_node);
+#endif
+    }
 }
 
 void QueryTreePassManager::dump(WriteBuffer & buffer)
