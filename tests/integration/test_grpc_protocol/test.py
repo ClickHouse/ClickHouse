@@ -368,23 +368,24 @@ progress {
   read_bytes: 16
   total_rows_to_read: 8
 }
-, output: "0\\t0\\n1\\t0\\n"
+, output: "0\\t0\\n1\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "2\\t0\\n3\\t0\\n"
+, output: "\\n2\\t0\\n3\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "4\\t0\\n5\\t0\\n"
+, output: "\\n4\\t0\\n5\\t0"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "6\\t0\\n7\\t0\\n"
-, stats {
+, output: "\\n6\\t0\\n7\\t0"
+, output: "\\n"
+stats {
   rows: 8
   blocks: 4
   allocated_bytes: 324
