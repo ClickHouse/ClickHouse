@@ -31,7 +31,7 @@ The dictionary structure consists of attributes. Dictionary attributes are speci
 
 Depending on dictionary [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
 
-### SOURCE
+## SOURCE
 
 The source for a dictionary can be a:
 - table in the current ClickHouse service
@@ -39,11 +39,7 @@ The source for a dictionary can be a:
 - file available by HTTP(S)
 - another database
 
-
-You can add a comment to the dictionary when you creating it using `COMMENT` clause.
-
-#### Create a dictionary from a table in the current ClickHouse service
-
+### Create a dictionary from a table in the current ClickHouse service
 
 Input table `source_table`:
 
@@ -74,20 +70,29 @@ Output the dictionary:
 SHOW CREATE DICTIONARY id_value_dictionary;
 ```
 
-```text
-┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE DICTIONARY default.id_value_dictionary
+```response
+CREATE DICTIONARY default.id_value_dictionary
 (
     `id` UInt64,
     `value` String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
+SOURCE(CLICKHOUSE(TABLE 'source_table'))
 LIFETIME(MIN 0 MAX 1000)
-LAYOUT(FLAT()) |
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+LAYOUT(FLAT())
 ```
-#### Create a dictionary from a table in a remote ClickHouse service                                                                                                                                  
+
+### Create a dictionary from a table in a remote ClickHouse service
+
+Input table (in the remote ClickHouse service) `source_table`:
+
+``` text
+┌─id─┬─value──┐
+│  1 │ First  │
+│  2 │ Second │
+└────┴────────┘
+```
+
 Creating the dictionary:
 
 ``` sql
@@ -97,11 +102,13 @@ CREATE DICTIONARY id_value_dictionary
     value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'HOSTNAME' PORT '8443' TABLE 'source_table'))
+SOURCE(CLICKHOUSE(HOST 'HOSTNAME' PORT 9000 USER 'default' PASSWORD 'PASSWORD' TABLE 'source_table' DB 'default'))
 LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000)
 ```
-#### Create a dictionary from a file available by HTTP(S)                                                                                                                                             
+
+### Create a dictionary from a file available by HTTP(S)
+
 ```sql
 statement: CREATE DICTIONARY default.taxi_zone_dictionary
 (
@@ -116,21 +123,9 @@ LIFETIME(MIN 0 MAX 0)
 LAYOUT(HASHED())
 ```
 
-#### Create a dictionary from another database
+### Create a dictionary from another database
 
-
-
-Output the comment to dictionary:
-
-``` sql
-SELECT comment FROM system.dictionaries WHERE name == 'dictionary_with_comment' AND database == currentDatabase();
-```
-
-```text
-┌─comment──────────────────┐
-│ The temporary dictionary │
-└──────────────────────────┘
-```
+Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md/#dbms).
 
 **See Also**
 

@@ -6,6 +6,11 @@ sidebar_label: Dictionary Sources
 
 # Dictionary Sources
 
+:::tip
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
+:::
+
 A dictionary can be connected to ClickHouse from many different sources.
 
 If the dictionary is configured using an xml-file, the configuration looks like this:
@@ -65,13 +70,13 @@ Types of sources (`source_type`):
 -   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
-    -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
-    -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-    -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-    -   [Redis](#dicts-external_dicts_dict_sources-redis)
-    -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
+    -   [ODBC](#odbc)
+    -   [MySQL](#mysql)
+    -   [ClickHouse](#clickhouse)
+    -   [MongoDB](#mongodb)
+    -   [Redis](#redis)
+    -   [Cassandra](#cassandra)
+    -   [PostgreSQL](#postgresql)
 
 ## Local File
 
