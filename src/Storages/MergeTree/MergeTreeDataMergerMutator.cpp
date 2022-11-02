@@ -364,7 +364,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 auto best_partition_it = std::max_element(
                     partitions_info.begin(),
                     partitions_info.end(),
-                    [](const auto & e1, const auto & e2) { return e1.second.min_age > e2.second.min_age; });
+                    [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
 
                 assert(best_partition_it != partitions_info.end());
 
