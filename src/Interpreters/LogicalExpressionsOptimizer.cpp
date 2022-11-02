@@ -231,7 +231,9 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
     const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
 
-    /// We eliminate too short chains.
+    /// For LowCardinality column, the dict is usually smaller and the index is relatively large.
+    /// In most cases, merging OR-chain as IN is better than converting each LowCardinality into full column individually.
+    /// For non-LowCardinality, we need to eliminate too short chains.
     if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length &&
             !isLowCardinalityEqualityChain(equality_functions))
         return false;
