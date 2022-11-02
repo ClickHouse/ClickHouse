@@ -189,7 +189,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     if (has_search_limit)
-        params.search_limit = config.getUInt64(ldap_server_config + ".search_limit");
+        params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
