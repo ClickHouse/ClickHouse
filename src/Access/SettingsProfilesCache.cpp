@@ -144,26 +144,6 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     info->profiles = enabled.params.settings_from_user.toProfileIDs();
     substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
 
-// TODO (vnemkov): check if it fails on CI/CD to localize the previous bug names_of_profiles/profiles mismatch. Failed to reporoduce locally, remove before merging.
-//
-#if !defined(NDEBUG)
-    for (const auto & profile_id : info->profiles)
-    {
-        if (!info->names_of_profiles.contains(profile_id))
-        {
-            const auto p = all_profiles.find(profile_id);
-            const auto profile_name = p != all_profiles.end() ? p->second->getName() : "<! Profile with no name !>";
-
-            throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Profile {} ({}) missing from SettingsProfilesInfo::names_of_profiles",
-                    toString(profile_id),
-                    profile_name);
-        }
-    }
-
-#endif
-
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
 
