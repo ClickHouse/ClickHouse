@@ -6,6 +6,11 @@ sidebar_label: Configuring a Dictionary
 
 # Configuring a Dictionary
 
+:::tip
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
+:::
+
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 
 ``` xml

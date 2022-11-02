@@ -12,6 +12,11 @@ Dictionary updates (other than loading for first use) do not block queries. Duri
 
 Example of settings:
 
+:::tip
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
+:::
+
 ``` xml
 <dictionary>
     ...

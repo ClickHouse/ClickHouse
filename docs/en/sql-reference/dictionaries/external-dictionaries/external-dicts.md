@@ -6,6 +6,11 @@ sidebar_label: General Description
 
 # Dictionaries 
 
+:::tip
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
+:::
+
 You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a DDL query, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 
 ClickHouse:
