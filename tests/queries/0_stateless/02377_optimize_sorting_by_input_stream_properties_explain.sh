@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set max_threads=1"
+DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set query_plan_read_in_order=0;set max_threads=1"
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set max_threads=1"
 MAKE_OUTPUT_STABLE="set optimize_read_in_order=1"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
