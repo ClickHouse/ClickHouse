@@ -209,9 +209,7 @@ select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
   Prefix sort description: toStartOfDay(x) ASC
   Result sort description: toStartOfDay(x) ASC, intDiv(intDiv(y, -2), -3) ASC
-select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
-2020-02-03 00:00:00	1	1
-2020-02-03 00:00:00	1	1
+-- select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3) settings optimize_move_to_prewhere=0) where explain like '%sort description%';
   Prefix sort description: intDiv(intDiv(y, -2), -3) ASC
   Result sort description: intDiv(intDiv(y, -2), -3) ASC
