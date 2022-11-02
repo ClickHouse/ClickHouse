@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
@@ -33,7 +33,7 @@ private:
 
     Chunk generate() override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx);
+    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx);
 
     String query_str;
     UInt64 max_block_size;

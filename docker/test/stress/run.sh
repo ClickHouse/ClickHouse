@@ -13,25 +13,28 @@ sysctl kernel.core_pattern='core.%e.%p-%P'
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
+# Temporarily disable ThreadFuzzer with tsan because of https://github.com/google/sanitizers/issues/1540
+is_tsan_build=$(clickhouse local -q "select value like '% -fsanitize=thread %' from system.build_options where name='CXX_FLAGS'")
+if [ "$is_tsan_build" -eq "0" ]; then
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+    export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US=100000
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+fi
 
 
 function install_packages()
@@ -44,7 +47,6 @@ function install_packages()
 
 function configure()
 {
-    export ZOOKEEPER_FAULT_INJECTION=1
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
@@ -200,6 +202,7 @@ quit
 
 install_packages package_folder
 
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
@@ -240,6 +243,7 @@ stop
 
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
 # But we still need default disk because some tables loaded only into it
@@ -266,10 +270,6 @@ start
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
-
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
-echo $previous_release_tag
 
 stop
 
@@ -328,6 +328,10 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
+echo $previous_release_tag
+
 echo "Clone previous release repository"
 git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
@@ -372,6 +376,8 @@ else
     install_packages previous_release_package_folder
 
     # Start server from previous release
+    # Previous version may not be ready for fault injections
+    export ZOOKEEPER_FAULT_INJECTION=0
     configure
 
     # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
@@ -386,12 +392,23 @@ else
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
 
-    # Install new package before running stress test because we should use new clickhouse-client and new clickhouse-test
-    # But we should leave old binary in /usr/bin/ for gdb (so it will print sane stacktarces)
+    # Install new package before running stress test because we should use new
+    # clickhouse-client and new clickhouse-test.
+    #
+    # But we should leave old binary in /usr/bin/ and debug symbols in
+    # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
+    # will print sane stacktraces and also to avoid possible crashes.
+    #
+    # FIXME: those files can be extracted directly from debian package, but
+    # actually better solution will be to use different PATH instead of playing
+    # games with files from packages.
     mv /usr/bin/clickhouse previous_release_package_folder/
+    mv /usr/lib/debug/usr/bin/clickhouse.debug previous_release_package_folder/
     install_packages package_folder
     mv /usr/bin/clickhouse package_folder/
+    mv /usr/lib/debug/usr/bin/clickhouse.debug package_folder/
     mv previous_release_package_folder/clickhouse /usr/bin/
+    mv previous_release_package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
 
     mkdir tmp_stress_output
 
@@ -407,6 +424,8 @@ else
 
     # Start new server
     mv package_folder/clickhouse /usr/bin/
+    mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
+    export ZOOKEEPER_FAULT_INJECTION=1
     configure
     start 500
     clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK'" >> /test_output/test_results.tsv \
@@ -461,6 +480,7 @@ else
                -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
                -e "The set of parts restored in place of" \
                -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
+               -e "Code: 269. DB::Exception: Destination table is myself" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv

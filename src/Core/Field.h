@@ -604,7 +604,7 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     String dump() const;

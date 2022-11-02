@@ -279,7 +279,7 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
     UInt x_uint = bit_cast<UInt>(x);
-    x_uint = feistelNetwork(x_uint, mantissa_num_bits, seed);
+    x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
     return bit_cast<Float>(x_uint);
 }
 
@@ -511,13 +511,13 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             UInt32 src_datetime = src_data[i];
-            UInt32 src_date = date_lut.toDate(src_datetime);
+            UInt32 src_date = static_cast<UInt32>(date_lut.toDate(src_datetime));
 
             Int32 src_diff = src_datetime - src_prev_value;
-            Int32 res_diff = transformSigned(src_diff, seed);
+            Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
 
             UInt32 new_datetime = res_prev_value + res_diff;
-            UInt32 new_time = new_datetime - date_lut.toDate(new_datetime);
+            UInt32 new_time = new_datetime - static_cast<UInt32>(date_lut.toDate(new_datetime));
             res_data[i] = src_date + new_time;
 
             src_prev_value = src_datetime;
