@@ -513,7 +513,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };
@@ -585,7 +585,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     keys_object,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -595,7 +595,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else

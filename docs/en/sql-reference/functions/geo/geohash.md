@@ -1,8 +1,8 @@
 ---
+slug: /en/sql-reference/functions/geo/geohash
 sidebar_label: Geohash
+title: "Functions for Working with Geohash"
 ---
-
-# Functions for Working with Geohash
 
 [Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth’s surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer is the geohash string, the more precise is the geographic location.
 

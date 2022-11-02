@@ -25,15 +25,30 @@ PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType mer
 {
     switch (merge_type)
     {
-    case MergeType::Regular:
-        return REGULAR_MERGE;
-    case MergeType::TTLDelete:
-        return TTL_DELETE_MERGE;
-    case MergeType::TTLRecompress:
-        return TTL_RECOMPRESS_MERGE;
+        case MergeType::Regular:
+            return REGULAR_MERGE;
+        case MergeType::TTLDelete:
+            return TTL_DELETE_MERGE;
+        case MergeType::TTLRecompress:
+            return TTL_RECOMPRESS_MERGE;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
+}
+
+PartLogElement::PartMergeAlgorithm PartLogElement::getMergeAlgorithm(MergeAlgorithm merge_algorithm_)
+{
+    switch (merge_algorithm_)
+    {
+        case MergeAlgorithm::Undecided:
+            return UNDECIDED;
+        case MergeAlgorithm::Horizontal:
+            return HORIZONTAL;
+        case MergeAlgorithm::Vertical:
+            return VERTICAL;
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeAlgorithm {}", static_cast<UInt64>(merge_algorithm_));
 }
 
 NamesAndTypesList PartLogElement::getNamesAndTypes()
@@ -60,12 +75,22 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         }
     );
 
+    auto merge_algorithm_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Undecided",  static_cast<Int8>(UNDECIDED)},
+            {"Horizontal", static_cast<Int8>(HORIZONTAL)},
+            {"Vertical",   static_cast<Int8>(VERTICAL)},
+        }
+    );
+
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return {
         {"query_id", std::make_shared<DataTypeString>()},
         {"event_type", std::move(event_type_datatype)},
         {"merge_reason", std::move(merge_reason_datatype)},
+        {"merge_algorithm", std::move(merge_algorithm_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
 
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -104,6 +129,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(merge_reason);
+    columns[i++]->insert(merge_algorithm);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
@@ -143,16 +169,6 @@ bool PartLog::addNewPart(
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
 
 bool PartLog::addNewParts(
     ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
@@ -175,24 +191,24 @@ bool PartLog::addNewParts(
         {
             PartLogElement elem;
 
-            if (query_id.data && query_id.size)
-                elem.query_id.insert(0, query_id.data, query_id.size);
+            if (!query_id.empty())
+                elem.query_id.insert(0, query_id.data(), query_id.size());
 
             elem.event_type = PartLogElement::NEW_PART; //-V1048
 
             // construct event_time and event_time_microseconds using the same time point
             // so that the two times will always be equal up to a precision of a second.
             const auto time_now = std::chrono::system_clock::now();
-            elem.event_time = time_in_seconds(time_now);
-            elem.event_time_microseconds = time_in_microseconds(time_now);
+            elem.event_time = timeInSeconds(time_now);
+            elem.event_time_microseconds = timeInMicroseconds(time_now);
             elem.duration_ms = elapsed_ns / 1000000;
 
             elem.database_name = table_id.database_name;
             elem.table_name = table_id.table_name;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
-            elem.disk_name = part->data_part_storage->getDiskName();
-            elem.path_on_disk = part->data_part_storage->getFullPath();
+            elem.disk_name = part->getDataPartStorage().getDiskName();
+            elem.path_on_disk = part->getDataPartStorage().getFullPath();
             elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();

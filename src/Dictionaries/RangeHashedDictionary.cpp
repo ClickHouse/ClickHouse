@@ -151,7 +151,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -161,7 +161,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, const StringRef value, bool)
+                    [&](size_t, StringRef value, bool)
                     {
                         out->insertData(value.data, value.size);
                     },
@@ -255,7 +255,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -264,7 +264,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, const StringRef value, bool)
+                    [&](size_t, StringRef value, bool)
                     {
                         out->insertData(value.data, value.size);
                     });
@@ -880,7 +880,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         }
         else
         {
-            value_to_insert = value.get<ValueType>();
+            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
         }
 
         container.back() = value_to_insert;

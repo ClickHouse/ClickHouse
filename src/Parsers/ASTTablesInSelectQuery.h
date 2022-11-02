@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <base/EnumReflection.h>
 
+#include <Core/Joins.h>
+
+#include <Parsers/IAST.h>
 
 namespace DB
 {
@@ -64,40 +66,9 @@ struct ASTTableExpression : public IAST
 /// How to JOIN another table.
 struct ASTTableJoin : public IAST
 {
-    /// Algorithm for distributed query processing.
-    enum class Locality
-    {
-        Unspecified,
-        Local,    /// Perform JOIN, using only data available on same servers (co-located data).
-        Global    /// Collect and merge data from remote servers, and broadcast it to each server.
-    };
-
-    /// Allows more optimal JOIN for typical cases.
-    enum class Strictness
-    {
-        Unspecified,
-        RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
-        Any,    /// Semi Join with any value from filtering table. For LEFT JOIN with Any and RightAny are the same.
-        All,    /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
-        Asof,   /// For the last JOIN column, pick the latest value
-        Semi,   /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
-        Anti,   /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
-    };
-
-    /// Join method.
-    enum class Kind
-    {
-        Inner, /// Leave only rows that was JOINed.
-        Left, /// If in "right" table there is no corresponding rows, use default values instead.
-        Right,
-        Full,
-        Cross, /// Direct product. Strictness and condition doesn't matter.
-        Comma /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
-    };
-
-    Locality locality = Locality::Unspecified;
-    Strictness strictness = Strictness::Unspecified;
-    Kind kind = Kind::Inner;
+    JoinLocality locality = JoinLocality::Unspecified;
+    JoinStrictness strictness = JoinStrictness::Unspecified;
+    JoinKind kind = JoinKind::Inner;
 
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;
@@ -112,16 +83,6 @@ struct ASTTableJoin : public IAST
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
-
-inline constexpr bool isLeft(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Left; }
-inline constexpr bool isRight(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Right; }
-inline constexpr bool isInner(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Inner; }
-inline constexpr bool isFull(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Full; }
-inline constexpr bool isCrossOrComma(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Comma || kind == ASTTableJoin::Kind::Cross; }
-inline constexpr bool isRightOrFull(ASTTableJoin::Kind kind)  { return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full; }
-inline constexpr bool isLeftOrFull(ASTTableJoin::Kind kind)   { return kind == ASTTableJoin::Kind::Left  || kind == ASTTableJoin::Kind::Full; }
-inline constexpr bool isInnerOrRight(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right; }
-inline constexpr bool isInnerOrLeft(ASTTableJoin::Kind kind)  { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Left; }
 
 /// Specification of ARRAY JOIN.
 struct ASTArrayJoin : public IAST

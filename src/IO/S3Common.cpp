@@ -1,8 +1,10 @@
-#include <Common/config.h>
+#include <IO/S3Common.h>
+
+#include <Common/Exception.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include "config.h"
 
 #if USE_AWS_S3
-
-#    include <IO/S3Common.h>
 
 #    include <Common/quoteString.h>
 
@@ -24,7 +26,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
+#    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -34,6 +36,32 @@
 #    include <Common/logger_useful.h>
 
 #    include <fstream>
+
+namespace ProfileEvents
+{
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
+}
+
+namespace DB
+{
+
+bool S3Exception::isRetryableError() const
+{
+    /// Looks like these list is quite conservative, add more codes if you wish
+    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        Aws::S3::S3Errors::ACCESS_DENIED,
+        Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
+        Aws::S3::S3Errors::INVALID_SIGNATURE,
+        Aws::S3::S3Errors::NO_SUCH_UPLOAD,
+        Aws::S3::S3Errors::NO_SUCH_BUCKET,
+    };
+
+    return !unretryable_errors.contains(code);
+}
+
+}
 
 namespace
 {
@@ -45,12 +73,14 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
+    /// We map levels to our own logger 1 to 1 except WARN+ levels. In most cases we failover such errors with retries
+    /// and don't want to see them as Errors in our logs.
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
-        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::error, Poco::Message::PRIO_FATAL}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
+        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
@@ -543,7 +573,7 @@ public:
             /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
             /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
 
@@ -580,7 +610,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -700,9 +730,10 @@ namespace S3
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging)
+        bool enable_s3_requests_logging,
+        bool for_disk_s3)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging, for_disk_s3);
     }
 
     URI::URI(const Poco::URI & uri_)
@@ -751,25 +782,16 @@ namespace S3
 
             boost::to_upper(name);
             if (name != S3 && name != COS && name != OBS && name != OSS)
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
-            }
+
             if (name == S3)
-            {
                 storage_name = name;
-            }
             else if (name == OBS)
-            {
                 storage_name = OBS;
-            }
             else if (name == OSS)
-            {
                 storage_name = OSS;
-            }
             else
-            {
                 storage_name = COSN;
-            }
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
@@ -790,8 +812,13 @@ namespace S3
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
+
+    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
     {
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
@@ -804,16 +831,95 @@ namespace S3
         if (outcome.IsSuccess())
         {
             auto read_result = outcome.GetResultWithOwnership();
-            return static_cast<size_t>(read_result.GetContentLength());
+            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
         }
         else if (throw_on_error)
         {
             throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         }
-        return 0;
+        return {};
     }
+
+    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    {
+        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
+    }
+
 }
 
 }
 
 #endif
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+
+namespace S3
+{
+
+AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
+    auto access_key_id = config.getString(config_elem + ".access_key_id", "");
+    auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
+    auto region = config.getString(config_elem + ".region", "");
+    auto server_side_encryption_customer_key_base64 = config.getString(config_elem + ".server_side_encryption_customer_key_base64", "");
+
+    std::optional<bool> use_environment_credentials;
+    if (config.has(config_elem + ".use_environment_credentials"))
+        use_environment_credentials = config.getBool(config_elem + ".use_environment_credentials");
+
+    std::optional<bool> use_insecure_imds_request;
+    if (config.has(config_elem + ".use_insecure_imds_request"))
+        use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
+
+    HeaderCollection headers;
+    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
+    config.keys(config_elem, subconfig_keys);
+    for (const std::string & subkey : subconfig_keys)
+    {
+        if (subkey.starts_with("header"))
+        {
+            auto header_str = config.getString(config_elem + "." + subkey);
+            auto delimiter = header_str.find(':');
+            if (delimiter == std::string::npos)
+                throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
+            headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
+        }
+    }
+
+    return AuthSettings
+    {
+        std::move(access_key_id), std::move(secret_access_key),
+        std::move(region),
+        std::move(server_side_encryption_customer_key_base64),
+        std::move(headers),
+        use_environment_credentials,
+        use_insecure_imds_request
+    };
+}
+
+
+void AuthSettings::updateFrom(const AuthSettings & from)
+{
+    /// Update with check for emptyness only parameters which
+    /// can be passed not only from config, but via ast.
+
+    if (!from.access_key_id.empty())
+        access_key_id = from.access_key_id;
+    if (!from.secret_access_key.empty())
+        secret_access_key = from.secret_access_key;
+
+    headers = from.headers;
+    region = from.region;
+    server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
+    use_environment_credentials = from.use_environment_credentials;
+    use_insecure_imds_request = from.use_insecure_imds_request;
+}
+
+}
+}

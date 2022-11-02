@@ -110,12 +110,12 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
         }
 
         /// Send queries.
-        if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
+        if  (io_submit(ctx.ctx, query_cbs.size(), query_cbs.data()) < 0)
             throwFromErrno("io_submit failed", ErrorCodes::CANNOT_IO_SUBMIT);
 
         /// Receive answers. If we have something else to send, then receive at least one answer (after that send them), otherwise wait all answers.
-        memset(&events[0], 0, buffers_count * sizeof(events[0]));
-        int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
+        memset(events.data(), 0, buffers_count * sizeof(events[0]));
+        int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, events.data(), nullptr);
         if (evs < 0)
             throwFromErrno("io_getevents failed", ErrorCodes::CANNOT_IO_GETEVENTS);
 

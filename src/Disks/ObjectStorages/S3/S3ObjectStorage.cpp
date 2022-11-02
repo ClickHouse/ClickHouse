@@ -1,6 +1,9 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
+
+#include <IO/S3Common.h>
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
@@ -24,10 +27,32 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
-#include <Common/IFileCache.h>
-#include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/MultiVersion.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event S3DeleteObjects;
+    extern const Event S3HeadObject;
+    extern const Event S3ListObjects;
+    extern const Event S3CopyObject;
+    extern const Event S3CreateMultipartUpload;
+    extern const Event S3UploadPartCopy;
+    extern const Event S3AbortMultipartUpload;
+    extern const Event S3CompleteMultipartUpload;
+
+    extern const Event DiskS3DeleteObjects;
+    extern const Event DiskS3HeadObject;
+    extern const Event DiskS3ListObjects;
+    extern const Event DiskS3CopyObject;
+    extern const Event DiskS3CreateMultipartUpload;
+    extern const Event DiskS3UploadPartCopy;
+    extern const Event DiskS3AbortMultipartUpload;
+    extern const Event DiskS3CompleteMultipartUpload;
+}
 
 namespace DB
 {
@@ -53,7 +78,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(fmt::format("{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType())), err.GetErrorType());
     }
 }
 
@@ -67,7 +92,7 @@ void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response,
     if (!response.IsSuccess() && (!if_exists || !isNotFoundError(response.GetError().GetErrorType())))
     {
         const auto & err = response.GetError();
-        throw Exception(ErrorCodes::S3_ERROR, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
@@ -88,12 +113,27 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
 
 std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new S3 object.
+    return fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size),
+        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 Aws::S3::Model::HeadObjectOutcome S3ObjectStorage::requestObjectHeadData(const std::string & bucket_from, const std::string & key) const
 {
     auto client_ptr = client.get();
+
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
     Aws::S3::Model::HeadObjectRequest request;
     request.SetBucket(bucket_from);
     request.SetKey(key);
@@ -114,23 +154,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return true;
 }
 
-String S3ObjectStorage::getCacheBasePath() const
-{
-    if (!cache)
-        return "";
-
-    return cache->getBasePath();
-}
-
-void S3ObjectStorage::removeCacheIfExists(const std::string & path_key)
-{
-    if (!cache || path_key.empty())
-        return;
-
-    IFileCache::Key key = cache->hash(path_key);
-    cache->removeIfExists(key);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
@@ -139,33 +162,40 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 {
     assert(!objects[0].getPathKeyForCache().empty());
 
-    ReadSettings disk_read_settings{read_settings};
-    if (cache)
-    {
-        if (IFileCache::isReadOnly())
-            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
-        disk_read_settings.remote_fs_cache = cache;
-    }
+    ReadSettings disk_read_settings = patchSettings(read_settings);
 
     auto settings_ptr = s3_settings.get();
 
-    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        client.get(),
-        bucket,
-        version_id,
+    auto read_buffer_creator =
+        [this, settings_ptr, disk_read_settings]
+        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromS3>(
+            client.get(),
+            bucket,
+            path,
+            version_id,
+            settings_ptr->s3_settings.max_single_read_retries,
+            disk_read_settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
+    };
+
+    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         objects,
-        settings_ptr->s3_settings.max_single_read_retries,
         disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = getThreadPoolReader();
+        auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl), disk_read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -183,9 +213,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         object.absolute_path,
         version_id,
         settings_ptr->s3_settings.max_single_read_retries,
-        read_settings);
+        patchSettings(read_settings));
 }
-
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
@@ -195,14 +224,16 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    WriteSettings disk_write_settings = IObjectStorage::patchSettings(write_settings);
+
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    bool cache_on_write = cache
-         && write_settings.enable_filesystem_cache_on_write_operations
-         && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
-
     auto settings_ptr = s3_settings.get();
+    ThreadPoolCallbackRunner<void> scheduler;
+    if (write_settings.s3_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
         bucket,
@@ -210,15 +241,14 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         settings_ptr->s3_settings,
         attributes,
         buf_size,
-        threadPoolCallbackRunner(getThreadPoolWriter()),
-        cache_on_write ? cache : nullptr);
-
+        std::move(scheduler),
+        disk_write_settings);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -231,6 +261,8 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
     {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
         outcome = client_ptr->ListObjectsV2(request);
         throwIfError(outcome);
 
@@ -247,16 +279,63 @@ void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize
     } while (outcome.GetResult().GetIsTruncated());
 }
 
+void S3ObjectStorage::getDirectoryContents(const std::string & path,
+    RelativePathsWithSize & files,
+    std::vector<std::string> & directories) const
+{
+    auto settings_ptr = s3_settings.get();
+    auto client_ptr = client.get();
+
+    Aws::S3::Model::ListObjectsV2Request request;
+    request.SetBucket(bucket);
+    request.SetPrefix(path);
+    request.SetMaxKeys(settings_ptr->list_object_keys_size);
+    request.SetDelimiter("/");
+
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+    do
+    {
+        ProfileEvents::increment(ProfileEvents::S3ListObjects);
+        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
+        outcome = client_ptr->ListObjectsV2(request);
+        throwIfError(outcome);
+
+        auto result = outcome.GetResult();
+        auto result_objects = result.GetContents();
+        auto result_common_prefixes = result.GetCommonPrefixes();
+
+        if (result_objects.empty() && result_common_prefixes.empty())
+            break;
+
+        for (const auto & object : result_objects)
+            files.emplace_back(object.GetKey(), object.GetSize());
+
+        for (const auto & common_prefix : result_common_prefixes)
+        {
+            std::string directory = common_prefix.GetPrefix();
+            /// Make it compatible with std::filesystem::path::filename()
+            trimRight(directory, '/');
+            directories.emplace_back(directory);
+        }
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+    } while (outcome.GetResult().GetIsTruncated());
+}
+
 void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto client_ptr = client.get();
 
+    ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+    ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
     Aws::S3::Model::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(object.absolute_path);
     auto outcome = client_ptr->DeleteObject(request);
 
     throwIfUnexpectedError(outcome, if_exists);
+
+    LOG_TRACE(log, "Object with path {} was removed from S3", object.absolute_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -294,12 +373,17 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(current_chunk);
+
+            ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+            ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
             Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
             auto outcome = client_ptr->DeleteObjects(request);
 
             throwIfUnexpectedError(outcome, if_exists);
+
+            LOG_TRACE(log, "Objects with paths [{}] were removed from S3", keys);
         }
     }
 }
@@ -365,6 +449,9 @@ void S3ObjectStorage::copyObjectImpl(
     std::optional<ObjectAttributes> metadata) const
 {
     auto client_ptr = client.get();
+
+    ProfileEvents::increment(ProfileEvents::S3CopyObject);
+    ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -384,6 +471,15 @@ void S3ObjectStorage::copyObjectImpl(
     }
 
     throwIfError(outcome);
+
+    auto settings_ptr = s3_settings.get();
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObjectMultipartImpl(
@@ -404,6 +500,8 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     String multipart_upload_id;
 
     {
+        ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
+        ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
         Aws::S3::Model::CreateMultipartUploadRequest request;
         request.SetBucket(dst_bucket);
         request.SetKey(dst_key);
@@ -422,17 +520,21 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     size_t upload_part_size = settings_ptr->s3_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
+        ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
+        ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
-        part_request.SetPartNumber(part_number);
+        part_request.SetPartNumber(static_cast<int>(part_number));
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = client_ptr->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
         {
+            ProfileEvents::increment(ProfileEvents::S3AbortMultipartUpload);
+            ProfileEvents::increment(ProfileEvents::DiskS3AbortMultipartUpload);
             Aws::S3::Model::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dst_bucket);
             abort_request.SetKey(dst_key);
@@ -447,6 +549,8 @@ void S3ObjectStorage::copyObjectMultipartImpl(
     }
 
     {
+        ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
+        ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
         Aws::S3::Model::CompleteMultipartUploadRequest req;
         req.SetBucket(dst_bucket);
         req.SetKey(dst_key);
@@ -456,7 +560,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         for (size_t i = 0; i < part_tags.size(); ++i)
         {
             Aws::S3::Model::CompletedPart part;
-            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
+            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(static_cast<int>(i) + 1));
         }
 
         req.SetMultipartUpload(multipart_upload);
@@ -465,6 +569,14 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
         throwIfError(outcome);
     }
+
+    if (settings_ptr->s3_settings.check_objects_after_upload)
+    {
+        auto object_head = requestObjectHeadData(dst_bucket, dst_key);
+        if (!object_head.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", dst_key, dst_bucket);
+    }
+
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
@@ -517,6 +629,7 @@ void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
 {
     s3_settings.set(getSettings(config, config_prefix, context));
     client.set(getClient(config, config_prefix, context));
+    applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
@@ -525,7 +638,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         getClient(config, config_prefix, context),
         getSettings(config, config_prefix, context),
-        version_id, s3_capabilities, new_namespace, nullptr);
+        version_id, s3_capabilities, new_namespace,
+        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }
 
 }

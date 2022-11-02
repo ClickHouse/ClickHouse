@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/select/having
 sidebar_label: HAVING
 ---
 

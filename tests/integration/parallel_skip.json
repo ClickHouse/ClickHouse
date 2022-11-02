@@ -46,5 +46,8 @@
   "test_storage_s3/test.py::test_url_reconnect_in_the_middle",
   "test_system_metrics/test.py::test_readonly_metrics",
   "test_system_replicated_fetches/test.py::test_system_replicated_fetches",
-  "test_zookeeper_config_load_balancing/test.py::test_round_robin"
+  "test_zookeeper_config_load_balancing/test.py::test_round_robin",
+
+  "test_user_ip_restrictions/test.py::test_ipv4",
+  "test_user_ip_restrictions/test.py::test_ipv6"
 ]

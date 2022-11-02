@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/alter/partition
 sidebar_position: 38
 sidebar_label: PARTITION
+title: "Manipulating Partitions and Parts"
 ---
-
-# Manipulating Partitions and Parts
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
@@ -39,7 +39,7 @@ ALTER TABLE mt DETACH PARTITION '2020-11-21';
 ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
-Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
@@ -53,7 +53,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
 
-Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 The query is replicated – it deletes data on all replicas.
 
@@ -71,7 +71,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partiti
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.
-Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 ## ATTACH PARTITION\|PART
 
@@ -86,7 +86,7 @@ ALTER TABLE visits ATTACH PARTITION 201901;
 ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ```
 
-Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
@@ -108,7 +108,8 @@ Note that data will be deleted neither from `table1` nor from `table2`.
 For the query to run successfully, the following conditions must be met:
 
 -   Both tables must have the same structure.
--   Both tables must have the same partition key.
+-   Both tables must have the same partition key, the same order by key and the same primary key.
+-   Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
 
 ## REPLACE PARTITION
 
@@ -121,7 +122,8 @@ This query copies the data partition from the `table1` to `table2` and replaces 
 For the query to run successfully, the following conditions must be met:
 
 -   Both tables must have the same structure.
--   Both tables must have the same partition key.
+-   Both tables must have the same partition key, the same order by key and the same primary key.
+-   Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
 
 ## MOVE PARTITION TO TABLE
 
@@ -134,9 +136,9 @@ This query moves the data partition from the `table_source` to `table_dest` with
 For the query to run successfully, the following conditions must be met:
 
 -   Both tables must have the same structure.
--   Both tables must have the same partition key.
+-   Both tables must have the same partition key, the same order by key and the same primary key.
+-   Both tables must have the same storage policy (a disk where the partition is stored should be available for both tables).
 -   Both tables must be the same engine family (replicated or non-replicated).
--   Both tables must have the same storage policy.
 
 ## CLEAR COLUMN IN PARTITION
 
@@ -164,7 +166,7 @@ This query creates a local backup of a specified partition. If the `PARTITION` c
 The entire backup process is performed without stopping the server.
 :::
 
-Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
@@ -192,7 +194,7 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
+For more information about backups and restoring data, see the [Data Backup](/docs/en/manage/backups.mdx) section.
 
 ## UNFREEZE PARTITION
 
@@ -317,7 +319,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
-All the rules above are also true for the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
+All the rules above are also true for the [OPTIMIZE](../../../sql-reference/statements/optimize.md) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;

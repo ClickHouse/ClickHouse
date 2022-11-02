@@ -75,7 +75,7 @@ namespace
     {
         for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
         {
-            const std::string_view & command = RowPolicyFilterTypeInfo::get(filter_type).command;
+            std::string_view command = RowPolicyFilterTypeInfo::get(filter_type).command;
             commands.emplace(command);
         }
     }
@@ -96,7 +96,7 @@ namespace
 
             for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
             {
-                const std::string_view & command = RowPolicyFilterTypeInfo::get(filter_type).command;
+                std::string_view command = RowPolicyFilterTypeInfo::get(filter_type).command;
                 if (ParserKeyword{command.data()}.ignore(pos, expected))
                 {
                     res_commands.emplace(command);

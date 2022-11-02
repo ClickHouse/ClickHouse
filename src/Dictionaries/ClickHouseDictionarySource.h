@@ -23,6 +23,7 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
+        const std::string quota_key;
         const std::string db;
         const std::string table;
         const std::string query;

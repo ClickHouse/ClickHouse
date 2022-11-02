@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_S2_GEOMETRY
 
@@ -135,7 +135,7 @@ public:
 
 }
 
-void registerFunctionS2RectAdd(FunctionFactory & factory)
+REGISTER_FUNCTION(S2RectAdd)
 {
     factory.registerFunction<FunctionS2RectAdd>();
 }

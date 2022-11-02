@@ -312,7 +312,7 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-String DiskRestartProxy::getCacheBasePath() const
+const String & DiskRestartProxy::getCacheBasePath() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getCacheBasePath();
@@ -329,6 +329,20 @@ void DiskRestartProxy::getRemotePathsRecursive(
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
+}
+
+DiskPtr DiskRestartProxy::getNestedDisk() const
+{
+    DiskPtr delegate_copy;
+
+    {
+        ReadLock lock (mutex);
+        delegate_copy = delegate;
+    }
+
+    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate_copy.get()))
+        return decorator->getNestedDisk();
+    return delegate_copy;
 }
 
 void DiskRestartProxy::restart(ContextPtr context)

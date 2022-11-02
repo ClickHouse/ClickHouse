@@ -212,9 +212,9 @@ protected:
         if constexpr (has_mapped)
             cached = &it->getMapped();
 
-        if (inserted)
+        if constexpr (has_mapped)
         {
-            if constexpr (has_mapped)
+            if (inserted)
             {
                 new (&it->getMapped()) Mapped();
             }

@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/string-search-functions
+---
 # 字符串搜索函数 {#zi-fu-chuan-sou-suo-han-shu}
 
 下列所有函数在默认的情况下区分大小写。对于不区分大小写的搜索，存在单独的变体。

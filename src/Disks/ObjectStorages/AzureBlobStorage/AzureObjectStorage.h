@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -9,8 +9,16 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/getRandomASCIIString.h>
+#include <Common/MultiVersion.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/storage/blobs.hpp>
+#endif
+
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -49,6 +57,8 @@ public:
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+
     std::string getName() const override { return "AzureObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
@@ -74,7 +84,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;
@@ -118,6 +128,10 @@ private:
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
+
+    Poco::Logger * log;
+
+    DataSourceDescription data_source_description;
 };
 
 }

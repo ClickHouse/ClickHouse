@@ -2,6 +2,8 @@
 
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Common/Throttler.h>
+#include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -24,13 +26,13 @@ ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
-
     String hdfs_uri;
     String hdfs_file_path;
 
     hdfsFile fin;
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
+    ReadSettings read_settings;
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
@@ -39,11 +41,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
-        : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
+        const ReadSettings & read_settings_,
+        size_t read_until_position_,
+        bool use_external_buffer_)
+        : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
+        , read_settings(read_settings_)
         , read_until_position(read_until_position_)
     {
         fs = createHDFSFS(builder.get());
@@ -86,7 +91,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             num_bytes_to_read = internal_buffer.size();
         }
 
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), num_bytes_to_read);
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         if (bytes_read < 0)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
@@ -97,6 +102,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_read);
             return true;
         }
 
@@ -127,10 +134,12 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
-        size_t read_until_position_)
+        size_t read_until_position_,
+        bool use_external_buffer_)
     : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
-               hdfs_uri_, hdfs_file_path_, config_, read_settings_.remote_fs_buffer_size, read_until_position_))
+               hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_))
+    , use_external_buffer(use_external_buffer_)
 {
 }
 
@@ -141,7 +150,18 @@ size_t ReadBufferFromHDFS::getFileSize()
 
 bool ReadBufferFromHDFS::nextImpl()
 {
-    impl->position() = impl->buffer().begin() + offset();
+    if (use_external_buffer)
+    {
+        impl->set(internal_buffer.begin(), internal_buffer.size());
+        assert(working_buffer.begin() != nullptr);
+        assert(!internal_buffer.empty());
+    }
+    else
+    {
+        impl->position() = impl->buffer().begin() + offset();
+        assert(!impl->hasPendingData());
+    }
+
     auto result = impl->next();
 
     if (result)

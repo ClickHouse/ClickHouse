@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/integration/json-import
 title: How to import JSON into ClickHouse?
 toc_hidden: true
 sidebar_position: 11

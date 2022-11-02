@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-tsan, no-asan, no-msan, no-debug
 
 SET max_threads=0;
 

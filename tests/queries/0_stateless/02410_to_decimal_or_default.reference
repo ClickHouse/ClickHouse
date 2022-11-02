@@ -1,0 +1,8 @@
+111	Decimal(9, 3)
+222	Decimal(18, 3)
+333	Decimal(38, 3)
+444	Decimal(76, 3)
+123.456	Decimal(9, 3)
+123.456	Decimal(18, 3)
+123.456	Decimal(38, 3)
+123.456	Decimal(76, 3)

@@ -254,7 +254,7 @@ bool LDAPClient::openConnection()
 #endif
 
     {
-        const int search_timeout = params.search_timeout.count();
+        const int search_timeout = static_cast<int>(params.search_timeout.count());
         diag(ldap_set_option(handle, LDAP_OPT_TIMELIMIT, &search_timeout));
     }
 
@@ -509,7 +509,6 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                 if (referrals)
                 {
                     SCOPE_EXIT({
-//                      ldap_value_free(referrals);
                         ber_memvfree(reinterpret_cast<void **>(referrals));
                         referrals = nullptr;
                     });
