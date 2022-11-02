@@ -58,6 +58,9 @@ public:
     /// Update tree hash
     void updateTreeHash(SipHash & hash_state) const;
 
+    /// Format for error message
+    String formatForErrorMessage() const;
+
 private:
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
