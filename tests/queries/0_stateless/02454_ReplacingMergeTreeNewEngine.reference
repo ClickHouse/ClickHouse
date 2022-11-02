@@ -44,13 +44,13 @@ d2	1	0
 d3	1	0
 d4	1	0
 d5	1	0
-== Test of the SETTINGS clean_deleted_rows as alaways ==
+== Test of the SETTINGS clean_deleted_rows as Alaways ==
 d1	5	0
 d2	1	0
 d3	1	0
 d4	3	0
 d5	1	0
-== Test of the SETTINGS clean_deleted_rows as never ==
+== Test of the SETTINGS clean_deleted_rows as Never ==
 d1	5	0
 d2	1	0
 d3	1	0

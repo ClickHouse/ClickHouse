@@ -892,7 +892,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             merged_transform = std::make_shared<ReplacingSortedTransform>(
                 header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
                 merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
-                (data_settings->clean_deleted_rows.toString() != "never") || global_ctx->cleanup);
+                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup);
             break;
 
         case MergeTreeData::MergingParams::Graphite:

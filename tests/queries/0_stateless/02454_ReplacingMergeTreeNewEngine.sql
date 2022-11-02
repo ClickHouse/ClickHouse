@@ -36,21 +36,21 @@ OPTIMIZE TABLE test FINAL CLEANUP;
 select * from test;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid) SETTINGS clean_deleted_rows='always';
+CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid) SETTINGS clean_deleted_rows='Always';
 
 SELECT '== Test of the SETTINGS clean_deleted_rows as alaways ==';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 OPTIMIZE TABLE test FINAL;
--- d6 has to be removed since we set clean_deleted_rows as 'always'
+-- d6 has to be removed since we set clean_deleted_rows as 'Always'
 select * from test;
 
-SELECT '== Test of the SETTINGS clean_deleted_rows as never ==';
-ALTER TABLE test MODIFY SETTING clean_deleted_rows='never';
+SELECT '== Test of the SETTINGS clean_deleted_rows as Never ==';
+ALTER TABLE test MODIFY SETTING clean_deleted_rows='Never';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 OPTIMIZE TABLE test FINAL;
--- d6 has NOT to be removed since we set clean_deleted_rows as 'never'
+-- d6 has NOT to be removed since we set clean_deleted_rows as 'Never'
 select * from test;
 
 SELECT '===Replicated case===';
@@ -61,12 +61,12 @@ DROP TABLE IF EXISTS testReplica2;
 CREATE TABLE testReplica1 (uid String, version UInt32, is_deleted UInt8)
     ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r1', version, is_deleted)
     ORDER BY uid
-    SETTINGS clean_deleted_rows='always';
+    SETTINGS clean_deleted_rows='Always';
 
 CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
     ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r2', version, is_deleted)
     ORDER BY uid
-    SETTINGS clean_deleted_rows='always';
+    SETTINGS clean_deleted_rows='Always';
 
 INSERT INTO testReplica1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
 SYSTEM SYNC REPLICA testReplica2;
