@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/dictionaries/internal-dicts
 sidebar_position: 39
-sidebar_label: Internal Dictionaries
+sidebar_label: Embedded Dictionaries
 ---
 
-# Internal Dictionaries
+# Embedded Dictionaries
 
 ClickHouse contains a built-in feature for working with a geobase.
 
