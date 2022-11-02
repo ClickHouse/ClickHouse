@@ -3,6 +3,7 @@
 #include <Disks/DiskFactory.h>
 
 #if USE_AZURE_BLOB_STORAGE
+#include <azure/core/diagnostics/logger.hpp>
 
 #include <Disks/DiskRestartProxy.h>
 
@@ -65,6 +66,26 @@ void checkRemoveAccess(IDisk & disk)
 
 void registerDiskAzureBlobStorage(DiskFactory & factory)
 {
+    Azure::Core::Diagnostics::Logger::SetLevel(Azure::Core::Diagnostics::Logger::Level::Verbose);
+    Azure::Core::Diagnostics::Logger::SetListener([](Azure::Core::Diagnostics::Logger::Level level, std::string const & message)
+    {
+        switch (level)
+        {
+            case Azure::Core::Diagnostics::Logger::Level::Verbose:
+                LOG_TRACE(&Poco::Logger::get("AzureObjectStorageSDK"), "{}", message);
+                break;
+            case Azure::Core::Diagnostics::Logger::Level::Informational:
+                LOG_INFO(&Poco::Logger::get("AzureObjectStorageSDK"), "{}", message);
+                break;
+            case Azure::Core::Diagnostics::Logger::Level::Warning:
+                LOG_WARNING(&Poco::Logger::get("AzureObjectStorageSDK"), "{}", message);
+                break;
+            case Azure::Core::Diagnostics::Logger::Level::Error:
+                LOG_ERROR(&Poco::Logger::get("AzureObjectStorageSDK"), "{}", message);
+                break;
+        }
+    });
+
     auto creator = [](
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
