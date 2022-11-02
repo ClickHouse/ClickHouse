@@ -20,7 +20,16 @@ namespace
 
 REGISTER_FUNCTION(FormatReadableDecimalSize)
 {
-    factory.registerFunction<FunctionFormatReadable<Impl>>();
+    factory.registerFunction<FunctionFormatReadable<Impl>>(
+    {
+        R"(
+Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
+)",
+        Documentation::Examples{
+            {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)"}},
+        Documentation::Categories{"OtherFunctions"}
+    },
+    FunctionFactory::CaseSensitive);
 }
 
 }
