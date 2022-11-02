@@ -5311,6 +5311,8 @@ StorageReplicatedMergeTree::allocateBlockNumber(
     if (!existsNodeCached(partition_path))
     {
         Coordination::Requests ops;
+        /// Check that table is not being dropped ("host" is the first node that is removed on replica drop)
+        ops.push_back(zkutil::makeCheckRequest(fs::path(replica_path) / "host", -1));
         ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
         /// We increment data version of the block_numbers node so that it becomes possible
         /// to check in a ZK transaction that the set of partitions didn't change
