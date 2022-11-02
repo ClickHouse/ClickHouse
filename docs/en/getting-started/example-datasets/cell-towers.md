@@ -4,6 +4,7 @@ sidebar_label: Cell Towers
 sidebar_position: 3
 title: "Cell Towers"
 ---
+import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_http.mdx';
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -15,11 +16,11 @@ import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 ## Goal
 
 In this guide you will learn how to:
-- load the OpenCelliD data in Clickhouse
-- connect Apache Superset to ClickHouse
-- build a dashboard based on data available in the dataset
-- how to choose data types for your table fields
-- how to choose a primary key
+- Load the OpenCelliD data in Clickhouse
+- Connect Apache Superset to ClickHouse
+- Build a dashboard based on data available in the dataset
+- Choose data types for your table fields
+- Choose a primary key
 
 Here is a preview of the dashboard created in this guide:
 
@@ -49,6 +50,26 @@ DESCRIBE TABLE cell_towers
 ```
 
 <SQLConsoleDetail />
+
+This is the output of `DESCRIBE`.  Down further in this guide the field type choices will be described.
+```response
+┌─name──────────┬─type──────────────────────────────────────────────────────────────────┬
+│ radio         │ Enum8('' = 0, 'CDMA' = 1, 'GSM' = 2, 'LTE' = 3, 'NR' = 4, 'UMTS' = 5) │
+│ mcc           │ UInt16                                                                │
+│ net           │ UInt16                                                                │
+│ area          │ UInt16                                                                │
+│ cell          │ UInt64                                                                │
+│ unit          │ Int16                                                                 │
+│ lon           │ Float64                                                               │
+│ lat           │ Float64                                                               │
+│ range         │ UInt32                                                                │
+│ samples       │ UInt32                                                                │
+│ changeable    │ UInt8                                                                 │
+│ created       │ DateTime                                                              │
+│ updated       │ DateTime                                                              │
+│ averageSignal │ UInt8                                                                 │
+└───────────────┴───────────────────────────────────────────────────────────────────────┴
+```
 
 </TabItem>
 <TabItem value="selfmanaged" label="Self-managed">
@@ -251,8 +272,15 @@ Here is a description of the columns taken from the OpenCelliD forum:
 | lat          | Latitude: With Longitude, approximate tower location   |
 
 :::tip mcc
-To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code), and use the first three digits in the `MCC / MNC` column.
+To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code), and use the three digits in the **Mobile country code** column.
 :::
+
+The schema for this table was designed for compact storage on disk and query speed.  
+- The `radio` data is stored as an `Enum8` (`UInt8`) rather than a string.
+- `mcc` or Mobile country code, is stored as a `UInt16` as we know the range is 1 - 999.
+- `lon` and `lat` are `Float64`.
+
+None of the other fields are used in the queries or visualizations in this guide, but they are described in the forum linked above if you are interested.
 
 ## Build visualizations with Apache Superset
 
@@ -270,9 +298,14 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
 
 1. Add your ClickHouse service as a Superset **database**
 
-In Superset a database can be added by choosing the database type, and then providing the connection details.
+## 1. Gather your connection details
+<ConnectionDetails />
+
+  In Superset a database can be added by choosing the database type, and then providing the connection details.
 
 ![Add a database](@site/docs/en/getting-started/example-datasets/images/superset-add.png)
+
+  Choose **ClickHouse Connect** from the list:
 
 ![Choose clickhouse connect as database type](@site/docs/en/getting-started/example-datasets/images/superset-choose-a-database.png)
 
@@ -280,27 +313,41 @@ In Superset a database can be added by choosing the database type, and then prov
 
 Add your connection details:
 
+:::tip
+  Make sure that you set **SSL** on when connecting to ClickHouse Cloud or other ClickHouse systems that enforce the use of SSL.
+:::
+
 ![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
 
 1. Add the table **cell_towers** as a Superset **dataset**
 
-In Superset a **dataset** maps to a table within a database.  Click on add a dataset and choose your ClickHouse service, the database containing your table (`default`), and choose the `cell_towers` table:
+  In Superset a **dataset** maps to a table within a database.  Click on add a dataset and choose your ClickHouse service, the database containing your table (`default`), and choose the `cell_towers` table:
 
 ![Add cell_towers table as a dataset](@site/docs/en/getting-started/example-datasets/images/superset-add-dataset.png)
 
-foo
+1. Create a new **Chart**
+
+When you choose to add a chart in Superset you have to specify the dataset (`cell_towers`) and the chart type.  Since the OpenCelliD dataset provides longitude and latitude coordinates for cell towers we will create a **Map** chart.  The **deck.gL Scatterplot** type is suited to this dataset as it works well with dense datapoints on a map.
 
 ![Create a map in Superset](@site/docs/en/getting-started/example-datasets/images/superset-create-map.png)
 
-1. Create some **charts**
+1. Specify the query used for the map
+
+A deck.gl Scatterplot requires a longitude and latitude, and one or more filters can also be applied to the query.  In this example two filters are applied, one for cell towers with UMTS radios, and one for the Mobile country code assigned to The Netherlands.
+
+The fields `lon` and `lat` contain the longitude and latitude:
 
 ![Specify longitude and latitude fields](@site/docs/en/getting-started/example-datasets/images/superset-lon-lat.png)
 
 1. Add the charts to a **dashboard**
 
+Add a filter with `mcc` = `204` (or substitute any other `mcc` value):
+
 ![Filter on MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-mcc-204.png)
 
 1. foo
+
+Add a filter with `radio` = `'UMTS'` (or substitute any other `radio` value, you can see the choices in the output of `DESCRIBE TABLE cell_towers`):
 
 ![Filter on radio = UMTS](@site/docs/en/getting-started/example-datasets/images/superset-radio-umts.png)
 
@@ -308,10 +355,12 @@ This is the full comfiguration for the chart that filters on `radio = 'UMTS'` an
 
 ![Chart for UMTS radios in MCC 204](@site/docs/en/getting-started/example-datasets/images/superset-umts-netherlands.png)
 
-1. foo
+Click on **UPDATE CHART** to render the visualization.
+
+1. This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way and they are added to a dashboard.
 
 ![Dashboard of cell towers by radio type in mcc 204](@site/docs/en/getting-started/example-datasets/images/superset-cell-tower-dashboard.png)
 
 The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
-Although you cannot create temporary tables there.
+Although you cannot create tables there.
