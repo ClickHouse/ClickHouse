@@ -3,8 +3,11 @@ slug: /en/sql-reference/dictionaries/internal-dicts
 sidebar_position: 39
 sidebar_label: Embedded Dictionaries
 ---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 # Embedded Dictionaries
+
+<SelfManaged />
 
 ClickHouse contains a built-in feature for working with a geobase.
 
