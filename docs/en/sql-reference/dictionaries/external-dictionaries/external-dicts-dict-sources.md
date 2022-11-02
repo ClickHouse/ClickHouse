@@ -1,12 +1,12 @@
 ---
 slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources
 sidebar_position: 43
-sidebar_label: Sources of External Dictionaries
+sidebar_label: Dictionary Sources
 ---
 
-# Sources of External Dictionaries
+# Dictionary Sources
 
-An external dictionary can be connected to ClickHouse from many different sources.
+A dictionary can be connected to ClickHouse from many different sources.
 
 If the dictionary is configured using an xml-file, the configuration looks like this:
 

@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
 sidebar_position: 40
-sidebar_label: Configuring an External Dictionary
+sidebar_label: Configuring a Dictionary
 ---
 
-# Configuring an External Dictionary
+# Configuring a Dictionary
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 

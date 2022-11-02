@@ -171,5 +171,5 @@ Configuration fields:
 
 **See Also**
 
--   [Functions for working with external dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
+-   [Functions for working with dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
 
