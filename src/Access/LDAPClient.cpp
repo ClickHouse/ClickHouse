@@ -275,7 +275,7 @@ bool LDAPClient::openConnection()
     }
 
     {
-        const int size_limit = params.search_limit;
+        const int size_limit = static_cast<int>(params.search_limit);
         handleError(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
     }
 
