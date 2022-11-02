@@ -63,17 +63,17 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
     return nullptr;
 }
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
-    IQueryPlanStep * step = node->step.get();
+    IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
-        return node;
+        return &node;
 
-    if (node->children.size() != 1)
+    if (node.children.size() != 1)
         return nullptr;
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step) || typeid_cast<DistinctStep *>(step))
-        return findReadingStep(node->children.front());
+        return findReadingStep(*node.children.front());
 
     return nullptr;
 }
@@ -134,16 +134,16 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
         dag = expression->clone();
 }
 
-void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, FixedColumns & fixed_columns)
+void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns)
 {
-    IQueryPlanStep * step = node->step.get();
+    IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
         return;
 
-    if (node->children.size() != 1)
+    if (node.children.size() != 1)
         return;
 
-    buildSortingDAG(node->children.front(), dag, fixed_columns);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns);
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
         appendExpression(dag, expression->getExpression());
@@ -432,7 +432,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                         if (child_match.node)
                         {
                             auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
-                            if (info.is_always_monotonic)
+                            if (info.is_monotonic)
                             {
                                 MatchedTrees::Monotonicity monotonicity;
                                 monotonicity.direction *= info.is_positive ? 1 : -1;
@@ -468,6 +468,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     const Names & sorting_key_columns,
     size_t limit)
 {
+    //std::cerr << "------- buildInputOrderInfo " << std::endl;
     SortDescription order_key_prefix_descr;
     order_key_prefix_descr.reserve(description.size());
 
@@ -664,10 +665,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     SortingStep & sorting,
     QueryPlan::Node & node)
 {
-    if (node.children.size() != 1)
-        return nullptr;
-
-    QueryPlan::Node * reading_node = findReadingStep(node.children.front());
+    QueryPlan::Node * reading_node = findReadingStep(node);
     if (!reading_node)
         return nullptr;
 
@@ -676,7 +674,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     ActionsDAGPtr dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node.children.front(), dag, fixed_columns);
+    buildSortingDAG(node, dag, fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enreachFixedColumns(*dag, fixed_columns);
