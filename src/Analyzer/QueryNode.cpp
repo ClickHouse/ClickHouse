@@ -120,7 +120,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasGroupBy())
+    if (!is_group_by_all && hasGroupBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "GROUP BY\n";
         getGroupBy().dumpTreeImpl(buffer, format_state, indent + 4);
