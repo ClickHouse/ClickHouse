@@ -685,6 +685,15 @@ namespace detail
 
         bool supportsRightBoundedReads() const override { return true; }
 
+        void setReadUntilPosition(size_t position) override /// position is non-inclusive
+        {
+            if (!read_range.end || position != *read_range.end + 1)
+            {
+                read_range.end = position - 1;
+                impl.reset();
+            }
+        }
+
         std::string getResponseCookie(const std::string & name, const std::string & def) const
         {
             for (const auto & cookie : cookies)
