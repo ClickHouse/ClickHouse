@@ -56,6 +56,7 @@ String Range::toString() const
 
 
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
+/// If perfect_prefix_match == true, only consider pattern in the format `prefix%_`
 String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfect_prefix_match)
 {
     String fixed_prefix;
