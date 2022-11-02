@@ -87,5 +87,5 @@ select * from (explain plan actions = 1 select * from tab2 order by toTimeZone(t
 select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 order by toStartOfDay(x), intDiv(intDiv(y, -2), -3)) where explain like '%sort description%';
 
-select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
+-- select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3);
 select * from (explain plan actions = 1 select * from tab2 where toTimezone(x, 'CET') = '2020-02-03 01:00:00' order by intDiv(intDiv(y, -2), -3) settings optimize_move_to_prewhere=0) where explain like '%sort description%';
