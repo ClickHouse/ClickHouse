@@ -249,7 +249,10 @@ void BackupWriterS3::copyObjectMultipartImpl(
         position = next_position;
 
         if (part_number % rw_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        {
             upload_part_size *= rw_settings.upload_part_size_multiply_factor;
+            upload_part_size = std::min(upload_part_size, rw_settings.max_upload_part_size);
+        }
     }
 
     {

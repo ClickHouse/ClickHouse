@@ -16,6 +16,9 @@ namespace
 {
     /// An object up to 5 GB can be copied in a single atomic operation.
     constexpr UInt64 DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE = 5_GiB;
+
+    /// The maximum size of an uploaded part.
+    constexpr UInt64 DEFAULT_MAX_UPLOAD_PART_SIZE = 5_GiB;
 }
 
 
@@ -57,6 +60,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             S3Settings::ReadWriteSettings rw_settings;
             rw_settings.max_single_read_retries = get_uint_for_key(key, "max_single_read_retries", true, settings.s3_max_single_read_retries);
             rw_settings.min_upload_part_size = get_uint_for_key(key, "min_upload_part_size", true, settings.s3_min_upload_part_size);
+            rw_settings.max_upload_part_size = get_uint_for_key(key, "max_upload_part_size", true, DEFAULT_MAX_UPLOAD_PART_SIZE);
             rw_settings.upload_part_size_multiply_factor = get_uint_for_key(key, "upload_part_size_multiply_factor", true, settings.s3_upload_part_size_multiply_factor);
             rw_settings.upload_part_size_multiply_parts_count_threshold = get_uint_for_key(key, "upload_part_size_multiply_parts_count_threshold", true, settings.s3_upload_part_size_multiply_parts_count_threshold);
             rw_settings.max_single_part_upload_size = get_uint_for_key(key, "max_single_part_upload_size", true, settings.s3_max_single_part_upload_size);
@@ -103,6 +107,8 @@ void S3Settings::ReadWriteSettings::updateFromSettingsIfEmpty(const Settings & s
         max_single_read_retries = settings.s3_max_single_read_retries;
     if (!min_upload_part_size)
         min_upload_part_size = settings.s3_min_upload_part_size;
+    if (!max_upload_part_size)
+        max_upload_part_size = DEFAULT_MAX_UPLOAD_PART_SIZE;
     if (!upload_part_size_multiply_factor)
         upload_part_size_multiply_factor = settings.s3_upload_part_size_multiply_factor;
     if (!upload_part_size_multiply_parts_count_threshold)
