@@ -72,7 +72,10 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     if (node.children.size() != 1)
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step) || typeid_cast<DistinctStep *>(step))
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+        return findReadingStep(*node.children.front());
+
+    if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct->isPreliminary())
         return findReadingStep(*node.children.front());
 
     return nullptr;
