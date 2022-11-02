@@ -175,6 +175,12 @@ OffsetTransform::Status OffsetTransform::preparePairNegative(PortsData & data)
     {
         PortsData pop(queuePop());
         pop.output_port->push(std::move(pop.current_chunk));
+
+        if (input.isFinished())
+            ++num_finished_port_pairs;
+        else
+            input.setNeeded();
+
         return Status::PortFull;
     }
 
