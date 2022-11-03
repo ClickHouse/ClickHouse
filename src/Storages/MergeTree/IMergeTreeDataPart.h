@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IO/WriteSettings.h"
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
@@ -46,7 +47,7 @@ class UncompressedCache;
 class MergeTreeTransaction;
 
 /// Description of the data part.
-class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
+class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
@@ -67,19 +68,18 @@ public:
 
     using uint128 = IPartMetadataManager::uint128;
 
-
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
@@ -94,13 +94,12 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const = 0;
+        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -152,7 +151,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove();
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -199,10 +198,6 @@ public:
     /// The intention is to use it for identifying cases where the same part is
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
-
-    /// This is an object which encapsulates all the operations with disk.
-    /// Contains a path to stored data.
-    DataPartStoragePtr data_part_storage;
 
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -289,8 +284,8 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
-        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, const DataPartStorageBuilderPtr & data_part_storage_builder, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -321,17 +316,17 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const;
+    void renameToDetached(const String & prefix);
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
 
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    DataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -347,7 +342,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
+    std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -445,6 +440,12 @@ public:
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
+    void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
+
+    void writeDeleteOnDestroyMarker();
+    void removeDeleteOnDestroyMarker();
+    void removeVersionMetadata();
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -485,7 +486,7 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    String getRelativePathForDetachedPart(const String & prefix) const;
+    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of
@@ -566,6 +567,12 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
 
+    void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
+    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
+
+    template <typename Writer>
+    void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
+
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
 
     /// Found column without specific compression and return codec
@@ -585,7 +592,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage);
+std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 }

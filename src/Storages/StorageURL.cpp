@@ -296,7 +296,7 @@ namespace
                 {
                     auto impl = IStorageURLBase::createHTTPReadBuffer(
                         request_uri, connection_params, object_infos, download_threads, cache_result, context);
-                    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, settings.zstd_window_log_max);
+                    return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, static_cast<int>(settings.zstd_window_log_max));
                 }
                 catch (...)
                 {
@@ -704,7 +704,7 @@ Pipe IStorageURLBase::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
@@ -794,7 +794,7 @@ Pipe StorageURLWithFailover::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     ColumnsDescription columns_description;
     Block block_for_format;

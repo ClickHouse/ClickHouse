@@ -66,7 +66,7 @@ FileSegment::FileSegment(
         {
             throw Exception(
                 ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state");
+                "Can only create cell with either EMPTY, DOWNLOADED or SKIP_CACHE state");
         }
     }
 }
@@ -250,7 +250,6 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
             return nullptr;
     }
 
-    LOG_TRACE(log, "Extracted reader from file segment");
     return std::move(remote_file_reader);
 }
 
@@ -655,7 +654,7 @@ String FileSegment::stateToString(FileSegment::State state)
         case FileSegment::State::SKIP_CACHE:
             return "SKIP_CACHE";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void FileSegment::assertCorrectness() const

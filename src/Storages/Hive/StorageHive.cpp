@@ -709,7 +709,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
                             hive_file->getPath(),
                             hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
 
-                        skip_splits.insert(i);
+                        skip_splits.insert(static_cast<int>(i));
                     }
                 }
                 hive_file->setSkipSplits(skip_splits);
@@ -731,7 +731,7 @@ Pipe StorageHive::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     lazyInitialize();
 
@@ -811,7 +811,7 @@ Pipe StorageHive::read(
 }
 
 HiveFiles StorageHive::collectHiveFiles(
-    unsigned max_threads,
+    size_t max_threads,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
@@ -920,7 +920,13 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
 
     HDFSBuilderWrapperPtr builder_wrapper = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder_wrapper->getBuilder());
-    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
+    HiveFiles hive_files = collectHiveFiles(
+        settings.max_threads,
+        query_info,
+        hive_table_metadata,
+        fs,
+        context_,
+        prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)

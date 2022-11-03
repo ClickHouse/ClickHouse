@@ -5,6 +5,9 @@ sidebar_label: ClickHouse Keeper
 ---
 
 # ClickHouse Keeper
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
+
+<SelfManaged />
 
 ClickHouse Keeper provides the coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is compatible with ZooKeeper.
 

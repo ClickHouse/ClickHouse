@@ -27,7 +27,7 @@
 #include <chrono>
 
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -703,19 +703,26 @@ void AsynchronousMetrics::update(TimePoint update_time)
             Int64 free_memory_in_allocator_arenas = 0;
 
 #if USE_JEMALLOC
-            /// This is a memory which is kept by allocator.
-            /// Will subsract it from RSS to decrease memory drift.
+            /// According to jemalloc man, pdirty is:
+            ///
+            ///     Number of pages within unused extents that are potentially
+            ///     dirty, and for which madvise() or similar has not been called.
+            ///
+            /// So they will be subtracted from RSS to make accounting more
+            /// accurate, since those pages are not really RSS but a memory
+            /// that can be used at anytime via jemalloc.
             free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
 #endif
 
-            Int64 difference = rss - free_memory_in_allocator_arenas - amount;
+            Int64 difference = rss - amount;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
                 LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
+                    ReadableSize(free_memory_in_allocator_arenas),
                     ReadableSize(rss),
                     ReadableSize(difference));
 
@@ -1420,7 +1427,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 {
                     const auto & settings = getContext()->getSettingsRef();
 
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();

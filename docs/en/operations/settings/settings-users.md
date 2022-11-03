@@ -35,7 +35,7 @@ Structure of the `users` section:
             <database_name>
                 <table_name>
                     <filter>expression</filter>
-                <table_name>
+                </table_name>
             </database_name>
         </databases>
     </user_name>

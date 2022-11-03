@@ -136,7 +136,8 @@ public:
                 const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED, matched_groups.data(), matched_groups.size()))
+                        0, end - pos, regexp->UNANCHORED,
+                        matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)
@@ -179,7 +180,8 @@ public:
                 const auto * end = pos + current_row.size;
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED, matched_groups.data(), matched_groups.size()))
+                        0, end - pos, regexp->UNANCHORED, matched_groups.data(),
+                        static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)

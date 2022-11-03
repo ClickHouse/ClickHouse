@@ -9,6 +9,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForSort;
+}
+
 namespace DB
 {
 
@@ -197,7 +203,7 @@ void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescri
                 max_bytes_before_remerge / pipeline.getNumStreams(),
                 remerge_lowered_memory_bytes_ratio,
                 max_bytes_before_external_sort,
-                std::make_unique<TemporaryDataOnDisk>(tmp_data),
+                std::make_unique<TemporaryDataOnDisk>(tmp_data, CurrentMetrics::TemporaryFilesForSort),
                 min_free_disk_space);
         });
 }

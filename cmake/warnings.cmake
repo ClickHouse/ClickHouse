@@ -27,7 +27,6 @@ if (COMPILER_CLANG)
     no_warning(sign-conversion)
     no_warning(implicit-int-conversion)
     no_warning(implicit-int-float-conversion)
-    no_warning(shorten-64-to-32)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
     no_warning(disabled-macro-expansion)
     no_warning(documentation-unknown-command)

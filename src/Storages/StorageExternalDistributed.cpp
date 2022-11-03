@@ -181,7 +181,7 @@ void StorageExternalDistributed::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (const auto & shard : shards)

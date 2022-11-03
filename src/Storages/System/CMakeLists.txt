@@ -7,8 +7,6 @@ get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
 function(generate_system_build_options)
     include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)
-    include(${ClickHouse_SOURCE_DIR}/src/Functions/configure_config.cmake)
-    include(${ClickHouse_SOURCE_DIR}/src/Formats/configure_config.cmake)
     configure_file(StorageSystemBuildOptions.cpp.in StorageSystemBuildOptions.generated.cpp)
 endfunction()
 

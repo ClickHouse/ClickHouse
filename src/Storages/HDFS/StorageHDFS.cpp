@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -137,8 +137,15 @@ namespace
 
     std::pair<String, String> getPathFromUriAndUriWithoutPath(const String & uri)
     {
-        const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-        return {uri.substr(begin_of_path), uri.substr(0, begin_of_path)};
+        auto pos = uri.find("//");
+        if (pos != std::string::npos && pos + 2 < uri.length())
+        {
+            pos = uri.find('/', pos + 2);
+            if (pos != std::string::npos)
+                return {uri.substr(pos), uri.substr(0, pos)};
+        }
+
+        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, StorageHDFS::ObjectInfos * object_infos)
@@ -254,11 +261,12 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (it == paths.end())
             return nullptr;
 
-        auto compression = chooseCompressionMethod(*it, compression_method);
         auto impl = createHDFSReadBuffer(uri_without_path, *it++, object_infos, ctx);
+        const auto compression = chooseCompressionMethod(*it, compression_method);
+        const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
 
         return wrapReadBufferWithCompressionMethod(
-            std::move(impl), compression, ctx->getSettingsRef().zstd_window_log_max);
+            std::move(impl), compression, static_cast<int>(zstd_window_log_max));
     };
 
     ColumnsDescription columns;
@@ -400,11 +408,13 @@ bool HDFSSource::initialize()
     const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
     const auto & context = getContext();
 
-    auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
     auto impl = StorageHDFS::createHDFSReadBuffer(uri_without_path, path_from_uri, object_infos, context);
+    auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
+    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::move(impl), compression, context->getSettingsRef().zstd_window_log_max);
+        std::move(impl), compression, static_cast<int>(context->getSettingsRef().zstd_window_log_max));
 
     auto input_format = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -643,7 +653,7 @@ Pipe StorageHDFS::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     std::shared_ptr<HDFSSource::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)
