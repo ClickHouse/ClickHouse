@@ -141,12 +141,14 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
+void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
     auto client_ptr = client.get();
 
     Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
     blobs_list_options.Prefix = path;
+    if (max_keys)
+        blobs_list_options.PageSizeHint = max_keys;
 
     auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
     for (;;)
@@ -156,6 +158,8 @@ void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWit
         for (const auto & blob : blobs_list)
             children.emplace_back(blob.Name, blob.BlobSize);
 
+        if (max_keys && children.size() >= static_cast<size_t>(max_keys))
+            break;
         if (!blobs_list_response.HasPage())
             break;
         blobs_list_response.MoveToNextPage();

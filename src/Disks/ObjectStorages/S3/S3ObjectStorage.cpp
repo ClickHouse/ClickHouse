@@ -248,7 +248,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
+void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -256,7 +256,10 @@ void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSi
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(path);
-    request.SetMaxKeys(settings_ptr->list_object_keys_size);
+    if (max_keys)
+        request.SetMaxKeys(max_keys);
+    else
+        request.SetMaxKeys(settings_ptr->list_object_keys_size);
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
@@ -274,6 +277,14 @@ void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSi
 
         for (const auto & object : objects)
             children.emplace_back(object.GetKey(), object.GetSize());
+
+        if (max_keys)
+        {
+            int keys_left = max_keys - static_cast<int>(children.size());
+            if (keys_left <= 0)
+                break;
+            request.SetMaxKeys(keys_left);
+        }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     } while (outcome.GetResult().GetIsTruncated());
