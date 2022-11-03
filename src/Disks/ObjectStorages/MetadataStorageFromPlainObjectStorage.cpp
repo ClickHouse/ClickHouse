@@ -39,8 +39,11 @@ std::filesystem::path MetadataStorageFromPlainObjectStorage::getAbsolutePath(con
 
 bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(path));
-    return object_storage->exists(object);
+    RelativePathsWithSize children;
+    /// NOTE: exists() cannot be used here since it works only for existing
+    /// key, and does not work for some intermediate path.
+    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
+    return !children.empty();
 }
 
 bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
