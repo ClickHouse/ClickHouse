@@ -488,7 +488,8 @@ void LocalServer::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", true);
+        std::string progress = config().getString("progress", "tty");
+        need_render_progress = (Poco::icompare(progress, "off") && Poco::icompare(progress, "no") && Poco::icompare(progress, "false") && Poco::icompare(progress, "0"));
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
