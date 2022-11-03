@@ -70,6 +70,7 @@
 #include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace fs = std::filesystem;
@@ -117,6 +118,25 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+std::istream& operator>> (std::istream & in, ProgressOption & progress)
+{
+    std::string token;
+    in >> token;
+
+    boost::to_upper(token);
+
+    if (token == "OFF" || token == "FALSE" || token == "0" || token == "NO")
+        progress = ProgressOption::OFF;
+    else if (token == "TTY" || token == "ON" || token == "TRUE" || token == "1" || token == "YES")
+        progress = ProgressOption::TTY;
+    else if (token == "ERR")
+        progress = ProgressOption::ERR;
+    else
+        throw boost::program_options::validation_error(boost::program_options::validation_error::invalid_option_value);
+
+    return in;
+}
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
 {
@@ -642,7 +662,7 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::initTtyBuffer()
+void ClientBase::initTtyBuffer(bool to_err)
 {
     if (!tty_buf)
     {
@@ -651,6 +671,12 @@ void ClientBase::initTtyBuffer()
         /// Output all progress bar commands to terminal at once to avoid flicker.
         /// This size is usually greater than the window size.
         static constexpr size_t buf_size = 1024;
+
+        if (to_err)
+        {
+            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+            return;
+        }
 
         std::error_code ec;
         std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
@@ -681,13 +707,6 @@ void ClientBase::initTtyBuffer()
                 /// Fallback to other options.
             }
         }
-
-        if (stderr_is_a_tty)
-        {
-            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
-        }
-        else
-            need_render_progress = false;
     }
 }
 
@@ -2270,8 +2289,6 @@ void ClientBase::init(int argc, char ** argv)
     stdout_is_a_tty = isatty(STDOUT_FILENO);
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
-    if (need_render_progress)
-        initTtyBuffer();
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
@@ -2299,7 +2316,7 @@ void ClientBase::init(int argc, char ** argv)
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
-        ("progress", po::value<bool>()->implicit_value(true), "print progress of queries execution")
+        ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::TTY, "tty"), "Print progress of queries execution - to TTY (default): tty|on|1|true|yes; to STDERR: err; OFF: off|0|false|no")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -2354,6 +2371,11 @@ void ClientBase::init(int argc, char ** argv)
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
+    if (options["progress"].as<ProgressOption>() == ProgressOption::OFF)
+        need_render_progress = false;
+    else
+        initTtyBuffer(options["progress"].as<ProgressOption>() == ProgressOption::ERR);
+
     if (options.count("version") || options.count("V"))
     {
         showClientVersion();
@@ -2404,7 +2426,20 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("profile-events-delay-ms"))
         config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
-        config().setBool("progress", options["progress"].as<bool>());
+    {
+        switch (options["progress"].as<ProgressOption>())
+        {
+            case OFF:
+                config().setString("progress", "off");
+                break;
+            case TTY:
+                config().setString("progress", "tty");
+                break;
+            case ERR:
+                config().setString("progress", "err");
+                break;
+        }
+    }
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))

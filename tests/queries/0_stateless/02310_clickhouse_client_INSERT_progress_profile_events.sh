@@ -14,6 +14,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 tmp_file_progress="$(mktemp "$CUR_DIR/$CLICKHOUSE_TEST_UNIQUE_NAME.XXXXXX.progress")"
 trap 'rm $tmp_file_progress' EXIT
 
-yes | head -n10000000 | $CLICKHOUSE_CLIENT -q "insert into function null('foo String') format TSV" --progress 2> "$tmp_file_progress"
+yes | head -n10000000 | $CLICKHOUSE_CLIENT -q "insert into function null('foo String') format TSV" --progress err 2> "$tmp_file_progress"
 echo $?
 test -s "$tmp_file_progress" && echo "--progress produce some rows" || echo "FAIL: no rows with --progress"

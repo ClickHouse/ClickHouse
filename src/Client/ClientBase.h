@@ -36,6 +36,14 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+enum ProgressOption
+{
+    OFF,
+    TTY,
+    ERR,
+};
+std::istream& operator>> (std::istream & in, ProgressOption & progress);
+
 void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
@@ -145,7 +153,7 @@ private:
 
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
-    void initTtyBuffer();
+    void initTtyBuffer(bool to_err = false);
 
     String prompt() const;
 
