@@ -1952,6 +1952,26 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
     return *shared->external_user_defined_executable_functions_loader;
 }
 
+
+void Context::fillZkConnectionInfo(MutableColumns & res_columns) const
+{
+    res_columns[0]->insert("default_zookeeper");
+    res_columns[1]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk);
+    res_columns[2]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk_index);
+    res_columns[3]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk_time);
+
+    std::map<String, zkutil::ZooKeeperPtr>::iterator iter;
+    iter = shared->auxiliary_zookeepers.begin();
+
+    for (iter = shared->auxiliary_zookeepers.begin(); iter != shared->auxiliary_zookeepers.end(); iter ++)
+    {
+        res_columns[0]->insert(iter->first);
+        res_columns[1]->insert(iter->second->getZooKeeperArgs().connected_zk);
+        res_columns[2]->insert(iter->second->getZooKeeperArgs().connected_zk_index);
+        res_columns[3]->insert(iter->second->getZooKeeperArgs().connected_zk_time);
+    }
+}
+
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->embedded_dictionaries_mutex);

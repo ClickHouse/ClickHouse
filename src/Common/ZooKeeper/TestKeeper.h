@@ -39,6 +39,8 @@ public:
 
     bool isExpired() const override { return expired; }
     int64_t getSessionID() const override { return 0; }
+    String getConnectedHost() const override { return args.connected_zk; }
+    UInt64 getConnectedDateTime() const override { return args.connected_zk_time; }
 
 
     void create(

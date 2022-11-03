@@ -521,6 +521,8 @@ public:
 
     void setServerCompletelyStarted();
 
+    ZooKeeperArgs getZooKeeperArgs() const { return args; }
+
 private:
     friend class EphemeralNodeHolder;
 

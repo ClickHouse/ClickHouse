@@ -125,6 +125,10 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    String getConnectedHost() const override { return args.connected_zk; }
+
+    UInt64 getConnectedDateTime() const override { return args.connected_zk_time; }
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback);
@@ -201,6 +205,7 @@ public:
 
 private:
     ACLs default_acls;
+    String connected_zk;
 
     zkutil::ZooKeeperArgs args;
 

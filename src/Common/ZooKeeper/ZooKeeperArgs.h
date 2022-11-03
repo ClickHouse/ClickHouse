@@ -22,6 +22,9 @@ struct ZooKeeperArgs
 
     String implementation = "zookeeper";
     Strings hosts;
+    String connected_zk;
+    size_t connected_zk_index;
+    UInt64 connected_zk_time;
     String auth_scheme;
     String identity;
     String chroot;

@@ -111,6 +111,22 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
+
+        args.connected_zk = impl->getConnectedHost();
+        args.connected_zk_time = impl->getConnectedDateTime();
+        args.connected_zk_index = 0;
+
+        if (args.hosts.size() > 1)
+        {
+            for (size_t i = 0; i < args.hosts.size(); i++)
+            {
+                if (args.hosts[i] == args.connected_zk)
+                {
+                    args.connected_zk_index = i;
+                    break;
+                }
+            }
+        }
     }
     else if (args.implementation == "testkeeper")
     {
@@ -181,7 +197,6 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 
     return shuffle_hosts;
 }
-
 
 bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
 {

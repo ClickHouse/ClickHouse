@@ -720,6 +720,8 @@ public:
     const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
     IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
+    void fillZkConnectionInfo(MutableColumns & res_columns) const;
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
