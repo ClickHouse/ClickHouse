@@ -933,6 +933,16 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
         {
             required_columns.emplace_back(args[0]->result_name);
         }
+        else if (function_name == "splitByRegexp")
+        {
+            if (args.size() >= 2)
+            {
+                /// In Spark: split(str, regex [, limit] )
+                /// In CH: splitByRegexp(regexp, s)
+                std::swap(args[0], args[1]);
+            }
+        }
+
         if (function_signature.find("extract:", 0) != function_signature.npos)
         {
             // delete the first arg
