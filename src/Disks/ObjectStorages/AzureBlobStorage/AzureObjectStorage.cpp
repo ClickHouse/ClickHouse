@@ -149,10 +149,17 @@ void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWit
     blobs_list_options.Prefix = path;
 
     auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
-    auto blobs_list = blobs_list_response.Blobs;
+    for (;;)
+    {
+        auto blobs_list = blobs_list_response.Blobs;
 
-    for (const auto & blob : blobs_list)
-        children.emplace_back(blob.Name, blob.BlobSize);
+        for (const auto & blob : blobs_list)
+            children.emplace_back(blob.Name, blob.BlobSize);
+
+        if (!blobs_list_response.HasPage())
+            break;
+        blobs_list_response.MoveToNextPage();
+    }
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
