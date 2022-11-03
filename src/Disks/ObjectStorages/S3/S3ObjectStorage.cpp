@@ -299,7 +299,12 @@ void S3ObjectStorage::getDirectoryContents(const std::string & path,
 
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
-    request.SetPrefix(path);
+    /// NOTE: if you do "ls /foo" instead of "ls /foo/" over S3 with this API
+    /// it will return only "/foo" itself without any underlying nodes.
+    if (path.ends_with("/"))
+        request.SetPrefix(path);
+    else
+        request.SetPrefix(path + "/");
     request.SetMaxKeys(settings_ptr->list_object_keys_size);
     request.SetDelimiter("/");
 
