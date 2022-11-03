@@ -88,6 +88,11 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
         result.push_back(path_size.relative_path);
     for (const auto & directory : directories)
         result.push_back(directory);
+    for (auto & row : result)
+    {
+        chassert(row.starts_with(object_storage_root_path));
+        row.erase(0, object_storage_root_path.size());
+    }
     return result;
 }
 
