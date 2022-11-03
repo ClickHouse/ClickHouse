@@ -1131,8 +1131,11 @@ void MergeTreeData::loadDataPartsFromDisk(
     {
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            pool.scheduleOrThrowOnError([&, thread]
+            pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+
                 while (true)
                 {
                     std::pair<String, DiskPtr> thread_part;
