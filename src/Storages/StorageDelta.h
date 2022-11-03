@@ -91,7 +91,6 @@ private:
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
     String table_path;
-    String format_name;
 };
 
 }
