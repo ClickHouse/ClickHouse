@@ -672,41 +672,40 @@ void ClientBase::initTtyBuffer(bool to_err)
         /// This size is usually greater than the window size.
         static constexpr size_t buf_size = 1024;
 
-        if (to_err)
+        if (!to_err)
         {
-            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
-            return;
-        }
+            std::error_code ec;
+            std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
 
-        std::error_code ec;
-        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
-
-        if (!ec && exists(tty) && is_character_file(tty)
-            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
-        {
-            try
+            if (!ec && exists(tty) && is_character_file(tty)
+                && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
             {
-                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+                try
+                {
+                    tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
 
-                /// It is possible that the terminal file has writeable permissions
-                /// but we cannot write anything there. Check it with invisible character.
-                tty_buf->write('\0');
-                tty_buf->next();
+                    /// It is possible that the terminal file has writeable permissions
+                    /// but we cannot write anything there. Check it with invisible character.
+                    tty_buf->write('\0');
+                    tty_buf->next();
 
-                return;
-            }
-            catch (const Exception & e)
-            {
-                if (tty_buf)
-                    tty_buf.reset();
+                    return;
+                }
+                catch (const Exception & e)
+                {
+                    if (tty_buf)
+                        tty_buf.reset();
 
-                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
-                    throw;
+                    if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                        throw;
 
-                /// It is normal if file exists, indicated as writeable but still cannot be opened.
-                /// Fallback to other options.
+                    /// It is normal if file exists, indicated as writeable but still cannot be opened.
+                    /// Fallback to other options.
+                }
             }
         }
+
+        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
     }
 }
 
