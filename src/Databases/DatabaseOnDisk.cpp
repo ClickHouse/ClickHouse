@@ -716,8 +716,12 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, ast_storage, false,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage,
+                                                            ast_storage,
+                                                            false,
+                                                            max_parser_depth,
+                                                            throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
                             std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));

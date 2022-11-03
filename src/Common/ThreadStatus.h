@@ -78,7 +78,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::vector<UInt64> thread_ids;
+    std::unordered_set<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group

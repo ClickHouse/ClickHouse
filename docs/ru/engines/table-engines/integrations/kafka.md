@@ -87,14 +87,15 @@ SETTINGS
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
-    Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::note "Attention"
+Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
-    :::
+
 </details>
 
 ## Описание {#opisanie}

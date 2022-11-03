@@ -101,7 +101,7 @@ int mainImpl(int argc, char ** argv)
     size_t ops = 0;
     while (ops < count)
     {
-        if (poll(polls.data(), descriptors, -1) <= 0)
+        if (poll(polls.data(), static_cast<nfds_t>(descriptors), -1) <= 0)
             throwFromErrno("poll failed", ErrorCodes::SYSTEM_ERROR);
         for (size_t i = 0; i < descriptors; ++i)
         {
