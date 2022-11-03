@@ -14,12 +14,12 @@ template <typename To, typename From>
 std::decay_t<To> bit_cast(const From & from)
 {
     To res {};
-    if constexpr (std::endian::native == std::endian::little || !std::is_arithmetic_v<To>)
+    if constexpr (std::endian::native == std::endian::little)
       memcpy(static_cast<void*>(&res), &from, std::min(sizeof(res), sizeof(from)));
     else
     {
       uint32_t offset = (sizeof(res) > sizeof(from)) ? (sizeof(res) - sizeof(from)) : 0;
-      reverseMemcpy(reinterpret_cast<char *>(&res) + offset, &from, std::min(sizeof(res), sizeof(from)));
+      memcpy(reinterpret_cast<char *>(&res) + offset, &from, std::min(sizeof(res), sizeof(from)));
     }
     return res;
 }
