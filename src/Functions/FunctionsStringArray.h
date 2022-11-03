@@ -59,7 +59,7 @@ using Pos = const char *;
 
 /// Substring generators. All of them have a common interface.
 
-class AlphaTokensImpl
+class SplitByAlphaImpl
 {
 private:
     Pos pos;
@@ -929,7 +929,7 @@ public:
 };
 
 
-using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByAlpha = FunctionTokens<SplitByAlphaImpl>;
 using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
 using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
