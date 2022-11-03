@@ -571,7 +571,7 @@ Example:
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -1817,11 +1817,6 @@ Result:
 │                                                0 │
 └──────────────────────────────────────────────────┘
 ```
-
-## modelEvaluate(model_name, …)
-
-Evaluate external model.
-Accepts a model name and model arguments. Returns Float64.
 
 ## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
 

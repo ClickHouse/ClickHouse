@@ -208,6 +208,7 @@ def parse_env_variables(
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if package_type == "deb":
+        # NOTE: This are the env for packages/build script
         result.append("MAKE_DEB=true")
         cmake_flags.append("-DENABLE_TESTS=0")
         cmake_flags.append("-DENABLE_UTILS=0")
@@ -257,6 +258,10 @@ def parse_env_variables(
         if clang_tidy:
             # 15G is not enough for tidy build
             cache_maxsize = "25G"
+
+            # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
+            # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
+            result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
         result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
 
     if distcc_hosts:
@@ -268,6 +273,7 @@ def parse_env_variables(
         result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if additional_pkgs:
+        # NOTE: This are the env for packages/build script
         result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
@@ -280,9 +286,7 @@ def parse_env_variables(
         cmake_flags.append("-DENABLE_TESTS=1")
 
     if shared_libraries:
-        cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
-        )
+        cmake_flags.append("-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1")
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The shared library
         # build is probably the least heavy disk-wise.

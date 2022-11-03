@@ -1020,6 +1020,62 @@ Example:
 }
 ```
 
+To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](../operations/settings/settings.md#format_json_object_each_row_column_for_object_name). Value of this setting is set to the name of a column, that is used as JSON key for a row in resulting object.
+Examples:
+
+For output:
+
+Let's say we have table `test` with two columns:
+```
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+Let's output it in `JSONObjectEachRow` format and use `format_json_object_each_row_column_for_object_name` setting:
+
+```sql
+select * from test settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+The output:
+```json
+{
+	"first_obj": {"number": 1},
+	"second_obj": {"number": 2},
+	"third_obj": {"number": 3}
+}
+```
+
+For input:
+
+Let's say we stored output from previous example in a file with name `data.json`:
+```sql
+select * from file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+It also works in schema inference:
+
+```sql
+desc file('data.json', JSONObjectEachRow) settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
+```
+
 
 ### Inserting Data {#json-inserting-data}
 
