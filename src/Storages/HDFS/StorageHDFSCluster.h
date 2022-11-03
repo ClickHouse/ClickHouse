@@ -32,7 +32,7 @@ public:
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -44,6 +44,7 @@ private:
     String uri;
     String format_name;
     String compression_method;
+    bool add_columns_structure_to_query = false;
 };
 
 

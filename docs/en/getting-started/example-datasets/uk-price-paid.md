@@ -101,7 +101,7 @@ SELECT count()
 FROM uk_price_paid
 ```
 
-At the time this query was executed, the dataset had 27,450,499 rows. Let's see what the storage size is of the table in ClickHouse:
+At the time this query was run, the dataset had 27,450,499 rows. Let's see what the storage size is of the table in ClickHouse:
 
 ```sql
 SELECT formatReadableSize(total_bytes)
@@ -342,7 +342,7 @@ The result looks like:
 
 ## Let's Speed Up Queries Using Projections {#speedup-with-projections}
 
-[Projections](../../sql-reference/statements/alter/projection.md) allow you to improve query speeds by storing pre-aggregated data in whatever format you want. In this example, we create a projection that keeps track of the average price, total price, and count of properties grouped by the year, district and town. At execution time, ClickHouse will use your projection if it thinks the projection can improve the performance fo the query (you don't have to do anything special to use the projection - ClickHouse decides for you when the projection will be useful).
+[Projections](../../sql-reference/statements/alter/projection.md) allow you to improve query speeds by storing pre-aggregated data in whatever format you want. In this example, we create a projection that keeps track of the average price, total price, and count of properties grouped by the year, district and town. At query time, ClickHouse will use your projection if it thinks the projection can improve the performance of the query (you don't have to do anything special to use the projection - ClickHouse decides for you when the projection will be useful).
 
 ### Build a Projection {#build-projection}
 

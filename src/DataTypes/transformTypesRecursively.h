@@ -14,4 +14,6 @@ namespace DB
 /// Function transform_complex_types will be applied to complex types (Array/Map/Tuple) after recursive call to their nested types.
 void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &)> transform_simple_types, std::function<void(DataTypes &)> transform_complex_types);
 
+void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback);
+
 }
