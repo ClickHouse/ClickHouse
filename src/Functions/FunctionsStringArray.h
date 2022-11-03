@@ -70,9 +70,9 @@ public:
     static constexpr auto name = "alphaTokens";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
+    static bool isVariadic() { return true; }
 
-    static size_t getNumberOfArguments() { return 1; }
+    static size_t getNumberOfArguments() { return 0; }
 
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
@@ -98,10 +98,10 @@ public:
         return 0;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
-        return {};
+        return 1;
     }
 
     /// Get the next token, if any, or return false.
@@ -136,8 +136,8 @@ public:
     static constexpr auto name = "splitByNonAlpha";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 1; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
@@ -163,10 +163,10 @@ public:
         return 0;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
-        return {};
+        return 1;
     }
 
     /// Get the next token, if any, or return false.
@@ -201,8 +201,8 @@ public:
     static constexpr auto name = "splitByWhitespace";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 1; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
@@ -228,10 +228,10 @@ public:
         return 0;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
-        return {};
+        return 1;
     }
 
     /// Get the next token, if any, or return false.
@@ -308,8 +308,8 @@ public:
         return 1;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
         return 2;
     }
@@ -318,7 +318,6 @@ public:
     {
         pos = pos_;
         end = end_;
-        curr_split = 0;
     }
 
     bool get(Pos & token_begin, Pos & token_end)
@@ -353,8 +352,8 @@ private:
 public:
     static constexpr auto name = "splitByString";
     static String getName() { return name; }
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 2; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
     static void checkArguments(const DataTypes & arguments)
     {
@@ -379,10 +378,10 @@ public:
         return 1;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
-        return {};
+        return 2;
     }
 
     /// Called for each next string.
@@ -468,8 +467,8 @@ public:
         return 1;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
         return 2;
     }
@@ -559,10 +558,10 @@ public:
         return 0;
     }
 
-    /// Returns the position of the possible max_split argument. std::nullopt means max_split argument is disabled in current function.
-    static std::optional<size_t> getMaxSplitArgumentPosition()
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
     {
-        return {};
+        return std::nullopt;
     }
 
     /// Called for each next string.
@@ -622,15 +621,15 @@ public:
     {
         Generator::checkArguments(arguments);
 
-        const auto max_split_pos = Generator::getMaxSplitArgumentPosition();
-        if (max_split_pos)
-            if (arguments.size() > *max_split_pos && !isNativeInteger(arguments[*max_split_pos]))
+        const auto max_substrings_pos = Generator::getMaxSubstringsArgumentPosition();
+        if (max_substrings_pos)
+            if (arguments.size() > *max_substrings_pos && !isNativeInteger(arguments[*max_substrings_pos]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "{}-th argument for function '{}' must be integer, got '{}' instead",
-                    *max_split_pos + 1,
+                    *max_substrings_pos + 1,
                     getName(),
-                    arguments[*max_split_pos]->getName());
+                    arguments[*max_substrings_pos]->getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -642,8 +641,8 @@ public:
         const auto & array_argument = arguments[generator.getStringsArgumentPosition()];
 
         /// Whether we need to limit max tokens returned by Generator::get
-        /// If max_split is std::nullopt, no limit is applied.
-        auto max_split = getMaxSplit(arguments);
+        /// If max_substrings is std::nullopt, no limit is applied.
+        auto max_substrings = getMaxSubstrings(arguments);
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
         const ColumnConst * col_const_str =
@@ -679,7 +678,7 @@ public:
 
                 generator.set(pos, end);
                 size_t j = 0;
-                while (generator.get(token_begin, token_end) && !(max_split && j >= *max_split))
+                while (generator.get(token_begin, token_end) && !(max_substrings && j >= *max_substrings))
                 {
                     size_t token_size = token_end - token_begin;
 
@@ -707,7 +706,7 @@ public:
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
 
-            while (generator.get(token_begin, token_end) && !(max_split && dst.size() >= *max_split))
+            while (generator.get(token_begin, token_end) && !(max_substrings && dst.size() >= *max_substrings))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
             return result_type->createColumnConst(col_const_str->size(), dst);
@@ -721,7 +720,7 @@ public:
 
 private:
     template <typename DataType>
-    std::optional<Int64> getMaxSplitImpl(const ColumnWithTypeAndName & argument) const
+    std::optional<Int64> getMaxSubstringsImpl(const ColumnWithTypeAndName & argument) const
     {
         const auto * col = checkAndGetColumnConst<ColumnVector<DataType>>(argument.column.get());
         if (!col)
@@ -731,20 +730,20 @@ private:
         return static_cast<Int64>(value);
     }
 
-    std::optional<size_t> getMaxSplit(const ColumnsWithTypeAndName & arguments) const
+    std::optional<size_t> getMaxSubstrings(const ColumnsWithTypeAndName & arguments) const
     {
-        const auto pos = Generator::getMaxSplitArgumentPosition();
+        const auto pos = Generator::getMaxSubstringsArgumentPosition();
         if (!pos)
             return {};
 
         if (arguments.size() <= *pos)
             return {};
 
-        std::optional<Int64> max_split;
-        if (!((max_split = getMaxSplitImpl<UInt8>(arguments[2])) || (max_split = getMaxSplitImpl<Int8>(arguments[2]))
-              || (max_split = getMaxSplitImpl<UInt16>(arguments[2])) || (max_split = getMaxSplitImpl<Int16>(arguments[2]))
-              || (max_split = getMaxSplitImpl<UInt32>(arguments[2])) || (max_split = getMaxSplitImpl<Int32>(arguments[2]))
-              || (max_split = getMaxSplitImpl<UInt64>(arguments[2])) || (max_split = getMaxSplitImpl<Int64>(arguments[2]))))
+        std::optional<Int64> max_substrings;
+        if (!((max_substrings = getMaxSubstringsImpl<UInt8>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int8>(arguments[2]))
+              || (max_substrings = getMaxSubstringsImpl<UInt16>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int16>(arguments[2]))
+              || (max_substrings = getMaxSubstringsImpl<UInt32>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int32>(arguments[2]))
+              || (max_substrings = getMaxSubstringsImpl<UInt64>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int64>(arguments[2]))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {}, which is {}-th argument of function {}",
@@ -752,12 +751,12 @@ private:
                 *pos + 1,
                 getName());
 
-        /// If max_split is negative or zero, tokenize will be applied as many times as possible, which is equivalent to
-        /// no max_split argument in function
-        if (max_split && *max_split <= 0)
+        /// If max_substrings is negative or zero, tokenize will be applied as many times as possible, which is equivalent to
+        /// no max_substrings argument in function
+        if (max_substrings && *max_substrings <= 0)
             return {};
-        
-        return *max_split;
+
+        return *max_substrings;
     }
 };
 

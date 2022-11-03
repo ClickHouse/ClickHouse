@@ -8,7 +8,7 @@ sidebar_label: Splitting and Merging Strings and Arrays
 
 ## splitByChar(separator, s)
 
-Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consisting of exactly one character.
+Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consists of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 **Syntax**
