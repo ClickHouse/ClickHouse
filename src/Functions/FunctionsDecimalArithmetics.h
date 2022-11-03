@@ -32,8 +32,8 @@ struct DecimalOpHerpers
 //    constexpr const static UInt256 MAX_INT256 = UInt256(-1) >> 1;
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
-        int const len1 = static_cast<int>(num1.size());
-        int const len2 = static_cast<int>(num2.size());
+        UInt16 const len1 = num1.size();
+        UInt16 const len2 = num2.size();
         if (len1 == 0 || len2 == 0)
             return {0};
 
@@ -43,13 +43,13 @@ struct DecimalOpHerpers
 
         for (auto i = len1 - 1; i >= 0; --i)
         {
-            int carry = 0;
+            UInt16 carry = 0;
             i_n2 = 0;
             for (auto j = len2 - 1; j >= 0; --j)
             {
                 if (unlikely(i_n1 + i_n2 >= 76))
                     throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-                int const sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
+                UInt16 const sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
                 ++i_n2;
@@ -61,7 +61,7 @@ struct DecimalOpHerpers
             ++i_n1;
         }
 
-        int i = static_cast<int>(result.size()) - 1;
+        Int32 i = static_cast<Int32>(result.size() - 1);
         while (i >= 0 && result[i] == 0)
         {
             result.pop_back();
@@ -78,12 +78,12 @@ struct DecimalOpHerpers
     {
         std::vector<UInt8> result;
 
-        int idx = 0;
+        UInt8 idx = 0;
         UInt256 temp = number[idx];
         while (temp < divisor)
             temp = temp * 10 + (number[++idx]);
 
-        while (int(number.size()) > idx)
+        while (number.size() > idx)
         {
             result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[++idx];
