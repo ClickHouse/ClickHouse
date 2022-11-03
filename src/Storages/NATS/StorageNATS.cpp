@@ -59,7 +59,7 @@ StorageNATS::StorageNATS(
     , num_consumers(nats_settings->nats_num_consumers.value)
     , max_rows_per_message(nats_settings->nats_max_rows_per_message)
     , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
-    , semaphore(0, num_consumers)
+    , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , is_attach(is_attach_)
 {
@@ -288,7 +288,7 @@ void StorageNATS::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        unsigned /* num_streams */)
+        size_t /* num_streams */)
 {
     if (!consumers_ready)
         throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);

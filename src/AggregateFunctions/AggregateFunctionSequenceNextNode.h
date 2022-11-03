@@ -226,7 +226,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[min_required_args + i])->getData()[row_num])
                 node->events_bitset.set(i);
-        node->event_time = timestamp;
+        node->event_time = static_cast<DataTypeDateTime::FieldType>(timestamp);
 
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
@@ -365,7 +365,7 @@ public:
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
-        const UInt32 unmatched_idx = data.value.size();
+        const UInt32 unmatched_idx = static_cast<UInt32>(data.value.size());
 
         if (data.value.size() <= events_size)
             return unmatched_idx;
