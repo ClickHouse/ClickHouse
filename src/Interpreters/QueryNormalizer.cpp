@@ -119,9 +119,9 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         }
         else
         {
+            auto alias_name = ast->getAliasOrColumnName();
             ast = alias_node->clone();
-            if (data.finished_asts.contains(alias_node))
-                data.finished_asts[ast] = ast;
+            ast->setAlias(alias_name);
         }
     }
 }
