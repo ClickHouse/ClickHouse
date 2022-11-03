@@ -377,7 +377,9 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
 {
     assert(deltas.empty() || deltas.front().zxid >= commit_zxid);
 
+    // collect nodes that have no further modification in the current transaction
     std::unordered_set<std::string> modified_nodes;
+
     while (!deltas.empty() && deltas.front().zxid == commit_zxid)
     {
         if (std::holds_alternative<SubDeltaEnd>(deltas.front().operation))
@@ -396,10 +398,13 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             if (path_deltas.empty())
             {
                 deltas_for_path.erase(front_delta.path);
+
+                // no more deltas for path -> no modification
                 modified_nodes.insert(std::move(front_delta.path));
             }
             else if (path_deltas.front()->zxid > commit_zxid)
             {
+                // next delta has a zxid from a different transaction -> no modification in this transaction
                 modified_nodes.insert(std::move(front_delta.path));
             }
         }
@@ -417,6 +422,7 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
     }
 
     // delete all cached nodes that were not modified after the commit_zxid
+    // we only need to check the nodes that were modified in this transaction
     for (const auto & node : modified_nodes)
     {
         if (nodes[node].zxid == commit_zxid)
