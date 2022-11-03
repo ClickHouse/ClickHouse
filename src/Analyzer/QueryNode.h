@@ -176,24 +176,6 @@ public:
         is_group_by_with_grouping_sets = is_group_by_with_grouping_sets_value;
     }
 
-    /// Return true if query node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
-    {
-        return table_expression_modifiers.has_value();
-    }
-
-    /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
-    {
-        return table_expression_modifiers;
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
-
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -559,8 +541,6 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
-    String getName() const override;
-
     DataTypePtr getResultType() const override
     {
         if (constant_value)
@@ -604,7 +584,6 @@ private:
     std::string cte_name;
     NamesAndTypes projection_columns;
     ConstantValuePtr constant_value;
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;

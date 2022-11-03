@@ -84,8 +84,6 @@ public:
         return QueryTreeNodeType::LAMBDA;
     }
 
-    String getName() const override;
-
     DataTypePtr getResultType() const override
     {
         return getExpression()->getResultType();
