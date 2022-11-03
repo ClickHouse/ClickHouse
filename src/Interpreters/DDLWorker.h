@@ -159,7 +159,7 @@ protected:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    std::atomic<UInt64> max_id = 0;
+    std::atomic<UInt32> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

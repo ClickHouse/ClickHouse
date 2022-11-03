@@ -922,7 +922,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         stat.version = 0;
         stat.aversion = 0;
         stat.cversion = 0;
-        stat.dataLength = request.data.length();
+        stat.dataLength = static_cast<Int32>(request.data.length());
         stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
 
         new_deltas.emplace_back(
@@ -1222,7 +1222,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                     value.stat.version++;
                     value.stat.mzxid = zxid;
                     value.stat.mtime = time;
-                    value.stat.dataLength = data.length();
+                    value.stat.dataLength = static_cast<Int32>(data.length());
                     value.setData(data);
                 },
                 request.version});
