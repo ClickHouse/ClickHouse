@@ -1339,7 +1339,7 @@ TEST(LZ4Test, DecompressMalformedInput)
 
     DB::Memory<> memory;
     memory.resize(ICompressionCodec::getHeaderSize() + uncompressed_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-    unalignedStoreLE<uint8_t>(&memory[0], static_cast<uint8_t>(CompressionMethodByte::LZ4));
+    unalignedStoreLE<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
     unalignedStoreLE<uint32_t>(&memory[1], source_size);
     unalignedStoreLE<uint32_t>(&memory[5], uncompressed_size);
 
