@@ -32,12 +32,12 @@ namespace ErrorCodes
 
 /** Functions that split strings into an array of strings or vice versa.
   *
-  * splitByChar(sep, s)
-  * splitByString(sep, s)
-  * splitByRegexp(regexp, s)
+  * splitByChar(sep, s[, max_substrings])
+  * splitByString(sep, s[, max_substrings])
+  * splitByRegexp(regexp, s[, max_substrings])
   *
-  * splitByWhitespace(s)      - split the string by whitespace characters
-  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
+  * splitByWhitespace(s[, max_substrings])      - split the string by whitespace characters
+  * splitByNonAlpha(s[, max_substrings])        - split the string by whitespace and punctuation characters
   *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
@@ -48,7 +48,7 @@ namespace ErrorCodes
   * arrayStringConcat(arr, delimiter)
   * - join an array of strings into one string via a separator.
   *
-  * alphaTokens(s)            - select from the string subsequence `[a-zA-Z]+`.
+  * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
   *
   * URL functions are located separately.
   */
@@ -622,14 +622,13 @@ public:
         Generator::checkArguments(arguments);
 
         const auto max_substrings_pos = Generator::getMaxSubstringsArgumentPosition();
-        if (max_substrings_pos)
-            if (arguments.size() > *max_substrings_pos && !isNativeInteger(arguments[*max_substrings_pos]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "{}-th argument for function '{}' must be integer, got '{}' instead",
-                    *max_substrings_pos + 1,
-                    getName(),
-                    arguments[*max_substrings_pos]->getName());
+        if (max_substrings_pos && *max_substrings_pos < arguments.size() && !isNativeInteger(arguments[*max_substrings_pos]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{}-th argument for function '{}' must be integer, got '{}' instead",
+                *max_substrings_pos + 1,
+                getName(),
+                arguments[*max_substrings_pos]->getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -734,16 +733,16 @@ private:
     {
         const auto pos = Generator::getMaxSubstringsArgumentPosition();
         if (!pos)
-            return {};
+            return std::nullopt;
 
-        if (arguments.size() <= *pos)
-            return {};
+        if (*pos >= arguments.size())
+            return std::nullopt;
 
         std::optional<Int64> max_substrings;
-        if (!((max_substrings = getMaxSubstringsImpl<UInt8>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int8>(arguments[2]))
-              || (max_substrings = getMaxSubstringsImpl<UInt16>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int16>(arguments[2]))
-              || (max_substrings = getMaxSubstringsImpl<UInt32>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int32>(arguments[2]))
-              || (max_substrings = getMaxSubstringsImpl<UInt64>(arguments[2])) || (max_substrings = getMaxSubstringsImpl<Int64>(arguments[2]))))
+        if (!((max_substrings = getMaxSubstringsImpl<UInt8>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int8>(arguments[*pos]))
+              || (max_substrings = getMaxSubstringsImpl<UInt16>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int16>(arguments[*pos]))
+              || (max_substrings = getMaxSubstringsImpl<UInt32>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int32>(arguments[*pos]))
+              || (max_substrings = getMaxSubstringsImpl<UInt64>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int64>(arguments[*pos]))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {}, which is {}-th argument of function {}",
@@ -754,7 +753,7 @@ private:
         /// If max_substrings is negative or zero, tokenize will be applied as many times as possible, which is equivalent to
         /// no max_substrings argument in function
         if (max_substrings && *max_substrings <= 0)
-            return {};
+            return std::nullopt;
 
         return *max_substrings;
     }

@@ -3,12 +3,3 @@ select splitByRegexp('', 'abcde');
 select splitByRegexp('<[^<>]*>', x) from (select arrayJoin(['<h1>hello<h2>world</h2></h1>', 'gbye<split>bug']) x);
 select splitByRegexp('ab', '');
 select splitByRegexp('', '');
-
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC');
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', -1);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 0);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 1);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 2);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 3);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 4);
-select splitByRegexp('[ABC]', 'oneAtwoBthreeC', 5);
