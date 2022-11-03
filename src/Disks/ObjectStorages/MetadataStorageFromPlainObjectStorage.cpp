@@ -66,7 +66,7 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     RelativePathsWithSize children;
-    object_storage->findAllFiles(getAbsolutePath(path), children);
+    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
     if (children.empty())
         return 0;
     if (children.size() != 1)
