@@ -441,6 +441,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (info.sum_marks == 0)
         return {};
 
+    bool added_prewhere_output = false;
+    if (prewhere_info && prewhere_info->prewhere_actions)
+    {
+        auto & outputs = prewhere_info->prewhere_actions->getOutputs();
+        std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
+        for (const auto * input :  prewhere_info->prewhere_actions->getInputs())
+        {
+            if (!outputs_set.contains(input))
+            {
+                outputs.push_back(input);
+                added_prewhere_output = true;
+            }
+        }
+    }
+
     /// Let's split ranges to avoid reading much data.
     auto split_ranges = [rows_granularity = data_settings->index_granularity, max_block_size = max_block_size]
         (const auto & ranges, int direction)
@@ -567,6 +582,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                                         info.use_uncompressed_cache, input_order_info->limit));
     }
 
+    Block pipe_header;
+    if (!pipes.empty())
+        pipe_header = pipes.front().getHeader();
+
     if (need_preliminary_merge)
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
@@ -588,9 +607,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         for (auto & pipe : pipes)
         {
-            /// Drop temporary columns, added by 'sorting_key_prefix_expr'
-            out_projection = createProjection(pipe.getHeader());
-
             pipe.addSimpleTransform([sorting_key_expr](const Block & header)
             {
                 return std::make_shared<ExpressionTransform>(header, sorting_key_expr);
@@ -609,6 +625,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
     }
+
+    if (!pipes.empty() && (need_preliminary_merge || added_prewhere_output))
+        /// Drop temporary columns, added by 'sorting_key_prefix_expr'
+        out_projection = createProjection(pipe_header);
 
     return Pipe::unitePipes(std::move(pipes));
 }
