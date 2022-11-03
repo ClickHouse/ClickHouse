@@ -24,15 +24,13 @@ class StorageHudi : public IStorage
 {
 public:
     StorageHudi(
-        const S3::URI & uri_,
-        const String & access_key_,
-        const String & secret_access_key_,
+        const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
-        const String & format_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::optional<FormatSettings> format_settings_);
 
     String getName() const override { return "Hudi"; }
 
