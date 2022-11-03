@@ -5,16 +5,17 @@ ClickHouse® is an open-source column-oriented database management system that a
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
-* [ClickHouse Cloud](https://clickhouse.com/cloud) ClickHouse as a service, built by the creators and maintainers.
+* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
 * [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
 * [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-rxm3rdrk-lIUmhLC3V8WTaL0TGxsOmg) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
-* [Blog](https://clickhouse.com/blog/en/) contains various ClickHouse-related articles, as well as announcements and reports about events.
+* [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlight and navigation.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming events
-* [**v22.10 Release Webinar**](https://clickhouse.com/company/events/v22-10-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
-* [**Introducing ClickHouse Cloud**](https://clickhouse.com/company/events/cloud-beta) Introducing ClickHouse as a service, built by creators and maintainers of the fastest OLAP database on earth. Join Tanya Bragin for a detailed walkthrough of ClickHouse Cloud capabilities, as well as a peek behind the curtain to understand the unique architecture that makes our service tick. 
+* [**v22.11 Release Webinar**](https://clickhouse.com/company/events/v22-11-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
+* [**ClickHouse Meetup at the Deutsche Bank office in Berlin**](https://www.meetup.com/clickhouse-berlin-user-group/events/289311596/) Hear from Deutsche Bank on why they chose ClickHouse for big sensitive data in a regulated environment. The ClickHouse team will then present how ClickHouse is used for real time financial data analytics, including tick data, trade analytics and risk management.
+* [**AWS re:Invent**](https://clickhouse.com/company/events/aws-reinvent) Core members of the ClickHouse team -- including 2 of our founders -- will be at re:Invent from November 29 to December 3. We are available on the show floor, but are also determining interest in holding an event during the time there. 

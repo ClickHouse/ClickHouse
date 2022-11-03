@@ -60,7 +60,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
 
@@ -98,7 +98,7 @@ private:
     void initMinMaxIndexExpression();
 
     HiveFiles collectHiveFiles(
-        unsigned max_threads,
+        size_t max_threads,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
