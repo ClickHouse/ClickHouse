@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteHelpers.h>
-#include <cmath>
 
 namespace ProfileEvents
 {
@@ -21,63 +20,56 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
-/// Tracking window. Actually the size is not really important. We just want to avoid
-/// throttles when there are no actions for a long period time.
-static const double window_ns = 1ULL * NS;
+static const size_t default_burst_seconds = 1;
+
+Throttler::Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_)
+    : max_speed(max_speed_)
+    , max_burst(max_speed_ * default_burst_seconds)
+    , limit_exceeded_exception_message("")
+    , tokens(max_burst)
+    , parent(parent_)
+{}
+
+Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
+            const std::shared_ptr<Throttler> & parent_)
+    : max_speed(max_speed_)
+    , max_burst(max_speed_ * default_burst_seconds)
+    , limit(limit_)
+    , limit_exceeded_exception_message(limit_exceeded_exception_message_)
+    , tokens(max_burst)
+    , parent(parent_)
+{}
 
 void Throttler::add(size_t amount)
 {
-    size_t new_count;
-    /// This outer variable is always equal to smoothed_speed.
-    /// We use to avoid race condition.
-    double current_speed = 0;
-
+    // Values obtained under lock to be checked after release
+    size_t count_value;
+    double tokens_value;
     {
         std::lock_guard lock(mutex);
-
         auto now = clock_gettime_ns_adjusted(prev_ns);
-        /// If prev_ns is equal to zero (first `add` call) we known nothing about speed
-        /// and don't track anything.
-        if (max_speed && prev_ns != 0)
+        if (max_speed)
         {
-            /// Time spent to process the amount of bytes
-            double time_spent = now - prev_ns;
-
-            /// The speed in bytes per second is equal to amount / time_spent in seconds
-            auto new_speed = amount / (time_spent / NS);
-
-            /// We want to make old values of speed less important for our smoothed value
-            /// so we decay it's value with coef.
-            auto decay_coeff = std::pow(0.5, time_spent / window_ns);
-
-            /// Weighted average between previous and new speed
-            smoothed_speed = smoothed_speed * decay_coeff + (1 - decay_coeff) * new_speed;
-            current_speed = smoothed_speed;
+            double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
+            tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
         }
-
         count += amount;
-        new_count = count;
+        count_value = count;
+        tokens_value = tokens;
         prev_ns = now;
     }
 
-    if (limit && new_count > limit)
+    if (limit && count_value > limit)
         throw Exception(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
-    if (max_speed && current_speed > max_speed)
+    /// Wait unless there is positive amount of tokens - throttling
+    if (max_speed && tokens_value < 0)
     {
-        /// If we was too fast then we have to sleep until our smoothed speed became <= max_speed
-        int64_t sleep_time = static_cast<int64_t>(-window_ns * std::log2(max_speed / current_speed));
-
-        if (sleep_time > 0)
-        {
-            accumulated_sleep += sleep_time;
-
-            sleepForNanoseconds(sleep_time);
-
-            accumulated_sleep -= sleep_time;
-
-            ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time / 1000UL);
-        }
+        int64_t sleep_time = static_cast<int64_t>(-tokens_value / max_speed * NS);
+        accumulated_sleep += sleep_time;
+        sleepForNanoseconds(sleep_time);
+        accumulated_sleep -= sleep_time;
+        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_time / 1000UL);
     }
 
     if (parent)
@@ -89,9 +81,9 @@ void Throttler::reset()
     std::lock_guard lock(mutex);
 
     count = 0;
-    accumulated_sleep = 0;
-    smoothed_speed = 0;
+    tokens = max_burst;
     prev_ns = 0;
+    // NOTE: do not zero `accumulated_sleep` to avoid races
 }
 
 bool Throttler::isThrottling() const
