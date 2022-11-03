@@ -829,7 +829,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())
         {
-            if (isObject(type))
+            if (type->hasDynamicSubcolumns())
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create table with column '{}' which type is '{}' "
@@ -1398,7 +1398,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
 
-    if (!res->supportsDynamicSubcolumns() && hasObjectColumns(res->getInMemoryMetadataPtr()->getColumns()))
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1698,8 +1698,12 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         return;
 
     auto ast_storage = std::make_shared<ASTStorage>();
-    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false,
-                                                            getContext()->getSettingsRef().max_parser_depth, true);
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage,
+                                                            ast_storage,
+                                                            false,
+                                                            max_parser_depth,
+                                                            true);
     auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
 
     if (!create.columns_list)

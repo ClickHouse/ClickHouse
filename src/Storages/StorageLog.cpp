@@ -462,7 +462,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     settings.getter = createStreamGetter(name_and_type);
 
     if (!serialize_states.contains(name))
-         serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+         serialization->serializeBinaryBulkStatePrefix(column, settings, serialize_states[name]);
 
     if (storage.use_marks_file)
     {
@@ -782,7 +782,7 @@ Pipe StorageLog::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
