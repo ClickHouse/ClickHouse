@@ -149,6 +149,8 @@ void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWit
     blobs_list_options.Prefix = path;
     if (max_keys)
         blobs_list_options.PageSizeHint = max_keys;
+    else
+        blobs_list_options.PageSizeHint = settings.get()->list_object_keys_size;
 
     auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
     for (;;)
