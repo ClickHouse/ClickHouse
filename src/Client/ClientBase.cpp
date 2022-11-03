@@ -704,8 +704,13 @@ void ClientBase::initTtyBuffer(bool to_err)
                 }
             }
         }
-
-        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        
+        if (stderr_is_a_tty)
+        {
+            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        }
+        else
+            need_render_progress = false;
     }
 }
 
