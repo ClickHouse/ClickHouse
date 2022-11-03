@@ -51,11 +51,11 @@ public:
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
-    void registerFunction(Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(TableFunctionProperties properties = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
         registerFunction(Function::name,
-                         TableFunctionFactoryData{std::move(creator), {std::move(doc), table_functions_allowed_in_readonly_mode.contains(Function::name)}} ,
+                         TableFunctionFactoryData{std::move(creator), {std::move(properties)}} ,
                          case_sensitiveness);
     }
 
@@ -82,10 +82,6 @@ private:
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;
-
-    inline static const NameSet table_functions_allowed_in_readonly_mode = {
-            "null", "view", "viewIfPermitted", "numbers", "numbers_mt", "generateRandom", "values", "cluster", "clusterAllReplicas"
-    };
 };
 
 }
