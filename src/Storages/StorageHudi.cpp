@@ -5,10 +5,10 @@
 #    include <Storages/StorageHudi.h>
 #    include <Common/logger_useful.h>
 
+#    include <Formats/FormatFactory.h>
 #    include <IO/S3Common.h>
 #    include <Storages/StorageFactory.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
-#include <Formats/FormatFactory.h>
 #    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/ListObjectsV2Request.h>
@@ -46,16 +46,17 @@ StorageHudi::StorageHudi(
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
     LOG_DEBUG(log, "Table path: {}", table_path);
-    
+
     StorageS3Configuration new_configuration;
     new_configuration.url = new_uri;
     new_configuration.auth_settings.access_key_id = configuration_.auth_settings.access_key_id;
-    new_configuration.auth_settings.secret_access_key= configuration_.auth_settings.secret_access_key;
+    new_configuration.auth_settings.secret_access_key = configuration_.auth_settings.secret_access_key;
     new_configuration.format = configuration_.format;
-    
+
     if (columns_.empty())
     {
-        columns_ = StorageS3::getTableStructureFromData(new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
+        columns_ = StorageS3::getTableStructureFromData(
+            new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -66,15 +67,15 @@ StorageHudi::StorageHudi(
     setInMemoryMetadata(storage_metadata);
 
     s3engine = std::make_shared<StorageS3>(
-            new_configuration,
-            table_id_,
-            columns_,
-            constraints_,
-            comment,
-            context_,
-            format_settings_,
-            /* distributed_processing_ */false,
-            nullptr);
+        new_configuration,
+        table_id_,
+        columns_,
+        constraints_,
+        comment,
+        context_,
+        format_settings_,
+        /* distributed_processing_ */ false,
+        nullptr);
 }
 
 Pipe StorageHudi::read(
@@ -209,27 +210,21 @@ void registerStorageHudi(StorageFactory & factory)
 
 
             StorageS3Configuration configuration;
-            
+
             configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
             configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-            
-            if (engine_args.size() == 4) 
+
+            if (engine_args.size() == 4)
                 configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
-            
+
             if (configuration.format == "auto")
                 configuration.format = "Parquet";
-            
+
             auto format_settings = getFormatSettings(args.getContext());
 
             return std::make_shared<StorageHudi>(
-                configuration,
-                args.table_id,
-                args.columns,
-                args.constraints,
-                args.comment,
-                args.getContext(),
-                format_settings);
+                configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), format_settings);
         },
         {
             .supports_settings = true,
