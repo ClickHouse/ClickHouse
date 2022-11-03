@@ -123,6 +123,15 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fiexd_columns.insert(maybe_fixed_column);
+
+                    const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
+                    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+                        && maybe_injective->children.size() == 1
+                        && maybe_injective->function_base->isInjective({}))
+                    {
+                        maybe_injective = maybe_injective->children.front();
+                        fiexd_columns.insert(maybe_injective);
+                    }
                 }
             }
         }
@@ -141,7 +150,19 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    {
+        if (const auto * prewhere_info = reading->getPrewhereInfo())
+        {
+            if (prewhere_info->prewhere_actions)
+            {
+                //std::cerr << "====== Adding prewhere " << std::endl;
+                appendExpression(dag, prewhere_info->prewhere_actions);
+                if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+            }
+        }
         return;
+    }
 
     if (node.children.size() != 1)
         return;
@@ -684,6 +705,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+
+        //std::cerr << "---- optimizeReadInOrder found mt" << std::endl;
         auto order_info = buildInputOrderInfo(
             reading,
             fixed_columns,
@@ -720,6 +743,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     auto * sorting = typeid_cast<SortingStep *>(node.step.get());
     if (!sorting)
         return;
+
+    //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
         return;

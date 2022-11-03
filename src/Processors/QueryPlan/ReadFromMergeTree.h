@@ -150,6 +150,7 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
