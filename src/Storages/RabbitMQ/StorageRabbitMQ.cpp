@@ -87,7 +87,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , semaphore(0, num_consumers)
+        , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(RESCHEDULE_MS)
@@ -674,7 +674,7 @@ void StorageRabbitMQ::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        unsigned /* num_streams */)
+        size_t /* num_streams */)
 {
     if (!rabbit_is_ready)
         throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
