@@ -37,7 +37,7 @@ struct AsciiImpl
 
     [[noreturn]] static void vectorFixedToConstant(const ColumnString::Chars &  /*data*/, size_t  /*n*/, Int32 &  /*res*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "vectorFixedToConstant not implemented for function {}", std::string(AsciiName::name));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "vectorFixedToConstant not implemented for function {}", AsciiName::name);
     }
 
     static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<ReturnType> & res)
@@ -52,12 +52,12 @@ struct AsciiImpl
 
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", std::string(AsciiName::name));
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", AsciiName::name);
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(AsciiName::name));
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", AsciiName::name);
     }
 
 private:
@@ -76,7 +76,7 @@ REGISTER_FUNCTION(Ascii)
         R"(
 Returns the ASCII code point of the first character of str.  The result type is Int32.
 
-If s is empty, the result is 0. If the first character is not an ASCII character or part of the Latin-1 Supplement range of UTF-16, the result is undefined)
+If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined)
         )",
         Documentation::Examples{{"ascii", "SELECT ascii('234')"}},
         Documentation::Categories{"String"}
