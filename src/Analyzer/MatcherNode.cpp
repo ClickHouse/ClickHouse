@@ -146,55 +146,6 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
 }
 
-String MatcherNode::getName() const
-{
-    WriteBufferFromOwnString buffer;
-
-    if (!qualified_identifier.empty())
-        buffer << qualified_identifier.getFullName() << '.';
-
-    if (matcher_type == MatcherNodeType::ASTERISK)
-    {
-        buffer << '*';
-    }
-    else
-    {
-        buffer << "COLUMNS(";
-
-        if (columns_matcher)
-        {
-            buffer << ' ' << columns_matcher->pattern();
-        }
-        else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
-        {
-            size_t columns_identifiers_size = columns_identifiers.size();
-            for (size_t i = 0; i < columns_identifiers_size; ++i)
-            {
-                buffer << columns_identifiers[i].getFullName();
-
-                if (i + 1 != columns_identifiers_size)
-                    buffer << ", ";
-            }
-        }
-    }
-
-    buffer << ')';
-
-    const auto & column_transformers = getColumnTransformers().getNodes();
-    size_t column_transformers_size = column_transformers.size();
-
-    for (size_t i = 0; i < column_transformers_size; ++i)
-    {
-        const auto & column_transformer = column_transformers[i];
-        buffer << column_transformer->getName();
-
-        if (i + 1 != column_transformers_size)
-            buffer << ' ';
-    }
-
-    return buffer.str();
-}
-
 bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
