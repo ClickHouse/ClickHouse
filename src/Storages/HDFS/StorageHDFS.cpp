@@ -33,7 +33,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/defineRemoteStoragesCache.h>
 #include <Storages/wrapWithCachedReadBuffer.h>
-#include <Storages/HDFS/HDFSCommon.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>

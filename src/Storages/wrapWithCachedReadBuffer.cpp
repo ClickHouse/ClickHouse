@@ -79,7 +79,7 @@ std::unique_ptr<ReadBufferFromFileBase> wrapWithCachedReadBuffer(
     const ReadSettings & read_settings)
 {
     auto cache_data = FileCacheFactory::instance().tryGetByName(REMOTE_TABLE_ENGINES_CACHE_NAME);
-    if (!cache_data) /// Cache was not initiazed becuase it is not defined in config.
+    if (!cache_data) /// Cache was not initiazed because it is not defined in config.
         return nullptr;
 
     auto cache = cache_data->cache;

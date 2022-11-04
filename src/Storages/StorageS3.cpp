@@ -1035,10 +1035,6 @@ void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::S3Configuration
     if (!upd.headers_from_ast.empty())
         headers.insert(headers.end(), upd.headers_from_ast.begin(), upd.headers_from_ast.end());
 
-    std::cerr << "env: " << upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)) << "\n";
-    std::cerr << "env1: " << (upd.auth_settings.use_environment_credentials == std::nullopt) << "\n";
-    std::cerr << "env2: " << ctx->getConfigRef().getBool("s3.use_environment_credentials", false) << "\n";
-
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
         upd.uri.is_virtual_hosted_style,
