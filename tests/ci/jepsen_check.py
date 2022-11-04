@@ -27,7 +27,10 @@ from build_download_helper import get_build_name_for_check
 from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = "jepsen_group"
-DESIRED_INSTANCE_COUNT = 3
+
+KEEPER_DESIRED_INSTANCE_COUNT = 3
+SERVER_DESIRED_INSTANCE_COUNT = 4
+
 KEEPER_IMAGE_NAME = "clickhouse/keeper-jepsen-test"
 KEEPER_CHECK_NAME = "ClickHouse Keeper Jepsen"
 
@@ -87,15 +90,15 @@ def get_instances_addresses(ec2_client, instance_ids):
     return instance_ips
 
 
-def prepare_autoscaling_group_and_get_hostnames():
+def prepare_autoscaling_group_and_get_hostnames(count):
     asg_client = boto3.client("autoscaling", region_name="us-east-1")
     asg_client.set_desired_capacity(
-        AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=DESIRED_INSTANCE_COUNT
+        AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=count
     )
 
     instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
     counter = 0
-    while len(instances) < DESIRED_INSTANCE_COUNT:
+    while len(instances) < count:
         time.sleep(5)
         instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
         counter += 1
@@ -190,8 +193,8 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    instances = prepare_autoscaling_group_and_get_hostnames()
-    nodes_path = save_nodes_to_file(instances, TEMP_PATH)
+    instances = prepare_autoscaling_group_and_get_hostnames(KEEPER_DESIRED_INSTANCE_COUNT if args.program == 'keeper' else SERVER_DESIRED_INSTANCE_COUNT)
+    nodes_path = save_nodes_to_file(instances[:SERVER_DESIRED_INSTANCE_COUNT - 1], TEMP_PATH)
 
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == 'keeper' else SERVER_IMAGE_NAME
@@ -222,7 +225,7 @@ if __name__ == "__main__":
 
     extra_args = ''
     if args.program == 'server':
-        extra_args = f'-e KEEPER_NODE test'
+        extra_args = f'-e KEEPER_NODE={instances[-1]}'
 
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
