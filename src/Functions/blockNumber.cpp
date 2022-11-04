@@ -44,10 +44,7 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -68,7 +65,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(BlockNumber)
+void registerFunctionBlockNumber(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBlockNumber>();
 }

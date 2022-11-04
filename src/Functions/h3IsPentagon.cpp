@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -80,7 +80,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3IsPentagon)
+void registerFunctionH3IsPentagon(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3IsPentagon>();
 }

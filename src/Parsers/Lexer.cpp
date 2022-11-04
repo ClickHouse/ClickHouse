@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
@@ -40,7 +39,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 }
 
@@ -73,11 +72,11 @@ Token Lexer::nextTokenImpl()
 
     switch (*pos)
     {
-        case ' ':
-        case '\t':
-        case '\n':
-        case '\r':
-        case '\f':
+        case ' ': [[fallthrough]];
+        case '\t': [[fallthrough]];
+        case '\n': [[fallthrough]];
+        case '\r': [[fallthrough]];
+        case '\f': [[fallthrough]];
         case '\v':
         {
             ++pos;
@@ -86,15 +85,15 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::Whitespace, token_begin, pos);
         }
 
-        case '0':
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
+        case '0': [[fallthrough]];
+        case '1': [[fallthrough]];
+        case '2': [[fallthrough]];
+        case '3': [[fallthrough]];
+        case '4': [[fallthrough]];
+        case '5': [[fallthrough]];
+        case '6': [[fallthrough]];
+        case '7': [[fallthrough]];
+        case '8': [[fallthrough]];
         case '9':
         {
             /// The task is not to parse a number or check correctness, but only to skip it.
@@ -339,7 +338,7 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
-            return Token(TokenType::PipeMark, token_begin, pos);
+            return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
         {
@@ -415,7 +414,7 @@ APPLY_FOR_TOKENS(M)
 #undef M
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

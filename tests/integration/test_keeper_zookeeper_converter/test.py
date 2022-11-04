@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 from kazoo.client import KazooClient, KazooState
 from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import (
@@ -11,7 +10,6 @@ from kazoo.exceptions import (
     KazooException,
 )
 import os
-import time
 
 cluster = ClickHouseCluster(__file__)
 
@@ -61,7 +59,6 @@ def stop_clickhouse():
 
 def start_clickhouse():
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
 
 
 def copy_zookeeper_data(make_zk_snapshots):
@@ -105,7 +102,7 @@ def get_genuine_zk(timeout=60.0):
     return _genuine_zk_instance
 
 
-def compare_stats(stat1, stat2, path, ignore_pzxid=False):
+def compare_stats(stat1, stat2, path):
     assert stat1.czxid == stat2.czxid, (
         "path "
         + path
@@ -170,43 +167,35 @@ def compare_stats(stat1, stat2, path, ignore_pzxid=False):
         + " != "
         + str(stat2.numChildren)
     )
-    if not ignore_pzxid:
-        assert stat1.pzxid == stat2.pzxid, (
-            "path "
-            + path
-            + " pzxid not equal for stats: "
-            + str(stat1.pzxid)
-            + " != "
-            + str(stat2.pzxid)
-        )
+    assert stat1.pzxid == stat2.pzxid, (
+        "path "
+        + path
+        + " pzxid not equal for stats: "
+        + str(stat1.pzxid)
+        + " != "
+        + str(stat2.pzxid)
+    )
 
 
-def compare_states(zk1, zk2, path="/", exclude_paths=[]):
+def compare_states(zk1, zk2, path="/"):
     data1, stat1 = zk1.get(path)
     data2, stat2 = zk2.get(path)
     print("Left Stat", stat1)
     print("Right Stat", stat2)
     assert data1 == data2, "Data not equal on path " + str(path)
     # both paths have strange stats
-    if path not in ("/", "/zookeeper") and path not in exclude_paths:
+    if path not in ("/", "/zookeeper"):
         compare_stats(stat1, stat2, path)
 
     first_children = list(sorted(zk1.get_children(path)))
     second_children = list(sorted(zk2.get_children(path)))
     print("Got children left", first_children)
     print("Got children rigth", second_children)
-
-    if path == "/":
-        assert set(first_children) ^ set(second_children) == set(["keeper"])
-    else:
-        assert first_children == second_children, (
-            "Childrens are not equal on path " + path
-        )
+    assert first_children == second_children, "Childrens are not equal on path " + path
 
     for children in first_children:
-        if path != "/" or children != "keeper":
-            print("Checking child", os.path.join(path, children))
-            compare_states(zk1, zk2, os.path.join(path, children), exclude_paths)
+        print("Checking child", os.path.join(path, children))
+        compare_states(zk1, zk2, os.path.join(path, children))
 
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
@@ -230,21 +219,11 @@ def get_bytes(s):
     return s.encode()
 
 
-def assert_ephemeral_disappear(connection, path):
-    for _ in range(200):
-        if not connection.exists(path):
-            break
-
-        time.sleep(0.1)
-    else:
-        raise Exception("ZK refuse to remove ephemeral nodes")
-
-
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_simple_crud_requests(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
 
-    genuine_connection = get_genuine_zk(timeout=5)
+    genuine_connection = get_genuine_zk()
     for i in range(100):
         genuine_connection.create("/test_create" + str(i), get_bytes("data" + str(i)))
 
@@ -277,25 +256,10 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 
     copy_zookeeper_data(create_snapshots)
 
-    genuine_connection.stop()
-    genuine_connection.close()
+    genuine_connection = get_genuine_zk()
+    fake_connection = get_fake_zk()
 
-    genuine_connection = get_genuine_zk(timeout=5)
-
-    fake_connection = get_fake_zk(timeout=5)
-    for conn in [genuine_connection, fake_connection]:
-        assert_ephemeral_disappear(conn, "/test_ephemeral/0")
-
-    # After receiving close request zookeeper updates pzxid of ephemeral parent.
-    # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
-    compare_states(
-        genuine_connection, fake_connection, exclude_paths=["/test_ephemeral"]
-    )
-    eph1, stat1 = fake_connection.get("/test_ephemeral")
-    eph2, stat2 = genuine_connection.get("/test_ephemeral")
-
-    assert eph1 == eph2
-    compare_stats(stat1, stat2, "/test_ephemeral", ignore_pzxid=True)
+    compare_states(genuine_connection, fake_connection)
 
     # especially ensure that counters are the same
     genuine_connection.create(
@@ -314,7 +278,7 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 def test_multi_and_failed_requests(started_cluster, create_snapshots):
     restart_and_clear_zookeeper()
 
-    genuine_connection = get_genuine_zk(timeout=5)
+    genuine_connection = get_genuine_zk()
     genuine_connection.create("/test_multitransactions")
     for i in range(10):
         t = genuine_connection.transaction()
@@ -359,25 +323,10 @@ def test_multi_and_failed_requests(started_cluster, create_snapshots):
 
     copy_zookeeper_data(create_snapshots)
 
-    genuine_connection.stop()
-    genuine_connection.close()
+    genuine_connection = get_genuine_zk()
+    fake_connection = get_fake_zk()
 
-    genuine_connection = get_genuine_zk(timeout=5)
-    fake_connection = get_fake_zk(timeout=5)
-
-    for conn in [genuine_connection, fake_connection]:
-        assert_ephemeral_disappear(conn, "/test_multitransactions/fred0")
-
-    # After receiving close request zookeeper updates pzxid of ephemeral parent.
-    # Keeper doesn't receive such request (snapshot created before it) so it doesn't do it.
-    compare_states(
-        genuine_connection, fake_connection, exclude_paths=["/test_multitransactions"]
-    )
-    eph1, stat1 = fake_connection.get("/test_multitransactions")
-    eph2, stat2 = genuine_connection.get("/test_multitransactions")
-
-    assert eph1 == eph2
-    compare_stats(stat1, stat2, "/test_multitransactions", ignore_pzxid=True)
+    compare_states(genuine_connection, fake_connection)
 
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])

@@ -7,7 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ struct TrivialLRUResourceCacheReleaseFunction
 };
 
 /**
- * Similar to implementation in LRUCachePolicy.h, but with the difference that keys can
+ * Similar to implementation in LRUCache.h, but with the difference that keys can
  * only be evicted when they are releasable. Release state is controlled by this implementation.
  * get() and getOrSet() methods return a Holder to actual value, which does release() in destructor.
  *

@@ -1,6 +1,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <link.h>
 #include <array>

@@ -14,7 +14,7 @@ String quoteString(std::string_view x)
 }
 
 
-String doubleQuoteString(StringRef x)
+String doubleQuoteString(const StringRef & x)
 {
     String res(x.size, '\0');
     WriteBufferFromString wb(res);
@@ -23,7 +23,7 @@ String doubleQuoteString(StringRef x)
 }
 
 
-String backQuote(StringRef x)
+String backQuote(const StringRef & x)
 {
     String res(x.size, '\0');
     {
@@ -34,7 +34,7 @@ String backQuote(StringRef x)
 }
 
 
-String backQuoteIfNeed(StringRef x)
+String backQuoteIfNeed(const StringRef & x)
 {
     String res(x.size, '\0');
     {
@@ -43,5 +43,4 @@ String backQuoteIfNeed(StringRef x)
     }
     return res;
 }
-
 }

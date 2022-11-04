@@ -41,9 +41,24 @@ color_good = "#b0d050"
 header_template = """
 <!DOCTYPE html>
 <html lang="en">
+<link rel="preload" as="font" href="https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2" type="font/woff2" crossorigin="anonymous"/>
 <style>
+@font-face {{
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal;
+    font-display: swap;
+}}
+
 body {{
-    font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif;
+    font-family: "Yandex Sans Display Web", Arial, sans-serif;
     background: #EEE;
 }}
 
@@ -378,6 +393,20 @@ if args.report == "main":
             ]
         )
 
+    unmarked_short_rows = tsvRows("report/unexpected-query-duration.tsv")
+    error_tests += len(unmarked_short_rows)
+    addSimpleTable(
+        "Unexpected Query Duration",
+        ["Problem", 'Marked as "short"?', "Run time, s", "Test", "#", "Query"],
+        unmarked_short_rows,
+    )
+    if unmarked_short_rows:
+        errors_explained.append(
+            [
+                f'<a href="#{currentTableAnchor()}">Some queries have unexpected duration</a>'
+            ]
+        )
+
     def add_partial():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:
@@ -637,16 +666,12 @@ if args.report == "main":
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
+        if very_unstable_queries > 5:
+            error_tests += very_unstable_queries
+            status = "failure"
         message_array.append(str(very_unstable_queries) + " unstable")
-    # FIXME: uncomment the following lines when tests are stable and
-    #     reliable
-    #     if very_unstable_queries > 5:
-    #         error_tests += very_unstable_queries
-    #         status = "failure"
-    #
-    # error_tests += slow_average_tests
-    # FIXME: until here
 
+    error_tests += slow_average_tests
     if error_tests:
         status = "failure"
         message_array.insert(0, str(error_tests) + " errors")

@@ -35,9 +35,8 @@ private:
     void writePrefix() override;
 
     const FormatSettings format_settings;
-    Serializations serializations;
 
-    void writeRow(const Columns & columns, size_t row_idx, std::string & buffer);
+    void writeRow(const Serializations & serializations, const Columns & columns, size_t row_idx, std::string & buffer);
     void write(Chunk chunk, PortKind port_kind);
 };
 

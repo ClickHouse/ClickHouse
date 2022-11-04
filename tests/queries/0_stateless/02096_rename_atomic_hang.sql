@@ -2,7 +2,6 @@
 
 drop database if exists db_hang;
 drop database if exists db_hang_temp;
-set allow_deprecated_database_ordinary=1;
 create database db_hang engine=Ordinary;
 use db_hang;
 create table db_hang.test(A Int64) Engine=MergeTree order by A;

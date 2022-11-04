@@ -2,13 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 
 #if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2
-#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
-#    define LIBDIVIDE_AVX512
-#elif defined(__AVX2__)
-#    define LIBDIVIDE_AVX2
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define LIBDIVIDE_NEON
+#    define LIBDIVIDE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -80,7 +74,7 @@ struct ModuloByConstantImpl
             || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i]);
+                dst[i] = src[i];
             return;
         }
 
@@ -101,19 +95,16 @@ struct ModuloByConstantImpl
 
         if (b & (b - 1))
         {
-            libdivide::divider<A> divider(static_cast<A>(b));
+            libdivide::divider<A> divider(b);
             for (size_t i = 0; i < size; ++i)
-            {
-                /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
-                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-            }
+                dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
         }
         else
         {
             // gcc libdivide doesn't work well for pow2 division
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
+                dst[i] = src[i] & mask;
         }
     }
 
@@ -165,7 +156,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 struct NameModulo { static constexpr auto name = "modulo"; };
 using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
-REGISTER_FUNCTION(Modulo)
+void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
@@ -174,7 +165,7 @@ REGISTER_FUNCTION(Modulo)
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
 using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
 
-REGISTER_FUNCTION(ModuloLegacy)
+void registerFunctionModuloLegacy(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModuloLegacy>();
 }

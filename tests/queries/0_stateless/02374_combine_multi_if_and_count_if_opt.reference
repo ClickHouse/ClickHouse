@@ -1,2 +1,0 @@
-SELECT countIf(a = 1)
-FROM m

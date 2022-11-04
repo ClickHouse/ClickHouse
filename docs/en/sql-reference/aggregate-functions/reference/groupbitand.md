@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupbitand
-sidebar_position: 125
+toc_priority: 125
 ---
 
-# groupBitAnd
+# groupBitAnd {#groupbitand}
 
 Applies bitwise `AND` for series of numbers.
 
