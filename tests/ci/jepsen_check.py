@@ -163,16 +163,16 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    logging.info(
-        "Start at PR number %s, commit sha %s labels %s",
-        pr_info.number,
-        pr_info.sha,
-        pr_info.labels,
-    )
+    #logging.info(
+    #    "Start at PR number %s, commit sha %s labels %s",
+    #    pr_info.number,
+    #    pr_info.sha,
+    #    pr_info.labels,
+    #)
 
-    if pr_info.number != 0 and "jepsen-test" not in pr_info.labels:
-        logging.info("Not jepsen test label in labels list, skipping")
-        sys.exit(0)
+    #if pr_info.number != 0 and "jepsen-test" not in pr_info.labels:
+    #    logging.info("Not jepsen test label in labels list, skipping")
+    #    sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
 
@@ -198,18 +198,18 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
 
-    if pr_info.number == 0:
-        version = get_version_from_repo()
-        release_or_pr = f"{version.major}.{version.minor}"
-    else:
-        # PR number for anything else
-        release_or_pr = str(pr_info.number)
+    #if pr_info.number == 0:
+    #    version = get_version_from_repo()
+    #    release_or_pr = f"{version.major}.{version.minor}"
+    #else:
+    #    # PR number for anything else
+    #    release_or_pr = str(pr_info.number)
 
     # This check run separately from other checks because it requires exclusive
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
     # dependency on a build job and using busy loop on it's results. For the
     # same reason we are using latest docker image.
-    build_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
+    build_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/22.11/4012fcbf0191e9e64a34430db1468a2ae0744616/{build_name}/clickhouse"
     head = requests.head(build_url)
     counter = 0
     while head.status_code != 200:
