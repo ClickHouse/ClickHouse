@@ -101,7 +101,9 @@ Chunk ValuesBlockInputFormat::generate()
         return {};
     }
 
-    finalizeObjectColumns(columns);
+    for (const auto & column : columns)
+        column->finalize();
+
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
 }
