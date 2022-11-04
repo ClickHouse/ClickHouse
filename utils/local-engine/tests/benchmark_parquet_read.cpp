@@ -1,8 +1,5 @@
 #include <benchmark/benchmark.h>
-
-
 #include <parquet/arrow/reader.h>
-
 #include <Core/Block.h>
 #include <Common/DebugUtils.h>
 #include <DataTypes/DataTypeDate32.h>

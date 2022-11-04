@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <Poco/Util/MapConfiguration.h>
 #include <Builder/SerializedPlanBuilder.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -27,6 +28,7 @@
 #include <Storages/CustomStorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/SubstraitSource/ReadBufferBuilder.h>
 #include <base/logger_useful.h>
 #include <benchmark/benchmark.h>
 #include <Common/DebugUtils.h>
@@ -1251,7 +1253,6 @@ public:
 
 #include <Parser/CHColumnToSparkRow.h>
 
-
 [[maybe_unused]] static void BM_CHColumnToSparkRowNew(benchmark::State & state)
 {
     std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
@@ -1504,11 +1505,17 @@ int main(int argc, char ** argv)
     SharedContextHolder shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
-    global_context->setConfig(local_engine::SerializedPlanParser::config);
+
+    auto config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+    global_context->setConfig(config);
     const std::string path = "/";
     global_context->setPath(path);
     SerializedPlanParser::global_context = global_context;
     local_engine::SerializedPlanParser::initFunctionEnv();
+
+    auto & factory = local_engine::ReadBufferBuilderFactory::instance();
+    registerReadBufferBuildes(factory);
+
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv))
         return 1;

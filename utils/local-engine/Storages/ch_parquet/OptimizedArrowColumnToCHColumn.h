@@ -30,7 +30,7 @@ public:
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
-    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, const std::shared_ptr<arrow::Schema> & schema);
 
     /// Get missing columns that exists in header but not in arrow::Schema
     std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;

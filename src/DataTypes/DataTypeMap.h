@@ -30,7 +30,7 @@ public:
     std::string doGetName() const override;
     const char * getFamilyName() const override { return "Map"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
 

@@ -329,17 +329,17 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
 }
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
+    const std::shared_ptr<arrow::Field> & arrow_field,
     std::shared_ptr<arrow::ChunkedArray> & arrow_column,
-    const std::string & column_name,
     const std::string & format_name,
-    bool is_nullable,
     std::unordered_map<String, std::shared_ptr<ColumnWithTypeAndName>> & dictionary_values,
     bool read_ints_as_dates)
 {
-    if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
-        && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
+    const auto is_nullable = arrow_field->nullable();
+    const auto column_name = arrow_field->name();
+    if (is_nullable)
     {
-        auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates);
+        auto nested_column = readColumnFromArrowColumn(arrow_field->WithNullable(false), arrow_column, format_name, dictionary_values, read_ints_as_dates);
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
@@ -391,8 +391,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithDecimalData<arrow::Decimal256Array>(arrow_column, column_name);
         case arrow::Type::MAP:
         {
+            const auto arrow_nested_field = arrow_field->type()->field(0);
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
-            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+            auto nested_column
+                = readColumnFromArrowColumn(arrow_nested_field, arrow_nested_column, format_name, dictionary_values, read_ints_as_dates);
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
@@ -403,8 +405,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         }
         case arrow::Type::LIST:
         {
+            const auto arrow_nested_field = arrow_field->type()->field(0);
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
-            auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+            auto nested_column
+                = readColumnFromArrowColumn(arrow_nested_field, arrow_nested_column, format_name, dictionary_values, read_ints_as_dates);
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
@@ -412,7 +416,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         }
         case arrow::Type::STRUCT:
         {
-            auto arrow_type = arrow_column->type();
+            auto arrow_type = arrow_field->type();
             auto * arrow_struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
             std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
             for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -422,17 +426,19 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
             }
 
-            Columns tuple_elements;
-            DataTypes tuple_types;
             std::vector<String> tuple_names;
+            DataTypes tuple_types;
+            Columns tuple_elements;
 
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
+                const auto & nested_arrow_field = arrow_struct_type->field(i);
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
-                auto element = readColumnFromArrowColumn(nested_arrow_column, arrow_struct_type->field(i)->name(), format_name, false, dictionary_values, read_ints_as_dates);
-                tuple_elements.emplace_back(std::move(element.column));
-                tuple_types.emplace_back(std::move(element.type));
+                auto element = readColumnFromArrowColumn(
+                    nested_arrow_field, nested_arrow_column, format_name, dictionary_values, read_ints_as_dates);
                 tuple_names.emplace_back(std::move(element.name));
+                tuple_types.emplace_back(std::move(element.type));
+                tuple_elements.emplace_back(std::move(element.column));
             }
 
             auto tuple_column = ColumnTuple::create(std::move(tuple_elements));
@@ -451,8 +457,11 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                     dict_array.emplace_back(dict_chunk.dictionary());
                 }
+
+                auto * arrow_dict_type = assert_cast<arrow::DictionaryType *>(arrow_field->type().get());
+                auto arrow_dict_field = arrow::field("dict", arrow_dict_type->value_type());
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
-                auto dict_column = readColumnFromArrowColumn(arrow_dict_column, column_name, format_name, false, dictionary_values, read_ints_as_dates);
+                auto dict_column = readColumnFromArrowColumn(arrow_dict_field, arrow_dict_column, format_name, dictionary_values, read_ints_as_dates);
 
                 /// We should convert read column to ColumnUnique.
                 auto tmp_lc_column = DataTypeLowCardinality(dict_column.type).createColumn();
@@ -516,7 +525,8 @@ Block OptimizedArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema 
         arrow::ArrayVector array_vector = {arrow_array};
         auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
         std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
-        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values, false);
+        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(field, arrow_column, format_name, dict_values, false);
+        // std::cerr << "field:" << field->ToString() << ", datatype:" << sample_column.type->getName() << std::endl;
 
         sample_columns.emplace_back(std::move(sample_column));
     }
@@ -542,11 +552,12 @@ void OptimizedArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::share
 
     Stopwatch sw;
     sw.start();
-    arrowColumnsToCHChunk(res, name_to_column_ptr);
+    arrowColumnsToCHChunk(res, name_to_column_ptr, table->schema());
     real_convert += sw.elapsedNanoseconds();
 }
 
-void OptimizedArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void OptimizedArrowColumnToCHColumn::arrowColumnsToCHChunk(
+    Chunk & res, NameToColumnPtr & name_to_column_ptr, const std::shared_ptr<arrow::Schema> & schema)
 {
     if (unlikely(name_to_column_ptr.empty()))
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
@@ -568,8 +579,9 @@ void OptimizedArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToCo
             {
                 if (!nested_tables.contains(nested_table_name))
                 {
+                    const auto & arrow_field = schema->field(schema->GetFieldIndex(nested_table_name));
                     std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[nested_table_name];
-                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(arrow_column, nested_table_name, format_name, false, dictionary_values, true)};
+                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(arrow_field, arrow_column, format_name, dictionary_values, true)};
                     Block block(cols);
                     nested_tables[nested_table_name] = std::make_shared<Block>(Nested::flatten(block));
                 }
@@ -597,7 +609,10 @@ void OptimizedArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToCo
         if (read_from_nested)
             column = nested_tables[nested_table_name]->getByName(header_column.name);
         else
-            column = readColumnFromArrowColumn(arrow_column, header_column.name, format_name, false, dictionary_values, true);
+        {
+            const auto & arrow_field = schema->field(schema->GetFieldIndex(header_column.name));
+            column = readColumnFromArrowColumn(arrow_field, arrow_column, format_name, dictionary_values, true);
+        }
 
         try
         {

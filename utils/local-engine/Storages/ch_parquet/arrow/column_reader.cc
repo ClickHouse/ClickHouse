@@ -1928,7 +1928,11 @@ namespace internal {
                                                                 bool read_dictionary) {
             if (read_dictionary) {
                 return std::make_shared<ByteArrayDictionaryRecordReader>(descr, leaf_info, pool);
-            } else if (descr->logical_type()->type() == LogicalType::Type::type::STRING) {
+            } else if (descr->logical_type()->type() == LogicalType::Type::type::STRING && descr->max_definition_level() == 1) {
+                /// CHByteArrayChunkedRecordReader is only for reading columns whose max_definition_level is 1
+                /// It means CHByteArrayChunkedRecordReader is used when reading column with string type
+                /// but not used when reading column with string type nested in array/map/struct. e.g. array<string>
+                /// This fixes issue: https://github.com/Kyligence/ClickHouse/issues/166
                 return std::make_shared<CHByteArrayChunkedRecordReader>(descr, leaf_info, pool);
             } else {
                 return std::make_shared<ByteArrayChunkedRecordReader>(descr, leaf_info, pool);

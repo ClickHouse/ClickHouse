@@ -1,8 +1,8 @@
 #include "NativeSplitter.h"
 #include <Functions/FunctionFactory.h>
 #include <Parser/SerializedPlanParser.h>
+#include <Common/Exception.h>
 #include <jni/jni_common.h>
-#include "Common/Exception.h"
 #include <Common/JNIUtils.h>
 
 namespace local_engine
