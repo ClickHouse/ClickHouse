@@ -9,13 +9,13 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-/// This is the main function which optimizes the whole QueryPlan tree.
-void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+/// Main functions which optimize QueryPlan tree.
+/// First pass (ideally) apply local idempotent operations on top of Plan.
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+/// Second pass is used to apply read-in-order and attach a predicate to PK.
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
-void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
-
-/// Optimization is a function applied to QueryPlan::Node.
+/// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.
 /// It must guarantee that the structure of tree is correct.
@@ -72,11 +72,22 @@ inline const auto & getOptimizations()
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
-        //{tryDistinctReadInOrder, "distinctReadInOrder", &QueryPlanOptimizationSettings::distinct_in_order},
     }};
 
     return optimizations;
 }
+
+struct Frame
+{
+    QueryPlan::Node * node = nullptr;
+    size_t next_child = 0;
+};
+
+using Stack = std::vector<Frame>;
+
+/// Second pass optimizations.
+void optimizePrimaryKeyCondition(const Stack & stack);
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 }
 
