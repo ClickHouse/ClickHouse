@@ -1111,6 +1111,14 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
     }
     else
     {
+        /// Supported signatures:
+        ///
+        /// S3('url')
+        /// S3('url', 'format')
+        /// S3('url', 'format', 'compression')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
+
         if (engine_args.empty() || engine_args.size() > 5)
             throw Exception(
                 "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
