@@ -143,7 +143,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
         * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
         * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
-        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
+        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column [, is_deleted_column]])
         * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
         *
         * Alternatively, you can specify:
@@ -446,7 +446,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        if (arg_cnt > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (arg_cnt - min_num_params > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
                 throw Exception(
@@ -463,7 +463,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
-
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
     {
