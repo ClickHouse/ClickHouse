@@ -25,7 +25,7 @@ struct QueryPlanOptimizationSettings
     bool distinct_in_order = false;
 
     /// If read-in-order optimisation is enabled
-    bool read_in_order = false;
+    bool read_in_order = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

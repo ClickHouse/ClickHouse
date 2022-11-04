@@ -9,58 +9,32 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void optimizePrimaryKeyCondition(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizePrimaryKeyCondition(const Stack & stack)
 {
-    struct Frame
+    const auto & frame = stack.back();
+
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    auto * read_from_merge = typeid_cast<ReadFromMerge *>(frame.node->step.get());
+
+    if (!read_from_merge && !read_from_merge_tree)
+        return;
+
+    for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
-        QueryPlan::Node * node = nullptr;
-        size_t next_child = 0;
-    };
-
-    std::vector<Frame> stack;
-    stack.push_back({.node = &root});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-
-        if (frame.next_child == 0)
+        if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(*frame.node, nodes);
-
-            if (optimization_settings.distinct_in_order)
-                tryDistinctReadInOrder(frame.node);
+            if (read_from_merge_tree)
+                read_from_merge_tree->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
+            if (read_from_merge)
+                read_from_merge->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
         }
-
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
+        /// Note: actually, plan optimizations merge Filter and Expression steps.
+        /// Ideally, chain should look like (Expression -> ...) -> (Filter -> ...) -> ReadFromStorage,
+        /// So this is likely not needed.
+        else if (typeid_cast<ExpressionStep *>(iter->node->step.get()))
             continue;
-        }
-
-        auto add_read_from_storage_filter = [&](auto & storage)
-        {
-            for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
-            {
-                if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
-                    storage.addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
-                else if (typeid_cast<ExpressionStep *>(iter->node->step.get()))
-                    continue;
-                else
-                    break;
-            }
-        };
-
-        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
-            add_read_from_storage_filter(*read_from_merge_tree);
-        else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(frame.node->step.get()))
-            add_read_from_storage_filter(*read_from_merge);
-
-        stack.pop_back();
+        else
+            break;
     }
 }
 

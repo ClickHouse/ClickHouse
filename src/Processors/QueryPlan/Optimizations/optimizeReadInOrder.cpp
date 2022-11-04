@@ -814,6 +814,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
 }
 
+/// This optimisation is obsolete and will be removed.
+/// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
     /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
@@ -851,7 +853,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    if (!context->getSettings().optimize_read_in_window_order || context->getSettingsRef().allow_experimental_analyzer)
+    const auto & settings = context->getSettings();
+    if (!settings.optimize_read_in_window_order || (settings.optimize_read_in_order && settings.query_plan_read_in_order) || context->getSettingsRef().allow_experimental_analyzer)
     {
         return 0;
     }
