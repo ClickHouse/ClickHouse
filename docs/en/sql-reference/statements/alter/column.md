@@ -107,7 +107,7 @@ ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](partition.md#how-to-set-partition-expression).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
