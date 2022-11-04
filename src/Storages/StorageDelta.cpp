@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -236,7 +236,7 @@ Pipe StorageDelta::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     StorageS3::updateS3Configuration(context, base_configuration);
 
