@@ -103,6 +103,18 @@ struct MatchImpl
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
 
+    static void searchStringWithRe2(
+        const Regexps::Regexp & regexp,
+        const char * haystack_data, size_t haystack_length,
+        UInt8 & res)
+    {
+        bool match = regexp.getRE2()->Match(
+                    {haystack_data, haystack_length},
+                    0, haystack_length,
+                    re2_st::RE2::UNANCHORED, nullptr, 0);
+        res = negate ^ match;
+    }
+
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -176,15 +188,9 @@ struct MatchImpl
                 size_t prev_offset = 0;
                 for (size_t i = 0; i < haystack_size; ++i)
                 {
-                    const bool match = regexp.getRE2()->Match(
-                            {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
-                            0,
-                            haystack_offsets[i] - prev_offset - 1,
-                            re2_st::RE2::UNANCHORED,
-                            nullptr,
-                            0);
-                    res[i] = negate ^ match;
-
+                    const char * cur_haystack_data = reinterpret_cast<const char *>(&haystack_data[prev_offset]);
+                    size_t cur_haystack_length = haystack_offsets[i] - prev_offset - 1;
+                    searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
                     prev_offset = haystack_offsets[i];
                 }
             }
@@ -220,24 +226,14 @@ struct MatchImpl
                         res[i] = !negate;
                     else
                     {
-                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
-                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1] - 1;
-
+                        const char * cur_haystack_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
+                        cur_haystack_data += (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - cur_haystack_data) : 0;
+                        size_t cur_haystack_length = haystack_offsets[i] - haystack_offsets[i - 1] - 1;
                         /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                           *  so that it can match when `required_substring` occurs into the string several times,
                           *  and at the first occurrence, the regexp is not a match.
                           */
-                        const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
-                        const size_t end_pos = str_size;
-
-                        const bool match = regexp.getRE2()->Match(
-                                {str_data, str_size},
-                                start_pos,
-                                end_pos,
-                                re2_st::RE2::UNANCHORED,
-                                nullptr,
-                                0);
-                        res[i] = negate ^ match;
+                        searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
                     }
                 }
                 else
@@ -330,15 +326,9 @@ struct MatchImpl
                 size_t offset = 0;
                 for (size_t i = 0; i < haystack_size; ++i)
                 {
-                    const bool match = regexp.getRE2()->Match(
-                            {reinterpret_cast<const char *>(&haystack[offset]), N},
-                            0,
-                            N,
-                            re2_st::RE2::UNANCHORED,
-                            nullptr,
-                            0);
-                    res[i] = negate ^ match;
-
+                    const char * cur_haystack_data = reinterpret_cast<const char *>(&haystack[offset]);
+                    size_t cur_haystack_length = N;
+                    searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
                     offset += N;
                 }
             }
@@ -378,23 +368,14 @@ struct MatchImpl
                             res[i] = !negate;
                         else
                         {
-                            const char * str_data = reinterpret_cast<const char *>(next_pos - N);
-
+                            const char * cur_haystack_data = reinterpret_cast<const char *>(next_pos - N);
+                            cur_haystack_data += (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - cur_haystack_data) : 0;
+                            size_t cur_haystack_length = N;
                             /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                             *  so that it can match when `required_substring` occurs into the string several times,
                             *  and at the first occurrence, the regexp is not a match.
                             */
-                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
-                            const size_t end_pos = N;
-
-                            const bool match = regexp.getRE2()->Match(
-                                    {str_data, N},
-                                    start_pos,
-                                    end_pos,
-                                    re2_st::RE2::UNANCHORED,
-                                    nullptr,
-                                    0);
-                            res[i] = negate ^ match;
+                            searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
                         }
                     }
                     else
@@ -471,16 +452,7 @@ struct MatchImpl
                     if (!regexp->getRE2()) /// An empty regexp. Always matches.
                         res[i] = !negate;
                     else
-                    {
-                        const bool match = regexp->getRE2()->Match(
-                                {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
-                                0,
-                                cur_haystack_length,
-                                re2_st::RE2::UNANCHORED,
-                                nullptr,
-                                0);
-                        res[i] = negate ^ match;
-                    }
+                        searchStringWithRe2(*regexp, reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length, res[i]);
                 }
                 else
                 {
@@ -495,17 +467,9 @@ struct MatchImpl
                             res[i] = !negate; // no wildcards in pattern
                         else
                         {
-                            const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
-                            const size_t end_pos = cur_haystack_length;
-
-                            const bool match2 = regexp->getRE2()->Match(
-                                    {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
-                                    start_pos,
-                                    end_pos,
-                                    re2_st::RE2::UNANCHORED,
-                                    nullptr,
-                                    0);
-                            res[i] = negate ^ match2;
+                            const char * cur_haystack_data_ = reinterpret_cast<const char *>(cur_haystack_data); // NOLINT(readability-identifier-naming)
+                            cur_haystack_data_ += (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
+                            searchStringWithRe2(*regexp, cur_haystack_data_, cur_haystack_length, res[i]);
                         }
                     }
                 }
@@ -576,16 +540,7 @@ struct MatchImpl
                     if (!regexp->getRE2()) /// An empty regexp. Always matches.
                         res[i] = !negate;
                     else
-                    {
-                        const bool match = regexp->getRE2()->Match(
-                                {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
-                                0,
-                                cur_haystack_length,
-                                re2_st::RE2::UNANCHORED,
-                                nullptr,
-                                0);
-                        res[i] = negate ^ match;
-                    }
+                        searchStringWithRe2(*regexp, reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length, res[i]);
                 }
                 else
                 {
@@ -600,17 +555,9 @@ struct MatchImpl
                             res[i] = !negate; // no wildcards in pattern
                         else
                         {
-                            const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
-                            const size_t end_pos = cur_haystack_length;
-
-                            const bool match2 = regexp->getRE2()->Match(
-                                    {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
-                                    start_pos,
-                                    end_pos,
-                                    re2_st::RE2::UNANCHORED,
-                                    nullptr,
-                                    0);
-                            res[i] = negate ^ match2;
+                            const char * cur_haystack_data_ = reinterpret_cast<const char *>(cur_haystack_data); // NOLINT(readability-identifier-naming)
+                            cur_haystack_data_ += (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
+                            searchStringWithRe2(*regexp, cur_haystack_data_, cur_haystack_length, res[i]);
                         }
                     }
                 }
