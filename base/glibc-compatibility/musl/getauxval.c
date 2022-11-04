@@ -94,6 +94,11 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
     _Static_assert(sizeof(aux) < 4096, "Unexpected sizeof(aux)");
     while (__retry_read(fd, &aux, sizeof(aux)) == sizeof(aux))
     {
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+        __msan_unpoison(&aux, sizeof(aux));
+#endif
+#endif
         if (aux.a_type == AT_NULL)
         {
             break;
