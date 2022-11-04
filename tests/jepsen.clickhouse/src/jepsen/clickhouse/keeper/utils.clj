@@ -25,7 +25,7 @@
 
 (defn zk-connect
   [host port timeout]
-  (chu/exec-with-retries 30 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
+  (zk/connect (str host ":" port) :timeout-msec timeout))
 
 (defn zk-create-range
   [conn n]
@@ -129,7 +129,7 @@
 
 (defn clickhouse-alive?
   [node test]
-  (info "Checking server alive on" node)
+  (info "Checking Keeper alive on" node)
   (try
     (zk-connect (name node) 9181 30000)
     (catch Exception _ false)))

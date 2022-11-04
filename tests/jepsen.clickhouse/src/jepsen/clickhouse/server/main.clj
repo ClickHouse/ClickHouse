@@ -17,7 +17,9 @@
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]
             [jepsen.checker.timeline :as timeline]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io])
+  (:import (ch.qos.logback.classic Level)
+           (org.slf4j Logger LoggerFactory)))
 
 (def workloads
   "A map of workload names to functions that construct workloads, given opts."
@@ -28,6 +30,9 @@
   [["-w" "--workload NAME" "What workload should we run?"
     :default "set"
     :validate [workloads (cli/one-of workloads)]]
+   [nil "--keeper ADDRESS", "Address of a Keeper instance"
+    :default ""
+    :validate [#(not-empty %) "Address for Keeper cannot be empty"]]
    [nil "--nemesis NAME" "Which nemesis will poison our lives?"
     :default "random-node-killer"
     :validate [ch-nemesis/custom-nemeses (cli/one-of ch-nemesis/custom-nemeses)]]
@@ -99,6 +104,8 @@
   "Handles command line arguments. Can either run a test, or a web server for
   browsing results."
   [& args]
+  (.setLevel
+   (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
   (cli/run! (merge (cli/single-test-cmd {:test-fn clickhouse-server-test
                                          :opt-spec cli-opts})
                    (cli/test-all-cmd {:tests-fn (partial all-tests clickhouse-server-test)

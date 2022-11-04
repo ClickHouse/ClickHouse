@@ -34,10 +34,7 @@
                      (mapv :value)
                      (assoc op :type :ok, :value))))))
 
-  (teardown! [_ test]
-    (util/timeout chc/operation-timeout
-      (chc/with-connection [c conn] false
-        (j/query c ["DROP TABLE set ON CLUSTER test_cluster"]))))
+  (teardown! [_ test])
 
   (close! [_ test]
     (rc/close! conn)))

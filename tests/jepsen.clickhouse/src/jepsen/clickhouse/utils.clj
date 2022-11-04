@@ -42,7 +42,7 @@
   (let [encoded-url (md5 url)
         expected-file-name (.getName (io/file url))
         dest-folder (str binaries-cache-dir "/" encoded-url)
-        dest-file (str root-folder "/clickhouse")
+        dest-file (str dest-folder "/clickhouse")
         dest-symlink (str root-folder "/" expected-file-name)
         wget-opts (concat cu/std-wget-opts [:-O dest-file])]
     (when-not (cu/exists? dest-file)
@@ -56,7 +56,7 @@
 
 (defn get-clickhouse-url
   [url]
-  (non-precise-cached-wget! url root-folder binaries-cache-dir))
+  (non-precise-cached-wget! url))
 
 (defn get-clickhouse-scp
   [path]
@@ -66,7 +66,7 @@
   [source]
   (info "Downloading clickhouse from" source)
   (cond
-    (clojure.string/starts-with? source "http") (get-clickhouse-url source root-folder binaries-cache-dir)
+    (clojure.string/starts-with? source "http") (get-clickhouse-url source)
     (.exists (io/file source)) (get-clickhouse-scp source root-folder)
     :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
 
@@ -156,7 +156,7 @@
          (prepare-dirs)
          (if (or (not (cu/exists? binary-path)) (not reuse-binary))
            (do (info "Downloading clickhouse")
-               (let [clickhouse-path (download-clickhouse version root-folder binaries-cache-dir)]
+               (let [clickhouse-path (download-clickhouse version)]
                  (install-downloaded-clickhouse clickhouse-path)))
            (info "Binary already exsist on path" binary-path "skipping download"))
          (extra-setup test node)
