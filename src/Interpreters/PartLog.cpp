@@ -74,6 +74,7 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
             {"RegularMerge",        static_cast<Int8>(REGULAR_MERGE)},
             {"TTLDeleteMerge",      static_cast<Int8>(TTL_DELETE_MERGE)},
             {"TTLRecompressMerge",  static_cast<Int8>(TTL_RECOMPRESS_MERGE)},
+            {"TTLDropMerge",        static_cast<Int8>(TTL_DROP_MERGE)},
         }
     );
 
