@@ -571,13 +571,13 @@ Similar to base58Decode, but returns an empty string in case of error.
 
 ## base64Encode(s)
 
-Encodes ‘s’ string into base64
+Encodes ‘s’ FixedString or String into base64.
 
 Alias: `TO_BASE64`.
 
 ## base64Decode(s)
 
-Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+Decode base64-encoded FixedString or String ‘s’ into original string. In case of failure raises an exception.
 
 Alias: `FROM_BASE64`.
 
