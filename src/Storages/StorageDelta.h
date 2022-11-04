@@ -89,7 +89,7 @@ public:
 
 private:
     void Init();
-    
+
     // DeltaLake stores data in parts in different files
     // keys is vector of parts with latest version
     // generateQueryFromKeys constructs query from parts filenames for
