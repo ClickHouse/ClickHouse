@@ -193,7 +193,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
-    if (settings.optimize_syntax_fuse_functions)
+    if (settings.optimize_fuse_sum_count_avg)
         manager.addPass(std::make_unique<FuseFunctionsPass>());
 }
 
