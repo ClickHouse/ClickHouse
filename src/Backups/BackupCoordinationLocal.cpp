@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
+typedef IBackupCoordination::SizeAndChecksum SizeAndChecksum;
 using FileInfo = IBackupCoordination::FileInfo;
 
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
