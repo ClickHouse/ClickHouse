@@ -34,7 +34,8 @@ namespace ErrorCodes
 template <typename Allocator = Allocator<false>>
 struct Memory : boost::noncopyable, Allocator
 {
-    static constexpr size_t pad_right = PADDING_FOR_SIMD - 1;
+    /// Padding is needed to allow usage of 'memcpySmallAllowReadWriteOverflow15' function with this buffer.
+    static constexpr size_t pad_right = 15;
 
     size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;

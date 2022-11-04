@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #include <Disks/DiskFactory.h>
 
@@ -90,6 +90,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             "DiskAzureBlobStorage",
             std::move(metadata_storage),
             std::move(azure_object_storage),
+            DiskType::AzureBlobStorage,
             send_metadata,
             copy_thread_pool_size
         );

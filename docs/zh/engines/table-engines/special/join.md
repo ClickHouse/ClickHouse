@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/special/join
 sidebar_position: 40
 sidebar_label: 关联表引擎
 ---

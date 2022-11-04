@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/row-policy
 sidebar_position: 41
 sidebar_label: "Политика доступа"
 ---

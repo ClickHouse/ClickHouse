@@ -279,7 +279,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -295,7 +295,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -311,7 +311,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
     };
 
@@ -360,15 +360,15 @@ private:
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
-    const JoinKind kind;
-    const JoinStrictness strictness;
+    JoinKind kind;
+    JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-    const ASOFJoinInequality asof_inequality;
+    ASOFJoinInequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.

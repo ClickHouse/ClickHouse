@@ -31,7 +31,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 {
     ParserKeyword s_comment("COMMENT");
@@ -42,9 +41,7 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
     return comment;
 }
-
 }
-
 
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -152,7 +149,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_assume("ASSUME");
 
     ParserIdentifier name_p;
-    ParserExpression expression_p;
+    ParserLogicalOrExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
@@ -708,6 +705,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    ASTPtr live_view_timeout;
     ASTPtr live_view_periodic_refresh;
 
     String cluster_str;
@@ -739,6 +737,20 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (ParserKeyword{"WITH"}.ignore(pos, expected))
     {
+        if (ParserKeyword{"TIMEOUT"}.ignore(pos, expected))
+        {
+            if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
+            {
+                live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
+            }
+
+            /// Optional - AND
+            if (ParserKeyword{"AND"}.ignore(pos, expected))
+                with_and = true;
+
+            with_timeout = true;
+        }
+
         if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
         {
             if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
@@ -813,6 +825,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
 
+    if (live_view_timeout)
+        query->live_view_timeout.emplace(live_view_timeout->as<ASTLiteral &>().value.safeGet<UInt64>());
+
     if (live_view_periodic_refresh)
         query->live_view_periodic_refresh.emplace(live_view_periodic_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
 
@@ -840,8 +855,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserStorage storage_p;
     ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
-    ParserExpression watermark_p;
-    ParserExpression lateness_p;
+    ParserIntervalOperatorExpression watermark_p;
+    ParserIntervalOperatorExpression lateness_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr table;

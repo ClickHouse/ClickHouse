@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 32
 sidebar_label: "Произвольный ключ партиционирования"
 ---

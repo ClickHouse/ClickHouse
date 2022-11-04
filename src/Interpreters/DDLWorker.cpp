@@ -19,14 +19,12 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/setThreadName.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/isLocalAddress.h>
-#include <Core/ServerUUID.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
@@ -115,7 +113,7 @@ DDLWorker::DDLWorker(
 void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(prev_stop_flag);
+    chassert(true);
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
@@ -499,7 +497,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
 
 void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 {
-    UInt32 id = DDLTaskBase::getLogEntryNumber(entry_name);
+    UInt64 id = DDLTaskBase::getLogEntryNumber(entry_name);
     auto prev_id = max_id.load(std::memory_order_relaxed);
     while (prev_id < id)
     {
@@ -517,11 +515,6 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
     chassert(!task.completely_processed);
 
-    /// Setup tracing context on current thread for current DDL
-    OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__ ,
-        task.entry.tracing_context,
-        this->context->getOpenTelemetrySpanLog());
-
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
 
@@ -533,8 +526,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper);
 
     /// Try fast path
-    const String canary_value = Field(ServerUUID::get()).dump();
-    auto create_active_res = zookeeper->tryCreate(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
+    auto create_active_res = zookeeper->tryCreate(active_node_path, {}, zkutil::CreateMode::Ephemeral);
     if (create_active_res != Coordination::Error::ZOK)
     {
         if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
@@ -565,10 +557,10 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zookeeper->handleEphemeralNodeExistence(active_node_path, canary_value);
+            zookeeper->waitForEphemeralToDisappearIfAny(active_node_path);
         }
 
-        zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
+        zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
     }
 
     /// We must hold the lock until task execution status is committed to ZooKeeper,
@@ -898,7 +890,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, zkutil::RemoveException{"finished"});
+            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;

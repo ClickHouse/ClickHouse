@@ -443,7 +443,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
             final_lsn = current_lsn;
-            committed = true;
             break;
         }
         case 'R': // Relation
@@ -594,12 +593,6 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
-    updateLsn();
-}
-
-
-void MaterializedPostgreSQLConsumer::updateLsn()
-{
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -621,7 +614,6 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 
     final_lsn = result[0][0].as<std::string>();
     LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
-    committed = false;
     return final_lsn;
 }
 
@@ -779,7 +771,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
             try
             {
-                /// LOG_DEBUG(log, "Current message: {}", (*row)[1]);
+                // LOG_DEBUG(log, "Current message: {}", (*row)[1]);
                 processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
             }
             catch (const Exception & e)
@@ -798,7 +790,6 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
     catch (const pqxx::broken_connection &)
     {
-        LOG_DEBUG(log, "Connection was broken");
         connection->tryUpdateConnection();
         return false;
     }
@@ -832,13 +823,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
     }
 
     if (!tables_to_sync.empty())
-    {
         syncTables();
-    }
-    else if (committed)
-    {
-        updateLsn();
-    }
 
     return true;
 }

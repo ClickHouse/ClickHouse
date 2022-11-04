@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/
 title: "Синтаксис запросов SELECT"
 sidebar_label: SELECT
 sidebar_position: 32

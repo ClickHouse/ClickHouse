@@ -19,7 +19,7 @@
 #include <Storages/ColumnsDescription.h>
 
 
-#include "config.h"
+#include "config_core.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
@@ -53,8 +53,8 @@ class AccessRightsElements;
 enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
+class ExternalModelsLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
-class IUserDefinedSQLObjectsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -68,7 +68,6 @@ class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class Macros;
 struct Progress;
 struct FileProgress;
@@ -88,7 +87,6 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
-class AsynchronousInsertLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -164,8 +162,6 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
-class TemporaryDataOnDiskScope;
-using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -231,7 +227,7 @@ private:
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
-    std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
+    QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
@@ -367,29 +363,9 @@ private:
     /// A flag, used to mark if reader needs to apply deleted rows mask.
     bool apply_deleted_mask = true;
 
-    /// Temporary data for query execution accounting.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
-    /// Some counters for current query execution.
-    /// Most of them are workarounds and should be removed in the future.
-    struct KitchenSink
-    {
-        std::atomic<size_t> analyze_counter = 0;
-
-        KitchenSink() = default;
-
-        KitchenSink(const KitchenSink & rhs)
-            : analyze_counter(rhs.analyze_counter.load())
-        {}
-
-        KitchenSink & operator=(const KitchenSink & rhs)
-        {
-            analyze_counter = rhs.analyze_counter.load();
-            return *this;
-        }
-    };
-
-    KitchenSink kitchen_sink;
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
+    OpenTelemetryTraceContext query_trace_context;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -437,24 +413,23 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
-
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
-    void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
+    VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setUserDefinedPath(const String & path);
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -619,7 +594,6 @@ public:
 
     void killCurrentQuery();
 
-    bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
@@ -647,26 +621,24 @@ public:
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
-    /// Reset settings to default value
-    void resetSettingsToDefaultValue(const std::vector<String> & names);
-
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
+    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
+    const ExternalModelsLoader & getExternalModelsLoader() const;
+    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
-    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
-    EmbeddedDictionaries & getEmbeddedDictionaries();
-    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
-    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
-
-    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-    const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
-    IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
+    ExternalModelsLoader & getExternalModelsLoader();
+    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
@@ -751,9 +723,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(QueryStatusPtr elem);
+    void setProcessListElement(QueryStatus * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    QueryStatusPtr getProcessListElement() const;
+    QueryStatus * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -816,7 +788,6 @@ public:
     void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
-    ThreadPool & getLoadMarksThreadpool() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -898,8 +869,8 @@ public:
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
+
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
-    std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -933,7 +904,7 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
-    double getUptimeSeconds() const;
+    time_t getUptimeSeconds() const;
 
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
@@ -1024,17 +995,6 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
-
-    enum class FilesystemReaderType
-    {
-        SYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_REMOTE_FS_READER,
-    };
-
-    IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-
-    ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;

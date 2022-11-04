@@ -4,14 +4,12 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
-#include <base/errnoToString.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
-
 #if defined(OS_LINUX)
     #include <sys/prctl.h>
 #endif
@@ -59,7 +57,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -266,8 +264,8 @@ private:
     {
         size_t pos = message.find('\n');
 
-        LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, thread_num, message.substr(0, pos));
+        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
 
         /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
@@ -315,15 +313,15 @@ private:
 
         if (query_id.empty())
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, strsignal(sig), sig);
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
-                thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
@@ -575,8 +573,7 @@ void BaseDaemon::closeFDs()
     {
         int max_fd = -1;
 #if defined(_SC_OPEN_MAX)
-        // fd cannot be > INT_MAX
-        max_fd = static_cast<int>(sysconf(_SC_OPEN_MAX));
+        max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
@@ -668,7 +665,7 @@ void BaseDaemon::initialize(Application & self)
     if (config().has("timezone"))
     {
         const std::string config_timezone = config().getString("timezone");
-        if (0 != setenv("TZ", config_timezone.data(), 1)) // NOLINT(concurrency-mt-unsafe) // ok if not called concurrently with other setenv/getenv
+        if (0 != setenv("TZ", config_timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
@@ -839,7 +836,6 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -872,14 +868,12 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
-        build_id = "";
+        build_id_info = "no build id";
     else
-        build_id = build_id_hex;
+        build_id_info = "build id: " + build_id_hex;
 #else
-    build_id = "";
+    build_id_info = "no build id";
 #endif
-
-    git_hash = getGitHash();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -892,9 +886,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 
@@ -947,13 +940,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
@@ -1021,8 +1014,8 @@ void BaseDaemon::setupWatchdog()
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
             Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
+            if (config().getString("logger.formatting", "") == "json")
+                pf = new OwnJSONPatternFormatter;
             else
                 pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
@@ -1071,7 +1064,7 @@ void BaseDaemon::setupWatchdog()
                     break;
             }
             else if (errno != EINTR)
-                throw Poco::Exception("Cannot waitpid, errno: " + errnoToString());
+                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
         } while (true);
 
         if (errno == ECHILD)

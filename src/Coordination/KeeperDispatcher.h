@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 
@@ -14,7 +15,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
-#include <Coordination/KeeperSnapshotManagerS3.h>
 
 namespace DB
 {
@@ -76,8 +76,6 @@ private:
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
-
-    KeeperSnapshotManagerS3 snapshot_s3;
 
     /// Thread put requests to raft
     void requestThread();
