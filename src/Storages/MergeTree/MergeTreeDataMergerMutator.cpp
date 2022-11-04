@@ -303,19 +303,28 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
         /// TTL delete is preferred to recompression
-        TTLDeleteMergeSelector delete_ttl_selector(
+        TTLDeleteMergeSelector drop_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
-                data_settings->ttl_only_drop_parts);
+                true);
 
-        parts_to_merge = delete_ttl_selector.select(
-            parts_ranges,
-            data_settings->ttl_only_drop_parts ? data_settings->max_bytes_to_merge_at_max_space_in_pool : max_total_size_to_merge);
-
+        parts_to_merge = drop_ttl_selector.select(parts_ranges,data_settings->max_bytes_to_merge_at_max_space_in_pool);
         if (!parts_to_merge.empty())
         {
-            future_part->merge_type = data_settings->ttl_only_drop_parts ? MergeType::TTLDrop : MergeType::TTLDelete;
+            future_part->merge_type = MergeType::TTLDrop;
+        }
+        else if (!data_settings->ttl_only_drop_parts)
+        {
+            TTLDeleteMergeSelector delete_ttl_selector(
+                next_delete_ttl_merge_times_by_partition,
+                current_time,
+                data_settings->merge_with_ttl_timeout,
+                false);
+
+            parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+            if (!parts_to_merge.empty())
+                future_part->merge_type = MergeType::TTLDelete;
         }
         else if (metadata_snapshot->hasAnyRecompressionTTL())
         {
