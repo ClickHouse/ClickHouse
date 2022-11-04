@@ -96,9 +96,8 @@ public:
                 if (isRedundantExpression(expr).redundant)
                     continue;
             }
-            else
+            else if (auto * column = elem->as<ColumnNode>())
             {
-                auto * column = elem->as<ColumnNode>();
                 existing_keys.insert(column->getColumnName());
             }
 
