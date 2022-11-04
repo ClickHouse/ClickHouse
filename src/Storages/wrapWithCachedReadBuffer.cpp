@@ -71,7 +71,7 @@ ModificationTimeCache & getModificationTimeCache()
     return modification_time_cache;
 }
 
-std::unique_ptr<SeekableReadBuffer> wrapWithCachedReadBuffer(
+std::unique_ptr<ReadBufferFromFileBase> wrapWithCachedReadBuffer(
     ImplementationBufferCreator impl_creator,
     const std::string & object_path,
     size_t object_size,

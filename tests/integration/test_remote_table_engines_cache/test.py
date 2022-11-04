@@ -9,29 +9,43 @@ from pyhdfs import HdfsClient
 from helpers.s3_common import disable_auth_for_s3_bucket
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
+hive_instance = "roottestremotetableenginescache_hdfs1_1"
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
+        node = cluster.add_instance(
             "node",
             main_configs=[
                 "configs/config.d/remote_table_engines_cache.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/cache_log.xml",
+                "configs/config.d/hdfs.xml",
             ],
+            #extra_configs=["configs/hdfs-site.xml", "data/prepare_hive_data.sh"],
             with_minio=True,
             with_hdfs=True,
-            with_nginx=True,
+            #with_hive=True,
         )
 
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
-        disable_auth_for_s3_bucket(cluster)
+        # for hive
+        #prepare_file_name = "prepare_hive_data.sh"
+        #cluster.copy_file_to_container(
+        #    hive_instance,
+        #    f"{CURRENT_TEST_DIR}/data/{prepare_file_name}",
+        #    f"/{prepare_file_name}",
+        #)
+        #cluster.exec_in_container(
+        #    hive_instance,
+        #    ["bash", "-c", f"bash /{prepare_file_name}"],
+        #)
 
         yield cluster
     finally:
@@ -56,7 +70,7 @@ def test_simple(cluster, engine, max_download_threads):
             "url"
         ] = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
 
-    insertion_engine = {"s3": "s3", "hdfs": "hdfs", "url": "s3"}
+    insertion_engine = {"s3": "s3", "hdfs": "hdfs", "url": "s3", "hive": "hive"}
     table_function = get_table_function(args, insertion_engine[engine])
     node.query(
         f"""

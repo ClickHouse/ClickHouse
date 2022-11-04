@@ -15,6 +15,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -37,19 +38,43 @@ namespace DB
             " - hive_url, hive_database, hive_table, structure, partition_by_keys",
             getName());
 
-        if (args.size() != 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, message);
+        ExternalDataSourceConfiguration configuration;
+        if (auto named_collection = getExternalDataSourceConfiguration(args, context_))
+        {
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
+            configuration.set(common_configuration);
 
-        for (auto & arg : args)
-            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "structure")
+                    table_structure = checkAndGetLiteralArgument<String>(arg_value, "structure");
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key-value argument." "Got: {}. {}", arg_name, message);
+            }
 
-        hive_metastore_url = checkAndGetLiteralArgument<String>(args[0], "hive_url");
-        hive_database = checkAndGetLiteralArgument<String>(args[1], "hive_database");
-        hive_table = checkAndGetLiteralArgument<String>(args[2], "hive_table");
-        table_structure = checkAndGetLiteralArgument<String>(args[3], "structure");
-        partition_by_def = checkAndGetLiteralArgument<String>(args[4], "partition_by_keys");
+            hive_metastore_url = configuration.host;
+            hive_database = configuration.database;
+            hive_table = configuration.table;
+            actual_columns = parseColumnsListFromString(table_structure, context_);
 
-        actual_columns = parseColumnsListFromString(table_structure, context_);
+            assert(!hive_metastore_url.empty());
+        }
+        else
+        {
+            if (args.size() != 5)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, message);
+
+            for (auto & arg : args)
+                arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
+
+            hive_metastore_url = checkAndGetLiteralArgument<String>(args[0], "hive_url");
+            hive_database = checkAndGetLiteralArgument<String>(args[1], "hive_database");
+            hive_table = checkAndGetLiteralArgument<String>(args[2], "hive_table");
+            table_structure = checkAndGetLiteralArgument<String>(args[3], "structure");
+            partition_by_def = checkAndGetLiteralArgument<String>(args[4], "partition_by_keys");
+
+            actual_columns = parseColumnsListFromString(table_structure, context_);
+        }
     }
 
     ColumnsDescription TableFunctionHive::getActualTableStructure(ContextPtr /*context_*/) const { return actual_columns; }

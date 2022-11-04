@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <string>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } } // NOLINT(cppcoreguidelines-virtual-class-destructor)
 

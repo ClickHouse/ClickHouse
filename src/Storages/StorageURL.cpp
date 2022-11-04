@@ -658,7 +658,7 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
             (size_t start_offset, size_t end_offset_non_including)
         {
             auto impl_buffer_creator = [&](){ return read_buffer_creator(0, 0); };
-            auto result_buffer = wrapWithCachedReadBuffer(
+            std::unique_ptr<SeekableReadBuffer> result_buffer = wrapWithCachedReadBuffer(
                 impl_buffer_creator, uri_str, *file_info.size, *file_info.last_modification_time, context->getReadSettings());
 
             if (!result_buffer)

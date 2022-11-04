@@ -9,6 +9,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {
@@ -82,7 +83,7 @@ public:
 
     static bool shouldCollectObjectInfos(ContextPtr local_context);
 
-    static std::unique_ptr<ReadBuffer> createHDFSReadBuffer(
+    static std::unique_ptr<ReadBufferFromFileBase> createHDFSReadBuffer(
         const String & uri,
         const String & object_path,
         ObjectInfos * object_infos,

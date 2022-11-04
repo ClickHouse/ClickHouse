@@ -20,13 +20,13 @@
 namespace DB
 {
 
-class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
+class AsynchronousReadBufferFromHDFS : public ReadBufferFromFileBase
 {
 public:
     AsynchronousReadBufferFromHDFS(
         IAsynchronousReader & reader_,
         const ReadSettings & settings_,
-        std::shared_ptr<ReadBufferFromHDFS> impl_);
+        std::shared_ptr<ReadBufferFromFileBase> impl_);
 
     ~AsynchronousReadBufferFromHDFS() override;
 
@@ -53,7 +53,7 @@ private:
 
     IAsynchronousReader & reader;
     size_t priority;
-    std::shared_ptr<ReadBufferFromHDFS> impl;
+    std::shared_ptr<ReadBufferFromFileBase> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
     Memory<> prefetch_buffer;
 

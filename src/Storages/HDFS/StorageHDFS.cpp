@@ -601,7 +601,7 @@ bool StorageHDFS::supportsSubsetOfColumns() const
     return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
 }
 
-std::unique_ptr<ReadBuffer> StorageHDFS::createHDFSReadBuffer(
+std::unique_ptr<ReadBufferFromFileBase> StorageHDFS::createHDFSReadBuffer(
     const String & uri,
     const String & object_path,
     ObjectInfos * object_infos,

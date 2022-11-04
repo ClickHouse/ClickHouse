@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/HDFS/StorageHDFS.h>
 
 
 namespace DB
@@ -190,6 +191,7 @@ public:
         {
             bool need_next_file
                 = (!generate_chunk_from_metadata && !reader) || (generate_chunk_from_metadata && !current_file_remained_rows);
+
             if (need_next_file)
             {
                 current_idx = source_info->next_uri_to_read.fetch_add(1);
@@ -199,42 +201,28 @@ public:
                 current_file = source_info->hive_files[current_idx];
                 current_path = current_file->getPath();
 
-                /// This is the case that all columns to read are partition keys. We can construct const columns
-                /// directly without reading from hive files.
+                /// This is the case that all columns to read are partition keys.
+                /// We can construct const columns directly without reading from hive files.
                 if (generate_chunk_from_metadata && current_file->getRows())
                 {
                     current_file_remained_rows = *(current_file->getRows());
                     return generateChunkFromMetadata();
                 }
 
-                String uri_with_path = hdfs_namenode_url + current_path;
-                auto compression = chooseCompressionMethod(current_path, compression_method);
-                std::unique_ptr<ReadBuffer> raw_read_buf;
+                String uri_with_path = fs::path(hdfs_namenode_url) / current_path;
+                std::unique_ptr<ReadBufferFromFileBase> remote_read_buf;
                 try
                 {
-                    auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
+                    remote_read_buf = StorageHDFS::createHDFSReadBuffer(hdfs_namenode_url, current_path, nullptr, getContext());
+
+                    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
                     {
-                        auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url,
-                            current_path,
-                            getContext()->getGlobalContext()->getConfigRef(),
-                            getContext()->getReadSettings());
+                        remote_read_buf = std::make_unique<AsynchronousReadBufferFromHDFS>(
+                            IObjectStorage::getThreadPoolReader(), read_settings, std::move(remote_read_buf));
+                    }
 
-                        bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-                        if (thread_pool_read)
-                        {
-                            return std::make_unique<AsynchronousReadBufferFromHDFS>(
-                                IObjectStorage::getThreadPoolReader(), read_settings, std::move(buf));
-                        }
-                        else
-                        {
-                            return buf;
-                        }
-                    };
-
-                    raw_read_buf = get_raw_read_buf();
                     if (read_settings.remote_fs_prefetch)
-                        raw_read_buf->prefetch();
+                        remote_read_buf->prefetch();
                 }
                 catch (Exception & e)
                 {
@@ -243,11 +231,11 @@ public:
                     throw;
                 }
 
-                /// CACHE ADD HERE
-                auto remote_read_buf = std::move(raw_read_buf);
-
                 if (current_file->getFormat() == FileFormat::TEXT)
+                {
+                    auto compression = chooseCompressionMethod(current_path, compression_method);
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);
+                }
                 else
                     read_buf = std::move(remote_read_buf);
 
@@ -262,6 +250,7 @@ public:
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                     });
                 }
+
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
