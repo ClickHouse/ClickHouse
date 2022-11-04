@@ -16,13 +16,10 @@ select * from test FINAL;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
 
-SELECT '== 2 parts exist ==';
 -- Expect d6 to be version=3 is_deleted=false
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d1', 5, 0), ('d2', 1, 0), ('d3', 1, 0), ('d4', 1, 0),  ('d5', 1, 0), ('d6', 1, 0), ('d6', 3, 0);
 -- Insert previous version of 'd6' but only v=3 is_deleted=false will remain
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d1', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d1', 5, 0), ('d2', 1, 0), ('d3', 1, 0), ('d4', 1, 0),  ('d5', 1, 0), ('d6', 1, 0), ('d6', 2, 1);
--- Both versions exist
-select * from test;
 SELECT '== Only last version remains after OPTIMIZE W/ CLEANUP ==';
 OPTIMIZE TABLE test FINAL CLEANUP;
 select * from test;
@@ -38,7 +35,7 @@ select * from test;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid) SETTINGS clean_deleted_rows='Always';
 
-SELECT '== Test of the SETTINGS clean_deleted_rows as alaways ==';
+SELECT '== Test of the SETTINGS clean_deleted_rows as Alaways ==';
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
 OPTIMIZE TABLE test FINAL;
@@ -53,7 +50,7 @@ OPTIMIZE TABLE test FINAL;
 -- d6 has NOT to be removed since we set clean_deleted_rows as 'Never'
 select * from test;
 
-SELECT '===Replicated case===';
+SELECT '=== Replicated case ===';
 
 DROP TABLE IF EXISTS testReplica1;
 DROP TABLE IF EXISTS testReplica2;
