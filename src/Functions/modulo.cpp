@@ -80,7 +80,7 @@ struct ModuloByConstantImpl
             || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
         {
             for (size_t i = 0; i < size; ++i)
-                dst[i] = src[i];
+                dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
 
@@ -101,16 +101,19 @@ struct ModuloByConstantImpl
 
         if (b & (b - 1))
         {
-            libdivide::divider<A> divider(b);
+            libdivide::divider<A> divider(static_cast<A>(b));
             for (size_t i = 0; i < size; ++i)
-                dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+            {
+                /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
+            }
         }
         else
         {
             // gcc libdivide doesn't work well for pow2 division
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = src[i] & mask;
+                dst[i] = static_cast<ResultType>(src[i] & mask);
         }
     }
 

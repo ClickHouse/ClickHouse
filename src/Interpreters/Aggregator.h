@@ -1301,13 +1301,13 @@ private:
         Method & method,
         Arena * arena,
         bool final,
-        size_t bucket) const;
+        Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
-        size_t bucket,
+        Int32 bucket,
         std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;

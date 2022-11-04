@@ -15,6 +15,7 @@ public:
     {
         ParsedAST, /// 'EXPLAIN AST SELECT ...'
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
+        QueryTree, /// 'EXPLAIN QUERY TREE SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
@@ -109,6 +110,7 @@ private:
         {
             case ParsedAST: return "EXPLAIN AST";
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
+            case QueryTree: return "EXPLAIN QUERY TREE";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
             case QueryEstimates: return "EXPLAIN ESTIMATE";

@@ -68,12 +68,12 @@ namespace ErrorCodes
 namespace
 {
 
-int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    const int sleep_max_ms = 1000 * seconds_to_wait;
-    const int sleep_one_ms = 100;
-    int sleep_current_ms = 0;
-    int current_connections = 0;
+    const size_t sleep_max_ms = 1000 * seconds_to_wait;
+    const size_t sleep_one_ms = 100;
+    size_t sleep_current_ms = 0;
+    size_t current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -441,7 +441,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         main_config_reloader.reset();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
-        int current_connections = 0;
+        size_t current_connections = 0;
         for (auto & server : *servers)
         {
             server.stop();

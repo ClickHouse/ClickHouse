@@ -38,7 +38,7 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit GregorianDate(is_integer auto mjd);
+        explicit GregorianDate(is_integer auto modified_julian_day);
 
         /** Convert to Modified Julian Day. The type T is an integral type
           * which should be at least 32 bits wide, and should preferably
@@ -89,7 +89,8 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit OrdinalDate(is_integer auto mjd);
+        template <is_integer DayT>
+        explicit OrdinalDate(DayT modified_julian_day);
 
         /** Convert to Modified Julian Day. The type T is an integral
           * type which should be at least 32 bits wide, and should
@@ -257,9 +258,9 @@ namespace DB
     }
 
     template <typename YearT>
-    GregorianDate<YearT>::GregorianDate(is_integer auto mjd)
+    GregorianDate<YearT>::GregorianDate(is_integer auto modified_julian_day)
     {
-        const OrdinalDate<YearT> ord(mjd);
+        const OrdinalDate<YearT> ord(modified_julian_day);
         const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
         year_       = ord.year();
         month_      = md.month();
@@ -329,9 +330,24 @@ namespace DB
     }
 
     template <typename YearT>
-    OrdinalDate<YearT>::OrdinalDate(is_integer auto mjd)
+    template <is_integer DayT>
+    OrdinalDate<YearT>::OrdinalDate(DayT modified_julian_day)
     {
-        const auto a         = mjd + 678575;
+        /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
+
+        if constexpr (is_signed_v<DayT> && std::numeric_limits<DayT>::lowest() < -678941)
+            if (modified_julian_day < -678941)
+                throw Exception(
+                    ErrorCodes::CANNOT_FORMAT_DATETIME,
+                    "Value cannot be represented as date because it's out of range");
+
+        if constexpr (std::numeric_limits<DayT>::max() > 2973119)
+            if (modified_julian_day > 2973119)
+                throw Exception(
+                    ErrorCodes::CANNOT_FORMAT_DATETIME,
+                    "Value cannot be represented as date because it's out of range");
+
+        const auto a         = modified_julian_day + 678575;
         const auto quad_cent = gd::div(a, 146097);
         const auto b         = gd::mod(a, 146097);
         const auto cent      = gd::min(gd::div(b, 36524), 3);
@@ -339,8 +355,9 @@ namespace DB
         const auto quad      = gd::div(c, 1461);
         const auto d         = gd::mod(c, 1461);
         const auto y         = gd::min(gd::div(d, 365), 3);
+
         day_of_year_ = d - y * 365 + 1;
-        year_      = quad_cent * 400 + cent * 100 + quad * 4 + y + 1;
+        year_ = static_cast<YearT>(quad_cent * 400 + cent * 100 + quad * 4 + y + 1);
     }
 
     template <typename YearT>
