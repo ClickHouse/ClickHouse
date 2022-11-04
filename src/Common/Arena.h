@@ -34,8 +34,7 @@ namespace DB
 class Arena : private boost::noncopyable
 {
 private:
-    /// Padding allows to use 'memcpySmallAllowReadWriteOverflow15' instead of 'memcpy'.
-    static constexpr size_t pad_right = 15;
+    static constexpr size_t pad_right = PADDING_FOR_SIMD - 1;
 
     /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
     struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization

@@ -893,7 +893,7 @@ namespace
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            UInt64 pid;
+            Int32 pid;
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
@@ -982,9 +982,9 @@ namespace
         return 0;
     }
 
-    UInt64 isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file)
     {
-        UInt64 pid = 0;
+        int pid = 0;
 
         if (fs::exists(pid_file))
         {
@@ -1057,7 +1057,7 @@ namespace
         if (force && do_not_kill)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
 
-        UInt64 pid = isRunning(pid_file);
+        int pid = isRunning(pid_file);
 
         if (!pid)
             return 0;
