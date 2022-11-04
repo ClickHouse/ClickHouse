@@ -142,8 +142,7 @@ std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys,
     std::erase_if(keys, [&format](const std::string & s) { return std::filesystem::path(s).extension() != "." + format; });
 
     // for each partition path take only latest file
-
-    std::unordered_map<std::string, std::pair<std::string, uint64_t>> latest_parquets;
+    std::unordered_map<std::string, std::pair<std::string, uint64_t>> latest_parts;
 
     for (const auto & key : keys)
     {
@@ -161,9 +160,9 @@ std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys,
         // every filename contains metadata split by "_", timestamp is after last "_"
         uint64_t timestamp = std::stoul(key.substr(key.find_last_of("_") + 1));
 
-        auto it = latest_parquets.find(path);
+        auto it = latest_parts.find(path);
 
-        if (it != latest_parquets.end())
+        if (it != latest_parts.end())
         {
             if (it->second.second < timestamp)
             {
@@ -172,13 +171,13 @@ std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys,
         }
         else
         {
-            latest_parquets[path] = {key, timestamp};
+            latest_parts[path] = {key, timestamp};
         }
     }
 
     std::vector<std::string> filtered_keys;
     std::transform(
-        latest_parquets.begin(), latest_parquets.end(), std::back_inserter(filtered_keys), [](const auto & kv) { return kv.second.first; });
+        latest_parts.begin(), latest_parts.end(), std::back_inserter(filtered_keys), [](const auto & kv) { return kv.second.first; });
 
     std::string new_query;
 
@@ -218,6 +217,7 @@ void registerStorageHudi(StorageFactory & factory)
             if (engine_args.size() == 4)
                 configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
 
+            // Apache Hudi uses Parquet by default
             if (configuration.format == "auto")
                 configuration.format = "Parquet";
 

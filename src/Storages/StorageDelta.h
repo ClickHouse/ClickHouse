@@ -42,16 +42,16 @@ private:
 class JsonMetadataGetter
 {
 public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_);
+    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
 
     std::vector<String> getFiles() { return std::move(metadata).ListCurrentFiles(); }
 
 private:
-    void Init();
+    void Init(ContextPtr context);
 
     std::vector<String> getJsonLogFiles();
 
-    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
+    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
 
     void handleJSON(const JSON & json);
 
@@ -63,6 +63,9 @@ private:
 class StorageDelta : public IStorage
 {
 public:
+    // 1. Parses internal file structure of table
+    // 2. Finds out parts with latest version
+    // 3. Creates url for underlying StorageS3 enigne to handle reads
     StorageDelta(
         const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
@@ -74,6 +77,7 @@ public:
 
     String getName() const override { return "DeltaLake"; }
 
+    // Reads latest version of DeltaLake table
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -85,6 +89,11 @@ public:
 
 private:
     void Init();
+    
+    // DeltaLake stores data in parts in different files
+    // keys is vector of parts with latest version
+    // generateQueryFromKeys constructs query from parts filenames for
+    // underlying StorageS3 engine
     static String generateQueryFromKeys(std::vector<String> && keys);
 
     StorageS3::S3Configuration base_configuration;
