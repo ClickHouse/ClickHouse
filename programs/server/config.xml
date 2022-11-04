@@ -466,6 +466,30 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <!-- Complexity requirements for plaintext passwords. -->
+    <password_complexity>
+        <rule>
+            <match>.{12}</match>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <match>\p{N}</match>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+        <rule>
+            <match>\p{Ll}</match>
+            <message>contain at least 1 lowercase character</message>
+        </rule>
+        <rule>
+            <match>\p{Lu}</match>
+            <message>contain at least 1 uppercase character</message>
+        </rule>
+        <rule>
+            <match>[^\p{L}\p{N}]</match>
+            <message>contain at least 1 special character</message>
+        </rule>
+    </password_complexity>
+
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
 
