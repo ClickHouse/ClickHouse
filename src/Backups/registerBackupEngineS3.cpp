@@ -47,7 +47,7 @@ void registerBackupEngineS3(BackupFactory & factory)
     auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
 #if USE_AWS_S3
-        String backup_name = params.backup_info.toString();
+        String backup_name_for_logging = params.backup_info.toStringForLogging(params.context);
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
@@ -111,12 +111,12 @@ void registerBackupEngineS3(BackupFactory & factory)
         if (params.open_mode == IBackup::OpenMode::READ)
         {
             auto reader = std::make_shared<BackupReaderS3>(S3::URI{Poco::URI{s3_uri}}, access_key_id, secret_access_key, params.context);
-            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, reader, params.context);
+            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
         }
         else
         {
             auto writer = std::make_shared<BackupWriterS3>(S3::URI{Poco::URI{s3_uri}}, access_key_id, secret_access_key, params.context);
-            return std::make_unique<BackupImpl>(backup_name, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
+            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
         }
 #else
         throw Exception("S3 support is disabled", ErrorCodes::SUPPORT_IS_DISABLED);

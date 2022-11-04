@@ -85,8 +85,8 @@ public:
     [[nodiscard]] virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
     /// Creates column with the same type and specified size.
-    /// If size is less current size, then data is cut.
-    /// If size is greater, than default values are appended.
+    /// If size is less than current size, then data is cut.
+    /// If size is greater, then default values are appended.
     [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
 
     /// Returns number of values in column.
@@ -453,6 +453,16 @@ public:
         return getPtr();
     }
 
+    /// Some columns may require finalization before using of other operations.
+    virtual void finalize() {}
+    virtual bool isFinalized() const { return true; }
+
+    MutablePtr cloneFinalized() const
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        finalized->finalize();
+        return finalized;
+    }
 
     [[nodiscard]] static MutablePtr mutate(Ptr ptr)
     {

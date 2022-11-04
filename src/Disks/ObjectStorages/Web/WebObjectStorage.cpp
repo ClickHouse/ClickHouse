@@ -178,17 +178,6 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     }
 }
 
-void WebObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    for (const auto & [file_path, file_info] : files)
-    {
-        if (file_info.type == FileType::File && file_path.starts_with(path))
-        {
-            children.emplace_back(file_path, file_info.size);
-        }
-    }
-}
-
 void WebObjectStorage::throwNotAllowed()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported");
