@@ -583,7 +583,6 @@ if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/aes.c")
 endif ()
 
-
 target_sources(_krb5 PRIVATE
     ${ALL_SRCS}
 )
