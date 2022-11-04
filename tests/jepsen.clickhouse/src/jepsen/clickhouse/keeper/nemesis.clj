@@ -10,20 +10,6 @@
    [jepsen.clickhouse.utils :as chu]
    [jepsen.clickhouse.keeper.utils :refer :all]))
 
-(defn random-node-killer-nemesis
-  []
-  (nemesis/node-start-stopper
-   rand-nth
-   (fn start [test node] (chu/kill-clickhouse! node test))
-   (fn stop [test node] (start-clickhouse! node test))))
-
-(defn all-nodes-killer-nemesis
-  []
-  (nemesis/node-start-stopper
-   identity
-   (fn start [test node] (chu/kill-clickhouse! node test))
-   (fn stop [test node] (start-clickhouse! node test))))
-
 (defn select-last-file
   [path]
   (last (clojure.string/split
@@ -87,28 +73,6 @@
   (corruptor-nemesis coordination-data-dir (fn [path]
                                              (c/exec :rm :-fr path))))
 
-(defn partition-bridge-nemesis
-  []
-  (nemesis/partitioner nemesis/bridge))
-
-(defn blind-node
-  [nodes]
-  (let [[[victim] others] (nemesis/split-one nodes)]
-    {victim (into #{} others)}))
-
-(defn blind-node-partition-nemesis
-  []
-  (nemesis/partitioner blind-node))
-
-(defn blind-others
-  [nodes]
-  (let [[[victim] others] (nemesis/split-one nodes)]
-    (into {} (map (fn [node] [node #{victim}])) others)))
-
-(defn blind-others-partition-nemesis
-  []
-  (nemesis/partitioner blind-others))
-
 (defn network-non-symmetric-nemesis
   []
   (nemesis/partitioner nemesis/bridge))
@@ -120,9 +84,9 @@
            {:type :info, :f :corrupt}])))
 
 (def custom-nemesises
-  {"random-node-killer" {:nemesis (random-node-killer-nemesis)
+  {"random-node-killer" {:nemesis (chnem/random-node-killer-nemesis start-clickhouse!)
                          :generator (chnem/start-stop-generator 5 5)}
-   "all-nodes-killer" {:nemesis (all-nodes-killer-nemesis)
+   "all-nodes-killer" {:nemesis (chnem/all-nodes-killer-nemesis start-clickhouse!)
                        :generator (chnem/start-stop-generator 1 10)}
    "simple-partitioner" {:nemesis (nemesis/partition-random-halves)
                          :generator (chnem/start-stop-generator 5 5)}
@@ -138,9 +102,9 @@
                                    :generator (corruption-generator)}
    "drop-data-corruptor" {:nemesis (drop-all-corruption-nemesis)
                           :generator (corruption-generator)}
-   "bridge-partitioner" {:nemesis (partition-bridge-nemesis)
+   "bridge-partitioner" {:nemesis (chnem/partition-bridge-nemesis)
                          :generator (chnem/start-stop-generator 5 5)}
-   "blind-node-partitioner" {:nemesis (blind-node-partition-nemesis)
+   "blind-node-partitioner" {:nemesis (chnem/blind-node-partition-nemesis)
                              :generator (chnem/start-stop-generator 5 5)}
-   "blind-others-partitioner" {:nemesis (blind-others-partition-nemesis)
+   "blind-others-partitioner" {:nemesis (chnem/blind-others-partition-nemesis)
                                :generator (chnem/start-stop-generator 5 5)}})
