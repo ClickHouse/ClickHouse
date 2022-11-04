@@ -502,7 +502,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         ParserTupleOfLiterals parser_tuple;
 
         Tokens tokens_number(istr.position(), istr.buffer().end());
-        IParser::Pos iterator(tokens_number, settings.max_parser_depth);
+        IParser::Pos iterator(tokens_number, static_cast<unsigned>(settings.max_parser_depth));
         Expected expected;
         ASTPtr ast;
         if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))

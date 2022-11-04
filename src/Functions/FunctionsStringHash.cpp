@@ -35,13 +35,13 @@ struct Hash
 #ifdef __SSE4_2__
         return _mm_crc32_u64(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-        return __crc32cd(crc, val);
+        return __crc32cd(static_cast<UInt32>(crc), val);
 #else
         throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 
-    static UInt64 crc32u32(UInt64 crc [[maybe_unused]], UInt32 val [[maybe_unused]])
+    static UInt64 crc32u32(UInt32 crc [[maybe_unused]], UInt32 val [[maybe_unused]])
     {
 #ifdef __SSE4_2__
         return _mm_crc32_u32(crc, val);
@@ -52,7 +52,7 @@ struct Hash
 #endif
     }
 
-    static UInt64 crc32u16(UInt64 crc [[maybe_unused]], UInt16 val [[maybe_unused]])
+    static UInt64 crc32u16(UInt32 crc [[maybe_unused]], UInt16 val [[maybe_unused]])
     {
 #ifdef __SSE4_2__
         return _mm_crc32_u16(crc, val);
@@ -63,7 +63,7 @@ struct Hash
 #endif
     }
 
-    static UInt64 crc32u8(UInt64 crc [[maybe_unused]], UInt8 val [[maybe_unused]])
+    static UInt64 crc32u8(UInt32 crc [[maybe_unused]], UInt8 val [[maybe_unused]])
     {
 #ifdef __SSE4_2__
         return _mm_crc32_u8(crc, val);
@@ -84,7 +84,7 @@ struct Hash
             if constexpr (CaseInsensitive)
                 x |= 0x20u; /// see toLowerIfAlphaASCII from StringUtils.h
 
-            crc = crc32u8(crc, x);
+            crc = crc32u8(static_cast<UInt32>(crc), x);
             --size;
             ++start;
         }
@@ -96,7 +96,7 @@ struct Hash
             if constexpr (CaseInsensitive)
                 x |= 0x2020u;
 
-            crc = crc32u16(crc, x);
+            crc = crc32u16(static_cast<UInt32>(crc), x);
             size -= 2;
             start += 2;
         }
@@ -108,7 +108,7 @@ struct Hash
             if constexpr (CaseInsensitive)
                 x |= 0x20202020u;
 
-            crc = crc32u32(crc, x);
+            crc = crc32u32(static_cast<UInt32>(crc), x);
             size -= 4;
             start += 4;
         }

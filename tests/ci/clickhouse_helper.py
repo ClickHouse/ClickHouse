@@ -37,12 +37,8 @@ class ClickHouseHelper:
                     url, params=params, data=json_str, headers=auth
                 )
             except Exception as e:
-                logging.warning(
-                    "Received exception while sending data to %s on %s attempt: %s",
-                    url,
-                    i,
-                    e,
-                )
+                error = f"Received exception while sending data to {url} on {i} attempt: {e}"
+                logging.warning(error)
                 continue
 
             logging.info("Response content '%s'", response.content)
