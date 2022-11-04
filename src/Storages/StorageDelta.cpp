@@ -111,7 +111,7 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 
     request.SetBucket(bucket);
 
-    // DeltaLake format stores all metadata json files in _delta_log directory 
+    // DeltaLake format stores all metadata json files in _delta_log directory
     request.SetPrefix(std::filesystem::path(table_path) / "_delta_log");
 
     while (!is_finished)
@@ -139,7 +139,7 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
         // Needed in case any more results are available
         // if so, we will continue reading, and not read keys that were already read
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        
+
         /// Set to false if all of the results were returned. Set to true if more keys
         /// are available to return. If the number of results exceeds that specified by
         /// MaxKeys, all of the results might not be returned
