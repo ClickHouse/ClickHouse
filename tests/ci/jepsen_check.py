@@ -5,6 +5,8 @@ import logging
 import os
 import sys
 
+import argparse
+
 import boto3
 from github import Github
 import requests
@@ -26,8 +28,11 @@ from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 DESIRED_INSTANCE_COUNT = 3
-IMAGE_NAME = "clickhouse/keeper-jepsen-test"
-CHECK_NAME = "ClickHouse Keeper Jepsen"
+KEEPER_IMAGE_NAME = "clickhouse/keeper-jepsen-test"
+KEEPER_CHECK_NAME = "ClickHouse Keeper Jepsen"
+
+SERVER_IMAGE_NAME = "clickhouse/server-jepsen-test"
+SERVER_CHECK_NAME = "ClickHouse Server Jepsen"
 
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"
@@ -49,8 +54,8 @@ def _parse_jepsen_output(path):
                 current_type = "FAIL"
 
             if (
-                line.startswith("store/clickhouse-keeper")
-                or line.startswith("clickhouse-keeper")
+                line.startswith("store/clickhouse")
+                or line.startswith("clickhouse")
             ) and current_type:
                 test_results.append((line.strip(), current_type))
 
@@ -132,17 +137,27 @@ def get_run_command(
     repo_path,
     build_url,
     result_path,
+    extra_args,
     docker_image,
 ):
     return (
         f"docker run --network=host -v '{ssh_sock_dir}:{ssh_sock_dir}' -e SSH_AUTH_SOCK={ssh_auth_sock} "
         f"-e PR_TO_TEST={pr_info.number} -e SHA_TO_TEST={pr_info.sha} -v '{nodes_path}:/nodes.txt' -v {result_path}:/test_output "
-        f"-e 'CLICKHOUSE_PACKAGE={build_url}' -v '{repo_path}:/ch' -e 'CLICKHOUSE_REPO_PATH=/ch' -e NODES_USERNAME=ubuntu {docker_image}"
+        f"-e 'CLICKHOUSE_PACKAGE={build_url}' -v '{repo_path}:/ch' -e 'CLICKHOUSE_REPO_PATH=/ch' -e NODES_USERNAME=ubuntu {extra_args} {docker_image}"
     )
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(
+                    prog = 'Jepsen Check',
+                    description = 'Check that uses Jepsen. Both Keeper and Server can be tested.')
+    parser.add_argument('program', help='What should be tested. Valid values "keeper", "server"')
+    args = parser.parse_args()
+
+    if args.program != 'server' and args.program != 'keeper':
+        logging.warning(f"Invalid argument '{args.program}'")
+        sys.exit(0)
 
     stopwatch = Stopwatch()
 
@@ -161,7 +176,9 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token(), per_page=100)
 
-    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    check_name = KEEPER_CHECK_NAME if args.program == 'keeper' else SERVER_CHECK_NAME
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -177,9 +194,9 @@ if __name__ == "__main__":
     nodes_path = save_nodes_to_file(instances, TEMP_PATH)
 
     # always use latest
-    docker_image = IMAGE_NAME
+    docker_image = KEEPER_IMAGE_NAME if args.program == 'keeper' else SERVER_IMAGE_NAME
 
-    build_name = get_build_name_for_check(CHECK_NAME)
+    build_name = get_build_name_for_check(check_name)
 
     if pr_info.number == 0:
         version = get_version_from_repo()
@@ -203,6 +220,10 @@ if __name__ == "__main__":
             logging.warning("Cannot fetch build in 30 minutes, exiting")
             sys.exit(0)
 
+    extra_args = ''
+    if args.program == 'server':
+        extra_args = f'-e KEEPER_NODE test'
+
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
         auth_sock_dir = os.path.dirname(ssh_auth_sock)
@@ -214,6 +235,7 @@ if __name__ == "__main__":
             REPO_COPY,
             build_url,
             result_path,
+            extra_args,
             docker_image,
         )
         logging.info("Going to run jepsen: %s", cmd)
@@ -255,11 +277,11 @@ if __name__ == "__main__":
         pr_info.sha,
         test_result,
         [run_log_path] + additional_data,
-        CHECK_NAME,
+        check_name,
     )
 
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, CHECK_NAME, description, status, report_url)
+    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(
@@ -269,7 +291,7 @@ if __name__ == "__main__":
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
-        CHECK_NAME,
+        check_name,
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
     clear_autoscaling_group()
