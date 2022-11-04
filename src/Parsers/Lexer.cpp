@@ -378,10 +378,10 @@ Token Lexer::nextTokenImpl()
                     return Token(TokenType::DollarSign, token_begin, ++pos);
                 }
             }
-            if (isWordCharASCII(*pos))
+            if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;
-                while (pos < end && isWordCharASCII(*pos))
+                while (pos < end && (isWordCharASCII(*pos) || *pos == '$'))
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
