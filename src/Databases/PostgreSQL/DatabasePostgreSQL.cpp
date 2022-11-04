@@ -445,12 +445,7 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
 
     if (which.isDateTime64())
     {
-        auto ast_expression = std::make_shared<ASTFunction>();
-
-        ast_expression->name = "DateTime64";
-        ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-        return ast_expression;
+        return makeASTFunction("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
