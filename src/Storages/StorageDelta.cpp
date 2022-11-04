@@ -60,20 +60,20 @@ std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
     return keys;
 }
 
-JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_)
+JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context)
     : base_configuration(configuration_), table_path(table_path_)
 {
-    Init();
+    Init(context);
 }
 
-void JsonMetadataGetter::Init()
+void JsonMetadataGetter::Init(ContextPtr context)
 {
     auto keys = getJsonLogFiles();
 
     // read data from every json log file
     for (const String & key : keys)
     {
-        auto buf = createS3ReadBuffer(key);
+        auto buf = createS3ReadBuffer(key, context);
 
         while (!buf->eof())
         {
@@ -110,6 +110,8 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
     const auto bucket{base_configuration.uri.bucket};
 
     request.SetBucket(bucket);
+
+    // DeltaLake format stores all metadata json files in _delta_log directory 
     request.SetPrefix(std::filesystem::path(table_path) / "_delta_log");
 
     while (!is_finished)
@@ -129,18 +131,25 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
         {
             const auto & filename = obj.GetKey();
 
+            // DeltaLake metadata files have json extension
             if (std::filesystem::path(filename).extension() == ".json")
                 keys.push_back(filename);
         }
 
+        // Needed in case any more results are available
+        // if so, we will continue reading, and not read keys that were already read
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+        
+        /// Set to false if all of the results were returned. Set to true if more keys
+        /// are available to return. If the number of results exceeds that specified by
+        /// MaxKeys, all of the results might not be returned
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
 
     return keys;
 }
 
-std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key)
+std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key, ContextPtr context)
 {
     // TBD: add parallel downloads
     return std::make_shared<ReadBufferFromS3>(
@@ -149,7 +158,7 @@ std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String 
         key,
         base_configuration.uri.version_id,
         /* max single read retries */ 10,
-        ReadSettings{});
+        context->getReadSettings());
 }
 
 void JsonMetadataGetter::handleJSON(const JSON & json)
@@ -186,7 +195,7 @@ StorageDelta::StorageDelta(
     StorageInMemoryMetadata storage_metadata;
     StorageS3::updateS3Configuration(context_, base_configuration);
 
-    JsonMetadataGetter getter{base_configuration, table_path};
+    JsonMetadataGetter getter{base_configuration, table_path, context_};
 
     auto keys = getter.getFiles();
 
@@ -245,6 +254,9 @@ Pipe StorageDelta::read(
 
 String StorageDelta::generateQueryFromKeys(std::vector<String> && keys)
 {
+    // DeltaLake store data parts in different files
+    // keys are filenames of parts
+    // for StorageS3 to read all parts we need format {key1,key2,key3,...keyn}
     std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
     return new_query;
 }
@@ -270,6 +282,7 @@ void registerStorageDelta(StorageFactory & factory)
             if (engine_args.size() == 4)
                 configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
 
+            // DeltaLake uses Parquet by default
             if (configuration.format == "auto")
                 configuration.format = "Parquet";
 
