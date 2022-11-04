@@ -118,7 +118,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return static_cast<HashValue>(Hash()(key));
+        return Hash()(key);
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree

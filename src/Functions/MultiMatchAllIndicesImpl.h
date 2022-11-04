@@ -8,7 +8,8 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
-#include "config.h"
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -116,7 +117,7 @@ struct MultiMatchAllIndicesImpl
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
-                static_cast<unsigned>(length),
+                length,
                 0,
                 smart_scratch.get(),
                 on_match,
@@ -227,7 +228,7 @@ struct MultiMatchAllIndicesImpl
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
-                static_cast<unsigned>(cur_haystack_length),
+                cur_haystack_length,
                 0,
                 smart_scratch.get(),
                 on_match,

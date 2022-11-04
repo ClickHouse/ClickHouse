@@ -265,7 +265,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -275,22 +275,22 @@ struct CRC32Hash
 
         if (size < 8)
         {
-            return static_cast<unsigned>(hashLessThan8(x.data, x.size));
+            return hashLessThan8(x.data, x.size);
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1ULL;
 
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = static_cast<unsigned>(CRC_INT(res, word));
+            res = CRC_INT(res, word);
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = static_cast<unsigned>(CRC_INT(res, word));
+        res = CRC_INT(res, word);
 
         return res;
     }
@@ -302,7 +302,7 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef /* x */) const
+    size_t operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }

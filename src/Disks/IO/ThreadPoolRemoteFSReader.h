@@ -3,7 +3,6 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -14,8 +13,6 @@ public:
     ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_);
 
     std::future<IAsynchronousReader::Result> submit(Request request) override;
-
-    void wait() override { pool.wait(); }
 
 private:
     ThreadPool pool;

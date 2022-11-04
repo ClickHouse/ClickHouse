@@ -462,9 +462,8 @@
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
-    <allow_plaintext_password>1</allow_plaintext_password>
-    <allow_no_password>1</allow_no_password>
-    <allow_implicit_no_password>1</allow_implicit_no_password>
+    <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
+    <!-- <allow_no_password>0</allow_no_password> -->`
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -1114,6 +1113,10 @@
     <asynchronous_metric_log>
         <database>system</database>
         <table>asynchronous_metric_log</table>
+        <!--
+            Asynchronous metrics are updated once a minute, so there is
+            no need to flush more often.
+        -->
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
@@ -1172,18 +1175,6 @@
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </processors_profile_log>
-
-    <!-- Log of asynchronous inserts. It allows to check status
-         of insert query in fire-and-forget mode.
-    -->
-    <asynchronous_insert_log>
-        <database>system</database>
-        <table>asynchronous_insert_log</table>
-
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <partition_by>event_date</partition_by>
-        <ttl>event_date + INTERVAL 3 DAY</ttl>
-    </asynchronous_insert_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.

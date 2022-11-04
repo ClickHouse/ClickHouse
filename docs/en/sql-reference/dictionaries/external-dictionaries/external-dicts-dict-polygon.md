@@ -14,10 +14,8 @@ Example of a polygon dictionary configuration:
 <dictionary>
     <structure>
         <key>
-            <attribute>
-                <name>key</name>
-                <type>Array(Array(Array(Array(Float64))))</type>
-            </attribute>
+            <name>key</name>
+            <type>Array(Array(Array(Array(Float64))))</type>
         </key>
 
         <attribute>

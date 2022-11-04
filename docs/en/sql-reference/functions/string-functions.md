@@ -565,25 +565,21 @@ Result:
 └────────────────────────────┘
 ```
 
-## tryBase58Decode(s)
-
-Similar to base58Decode, but returns an empty string in case of error.
-
 ## base64Encode(s)
 
-Encodes ‘s’ FixedString or String into base64.
+Encodes ‘s’ string into base64
 
 Alias: `TO_BASE64`.
 
 ## base64Decode(s)
 
-Decode base64-encoded FixedString or String ‘s’ into original string. In case of failure raises an exception.
+Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
 
 Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s)
 
-Similar to base64Decode, but returns an empty string in case of error.
+Similar to base64Decode, but in case of error an empty string would be returned.
 
 ## endsWith(s, suffix)
 

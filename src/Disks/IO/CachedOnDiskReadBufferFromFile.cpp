@@ -240,6 +240,7 @@ CachedOnDiskReadBufferFromFile::ImplementationBufferPtr
 CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
 {
     auto download_state = file_segment->state();
+    LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
@@ -250,7 +251,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
         }
         else
         {
-            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+            LOG_DEBUG(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
             read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
             return getRemoteFSReadBuffer(*file_segment, read_type);
         }
@@ -262,7 +263,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
         {
             case FileSegment::State::SKIP_CACHE:
             {
-                LOG_TRACE(log, "Bypassing cache because file segment state is `SKIP_CACHE`");
+                LOG_DEBUG(log, "Bypassing cache because file segment state is `SKIP_CACHE`");
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 return getRemoteFSReadBuffer(*file_segment, read_type);
             }
@@ -357,7 +358,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 }
                 else
                 {
-                    LOG_TRACE(
+                    LOG_DEBUG(
                         log,
                         "Bypassing cache because file segment state is `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
@@ -615,7 +616,10 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 }
                 else
                 {
-                    LOG_TEST(log, "Bypassing cache because writeCache (in predownload) method failed");
+                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
+                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+
                     continue_predownload = false;
                 }
             }
@@ -654,7 +658,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 implementation_buffer->setReadUntilPosition(file_segment->range().right + 1); /// [..., range.right]
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
 
-                LOG_TRACE(
+                LOG_TEST(
                     log,
                     "Predownload failed because of space limit. "
                     "Will read from remote filesystem starting from offset: {}",
@@ -782,7 +786,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     assertCorrectness();
 
     if (file_offset_of_buffer_end == read_until_position)
+    {
+        LOG_TEST(log, "Read finished on offset {}", file_offset_of_buffer_end);
         return false;
+    }
 
     if (!initialized)
         initialize(file_offset_of_buffer_end, getTotalSizeToRead());
@@ -806,7 +813,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             {
                 bool need_complete_file_segment = file_segment->isDownloader();
                 if (need_complete_file_segment)
+                {
+                    LOG_TEST(log, "Resetting downloader {} from scope exit", file_segment->getDownloader());
                     file_segment->completePartAndResetDownloader();
+                }
             }
 
             chassert(!file_segment->isDownloader());
@@ -946,12 +956,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 else
                 {
                     chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-                    LOG_TRACE(log, "Bypassing cache because writeCache method failed");
+                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
                 }
             }
             else
             {
-                LOG_TRACE(log, "No space left in cache, will continue without cache download");
+                LOG_DEBUG(log, "No space left in cache, will continue without cache download");
                 file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 

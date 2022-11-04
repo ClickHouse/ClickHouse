@@ -28,7 +28,7 @@
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 #include <Common/getRandomASCIIString.h>
-#include <Common/StringUtils/StringUtils.h>
+
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 
@@ -190,7 +190,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
+        auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
     }
     else
@@ -230,9 +230,9 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
-    ThreadPoolCallbackRunner<void> scheduler;
+    ScheduleFunc scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunner(getThreadPoolWriter());
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         client.get(),
@@ -248,7 +248,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
+void S3ObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
@@ -274,49 +274,6 @@ void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSi
 
         for (const auto & object : objects)
             children.emplace_back(object.GetKey(), object.GetSize());
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-    } while (outcome.GetResult().GetIsTruncated());
-}
-
-void S3ObjectStorage::getDirectoryContents(const std::string & path,
-    RelativePathsWithSize & files,
-    std::vector<std::string> & directories) const
-{
-    auto settings_ptr = s3_settings.get();
-    auto client_ptr = client.get();
-
-    Aws::S3::Model::ListObjectsV2Request request;
-    request.SetBucket(bucket);
-    request.SetPrefix(path);
-    request.SetMaxKeys(settings_ptr->list_object_keys_size);
-    request.SetDelimiter("/");
-
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-    do
-    {
-        ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
-        outcome = client_ptr->ListObjectsV2(request);
-        throwIfError(outcome);
-
-        auto result = outcome.GetResult();
-        auto result_objects = result.GetContents();
-        auto result_common_prefixes = result.GetCommonPrefixes();
-
-        if (result_objects.empty() && result_common_prefixes.empty())
-            break;
-
-        for (const auto & object : result_objects)
-            files.emplace_back(object.GetKey(), object.GetSize());
-
-        for (const auto & common_prefix : result_common_prefixes)
-        {
-            std::string directory = common_prefix.GetPrefix();
-            /// Make it compatible with std::filesystem::path::filename()
-            trimRight(directory, '/');
-            directories.emplace_back(directory);
-        }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     } while (outcome.GetResult().GetIsTruncated());
@@ -527,7 +484,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
-        part_request.SetPartNumber(static_cast<int>(part_number));
+        part_request.SetPartNumber(part_number);
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = client_ptr->UploadPartCopy(part_request);
@@ -560,7 +517,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         for (size_t i = 0; i < part_tags.size(); ++i)
         {
             Aws::S3::Model::CompletedPart part;
-            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(static_cast<int>(i) + 1));
+            multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
         }
 
         req.SetMultipartUpload(multipart_upload);

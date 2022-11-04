@@ -1,10 +1,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 
@@ -99,22 +99,19 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
     Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
-
-    Strings exists_paths;
+    std::vector<std::future<Coordination::ExistsResponse>> replicas_status_futures;
+    replicas_status_futures.reserve(replicas.size());
     for (const auto & replica : replicas)
         if (replica != storage.replica_name)
-            exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+            replicas_status_futures.emplace_back(zookeeper->asyncExists(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
 
-    auto exists_result = zookeeper->exists(exists_paths);
-    auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+    std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
+    std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
     size_t active_replicas = 1;     /// Assume current replica is active (will check below)
-    for (size_t i = 0; i < exists_paths.size(); ++i)
-    {
-        auto status = exists_result[i];
-        if (status.error == Coordination::Error::ZOK)
+    for (auto & status : replicas_status_futures)
+        if (status.get().error == Coordination::Error::ZOK)
             ++active_replicas;
-    }
 
     size_t replicas_number = replicas.size();
     size_t quorum_size = getQuorumSize(replicas_number);
@@ -138,8 +135,8 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
-    auto is_active = get_results[0];
-    auto host = get_results[1];
+    auto is_active = is_active_future.get();
+    auto host = host_future.get();
 
     if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);
@@ -165,9 +162,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       */
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
-    if (!storage_snapshot->object_columns.empty())
-        convertDynamicColumnsToTuples(block, storage_snapshot);
-
+    deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
@@ -270,7 +265,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
+            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder, delayed_chunk->replicas_num);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -303,7 +298,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", replicas_num);
+        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder(), replicas_num);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -317,6 +312,7 @@ void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
+    DataPartStorageBuilderPtr builder,
     size_t replicas_num)
 {
     /// It is possible that we alter a part with different types of source columns.
@@ -327,7 +323,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -500,7 +496,7 @@ void ReplicatedMergeTreeSink::commitPart(
         try
         {
             auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
+            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
         }
         catch (const Exception & e)
         {
@@ -564,7 +560,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
+                part->renameTo(temporary_part_relative_path, false, builder);
+                builder->commit();
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next itration.

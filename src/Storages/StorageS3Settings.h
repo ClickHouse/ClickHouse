@@ -7,9 +7,6 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/HeaderCollection.h>
-
-#include <IO/S3Common.h>
 
 namespace Poco::Util
 {
@@ -18,11 +15,43 @@ class AbstractConfiguration;
 
 namespace DB
 {
+struct HttpHeader
+{
+    String name;
+    String value;
+
+    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
+};
+
+using HeaderCollection = std::vector<HttpHeader>;
 
 struct Settings;
 
 struct S3Settings
 {
+    struct AuthSettings
+    {
+        String access_key_id;
+        String secret_access_key;
+        String region;
+        String server_side_encryption_customer_key_base64;
+
+        HeaderCollection headers;
+
+        std::optional<bool> use_environment_credentials;
+        std::optional<bool> use_insecure_imds_request;
+
+        inline bool operator==(const AuthSettings & other) const
+        {
+            return access_key_id == other.access_key_id && secret_access_key == other.secret_access_key
+                && region == other.region
+                && server_side_encryption_customer_key_base64 == other.server_side_encryption_customer_key_base64
+                && headers == other.headers
+                && use_environment_credentials == other.use_environment_credentials
+                && use_insecure_imds_request == other.use_insecure_imds_request;
+        }
+    };
+
     struct ReadWriteSettings
     {
         size_t max_single_read_retries = 0;
@@ -52,7 +81,7 @@ struct S3Settings
         void updateFromSettingsIfEmpty(const Settings & settings);
     };
 
-    S3::AuthSettings auth_settings;
+    AuthSettings auth_settings;
     ReadWriteSettings rw_settings;
 
     inline bool operator==(const S3Settings & other) const
@@ -65,6 +94,7 @@ struct S3Settings
 class StorageS3Settings
 {
 public:
+    StorageS3Settings() = default;
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
     S3Settings getSettings(const String & endpoint) const;

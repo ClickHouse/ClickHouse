@@ -279,7 +279,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 
         size_t end = start + length;
         for (size_t i = start; i < end; ++i)
-            insertFromWithOwnership(from, i);
+            insertFrom(from, i);
     }
     else
     {
@@ -448,24 +448,19 @@ void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
     data.push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
 
-void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size_t n)
+void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
     ///  because ownership of states of aggregate function cannot be shared for individual rows,
     ///  (only as a whole, see comment above).
-    /// ensureOwnership() will execute in insertDefault()
+    ensureOwnership();
     insertDefault();
     insertMergeFrom(from, n);
 }
 
-void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
-{
-    insertRangeFrom(from, n, 1);
-}
-
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
-    /// ensureOwnership() will execute in insertDefault()
+    ensureOwnership();
     insertDefault();
     insertMergeFrom(place);
 }

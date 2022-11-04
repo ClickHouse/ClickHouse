@@ -29,9 +29,6 @@ public:
     String getName() const override { return "JSONObjectEachRowRowOutputFormat"; }
 
 private:
-    void write(const Columns & columns, size_t row) override;
-    void writeField(const IColumn & column, const ISerialization & serialization, size_t row) override;
-    void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeRowBetweenDelimiter() override;
@@ -39,8 +36,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
 
-    std::optional<size_t> field_index_for_object_name;
-    String object_name;
+    size_t row_num = 0;
 };
 
 }

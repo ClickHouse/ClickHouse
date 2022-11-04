@@ -89,7 +89,6 @@ public:
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
-    ObjectStoragePtr getObjectStorage() override;
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
@@ -107,8 +106,6 @@ public:
 
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
-
-    virtual DiskPtr getNestedDisk() const;
 
 protected:
     Executor & getExecutor() override;

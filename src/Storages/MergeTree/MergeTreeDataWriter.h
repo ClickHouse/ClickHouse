@@ -52,6 +52,7 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
+        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
@@ -73,20 +74,31 @@ public:
 
     /// For insertion.
     static TemporaryPart writeProjectionPart(
-        const MergeTreeData & data,
+        MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part);
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
+        const IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
+        MergeTreeData & data,
+        Poco::Logger * log,
+        Block block,
+        const ProjectionDescription & projection,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
+        const IMergeTreeDataPart * parent_part,
+        size_t block_num);
+
+    /// For WriteAheadLog AddPart.
+    static TemporaryPart writeInMemoryProjectionPart(
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part,
-        size_t block_num);
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
+        const IMergeTreeDataPart * parent_part);
 
     static Block mergeBlock(
         const Block & block,
@@ -98,14 +110,18 @@ public:
 private:
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
+        MergeTreeDataPartType part_type,
+        const String & relative_path,
+        const DataPartStorageBuilderPtr & data_part_storage_builder,
         bool is_temp,
-        IMergeTreeDataPart * parent_part,
+        const IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection);
 
     MergeTreeData & data;
+
     Poco::Logger * log;
 };
 

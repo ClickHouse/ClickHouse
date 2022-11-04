@@ -46,7 +46,7 @@ public:
 
     const MergeTreeData::HardlinkedFiles & getHardlinkedFiles() const;
 
-    MutableDataPartStoragePtr getBuilder() const;
+    DataPartStorageBuilderPtr getBuilder() const;
 
 private:
 

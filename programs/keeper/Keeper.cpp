@@ -24,8 +24,8 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
-#include "config.h"
-#include "config_version.h"
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -68,12 +68,12 @@ namespace ErrorCodes
 namespace
 {
 
-size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    const size_t sleep_max_ms = 1000 * seconds_to_wait;
-    const size_t sleep_one_ms = 100;
-    size_t sleep_current_ms = 0;
-    size_t current_connections = 0;
+    const int sleep_max_ms = 1000 * seconds_to_wait;
+    const int sleep_one_ms = 100;
+    int sleep_current_ms = 0;
+    int current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -441,7 +441,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         main_config_reloader.reset();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
-        size_t current_connections = 0;
+        int current_connections = 0;
         for (auto & server : *servers)
         {
             server.stop();
@@ -490,9 +490,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 void Keeper::logRevision() const
 {
     Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 
