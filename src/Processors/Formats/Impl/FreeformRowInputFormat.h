@@ -1,8 +1,5 @@
 #pragma once
 
-#include "Core/NamesAndTypes.h"
-#include "DataTypes/IDataType.h"
-#include "Processors/Formats/IInputFormat.h"
 #include "Processors/Formats/IRowInputFormat.h"
 #include "Processors/Formats/ISchemaReader.h"
 
@@ -17,7 +14,7 @@ public:
     String getName() const override { return "FreeformRowInputFormat"; }
 
 private:
-    bool readRow(MutableColumns & column, RowReadExtension &) override;
+    bool readRow(MutableColumns & columns, RowReadExtension &) override;
     const FormatSettings format_settings;
 };
 
@@ -25,10 +22,13 @@ class FreeformSchemaReader : public IRowSchemaReader
 {
 public:
     FreeformSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    // readSchema initiates the simultaneous iterations on multiple lines and pick the best solution
+    NamesAndTypesList readSchema() override;
 
 private:
-    NamesAndTypesList readSchema() override;
-    DataTypes readRowAndGetDataTypes() override;
+    std::vector<DataTypes> readRowAndGenerateSolutions();
+    std::vector<std::pair<DataTypePtr, char *>> readNextPossibleFields();
+    void recursivelyGetNextFieldInRow(char * current_pos, DataTypes current_result, std::vector<DataTypes> & solutions);
 };
 
 }
