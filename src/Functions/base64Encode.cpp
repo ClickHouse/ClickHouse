@@ -1,10 +1,7 @@
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBase64Conversion.h>
 
-#include "config.h"
-
 #if USE_BASE64
-#    include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -17,4 +14,5 @@ REGISTER_FUNCTION(Base64Encode)
     factory.registerAlias("TO_BASE64", "base64Encode", FunctionFactory::CaseInsensitive);
 }
 }
+
 #endif
