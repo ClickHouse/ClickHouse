@@ -482,6 +482,8 @@ struct ZTestMoments
 template <typename T>
 struct AnalysisOfVarianceMoments
 {
+    constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
+
     /// Sums of values within a group
     std::vector<T> xs1{};
     /// Sums of squared values within a group
@@ -493,6 +495,10 @@ struct AnalysisOfVarianceMoments
     {
         if (xs1.size() >= possible_size)
             return;
+
+        if (possible_size > MAX_GROUPS_NUMBER)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups for analysis of variance (should be no more than {}, got {})",
+                            MAX_GROUPS_NUMBER, possible_size);
 
         xs1.resize(possible_size, 0.0);
         xs2.resize(possible_size, 0.0);
