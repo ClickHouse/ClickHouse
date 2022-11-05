@@ -913,15 +913,16 @@ uint64_t KeeperServer::createSnapshot()
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
     else
-        LOG_WARNING(log, "Fail to scheduled snapshot creation task.");
+        LOG_WARNING(log, "Failed to schedule snapshot creation task.");
     return log_idx;
 }
 
 KeeperLogInfo KeeperServer::getKeeperLogInfo()
 {
     KeeperLogInfo log_info;
-    log_info.first_log_idx = state_manager->load_log_store()->start_index();
-    log_info.first_log_term = state_manager->load_log_store()->term_at(log_info.first_log_idx);
+    auto log_store = state_manager->load_log_store();
+    log_info.first_log_idx = log_store->start_index();
+    log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
     log_info.last_log_idx = raft_instance->get_last_log_idx();
     log_info.last_log_term = raft_instance->get_last_log_term();
     log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();

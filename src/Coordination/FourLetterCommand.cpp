@@ -481,7 +481,7 @@ String ApiVersionCommand::run()
 String CreateSnapshotCommand::run()
 {
     auto log_index = keeper_dispatcher.createSnapshot();
-    return log_index > 0 ? std::to_string(log_index) : "Fail to scheduled snapshot creation task.";
+    return log_index > 0 ? std::to_string(log_index) : "Failed to schedule snapshot creation task.";
 }
 
 String LogInfoCommand::run()
