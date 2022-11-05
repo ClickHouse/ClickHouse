@@ -36,7 +36,7 @@ private:
 };
 
 ///
-/// ZooKeeperWithFailtInjection mimics ZooKeeper interface and inject failures according to failure policy if set
+/// ZooKeeperWithFaultInjection mimics ZooKeeper interface and inject failures according to failure policy if set
 ///
 class ZooKeeperWithFaultInjection
 {
@@ -66,7 +66,7 @@ class ZooKeeperWithFaultInjection
         if (unlikely(logger))
             LOG_TRACE(
                 logger,
-                "ZooKeeperWithFailtInjection created: name={} seed={} fault_probability={}",
+                "ZooKeeperWithFaultInjection created: name={} seed={} fault_probability={}",
                 name,
                 seed,
                 fault_injection_probability);
@@ -103,7 +103,7 @@ public:
         if (unlikely(logger))
             LOG_TRACE(
                 logger,
-                "ZooKeeperWithFailtInjection report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
+                "ZooKeeperWithFaultInjection report: name={} seed={} calls_total={} calls_succeeded={} calls_failed={} failure_rate={}",
                 name,
                 seed,
                 calls_total,
@@ -251,7 +251,7 @@ public:
                     {
                         keeper->remove(result_path);
                         if (unlikely(logger))
-                            LOG_TRACE(logger, "ZooKeeperWithFailtInjection cleanup: seed={} func={} path={}", seed, "create", result_path);
+                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={}", seed, "create", result_path);
                     }
                 }
                 catch (const zkutil::KeeperException & e)
@@ -259,7 +259,7 @@ public:
                     if (unlikely(logger))
                         LOG_TRACE(
                             logger,
-                            "ZooKeeperWithFailtInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
+                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
                             seed,
                             "create",
                             result_path,
@@ -462,7 +462,7 @@ private:
                 ++calls_without_fault_injection;
 
                 if (unlikely(logger))
-                    LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
+                    LOG_TRACE(logger, "ZooKeeperWithFaultInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
 
                 return res;
             }
@@ -483,7 +483,7 @@ private:
                 ++calls_without_fault_injection;
 
                 if (unlikely(logger))
-                    LOG_TRACE(logger, "ZooKeeperWithFailtInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
+                    LOG_TRACE(logger, "ZooKeeperWithFaultInjection call SUCCEEDED: seed={} func={} path={}", seed, func_name, path);
             }
         }
         catch (const zkutil::KeeperException & e)
@@ -491,7 +491,7 @@ private:
             if (unlikely(logger))
                 LOG_TRACE(
                     logger,
-                    "ZooKeeperWithFailtInjection call FAILED: seed={} func={} path={} code={} message={} ",
+                    "ZooKeeperWithFaultInjection call FAILED: seed={} func={} path={} code={} message={} ",
                     seed,
                     func_name,
                     path,
