@@ -309,7 +309,7 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-- `csnp`: Schedule a snapshot creation task. Return the last committed log index of the scheduled snapshot if success or `Failed to schedule snapshot creation task.` if failed.
+- `csnp`: Schedule a snapshot creation task. Return the last committed log index of the scheduled snapshot if success or `Failed to schedule snapshot creation task.` if failed. Note that `lgif` command can help you determine whether the snapshot is done.
 
 ```
 100
