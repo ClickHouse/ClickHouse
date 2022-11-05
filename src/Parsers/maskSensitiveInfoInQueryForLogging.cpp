@@ -1,7 +1,6 @@
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
+#include <Parsers/maskSensitiveInfoInQueryForLogging.h>
 
-#include <Formats/FormatFactory.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -9,7 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/formatAST.h>
-#include <TableFunctions/TableFunctionFactory.h>
+#include <Common/KnownObjectNames.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/typeid_cast.h>
@@ -278,7 +277,7 @@ namespace
                     return;
                 }
 
-                if (FormatFactory::instance().getAllFormats().contains(format))
+                if (KnownFormatNames::instance().exists(format))
                     return; /// The argument after 'url' is a format: s3('url', 'format', ...)
 
                 /// The argument after 'url' is not a format so we do our replacement:
@@ -305,7 +304,7 @@ namespace
 
             /// Skip 1 or 2 arguments with table_function() or db.table or 'db', 'table'.
             const auto * table_function = arguments[arg_num]->as<ASTFunction>();
-            if (table_function && TableFunctionFactory::instance().isTableFunctionName(table_function->name))
+            if (table_function && KnownTableFunctionNames::instance().exists(table_function->name))
             {
                 ++arg_num;
             }

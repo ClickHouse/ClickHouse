@@ -15,7 +15,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
+#include <Parsers/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB

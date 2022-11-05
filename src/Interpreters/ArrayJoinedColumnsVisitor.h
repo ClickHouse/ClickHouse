@@ -9,7 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Aliases.h>
 

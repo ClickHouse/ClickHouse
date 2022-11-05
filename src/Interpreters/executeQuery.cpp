@@ -55,7 +55,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
+#include <Parsers/maskSensitiveInfoInQueryForLogging.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>

@@ -3,7 +3,7 @@
 #include <string_view>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
 #include <Core/ColumnNumbers.h>

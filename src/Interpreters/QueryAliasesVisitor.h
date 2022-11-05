@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Aliases.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 
 namespace DB
 {

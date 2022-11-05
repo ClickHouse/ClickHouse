@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>

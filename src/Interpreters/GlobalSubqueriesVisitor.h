@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTFunction.h>

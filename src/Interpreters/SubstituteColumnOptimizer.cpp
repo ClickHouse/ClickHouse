@@ -7,7 +7,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Poco/Logger.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
 
 

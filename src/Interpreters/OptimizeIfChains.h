@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 
 namespace DB
 {
