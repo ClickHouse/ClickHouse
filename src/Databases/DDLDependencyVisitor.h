@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/QualifiedTableName.h>
 #include <Parsers/IAST_fwd.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 
 namespace DB
 {

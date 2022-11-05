@@ -6,7 +6,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
+#include <Parsers/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB

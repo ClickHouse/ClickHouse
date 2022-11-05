@@ -2,7 +2,7 @@
 
 #include <Interpreters/Aliases.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>

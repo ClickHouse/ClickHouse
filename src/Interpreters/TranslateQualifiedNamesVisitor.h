@@ -4,7 +4,7 @@
 
 #include <Core/Names.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/InDepthNodeVisitor.h>
 
 namespace DB
 {
