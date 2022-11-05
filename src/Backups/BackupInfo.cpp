@@ -93,10 +93,10 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 }
 
 
-String BackupInfo::toStringForLogging(const ContextPtr & context) const
+String BackupInfo::toStringForLogging() const
 {
     ASTPtr ast = toAST();
-    return maskSensitiveInfoInBackupNameForLogging(serializeAST(*ast), ast, context);
+    return maskSensitiveInfoInBackupNameForLogging(serializeAST(*ast), ast);
 }
 
 }

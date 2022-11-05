@@ -392,14 +392,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
+        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast);
     }
     catch (...)
     {
         /// Anyway log the query.
         if (query.empty())
             query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
+        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast);
 
         logQuery(query_for_logging, context, internal, stage);
 
