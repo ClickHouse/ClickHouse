@@ -1673,7 +1673,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     if (node->as<ColumnNode>())
     {
-        into.push_back(node->clone());
+        into.push_back(node);
         return {false, 1};
     }
 
@@ -1702,7 +1702,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
         for (UInt64 i = 0; i < pushed_children; i++)
             into.pop_back();
 
-        into.push_back(node->clone());
+        into.push_back(node);
         pushed_children = 1;
     }
 
