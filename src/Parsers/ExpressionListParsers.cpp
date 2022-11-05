@@ -682,7 +682,7 @@ public:
 
     bool parseLambda()
     {
-        // 0. If empty - create function tuple with 0 args
+        // 1. If empty - create function tuple with 0 args
         if (isCurrentElementEmpty())
         {
             auto function = makeASTFunction("tuple");
@@ -693,16 +693,16 @@ public:
         if (operands.size() != 1 || !operators.empty() || !mergeElement())
             return false;
 
-        /// 1. If there is already tuple do nothing
-        if (tryGetFunctionName(elements.back()) == "tuple")
+        /// 2. If there is already tuple do nothing
+        if (elements.size() == 1 && tryGetFunctionName(elements.back()) == "tuple")
         {
             pushOperand(elements.back());
             elements.pop_back();
         }
-        /// 2. Put all elements in a single tuple
+        /// 3. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", elements);
+            auto function = makeASTFunction("tuple", std::move(elements));
             elements.clear();
             pushOperand(function);
         }
