@@ -1,12 +1,11 @@
 #include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/formatAST.h>
@@ -45,7 +44,6 @@ namespace
             bool is_create_table_query = false;
             bool is_create_database_query = false;
             bool is_create_dictionary_query = false;
-            ContextPtr context;
             PasswordWipingMode mode = PasswordWipingMode::Query;
         };
 
@@ -272,8 +270,13 @@ namespace
                 /// We need to distinguish that from s3('url', 'format', 'structure' [, 'compression_method']).
                 /// So we will check whether the argument after 'url' is a format.
                 String format;
-                if (!tryGetEvaluatedConstStringFromArgument(function, data, url_arg_idx + 1, &format))
+                if (!tryGetStringFromArgument(function, url_arg_idx + 1, &format, /* allow_literal= */ true, /* allow_identifier= */ false))
+                {
+                    /// We couldn't evaluate the argument after 'url' so we don't know whether it is a format or `aws_access_key_id`.
+                    /// So it's safer to wipe the next argument just in case.
+                    wipePasswordFromArgument(function, data, url_arg_idx + 2); /// Wipe either `aws_secret_access_key` or `structure`.
                     return;
+                }
 
                 if (FormatFactory::instance().getAllFormats().contains(format))
                     return; /// The argument after 'url' is a format: s3('url', 'format', ...)
@@ -309,27 +312,36 @@ namespace
             else
             {
                 String database;
-                if (!tryGetEvaluatedConstDatabaseNameFromArgument(function, data, arg_num, &database))
+                if (!tryGetStringFromArgument(function, arg_num, &database, /* allow_literal= */ true, /* allow_identifier= */ true))
+                {
+                    /// We couldn't evaluate the argument so we don't know whether it is 'db.table' or just 'db'.
+                    /// Hence we can't figure out whether we should skip one argument 'user' or two arguments 'table', 'user'
+                    /// before the argument 'password'. So it's safer to wipe two arguments just in case.
+                    /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+                    /// before wiping it (because the `password` argument is always a literal string).
+                    if (tryGetStringFromArgument(function, arg_num + 2, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false))
+                        wipePasswordFromArgument(function, data, arg_num + 2); /// Wipe either `password` or `user`.
+                    if (tryGetStringFromArgument(function, arg_num + 3, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false))
+                        wipePasswordFromArgument(function, data, arg_num + 3); /// Wipe either `password` or `sharding_key`.
                     return;
-                ++arg_num;
+                }
 
+                ++arg_num;
                 auto qualified_name = QualifiedTableName::parseFromString(database);
                 if (qualified_name.database.empty())
                     ++arg_num; /// skip 'table' argument
             }
 
-            /// Check if username and password are specified
-            /// (sharding_key can be of any type so while we're getting string literals they're username & password).
-            String username, password;
-            bool username_specified = tryGetStringFromArgument(function, arg_num, &username);
-            bool password_specified = username_specified && tryGetStringFromArgument(function, arg_num + 1, &password);
+            /// Skip username.
+            ++arg_num;
 
-            if (password_specified)
-            {
-                /// Password is specified so we do our replacement:
-                /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
-                wipePasswordFromArgument(function, data, arg_num + 1);
-            }
+            /// Do our replacement:
+            /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
+            /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
+            /// before wiping it (because the `password` argument is always a literal string).
+            bool can_be_password = tryGetStringFromArgument(function, arg_num, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false);
+            if (can_be_password)
+                wipePasswordFromArgument(function, data, arg_num);
         }
 
         static void wipePasswordFromEncryptionFunctionArguments(ASTFunction & function, Data & data)
@@ -410,7 +422,7 @@ namespace
             data.password_was_hidden = true;
         }
 
-        static bool tryGetNumArguments(const ASTFunction & function, size_t * num_arguments)
+        static bool tryGetNumArguments(const ASTFunction & function, size_t * res)
         {
             if (!function.arguments)
                 return false;
@@ -420,11 +432,13 @@ namespace
                 return false; /// return false because we don't want to validate query here
 
             const auto & arguments = expr_list->children;
-            *num_arguments = arguments.size();
+            if (res)
+                *res = arguments.size();
             return true;
         }
 
-        static bool tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, String * value)
+        static bool
+        tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, String * res, bool allow_literal, bool allow_identifier)
         {
             if (!function.arguments)
                 return false;
@@ -436,87 +450,31 @@ namespace
             const auto & arguments = expr_list->children;
             if (arg_idx >= arguments.size())
                 return false;
-
-            const auto * literal = arguments[arg_idx]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::String)
-                return false;
-
-            *value = literal->value.safeGet<String>();
-            return true;
-        }
-
-        static bool tryGetEvaluatedConstStringFromArgument(const ASTFunction & function, Data & data, size_t arg_idx, String * value)
-        {
-            if (!function.arguments)
-                return false;
-
-            const auto * expr_list = function.arguments->as<ASTExpressionList>();
-            if (!expr_list)
-                return false; /// return false because we don't want to validate query here
-
-            const auto & arguments = expr_list->children;
-            if (arg_idx >= arguments.size())
-                return false;
-
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return false;
-            }
 
             ASTPtr argument = arguments[arg_idx];
-            try
+            if (allow_literal)
             {
-                argument = evaluateConstantExpressionOrIdentifierAsLiteral(argument, data.context);
-            }
-            catch (...)
-            {
-                return false;
-            }
-
-            const auto & literal = assert_cast<const ASTLiteral &>(*argument);
-            if (literal.value.getType() != Field::Types::String)
-                return false;
-
-            *value = literal.value.safeGet<String>();
-            return true;
-        }
-
-        static bool tryGetEvaluatedConstDatabaseNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx, String * value)
-        {
-            if (!function.arguments)
-                return false;
-
-            const auto * expr_list = function.arguments->as<ASTExpressionList>();
-            if (!expr_list)
-                return false; /// return false because we don't want to validate query here
-
-            const auto & arguments = expr_list->children;
-            if (arg_idx >= arguments.size())
-                return false;
-
-            if constexpr (check_only)
-            {
-                data.can_contain_password = true;
-                return false;
+                if (const auto * literal = argument->as<ASTLiteral>())
+                {
+                    if (literal->value.getType() != Field::Types::String)
+                        return false;
+                    if (res)
+                        *res = literal->value.safeGet<String>();
+                    return true;
+                }
             }
 
-            ASTPtr argument = arguments[arg_idx];
-            try
+            if (allow_identifier)
             {
-                argument = evaluateConstantExpressionForDatabaseName(argument, data.context);
-            }
-            catch (...)
-            {
-                return false;
+                if (const auto * id = argument->as<ASTIdentifier>())
+                {
+                    if (res)
+                        *res = id->name();
+                    return true;
+                }
             }
 
-            const auto & literal = assert_cast<const ASTLiteral &>(*argument);
-            if (literal.value.getType() != Field::Types::String)
-                return false;
-
-            *value = literal.value.safeGet<String>();
-            return true;
+            return false;
         }
 
         static void visitDictionaryDef(ASTDictionary & dictionary, Data & data)
@@ -567,11 +525,10 @@ namespace
 
     /// Removes a password or its hash from a query if it's specified there or replaces it with some placeholder.
     /// This function is used to prepare a query for storing in logs (we don't want logs to contain sensitive information).
-    bool wipePasswordFromQuery(ASTPtr ast, PasswordWipingMode mode, const ContextPtr & context)
+    bool wipePasswordFromQuery(ASTPtr ast, PasswordWipingMode mode)
     {
         using WipingVisitor = PasswordWipingVisitor</*check_only= */ false>;
         WipingVisitor::Data data;
-        data.context = context;
         data.mode = mode;
         WipingVisitor::Visitor visitor{data};
         visitor.visit(ast);
@@ -579,7 +536,7 @@ namespace
     }
 
     /// Common utility for masking sensitive information.
-    String maskSensitiveInfoImpl(const String & query, const ASTPtr & parsed_query, PasswordWipingMode mode, const ContextPtr & context)
+    String maskSensitiveInfoImpl(const String & query, const ASTPtr & parsed_query, PasswordWipingMode mode)
     {
         String res = query;
 
@@ -587,7 +544,7 @@ namespace
         if (parsed_query && canContainPassword(*parsed_query, mode))
         {
             ASTPtr ast_without_password = parsed_query->clone();
-            if (wipePasswordFromQuery(ast_without_password, mode, context))
+            if (wipePasswordFromQuery(ast_without_password, mode))
                 res = serializeAST(*ast_without_password);
         }
 
@@ -602,22 +559,22 @@ namespace
             }
         }
 
-        res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
+        //res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
 
         return res;
     }
 }
 
 
-String maskSensitiveInfoInQueryForLogging(const String & query, const ASTPtr & parsed_query, const ContextPtr & context)
+String maskSensitiveInfoInQueryForLogging(const String & query, const ASTPtr & parsed_query)
 {
-    return maskSensitiveInfoImpl(query, parsed_query, PasswordWipingMode::Query, context);
+    return maskSensitiveInfoImpl(query, parsed_query, PasswordWipingMode::Query);
 }
 
 
-String maskSensitiveInfoInBackupNameForLogging(const String & backup_name, const ASTPtr & ast, const ContextPtr & context)
+String maskSensitiveInfoInBackupNameForLogging(const String & backup_name, const ASTPtr & ast)
 {
-    return maskSensitiveInfoImpl(backup_name, ast, PasswordWipingMode::BackupName, context);
+    return maskSensitiveInfoImpl(backup_name, ast, PasswordWipingMode::BackupName);
 }
 
 }

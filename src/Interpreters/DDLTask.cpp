@@ -170,11 +170,11 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
-void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
+void DDLTaskBase::formatRewrittenQuery(ContextPtr)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = maskSensitiveInfoInQueryForLogging(query_str, query, context);
+    query_for_logging = maskSensitiveInfoInQueryForLogging(query_str, query);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)

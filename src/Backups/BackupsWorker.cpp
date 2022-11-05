@@ -166,7 +166,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     }
 
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
-    String backup_name_for_logging = backup_info.toStringForLogging(context);
+    String backup_name_for_logging = backup_info.toStringForLogging();
     try
     {
         addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::CREATING_BACKUP);
@@ -388,7 +388,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     try
     {
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
-        String backup_name_for_logging = backup_info.toStringForLogging(context);
+        String backup_name_for_logging = backup_info.toStringForLogging();
         addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
 
         /// Prepare context to use.
