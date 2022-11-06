@@ -326,7 +326,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             if (!parts_to_merge.empty())
                 future_part->merge_type = MergeType::TTLDelete;
         }
-        else if (metadata_snapshot->hasAnyRecompressionTTL())
+
+        if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
         {
             TTLRecompressMergeSelector recompress_ttl_selector(
                     next_recompress_ttl_merge_times_by_partition,
