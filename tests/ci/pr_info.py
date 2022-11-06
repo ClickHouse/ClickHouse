@@ -87,7 +87,7 @@ class PRInfo:
         self.body = ""
         self.diff_urls = []
         self.release_pr = 0
-        ref = github_event.get("ref", "refs/head/master")
+        ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
 
