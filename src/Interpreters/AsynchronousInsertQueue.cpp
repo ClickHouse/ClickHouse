@@ -24,6 +24,7 @@
 #include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include "Processors/Chunk.h"
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -489,11 +490,13 @@ try
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     std::unique_ptr<ReadBuffer> last_buffer;
+    auto chunk_info = std::make_shared<ChunkOffsets>();
     for (const auto & entry : data->entries)
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+        chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
         /// in destructor, while resetting buffer at next iteration.
@@ -534,6 +537,7 @@ try
     try
     {
         auto chunk = Chunk(executor.getResultColumns(), total_rows);
+        chunk.setChunkInfo(std::move(chunk_info));
         size_t total_bytes = chunk.bytes();
 
         auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));

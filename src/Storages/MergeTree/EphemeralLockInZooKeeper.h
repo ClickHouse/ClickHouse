@@ -26,6 +26,8 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
         const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
+    friend std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> createEphemeralLockInZooKeeper(
+        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const std::vector<String> & deduplication_path);
 
 protected:
     EphemeralLockInZooKeeper() = delete;
@@ -95,6 +97,8 @@ private:
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
 
+std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> createEphemeralLockInZooKeeper(
+    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const std::vector<String> & deduplication_path);
 
 /// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions : public boost::noncopyable

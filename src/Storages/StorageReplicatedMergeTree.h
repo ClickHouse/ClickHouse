@@ -338,6 +338,7 @@ private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
+    template<bool async_insert>
     friend class ReplicatedMergeTreeSink;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
@@ -536,6 +537,8 @@ private:
 
     void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
+    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const std::vector<String> & block_id_paths) const;
+
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
@@ -711,6 +714,10 @@ private:
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
         const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+
+    std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> allocateBlockNumber(
+        const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
+        const std::vector<String> & zookeeper_block_id_paths) const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
