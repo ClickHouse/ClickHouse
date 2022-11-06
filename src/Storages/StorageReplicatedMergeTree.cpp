@@ -4467,9 +4467,19 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
 
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
+    bool async_insert = query_settings.async_insert;
+    if (deduplicate && async_insert)
+        return std::make_shared<ReplicatedMergeTreeSink<true>>(
+            *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
+            query_settings.insert_quorum_timeout.totalMilliseconds(),
+            query_settings.max_partitions_per_insert_block,
+            query_settings.insert_quorum_parallel,
+            deduplicate,
+            query_settings.insert_quorum.is_auto,
+            local_context);
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
-    return std::make_shared<ReplicatedMergeTreeSink>(
+    return std::make_shared<ReplicatedMergeTreeSink<false>>(
         *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
@@ -5171,7 +5181,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
+    ReplicatedMergeTreeSink<false> output(*this, metadata_snapshot, 0, 0, 0, false, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -5278,6 +5288,35 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path) cons
     }
 
     return res;
+}
+
+std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>>
+StorageReplicatedMergeTree::allocateBlockNumber(
+    const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
+    const std::vector<String> & zookeeper_block_id_paths) const
+{
+    String zookeeper_table_path = zookeeper_path;
+
+    String block_numbers_path = fs::path(zookeeper_table_path) / "block_numbers";
+    String partition_path = fs::path(block_numbers_path) / partition_id;
+
+    if (!existsNodeCached(partition_path))
+    {
+        Coordination::Requests ops;
+        ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
+        /// We increment data version of the block_numbers node so that it becomes possible
+        /// to check in a ZK transaction that the set of partitions didn't change
+        /// (unfortunately there is no CheckChildren op).
+        ops.push_back(zkutil::makeSetRequest(block_numbers_path, "", -1));
+
+        Coordination::Responses responses;
+        Coordination::Error code = zookeeper->tryMulti(ops, responses);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+
+    return createEphemeralLockInZooKeeper(
+        fs::path(partition_path) / "block-", fs::path(zookeeper_table_path) / "temp", *zookeeper, zookeeper_block_id_paths);
 }
 
 
@@ -6995,10 +7034,20 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     MutableDataPartPtr & part,
     const String & block_id_path) const
 {
+    if (block_id_path.empty())
+        return getCommitPartOps(ops, part, std::vector<String>());
+    else
+        return getCommitPartOps(ops, part, std::vector<String>({block_id_path}));
+}
+
+void StorageReplicatedMergeTree::getCommitPartOps(
+    Coordination::Requests & ops,
+    MutableDataPartPtr & part,
+    const std::vector<String> & block_id_paths) const
+{
     const String & part_name = part->name;
     const auto storage_settings_ptr = getSettings();
-
-    if (!block_id_path.empty())
+    for (const String & block_id_path : block_id_paths)
     {
         /// Make final duplicate check and commit block_id
         ops.emplace_back(
@@ -8596,7 +8645,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
+    auto sink = std::make_shared<ReplicatedMergeTreeSink<false>>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
     for (auto part : parts)
         sink->writeExistingPart(part);
 }
@@ -8606,7 +8655,7 @@ PartsTemporaryRename renamed_parts(*this, "detached/");
 MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
 /// TODO Allow to use quorum here.
-ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
+ReplicatedMergeTreeSink<false> output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
     /*is_attach*/true);
 
 for (size_t i = 0; i < loaded_parts.size(); ++i)

@@ -61,6 +61,43 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, holder_path};
 }
 
+std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> createEphemeralLockInZooKeeper(
+    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const std::vector<String> & deduplication_paths)
+{
+    /// The /abandonable_lock- name is for backward compatibility.
+    String holder_path_prefix = temp_path + "/abandonable_lock-";
+    String holder_path;
+
+    /// Check for duplicates in advance, to avoid superfluous block numbers allocation
+    Coordination::Requests ops;
+    for (const auto & deduplication_path : deduplication_paths)
+    {
+        ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
+    }
+    ops.emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
+    Coordination::Responses responses;
+    Coordination::Error e = zookeeper_.tryMulti(ops, responses);
+    if (e != Coordination::Error::ZOK)
+    {
+        /// TODO we should use some cache to check the conflict in advance.
+        for (const auto & response: responses)
+        {
+            if (response->error == Coordination::Error::ZNODEEXISTS)
+            {
+                String failed_op_path = zkutil::KeeperMultiException(e, ops, responses).getPathForFirstFailedOp();
+                return std::make_pair(std::nullopt, std::vector<String>({failed_op_path}));
+            }
+        }
+        zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
+        throw Exception("Unable to handle error {} when acquiring ephemeral lock in ZK", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    holder_path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
+
+    return std::make_pair(EphemeralLockInZooKeeper{path_prefix_, zookeeper_, holder_path}, std::vector<String>());
+}
+
 void EphemeralLockInZooKeeper::unlock()
 {
     Coordination::Requests ops;
