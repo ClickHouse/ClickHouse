@@ -29,6 +29,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
+#include <algorithm>
 #include <cassert>
 #include <stack>
 #include <limits>
@@ -55,11 +56,15 @@ String Range::toString() const
 }
 
 
-/// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-/// If perfect_prefix_match == true, only consider pattern in the format `prefix%_`
-String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfect_prefix_match)
+/// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
+/// We call a prefix "perfect" if:
+/// - (1) the prefix must have willcard
+/// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
+/// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool require_perfect_prefix)
 {
     String fixed_prefix;
+    fixed_prefix.reserve(like_pattern.size());
 
     const char * pos = like_pattern.data();
     const char * end = pos + like_pattern.size();
@@ -68,12 +73,13 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfe
         switch (*pos)
         {
             case '%':
-                [[fallthrough]];
             case '_':
-                if (perfect_prefix_match && std::find_if(pos+1, end, [](const char c) { return c != '%' && c != '_'; }) != end)
-                    return "";
+                if (require_perfect_prefix)
+                {
+                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
+                    return is_prefect_prefix ? fixed_prefix : "";
+                }
                 return fixed_prefix;
-
             case '\\':
                 ++pos;
                 if (pos == end)
@@ -81,12 +87,13 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern, bool perfe
                 [[fallthrough]];
             default:
                 fixed_prefix += *pos;
-                break;
         }
 
         ++pos;
     }
-
+    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
+    if (require_perfect_prefix)
+        return "";
     return fixed_prefix;
 }
 
@@ -349,7 +356,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*required_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -370,7 +377,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), true);
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*required_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
