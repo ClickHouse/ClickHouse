@@ -10,8 +10,6 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -207,6 +205,8 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         task->parseQueryFromEntry(context);
         /// Stage 3.2: check cluster and find the host in cluster
         task->setClusterInfo(context, log);
+        /// Stage 3.3: output rewritten query back to string
+        task->formatRewrittenQuery(context);
     }
     catch (...)
     {
@@ -431,11 +431,12 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
+bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
-    String query_to_execute = query_prefix + query;
+    String query_to_execute = query_prefix + task.query_str;
+    String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
     String dummy_string;
@@ -463,7 +464,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
             throw;
 
         task.execution_status = ExecutionStatus::fromCurrentException();
-        tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
+        tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
         /// We use return value of tryExecuteQuery(...) in tryExecuteQueryOnLeaderReplica(...) to determine
         /// if replica has stopped being leader and we should retry query.
@@ -484,7 +485,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
             throw;
 
         task.execution_status = ExecutionStatus::fromCurrentException();
-        tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
+        tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
         /// We don't know what exactly happened, but maybe it's Poco::NetException or std::bad_alloc,
         /// so we consider unknown exception as retryable error.
@@ -492,7 +493,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
     }
 
     task.execution_status = ExecutionStatus(0);
-    LOG_DEBUG(log, "Executed query: {}", query);
+    LOG_DEBUG(log, "Executed query: {}", query_to_show_in_logs);
 
     return true;
 }
@@ -514,7 +515,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
+    LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.query_for_logging);
     chassert(!task.completely_processed);
 
     /// Setup tracing context on current thread for current DDL
@@ -587,8 +588,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 
         try
         {
-            String rewritten_query = queryToString(task.query);
-            LOG_DEBUG(log, "Executing query: {}", rewritten_query);
+            LOG_DEBUG(log, "Executing query: {}", task.query_for_logging);
 
             StoragePtr storage;
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
@@ -605,12 +605,12 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 
             if (task.execute_on_leader)
             {
-                tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper, execute_on_leader_lock);
+                tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
             }
             else
             {
                 storage.reset();
-                tryExecuteQuery(rewritten_query, task, zookeeper);
+                tryExecuteQuery(task, zookeeper);
             }
         }
         catch (const Coordination::Exception &)
@@ -694,7 +694,6 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     DDLTaskBase & task,
     StoragePtr storage,
-    const String & rewritten_query,
     const String & /*node_path*/,
     const ZooKeeperPtr & zookeeper,
     std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock)
@@ -793,7 +792,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(rewritten_query, task, zookeeper))
+            if (tryExecuteQuery(task, zookeeper))
             {
                 executed_by_us = true;
                 break;

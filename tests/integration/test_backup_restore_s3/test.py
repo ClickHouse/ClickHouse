@@ -4,7 +4,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/disk_s3.xml", "configs/named_collection_s3_backups.xml"],
+    main_configs=[
+        "configs/disk_s3.xml",
+        "configs/named_collection_s3_backups.xml",
+        "configs/s3_settings.xml",
+    ],
     with_minio=True,
 )
 
@@ -27,17 +31,17 @@ def new_backup_name():
     return f"backup{backup_id_counter}"
 
 
-def check_backup_and_restore(storage_policy, backup_destination):
+def check_backup_and_restore(storage_policy, backup_destination, size=1000):
     node.query(
         f"""
     DROP TABLE IF EXISTS data NO DELAY;
     CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
-    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 1000;
+    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size};
     BACKUP TABLE data TO {backup_destination};
     RESTORE TABLE data AS data_restored FROM {backup_destination};
     SELECT throwIf(
-        (SELECT groupArray(tuple(*)) FROM data) !=
-        (SELECT groupArray(tuple(*)) FROM data_restored),
+        (SELECT count(), sum(sipHash64(*)) FROM data) !=
+        (SELECT count(), sum(sipHash64(*)) FROM data_restored),
         'Data does not matched after BACKUP/RESTORE'
     );
     DROP TABLE data NO DELAY;
@@ -106,9 +110,10 @@ def test_backup_to_s3_native_copy():
     )
     check_backup_and_restore(storage_policy, backup_destination)
     assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("single-operation copy")
 
 
-def test_backup_to_s3_other_bucket_native_copy():
+def test_backup_to_s3_native_copy_other_bucket():
     storage_policy = "policy_s3_other_bucket"
     backup_name = new_backup_name()
     backup_destination = (
@@ -116,3 +121,13 @@ def test_backup_to_s3_other_bucket_native_copy():
     )
     check_backup_and_restore(storage_policy, backup_destination)
     assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("single-operation copy")
+
+
+def test_backup_to_s3_native_copy_multipart_upload():
+    storage_policy = "policy_s3"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart_upload_copy/{backup_name}', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination, size=1000000)
+    assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("multipart upload copy")
