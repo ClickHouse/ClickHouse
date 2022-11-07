@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/types.h>
 
 namespace DB
@@ -33,7 +32,7 @@ inline String toString(DataSourceType data_source_type)
         case DataSourceType::AzureBlobStorage:
             return "azure_blob_storage";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 struct DataSourceDescription

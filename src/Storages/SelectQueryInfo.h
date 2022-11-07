@@ -7,9 +7,6 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
-#include <Planner/PlannerContext.h>
 
 #include <memory>
 
@@ -179,15 +176,6 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
-
-    /// Planner context
-    PlannerContextPtr planner_context;
-
-    /// Storage table expression
-    QueryTreeNodePtr table_expression;
-
-    /// Table expression modifiers for storage
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 

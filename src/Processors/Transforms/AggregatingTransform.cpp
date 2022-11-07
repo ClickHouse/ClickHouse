@@ -53,29 +53,33 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
-            : ISource(tmp_stream_->getHeader())
-            , tmp_stream(tmp_stream_)
-        {}
+        SourceFromNativeStream(const Block & header, const std::string & path)
+                : ISource(header), file_in(path), compressed_in(file_in),
+                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        {
+        }
 
         String getName() const override { return "SourceFromNativeStream"; }
 
         Chunk generate() override
         {
-            if (!tmp_stream)
+            if (!block_in)
                 return {};
 
-            auto block = tmp_stream->read();
+            auto block = block_in->read();
             if (!block)
             {
-                tmp_stream = nullptr;
+                block_in.reset();
                 return {};
             }
+
             return convertToChunk(block);
         }
 
     private:
-        TemporaryFileStream * tmp_stream;
+        ReadBufferFromFile file_in;
+        CompressedReadBuffer compressed_in;
+        std::unique_ptr<NativeReader> block_in;
     };
 }
 
@@ -560,7 +564,7 @@ void AggregatingTransform::initGenerate()
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
 
-    if (params->aggregator.hasTemporaryData())
+    if (params->aggregator.hasTemporaryFiles())
     {
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
@@ -573,7 +577,7 @@ void AggregatingTransform::initGenerate()
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
         return;
 
-    if (!params->aggregator.hasTemporaryData())
+    if (!params->aggregator.hasTemporaryFiles())
     {
         auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
         auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
@@ -600,27 +604,25 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & tmp_data = params->aggregator.getTemporaryData();
-
+        const auto & files = params->aggregator.getTemporaryFiles();
         Pipe pipe;
+
         {
+            auto header = params->aggregator.getHeader(false);
             Pipes pipes;
 
-            for (auto * tmp_stream : tmp_data.getStreams())
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
+            for (const auto & file : files.files)
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
 
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
-        size_t num_streams = tmp_data.getStreams().size();
-        size_t compressed_size = tmp_data.getStat().compressed_size;
-        size_t uncompressed_size = tmp_data.getStat().uncompressed_size;
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
-            num_streams,
-            ReadableSize(compressed_size),
-            ReadableSize(uncompressed_size));
+            files.files.size(),
+            ReadableSize(files.sum_size_compressed),
+            ReadableSize(files.sum_size_uncompressed));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 

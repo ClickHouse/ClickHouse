@@ -99,22 +99,19 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
     Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
-
-    Strings exists_paths;
+    std::vector<std::future<Coordination::ExistsResponse>> replicas_status_futures;
+    replicas_status_futures.reserve(replicas.size());
     for (const auto & replica : replicas)
         if (replica != storage.replica_name)
-            exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+            replicas_status_futures.emplace_back(zookeeper->asyncExists(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
 
-    auto exists_result = zookeeper->exists(exists_paths);
-    auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+    std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
+    std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
     size_t active_replicas = 1;     /// Assume current replica is active (will check below)
-    for (size_t i = 0; i < exists_paths.size(); ++i)
-    {
-        auto status = exists_result[i];
-        if (status.error == Coordination::Error::ZOK)
+    for (auto & status : replicas_status_futures)
+        if (status.get().error == Coordination::Error::ZOK)
             ++active_replicas;
-    }
 
     size_t replicas_number = replicas.size();
     size_t quorum_size = getQuorumSize(replicas_number);
@@ -138,8 +135,8 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
-    auto is_active = get_results[0];
-    auto host = get_results[1];
+    auto is_active = is_active_future.get();
+    auto host = host_future.get();
 
     if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);

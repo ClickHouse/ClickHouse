@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -478,9 +478,8 @@ static inline UInt32 randomNumber()
 {
     std::mt19937 rng;
     rng.seed(std::random_device()());
-    std::uniform_int_distribution<std::mt19937::result_type> dist6(
-        std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
-    return static_cast<UInt32>(dist6(rng));
+    std::uniform_int_distribution<std::mt19937::result_type> dist6(std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max());
+    return dist6(rng);
 }
 
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
@@ -680,11 +679,11 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.get<Int32>()));
+                        casted_int32_column->insertValue(value.get<Int32>());
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
-                        const Int32 & num = static_cast<Int32>(value.get<Int32>());
+                        const Int32 & num = value.get<Int32>();
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else

@@ -27,7 +27,7 @@
 #include <chrono>
 
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -1420,7 +1420,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 {
                     const auto & settings = getContext()->getSettingsRef();
 
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();

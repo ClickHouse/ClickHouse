@@ -848,11 +848,9 @@ Block KeyCondition::getBlockWithConstants(
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    if (syntax_analyzer_result)
-    {
-        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-        expr_for_constant_folding->execute(result);
-    }
+    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+
+    expr_for_constant_folding->execute(result);
 
     return result;
 }
@@ -889,22 +887,13 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
-    if (!syntax_analyzer_result)
-    {
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
     Block block_with_constants = getBlockWithConstants(query, syntax_analyzer_result, context);
 
-    if (syntax_analyzer_result)
-    {
-        for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
-            array_joined_columns.insert(name);
-    }
+    for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
+        array_joined_columns.insert(name);
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -973,12 +962,6 @@ KeyCondition::KeyCondition(
         const auto & name = key_column_names[i];
         if (!key_columns.contains(name))
             key_columns[name] = i;
-    }
-
-    if (!syntax_analyzer_result)
-    {
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
     }
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
@@ -1657,13 +1640,6 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(1).tryGetConstant(block_with_constants, const_value, const_type))
             {
-                /// If the const operand is null, the atom will be always false
-                if (const_value.isNull())
-                {
-                    out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
-                }
-
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
@@ -1687,13 +1663,6 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
             }
             else if (func.getArgumentAt(0).tryGetConstant(block_with_constants, const_value, const_type))
             {
-                /// If the const operand is null, the atom will be always false
-                if (const_value.isNull())
-                {
-                    out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
-                }
-
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
@@ -2598,7 +2567,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             return "true";
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

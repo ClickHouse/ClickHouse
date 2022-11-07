@@ -80,7 +80,6 @@ core
 vgcore*
 
 *.deb
-*.tar.zst
 *.build
 *.upload
 *.changes

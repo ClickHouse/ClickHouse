@@ -264,8 +264,7 @@ public:
         }
     }
 
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
         auto & nested_column = map_column.getNestedColumn();
@@ -289,24 +288,11 @@ public:
         for (auto & key : keys)
         {
             key_column.insert(key);
-            if constexpr (merge)
-                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
-            else
-                nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
         res_offsets.push_back(val_column.size());
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<false>(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

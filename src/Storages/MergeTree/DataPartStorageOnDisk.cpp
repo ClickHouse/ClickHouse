@@ -224,56 +224,31 @@ void DataPartStorageOnDisk::remove(
 
     /// NOTE relative_path can contain not only part name itself, but also some prefix like
     /// "moving/all_1_1_1" or "detached/all_2_3_5". We should handle this case more properly.
+    if (part_dir_without_slash.has_parent_path())
+    {
+        auto parent_path = part_dir_without_slash.parent_path();
+        if (parent_path == "detached")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove detached part {} with path {} in remove function. It shouldn't happen", part_dir, root_path);
 
-    /// File might be already renamed on previous try
-    bool has_delete_prefix = part_dir_without_slash.filename().string().starts_with("delete_tmp_");
-    std::optional<CanRemoveDescription> can_remove_description;
-    auto disk = volume->getDisk();
+        part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+    }
+    else
+    {
+        part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
+    }
+
     fs::path to = fs::path(root_path) / part_dir_without_slash;
 
-    if (!has_delete_prefix)
+    std::optional<CanRemoveDescription> can_remove_description;
+
+    auto disk = volume->getDisk();
+    if (disk->exists(to))
     {
-        if (part_dir_without_slash.has_parent_path())
-        {
-            auto parent_path = part_dir_without_slash.parent_path();
-            if (parent_path == "detached")
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Trying to remove detached part {} with path {} in remove function. It shouldn't happen",
-                    part_dir,
-                    root_path);
-
-            part_dir_without_slash = parent_path / ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
-        }
-        else
-        {
-            part_dir_without_slash = ("delete_tmp_" + std::string{part_dir_without_slash.filename()});
-        }
-
-        to = fs::path(root_path) / part_dir_without_slash;
-
-        if (disk->exists(to))
-        {
-            LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. "
-                        "Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
-            try
-            {
-                can_remove_description.emplace(can_remove_callback());
-                disk->removeSharedRecursive(
-                    fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
-            }
-            catch (...)
-            {
-                LOG_ERROR(
-                    log, "Cannot recursively remove directory {}. Exception: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
-                throw;
-            }
-        }
-
+        LOG_WARNING(log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
-            disk->moveDirectory(from, to);
-            onRename(root_path, part_dir_without_slash);
+            can_remove_description.emplace(can_remove_callback());
+            disk->removeSharedRecursive(fs::path(to) / "", !can_remove_description->can_remove_anything, can_remove_description->files_not_to_remove);
         }
         catch (const Exception & e)
         {
@@ -294,6 +269,21 @@ void DataPartStorageOnDisk::remove(
             }
             throw;
         }
+    }
+
+    try
+    {
+        disk->moveDirectory(from, to);
+        onRename(root_path, part_dir_without_slash);
+    }
+    catch (const fs::filesystem_error & e)
+    {
+        if (e.code() == std::errc::no_such_file_or_directory)
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, to));
+            return;
+        }
+        throw;
     }
 
     if (!can_remove_description)
@@ -406,17 +396,13 @@ void DataPartStorageOnDisk::clearDirectory(
     }
 }
 
-std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
+std::string DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const
 {
-    assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
     if (detached)
         full_relative_path /= "detached";
-
-    std::optional<String> original_checksums_content;
-    std::optional<Strings> original_files_list;
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
@@ -425,67 +411,10 @@ std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logg
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
 
-        if (broken && looksLikeBrokenDetachedPartHasTheSameContent(res, original_checksums_content, original_files_list))
-        {
-            LOG_WARNING(log, "Directory {} (to detach to) already exists, "
-                        "but its content looks similar to content of the broken part which we are going to detach. "
-                        "Assuming it was already cloned to detached, will not do it again to avoid redundant copies of broken part.", res);
-            return {};
-        }
-
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
 
     return res;
-}
-
-bool DataPartStorageOnDisk::looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path,
-                                                                         std::optional<String> & original_checksums_content,
-                                                                         std::optional<Strings> & original_files_list) const
-{
-    /// We cannot know for sure that content of detached part is the same,
-    /// but in most cases it's enough to compare checksums.txt and list of files.
-
-    if (!exists("checksums.txt"))
-        return false;
-
-    auto detached_full_path = fs::path(root_path) / "detached" / detached_part_path;
-    auto disk = volume->getDisk();
-    if (!disk->exists(detached_full_path / "checksums.txt"))
-        return false;
-
-    if (!original_checksums_content)
-    {
-        auto in = disk->readFile(detached_full_path / "checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
-        original_checksums_content.emplace();
-        readStringUntilEOF(*original_checksums_content, *in);
-    }
-
-    if (original_checksums_content->empty())
-        return false;
-
-    auto part_full_path = fs::path(root_path) / part_dir;
-    String detached_checksums_content;
-    {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
-        readStringUntilEOF(detached_checksums_content, *in);
-    }
-
-    if (original_checksums_content != detached_checksums_content)
-        return false;
-
-    if (!original_files_list)
-    {
-        original_files_list.emplace();
-        disk->listFiles(part_full_path, *original_files_list);
-        std::sort(original_files_list->begin(), original_files_list->end());
-    }
-
-    Strings detached_files_list;
-    disk->listFiles(detached_full_path, detached_files_list);
-    std::sort(detached_files_list.begin(), detached_files_list.end());
-
-    return original_files_list == detached_files_list;
 }
 
 void DataPartStorageBuilderOnDisk::setRelativePath(const std::string & path)
@@ -803,14 +732,12 @@ DataPartStoragePtr DataPartStorageOnDisk::freeze(
     const std::string & dir_path,
     bool make_source_readonly,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    bool copy_instead_of_hardlink,
-    const NameSet & files_to_copy_instead_of_hardlinks) const
-
+    bool copy_instead_of_hardlink) const
 {
     auto disk = volume->getDisk();
     disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
+    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, make_source_readonly, {}, copy_instead_of_hardlink);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);

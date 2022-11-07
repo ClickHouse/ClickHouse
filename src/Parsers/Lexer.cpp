@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
@@ -40,7 +39,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 }
 
@@ -339,7 +338,7 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
-            return Token(TokenType::PipeMark, token_begin, pos);
+            return Token(TokenType::ErrorSinglePipeMark, token_begin, pos);
         }
         case '@':
         {
@@ -415,7 +414,7 @@ APPLY_FOR_TOKENS(M)
 #undef M
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

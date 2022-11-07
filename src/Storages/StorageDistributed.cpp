@@ -564,10 +564,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    /// TODO: Analyzer syntax analyzer result
-    if (!query_info.syntax_analyzer_result)
-        return {};
-
     // GROUP BY
     const ASTPtr group_by = select.groupBy();
     if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
@@ -657,7 +653,7 @@ void StorageDistributed::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
@@ -1329,7 +1325,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res -= shards[i].weight;
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 

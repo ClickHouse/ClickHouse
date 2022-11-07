@@ -18,9 +18,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template<bool conform_rfc>
-struct FunctionPortImpl : public IFunction
+struct FunctionPort : public IFunction
 {
+    static constexpr auto name = "port";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
+
+    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -91,12 +94,7 @@ private:
         const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
         const char * end = p + size;
 
-        std::string_view host;
-        if constexpr (conform_rfc)
-            host = getURLHostRFC(p, size);
-        else
-            host = getURLHost(p, size);
-
+        std::string_view host = getURLHost(p, size);
         if (host.empty())
             return default_port;
         if (host.size() == size)
@@ -123,24 +121,9 @@ private:
     }
 };
 
-struct FunctionPort : public FunctionPortImpl<false>
-{
-    static constexpr auto name = "port";
-    String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
-};
-
-struct FunctionPortRFC : public FunctionPortImpl<true>
-{
-    static constexpr auto name = "portRFC";
-    String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPortRFC>(); }
-};
-
 REGISTER_FUNCTION(Port)
 {
     factory.registerFunction<FunctionPort>();
-    factory.registerFunction<FunctionPortRFC>();
 }
 
 }

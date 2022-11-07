@@ -142,7 +142,7 @@ DataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & new_rel
 
 void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
 {
-    String detached_path = *getRelativePathForDetachedPart(prefix, /* broken */ false);
+    String detached_path = getRelativePathForDetachedPart(prefix);
     flushToDisk(detached_path, metadata_snapshot);
 }
 

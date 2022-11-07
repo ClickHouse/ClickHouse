@@ -82,11 +82,6 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<FakeDiskTransaction>(*this);
 }
 
-ObjectStoragePtr DiskObjectStorage::getObjectStorage()
-{
-    return object_storage;
-}
-
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
@@ -290,7 +285,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
     {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}", id, object_storage_root_path);
         return false;
     }
 
@@ -464,26 +459,18 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
 
     if (unreserved_space >= bytes)
     {
-        LOG_TRACE(
-            log,
-            "Reserved {} on remote disk {}, having unreserved {}.",
-            ReadableSize(bytes),
-            backQuote(name),
-            ReadableSize(unreserved_space));
+        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
-    }
-    else
-    {
-        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
     }
 
     return {};

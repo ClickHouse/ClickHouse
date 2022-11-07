@@ -266,7 +266,6 @@ namespace
                 setCredentials(credentials, request_uri);
 
                 const auto settings = context->getSettings();
-                int zstd_window_log_max = static_cast<int>(settings.zstd_window_log_max);
                 try
                 {
                     if (download_threads > 1)
@@ -352,10 +351,10 @@ namespace
                                 return wrapReadBufferWithCompressionMethod(
                                     std::make_unique<ParallelReadBuffer>(
                                         std::move(read_buffer_factory),
-                                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
+                                        threadPoolCallbackRunner(IOThreadPool::get()),
                                         download_threads),
                                     compression_method,
-                                    zstd_window_log_max);
+                                    settings.zstd_window_log_max);
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -387,7 +386,7 @@ namespace
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
                             compression_method,
-                        zstd_window_log_max);
+                        settings.zstd_window_log_max);
                 }
                 catch (...)
                 {
@@ -642,7 +641,7 @@ Pipe IStorageURLBase::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
 
@@ -731,7 +730,7 @@ Pipe StorageURLWithFailover::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -1019,7 +1018,7 @@ ASTs::iterator StorageURL::collectHeaders(
                 if (arg_value.getType() != Field::Types::Which::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header value");
 
-                configuration.headers.emplace_back(arg_name, arg_value.safeGet<String>());
+                configuration.headers.emplace_back(arg_name, arg_value);
             }
 
             headers_it = arg_it;
@@ -1097,9 +1096,10 @@ void registerStorageURL(StorageFactory & factory)
             ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
             for (const auto & [header, value] : configuration.headers)
             {
+                auto value_literal = value.safeGet<String>();
                 if (header == "Range")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-                headers.emplace_back(header, value);
+                headers.emplace_back(std::make_pair(header, value_literal));
             }
 
             ASTPtr partition_by;

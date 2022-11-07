@@ -209,7 +209,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
@@ -645,7 +645,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     if (use_table_fd)
     {

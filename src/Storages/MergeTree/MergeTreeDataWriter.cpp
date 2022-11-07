@@ -244,7 +244,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     };
 
     auto merging_algorithm = get_merging_algorithm();

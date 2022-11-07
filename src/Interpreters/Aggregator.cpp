@@ -35,7 +35,6 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -58,20 +57,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForAggregation;
-}
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
-    extern const int TOO_MANY_ROWS;
-    extern const int EMPTY_DATA_PASSED;
-    extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
-    extern const int LOGICAL_ERROR;
-}
-
 }
 
 namespace
@@ -206,7 +191,7 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
         default:
             return type;
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void initDataVariantsWithSizeHint(
@@ -325,6 +310,17 @@ size_t getMinBytesForPrefetch()
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int NOT_ENOUGH_SPACE;
+    extern const int TOO_MANY_ROWS;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
+    extern const int LOGICAL_ERROR;
+}
+
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {
@@ -570,7 +566,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope, CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
@@ -1572,28 +1567,30 @@ bool Aggregator::executeOnBlock(Columns columns,
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
-    if (!tmp_data)
-        throw Exception("Cannot write to temporary file because temporary file is not initialized", ErrorCodes::LOGICAL_ERROR);
-
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto & out_stream = tmp_data->createStream(getHeader(false), max_temp_file_size);
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
+    auto file = createTempFile(max_temp_file_size);
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.path());
+    const auto & path = file->path();
+    WriteBufferFromFile file_buf(path);
+    CompressedWriteBuffer compressed_buf(file_buf);
+    NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
+
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", path);
+    ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
     /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
     data_variants.init(data_variants.type);
@@ -1606,31 +1603,61 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         data_variants.without_key = place;
     }
 
-    auto stat = out_stream.finishWriting();
-
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, stat.uncompressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
+    block_out.flush();
+    compressed_buf.next();
+    file_buf.next();
 
     double elapsed_seconds = watch.elapsedSeconds();
-    double compressed_size = stat.compressed_size;
-    double uncompressed_size = stat.uncompressed_size;
+    size_t compressed_bytes = file_buf.count();
+    size_t uncompressed_bytes = compressed_buf.count();
+
+    {
+        std::lock_guard lock(temporary_files.mutex);
+        temporary_files.files.emplace_back(std::move(file));
+        temporary_files.sum_size_uncompressed += uncompressed_bytes;
+        temporary_files.sum_size_compressed += compressed_bytes;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_bytes);
+
     LOG_DEBUG(log,
         "Written part in {:.3f} sec., {} rows, {} uncompressed, {} compressed,"
         " {:.3f} uncompressed bytes per row, {:.3f} compressed bytes per row, compression rate: {:.3f}"
         " ({:.3f} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
-        ReadableSize(uncompressed_size),
-        ReadableSize(compressed_size),
-        static_cast<double>(uncompressed_size) / rows,
-        static_cast<double>(compressed_size) / rows,
-        static_cast<double>(uncompressed_size) / compressed_size,
+        ReadableSize(uncompressed_bytes),
+        ReadableSize(compressed_bytes),
+        static_cast<double>(uncompressed_bytes) / rows,
+        static_cast<double>(compressed_bytes) / rows,
+        static_cast<double>(uncompressed_bytes) / compressed_bytes,
         static_cast<double>(rows) / elapsed_seconds,
-        ReadableSize(static_cast<double>(uncompressed_size) / elapsed_seconds),
-        ReadableSize(static_cast<double>(compressed_size) / elapsed_seconds));
+        ReadableSize(static_cast<double>(uncompressed_bytes) / elapsed_seconds),
+        ReadableSize(static_cast<double>(compressed_bytes) / elapsed_seconds));
 }
+
+
+TemporaryFileOnDiskHolder Aggregator::createTempFile(size_t max_temp_file_size) const
+{
+    auto file = std::make_unique<TemporaryFileOnDisk>(params.tmp_volume->getDisk(), CurrentMetrics::TemporaryFilesForAggregation);
+
+    // enoughSpaceInDirectory() is not enough to make it right, since
+    // another process (or another thread of aggregator) can consume all
+    // space.
+    //
+    // But true reservation (IVolume::reserve()) cannot be used here since
+    // current_memory_usage does not takes compression into account and
+    // will reserve way more that actually will be used.
+    //
+    // Hence let's do a simple check.
+    if (max_temp_file_size > 0 && !enoughSpaceInDirectory(file->getPath(), max_temp_file_size))
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
+    return file;
+}
+
 
 template <typename Method>
 Block Aggregator::convertOneBucketToBlock(
@@ -1638,14 +1665,14 @@ Block Aggregator::convertOneBucketToBlock(
     Method & method,
     Arena * arena,
     bool final,
-    Int32 bucket) const
+    size_t bucket) const
 {
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
     Block block = convertToBlockImpl<return_single_block>(
         method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size());
 
-    block.info.bucket_num = static_cast<int>(bucket);
+    block.info.bucket_num = bucket;
     return block;
 }
 
@@ -1653,7 +1680,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
     bool final,
-    Int32 bucket,
+    size_t bucket,
     std::atomic<bool> * is_cancelled) const
 {
     auto & merged_data = *variants[0];
@@ -1681,7 +1708,7 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    TemporaryFileStream & out) const
+    NativeWriter & out) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1697,7 +1724,7 @@ void Aggregator::writeToTemporaryFileImpl(
             max_temporary_block_size_bytes = block_size_bytes;
     };
 
-    for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+    for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, bucket);
         out.write(block);
@@ -3159,19 +3186,19 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
         selector[i] = bucket;
     }
 
-    UInt32 num_buckets = static_cast<UInt32>(destinations.size());
+    size_t num_buckets = destinations.size();
 
     for (size_t column_idx = 0; column_idx < columns; ++column_idx)
     {
         const ColumnWithTypeAndName & src_col = source.getByPosition(column_idx);
         MutableColumns scattered_columns = src_col.column->scatter(num_buckets, selector);
 
-        for (UInt32 bucket = 0, size = num_buckets; bucket < size; ++bucket)
+        for (size_t bucket = 0, size = num_buckets; bucket < size; ++bucket)
         {
             if (!scattered_columns[bucket]->empty())
             {
                 Block & dst = destinations[bucket];
-                dst.info.bucket_num = static_cast<int>(bucket);
+                dst.info.bucket_num = bucket;
                 dst.insert({std::move(scattered_columns[bucket]), src_col.type, src_col.name});
             }
 
@@ -3279,6 +3306,8 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
 {
     if (result.empty())
         return;
+
+    LOG_TRACE(log, "Destroying aggregate states");
 
     /// In what data structure is the data aggregated?
     if (result.type == AggregatedDataVariants::Type::without_key || params.overflow_row)

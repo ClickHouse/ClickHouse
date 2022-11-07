@@ -148,7 +148,7 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void setProcessListElement(QueryStatusPtr elem);
+    void setProcessListElement(QueryStatus * elem);
     void setProgressCallback(ProgressCallback callback);
 
     /// Recommend number of threads for pipeline execution.
@@ -189,7 +189,7 @@ private:
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
 
-    QueryStatusPtr process_list_element;
+    QueryStatus * process_list_element = nullptr;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();

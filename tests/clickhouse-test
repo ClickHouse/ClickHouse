@@ -865,12 +865,6 @@ class TestCase:
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
-            if diff.startswith("Binary files "):
-                diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
-                diff += str(file.read())
-                file.close()
-                diff += "==================="
             description += f"\n{diff}\n"
             if debug_log:
                 description += "\n"
@@ -987,7 +981,7 @@ class TestCase:
                 and (proc.stderr is None)
                 and (proc.stdout is None or "Exception" not in proc.stdout)
             )
-            need_drop_database = maybe_passed
+            need_drop_database = not maybe_passed
 
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
@@ -2055,7 +2049,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-drop-if-fail",
         action="store_true",
-        help="Do not drop database for test if test has failed (does not work if reference file mismatch)",
+        help="Do not drop database for test if test has failed",
     )
     parser.add_argument(
         "--hide-db-name",

@@ -221,12 +221,8 @@ cutQueryString
 cutQueryStringAndFragment
 cutToFirstSignificantSubdomain
 cutToFirstSignificantSubdomainCustom
-cutToFirstSignificantSubdomainCustomRFC
 cutToFirstSignificantSubdomainCustomWithWWW
-cutToFirstSignificantSubdomainCustomWithWWWRFC
-cutToFirstSignificantSubdomainRFC
 cutToFirstSignificantSubdomainWithWWW
-cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 dateDiff
@@ -285,9 +281,7 @@ dictHas
 dictIsIn
 divide
 domain
-domainRFC
 domainWithoutWWW
-domainWithoutWWWRFC
 dotProduct
 dumpColumnStructure
 e
@@ -338,8 +332,6 @@ filesystemFree
 finalizeAggregation
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
-firstSignificantSubdomainCustomRFC
-firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
@@ -601,7 +593,6 @@ polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
 port
-portRFC
 position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
@@ -907,7 +898,6 @@ toYearWeek
 today
 tokens
 topLevelDomain
-topLevelDomainRFC
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -918,7 +908,6 @@ trimBoth
 trimLeft
 trimRight
 trunc
-tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart

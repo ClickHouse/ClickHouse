@@ -72,7 +72,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -147,6 +147,7 @@ private:
     String prompt() const;
 
     void resetOutput();
+    void outputQueryInfo(bool echo_query_);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
@@ -197,7 +198,6 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
@@ -251,7 +251,6 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
-    int create_query_fuzzer_runs = 0;
 
     struct
     {
