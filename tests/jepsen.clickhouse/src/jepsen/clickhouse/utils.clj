@@ -132,6 +132,7 @@
      :chdir data-dir}
     binary-path
     binary-args)
+   (info "Waiting for server")
    (wait-clickhouse-alive! node test clickhouse-alive?)))
 
 (defn prepare-dirs

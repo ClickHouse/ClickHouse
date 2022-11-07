@@ -32,70 +32,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
-  DockerHubPushAarch64:
-    needs: CheckLabels
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix aarch64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: changed_images_aarch64
-          path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
-  DockerHubPushAmd64:
-    needs: CheckLabels
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_images_check.py --suffix amd64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
-  DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Download changed aarch64 images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images_aarch64
-          path: ${{ runner.temp }}
-      - name: Download changed amd64 images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images_amd64
-          path: ${{ runner.temp }}
-      - name: Images check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
-      - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/changed_images.json
 #############################################################################################
 ###################################### JEPSEN TESTS #########################################
 #############################################################################################
@@ -104,11 +40,11 @@ jobs:
     # When it's skipped, all dependent tasks will be skipped too.
     # DO NOT add it there
     if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
-    needs: [DockerHubPush]
+    needs: [CheckLabels]
     uses: ./.github/workflows/jepsen.yml
   FinishCheck:
     needs:
-      - DockerHubPush
+      - CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
