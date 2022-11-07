@@ -46,7 +46,7 @@ namespace
             context->getRemoteHostFilter(),
             static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-            /* for_disk_s3 = */ false);
+            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
 
         client_configuration.endpointOverride = s3_uri.endpoint;
         client_configuration.maxConnections = static_cast<unsigned>(context->getSettingsRef().s3_max_connections);
@@ -86,8 +86,8 @@ BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
-    , max_single_read_retries(context_->getSettingsRef().s3_max_single_read_retries)
     , read_settings(context_->getReadSettings())
+    , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
 {
 }
 
@@ -115,7 +115,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, max_single_read_retries, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, rw_settings, read_settings);
 }
 
 
@@ -123,7 +123,6 @@ BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
-    , max_single_read_retries(context_->getSettingsRef().s3_max_single_read_retries)
     , read_settings(context_->getReadSettings())
     , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
 {
@@ -318,7 +317,7 @@ bool BackupWriterS3::fileContentsEqual(const String & file_name, const String & 
     try
     {
         auto in = std::make_unique<ReadBufferFromS3>(
-            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, max_single_read_retries, read_settings);
+            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, rw_settings, read_settings);
         String actual_file_contents(expected_file_contents.size(), ' ');
         return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
             && (actual_file_contents == expected_file_contents) && in->eof();
