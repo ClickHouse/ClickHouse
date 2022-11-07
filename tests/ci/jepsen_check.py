@@ -161,7 +161,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.program != "server" and args.program != "keeper":
-        logging.warning(f"Invalid argument '{args.program}'")
+        logging.warning("Invalid argument '%s'", args.program)
         sys.exit(0)
 
     stopwatch = Stopwatch()
