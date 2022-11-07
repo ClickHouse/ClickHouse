@@ -33,7 +33,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client1.send("CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple()")
     client1.expect(prompt)
-    client1.send("CREATE LIVE VIEW test.lv WITH TIMEOUT AS SELECT sum(a) FROM test.mt")
+    client1.send("CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt")
     client1.expect(prompt)
     client1.send("WATCH test.lv")
     client1.expect("_version")

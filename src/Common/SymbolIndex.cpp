@@ -99,23 +99,25 @@ void updateResources(ElfW(Addr) base_address, std::string_view object_name, std:
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_start"));
 
-            resources.emplace(name, SymbolIndex::ResourcesBlob{
-                base_address,
-                object_name,
-                std::string_view{char_address, 0}, // NOLINT
-            });
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
+            {
+                resource.base_address = base_address;
+                resource.start = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
+            }
         }
-        else if (name.ends_with("_end"))
+        if (name.ends_with("_end"))
         {
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_end"));
 
-            auto it = resources.find(name);
-            if (it != resources.end() && it->second.base_address == base_address && it->second.data.empty())
+            auto & resource = resources[name];
+            if (!resource.base_address || resource.base_address == base_address)
             {
-                const char * start = it->second.data.data();
-                assert(char_address >= start);
-                it->second.data = std::string_view{start, static_cast<size_t>(char_address - start)};
+                resource.base_address = base_address;
+                resource.end = std::string_view{char_address, 0}; // NOLINT(bugprone-string-constructor)
+                resource.object_name = object_name;
             }
         }
     }

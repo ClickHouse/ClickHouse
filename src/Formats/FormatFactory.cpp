@@ -100,6 +100,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
+    format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
     format_settings.json.try_infer_objects = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
@@ -247,8 +248,8 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
-               context->getApplicationType() == Context::ApplicationType::SERVER};
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
+            settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
         if (!settings.input_format_record_errors_file_path.toString().empty())
         {
@@ -302,7 +303,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto * element_id = context->getProcessListElement();
+    auto element_id = context->getProcessListElement();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here

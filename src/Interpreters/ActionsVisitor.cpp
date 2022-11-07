@@ -52,7 +52,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
 
 namespace DB
@@ -91,15 +91,35 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
+template <typename T>
+static bool decimalEqualsFloat(Field field, Float64 float_value)
+{
+    auto decimal_field = field.get<DecimalField<T>>();
+    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
+    return decimal_to_float == float_value;
+}
+
 /// Applies stricter rules than convertFieldToType:
 /// Doesn't allow :
-/// - loss of precision with `Decimals`
+/// - loss of precision converting to Decimal
 static bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
 {
     result_value = convertFieldToType(from_value, to_type);
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
         return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-
+    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
+    {
+        /// Convert back to Float64 and compare
+        if (result_value.getType() == Field::Types::Decimal32)
+            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
+        if (result_value.getType() == Field::Types::Decimal64)
+            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
+        if (result_value.getType() == Field::Types::Decimal128)
+            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
+        if (result_value.getType() == Field::Types::Decimal256)
+            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
+    }
     return true;
 }
 
