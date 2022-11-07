@@ -69,7 +69,7 @@ jobs:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
   DockerHubPush:
-    needs: [DockerHubPushAmd64, DockerHubPushAarch64, PythonUnitTests]
+    needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
@@ -108,80 +108,7 @@ jobs:
     uses: ./.github/workflows/jepsen.yml
   FinishCheck:
     needs:
-      - StyleCheck
       - DockerHubPush
-      - DockerServerImages
-      - CheckLabels
-      - BuilderReport
-      - FastTest
-      - FunctionalStatelessTestDebug0
-      - FunctionalStatelessTestDebug1
-      - FunctionalStatelessTestDebug2
-      - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestReleaseDatabaseReplicated0
-      - FunctionalStatelessTestReleaseDatabaseReplicated1
-      - FunctionalStatelessTestReleaseWideParts
-      - FunctionalStatelessTestAarch64
-      - FunctionalStatelessTestAsan0
-      - FunctionalStatelessTestAsan1
-      - FunctionalStatelessTestTsan0
-      - FunctionalStatelessTestTsan1
-      - FunctionalStatelessTestTsan2
-      - FunctionalStatelessTestMsan0
-      - FunctionalStatelessTestMsan1
-      - FunctionalStatelessTestMsan2
-      - FunctionalStatelessTestUBsan
-      - FunctionalStatefulTestDebug
-      - FunctionalStatefulTestRelease
-      - FunctionalStatefulTestAarch64
-      - FunctionalStatefulTestAsan
-      - FunctionalStatefulTestTsan
-      - FunctionalStatefulTestMsan
-      - FunctionalStatefulTestUBsan
-      - FunctionalStatelessTestReleaseS3
-      - FunctionalStatelessTestS3Debug0
-      - FunctionalStatelessTestS3Debug1
-      - FunctionalStatelessTestS3Debug2
-      - FunctionalStatelessTestS3Tsan0
-      - FunctionalStatelessTestS3Tsan1
-      - FunctionalStatelessTestS3Tsan2
-      - StressTestDebug
-      - StressTestAsan
-      - StressTestTsan
-      - StressTestMsan
-      - StressTestUBsan
-      - ASTFuzzerTestDebug
-      - ASTFuzzerTestAsan
-      - ASTFuzzerTestTsan
-      - ASTFuzzerTestMSan
-      - ASTFuzzerTestUBSan
-      - IntegrationTestsAsan0
-      - IntegrationTestsAsan1
-      - IntegrationTestsAsan2
-      - IntegrationTestsRelease0
-      - IntegrationTestsRelease1
-      - IntegrationTestsTsan0
-      - IntegrationTestsTsan1
-      - IntegrationTestsTsan2
-      - IntegrationTestsTsan3
-      - PerformanceComparisonX86-0
-      - PerformanceComparisonX86-1
-      - PerformanceComparisonX86-2
-      - PerformanceComparisonX86-3
-      - PerformanceComparisonAarch-0
-      - PerformanceComparisonAarch-1
-      - PerformanceComparisonAarch-2
-      - PerformanceComparisonAarch-3
-      - UnitTestsAsan
-      - UnitTestsTsan
-      - UnitTestsMsan
-      - UnitTestsUBsan
-      - UnitTestsReleaseClang
-      - SharedBuildSmokeTest
-      - CompatibilityCheck
-      - IntegrationTestsFlakyCheck
-      - SQLancerTestRelease
-      - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
