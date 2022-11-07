@@ -23,9 +23,9 @@ namespace DB
 class StorageHudi : public IStorage
 {
 public:
-    // 1. Parses internal file structure of table
-    // 2. Finds out parts with latest version
-    // 3. Creates url for underlying StorageS3 enigne to handle reads
+    /// 1. Parses internal file structure of table.
+    /// 2. Finds out parts with latest version.
+    /// 3. Creates url for underlying StorageS3 enigne to handle reads.
     StorageHudi(
         const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
@@ -38,7 +38,7 @@ public:
     String getName() const override { return "Hudi"; }
 
 
-    // Reads latest version of Apache Hudi table
+    /// Reads latest version of Apache Hudi table
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -51,12 +51,12 @@ public:
 private:
     std::vector<std::string> getKeysFromS3();
 
-    // Apache Hudi store parts of data in different files
-    // Every part file has timestamp in it
-    // Every partition(directory) in Apache Hudi has different versions of part
-    // To find needed parts we need to find out latest part file for every partition
-    // Part format is usually parquet, but can differ
-    static std::string generateQueryFromKeys(std::vector<std::string> && keys, String format);
+    /// Apache Hudi store parts of data in different files.
+    /// Every part file has timestamp in it.
+    /// Every partition(directory) in Apache Hudi has different versions of part.
+    /// To find needed parts we need to find out latest part file for every partition.
+    /// Part format is usually parquet, but can differ.
+    static String generateQueryFromKeys(const std::vector<std::string> & keys, const String & format);
 
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;

@@ -1,29 +1,29 @@
 #include "config.h"
-
 #if USE_AWS_S3
 
-#    include <Storages/StorageDelta.h>
-#    include <Common/logger_useful.h>
+#include <Storages/StorageDelta.h>
+#include <Common/logger_useful.h>
 
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/ReadSettings.h>
-#    include <IO/S3Common.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/S3Common.h>
 
-#    include <Storages/ExternalDataSourceConfiguration.h>
-#    include <Storages/StorageFactory.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
-#    include <Formats/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
-#    include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
-#    include <fmt/format.h>
-#    include <fmt/ranges.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <ranges>
 
 namespace DB
 {
@@ -53,9 +53,7 @@ std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
     keys.reserve(file_update_time.size());
 
     for (auto && [k, _] : file_update_time)
-    {
         keys.push_back(k);
-    }
 
     return keys;
 }
@@ -75,12 +73,13 @@ void JsonMetadataGetter::Init(ContextPtr context)
     {
         auto buf = createS3ReadBuffer(key, context);
 
+        char c;
         while (!buf->eof())
         {
-            // may be some invalid characters before json
-            char c;
+            /// May be some invalid characters before json.
             while (buf->peek(c) && c != '{')
                 buf->ignore();
+
             if (buf->eof())
                 break;
 
@@ -91,7 +90,6 @@ void JsonMetadataGetter::Init(ContextPtr context)
                 continue;
 
             const JSON json(json_str);
-
             handleJSON(json);
         }
     }
@@ -111,8 +109,9 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 
     request.SetBucket(bucket);
 
-    // DeltaLake format stores all metadata json files in _delta_log directory
-    request.SetPrefix(std::filesystem::path(table_path) / "_delta_log");
+    /// DeltaLake format stores all metadata json files in _delta_log directory
+    static constexpr auto deltalake_metadata_directory = "_delta_log";
+    request.SetPrefix(std::filesystem::path(table_path) / deltalake_metadata_directory);
 
     while (!is_finished)
     {
@@ -136,8 +135,8 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
                 keys.push_back(filename);
         }
 
-        // Needed in case any more results are available
-        // if so, we will continue reading, and not read keys that were already read
+        /// Needed in case any more results are available
+        /// if so, we will continue reading, and not read keys that were already read
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
         /// Set to false if all of the results were returned. Set to true if more keys
@@ -151,13 +150,13 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 
 std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key, ContextPtr context)
 {
-    // TBD: add parallel downloads
+    /// TODO: add parallel downloads
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,
         key,
         base_configuration.uri.version_id,
-        /* max single read retries */ 10,
+        /* max single read retries */10,
         context->getReadSettings());
 }
 
@@ -198,7 +197,6 @@ StorageDelta::StorageDelta(
     JsonMetadataGetter getter{base_configuration, table_path, context_};
 
     auto keys = getter.getFiles();
-
     auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
@@ -281,12 +279,11 @@ void registerStorageDelta(StorageFactory & factory)
 
             if (engine_args.size() == 4)
                 configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
-
-            // DeltaLake uses Parquet by default
-            if (configuration.format == "auto")
+            else
+            {
+                /// DeltaLake uses Parquet by default.
                 configuration.format = "Parquet";
-
-            //auto format_settings = getFormatSettings(args.getContext());
+            }
 
             return std::make_shared<StorageDelta>(
                 configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), std::nullopt);
