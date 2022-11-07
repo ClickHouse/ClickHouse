@@ -6484,7 +6484,7 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
         if (startsWith(block_id, partition_prefix))
             paths_to_get.push_back(fs::path(zookeeper_path) / "blocks" / block_id);
 
-    auto results = zookeeper.get(paths_to_get);
+    auto results = zookeeper.tryGet(paths_to_get);
 
     for (size_t i = 0; i < paths_to_get.size(); ++i)
     {
