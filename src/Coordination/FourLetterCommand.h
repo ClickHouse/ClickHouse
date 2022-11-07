@@ -17,6 +17,7 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 /// Just like zookeeper Four Letter Words commands, CH Keeper responds to a small set of commands.
 /// Each command is composed of four letters, these commands are useful to monitor and issue system problems.
 /// The feature is based on Zookeeper 3.5.9, details is in https://zookeeper.apache.org/doc/r3.5.9/zookeeperAdmin.html#sc_zkCommands.
+/// Also we add some additional commands such as csnp, lgif etc.
 struct IFourLetterCommand
 {
 public:
@@ -327,4 +328,40 @@ struct ApiVersionCommand : public IFourLetterCommand
     String run() override;
     ~ApiVersionCommand() override = default;
 };
+
+/// Create snapshot manually
+struct CreateSnapshotCommand : public IFourLetterCommand
+{
+    explicit CreateSnapshotCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "csnp"; }
+    String run() override;
+    ~CreateSnapshotCommand() override = default;
+};
+
+/** Raft log information:
+ *     first_log_idx 1
+ *     first_log_term   1
+ *     last_log_idx 101
+ *     last_log_term    1
+ *     last_committed_idx   100
+ *     leader_committed_log_idx 101
+ *     target_committed_log_idx 101
+ *     last_snapshot_idx    50
+ */
+struct LogInfoCommand : public IFourLetterCommand
+{
+    explicit LogInfoCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgif"; }
+    String run() override;
+    ~LogInfoCommand() override = default;
+};
+
 }
