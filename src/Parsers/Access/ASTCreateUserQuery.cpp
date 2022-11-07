@@ -275,7 +275,24 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    return std::make_shared<ASTCreateUserQuery>(*this);
+    auto res = std::make_shared<ASTCreateUserQuery>(*this);
+
+    if (names)
+        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (default_roles)
+        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
+
+    if (default_database)
+        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+
+    if (grantees)
+        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+
+    if (settings)
+        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    return res;
 }
 
 
