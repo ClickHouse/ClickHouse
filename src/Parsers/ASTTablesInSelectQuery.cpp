@@ -113,23 +113,15 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << " ";
         database_and_table_name->formatImpl(settings, state, frame);
     }
-    /// In case of table function view, table_function is preferred over subquery for EXPLAIN SYNTAX
-    else if (table_function && table_function->as<ASTFunction>() && table_function->as<ASTFunction>()->name=="view")
+    else if (table_function && !table_function->as<ASTFunction>()->is_parameterized_view)
     {
         settings.ostr << " ";
         table_function->formatImpl(settings, state, frame);
     }
-    /// For parameterized view, subquery is preferred over table_function for EXPLAIN SYNTAX
-    /// we cannot remove the table function part, as its needed for query substitution
     else if (subquery)
     {
         settings.ostr << settings.nl_or_ws << indent_str;
         subquery->formatImpl(settings, state, frame);
-    }
-    else if (table_function)
-    {
-        settings.ostr << " ";
-        table_function->formatImpl(settings, state, frame);
     }
 
     if (final)

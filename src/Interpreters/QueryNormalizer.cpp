@@ -128,7 +128,7 @@ void QueryNormalizer::visit(ASTQueryParameter & node, Data & data)
     /// Eg: CREATE VIEW v1 AS SELECT * FROM t1 WHERE Column1={c1:UInt64} AND Column2={c1:UInt64}; - c1 is used twice
     auto it_alias = data.query_parameters.find(node.name);
     if (it_alias != data.query_parameters.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Same alias used multiple times {} ", backQuote(node.name));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Same alias used multiple times {}", backQuote(node.name));
 
     data.query_parameters.insert(node.name);
 }

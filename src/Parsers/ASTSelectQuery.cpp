@@ -9,8 +9,6 @@
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
 
-#include <queue>
-
 namespace DB
 {
 
@@ -482,10 +480,7 @@ bool ASTSelectQuery::hasQueryParameters() const
 {
     if (!has_query_parameters.has_value())
     {
-        if (analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty())
-            has_query_parameters = false;
-        else
-            has_query_parameters = true;
+        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
     }
 
     return  has_query_parameters.value();
