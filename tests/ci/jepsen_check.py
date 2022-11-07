@@ -194,7 +194,7 @@ if __name__ == "__main__":
         os.makedirs(result_path)
 
     instances = prepare_autoscaling_group_and_get_hostnames(KEEPER_DESIRED_INSTANCE_COUNT if args.program == 'keeper' else SERVER_DESIRED_INSTANCE_COUNT)
-    nodes_path = save_nodes_to_file(instances[:SERVER_DESIRED_INSTANCE_COUNT - 1], TEMP_PATH)
+    nodes_path = save_nodes_to_file(instances[:KEEPER_DESIRED_INSTANCE_COUNT], TEMP_PATH)
 
     # always use latest
     docker_image = KEEPER_IMAGE_NAME if args.program == 'keeper' else SERVER_IMAGE_NAME
