@@ -779,10 +779,10 @@ public:
         return column_sizes;
     }
 
-    const ColumnsDescription & getObjectColumns() const { return object_columns; }
+    const ColumnsDescription & getConcreteObjectColumns() const { return object_columns; }
 
     /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getObjectColumns(
+    static ColumnsDescription getConcreteObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
     IndexSizeByName getSecondaryIndexSizes() const override
@@ -1151,7 +1151,7 @@ protected:
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getObjectColumns(
+    static ColumnsDescription getConcreteObjectColumns(
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
