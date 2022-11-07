@@ -38,9 +38,13 @@ public:
         if (!function_node || !function_node->isAggregateFunction() || !matchFunctionName(function_node->getFunctionName()))
             return;
 
+        if (function_node->getResultType()->isNullable())
+            /// Do not apply to functions with Nullable result type, because `sumCount` handles it different from `sum` and `avg`.
+            return;
+
         const auto & arguments = function_node->getArgumentsNode()->getChildren();
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} must have exactly one argument", function_node->getFunctionName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} should have exactly one argument", function_node->getFunctionName());
 
         mapping[QueryTreeNodeWithHash(arguments[0])].push_back(&node);
     }
@@ -111,12 +115,12 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     if (function_name == "sum")
     {
-        assert(node->getResultType() == sum_count_result_type->getElement(0));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
         node = createTupleElementFunction(context, node->getResultType(), sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        assert(node->getResultType() == sum_count_result_type->getElement(1));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
         node = createTupleElementFunction(context, node->getResultType(), sum_count_node, 2);
     }
     else if (function_name == "avg")
@@ -148,6 +152,7 @@ void FuseFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context
         auto sum_count_node = createSumCoundNode(argument.node);
         for (auto * node : nodes)
         {
+            assert(node);
             replaceWithSumCount(*node, sum_count_node, context);
         }
     }

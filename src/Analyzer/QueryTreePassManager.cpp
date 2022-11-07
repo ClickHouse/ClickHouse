@@ -67,7 +67,6 @@ public:
   *
   * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
-  * TODO: Support fuse sum count optimize_fuse_sum_count_avg, optimize_syntax_fuse_functions.
   * TODO: Support setting convert_query_to_cnf.
   * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
@@ -79,7 +78,7 @@ public:
   * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Support setting optimize_if_transform_strings_to_enum.
-  * TODO: Support settings.optimize_syntax_fuse_functions.
+  * TODO: Support fuse quantile functions optimize_syntax_fuse_functions.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
