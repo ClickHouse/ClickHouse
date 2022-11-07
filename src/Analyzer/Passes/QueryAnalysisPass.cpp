@@ -4112,10 +4112,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (function_node.isWindowFunction())
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-               "Aggregate function with name {} does not exists. In scope {}",
+        {
+            std::string error_message = fmt::format("Aggregate function with name {} does not exists. In scope {}",
                function_name,
                scope.scope_node->formatASTForErrorMessage());
+
+            AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
+        }
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
@@ -4141,10 +4145,38 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (!function)
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-               "Function with name {} does not exists. In scope {}",
-               function_name,
-               scope.scope_node->formatASTForErrorMessage());
+        {
+            std::vector<std::string> possible_function_names;
+
+            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context);
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = UserDefinedSQLFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = FunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            for (auto & [name, lambda_node] : scope.alias_name_to_lambda_node)
+            {
+                if (lambda_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    possible_function_names.push_back(name);
+            }
+
+            std::string error_message = fmt::format("Function with name {} does not exists. In scope {}",
+                function_name,
+                scope.scope_node->formatASTForErrorMessage());
+
+            NamePrompter<2> name_prompter;
+            auto hints = name_prompter.getHints(function_name, possible_function_names);
+
+            appendHintsMessage(error_message, hints);
+
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, error_message);
+        }
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
