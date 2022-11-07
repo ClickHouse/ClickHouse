@@ -2,18 +2,21 @@
 
 #if USE_AWS_S3
 
-#    include <Storages/StorageHudi.h>
-#    include <Common/logger_useful.h>
+#include <Storages/StorageHudi.h>
+#include <Common/logger_useful.h>
 
-#    include <Formats/FormatFactory.h>
-#    include <IO/S3Common.h>
-#    include <Storages/StorageFactory.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
+#include <Formats/FormatFactory.h>
+#include <IO/S3Common.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
-#    include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+
+#include <ranges>
 
 namespace DB
 {
@@ -41,7 +44,6 @@ StorageHudi::StorageHudi(
     StorageS3::updateS3Configuration(context_, base_configuration);
 
     auto keys = getKeysFromS3();
-
     auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys), configuration_.format);
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
@@ -121,7 +123,7 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
         const auto & result_batch = outcome.GetResult().GetContents();
         for (const auto & obj : result_batch)
         {
-            const auto & filename = obj.GetKey().substr(table_path.size()); // object name without tablepath prefix
+            const auto & filename = obj.GetKey().substr(table_path.size()); /// Object name without tablepath prefix.
             keys.push_back(filename);
             LOG_DEBUG(log, "Found file: {}", filename);
         }
@@ -133,65 +135,55 @@ std::vector<std::string> StorageHudi::getKeysFromS3()
     return keys;
 }
 
-std::string StorageHudi::generateQueryFromKeys(std::vector<std::string> && keys, String format)
+String StorageHudi::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
 {
-    // make format lowercase
-    std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    // filter only files with specific format
-    std::erase_if(keys, [&format](const std::string & s) { return std::filesystem::path(s).extension() != "." + format; });
-
-    // for each partition path take only latest file
-    std::unordered_map<std::string, std::pair<std::string, uint64_t>> latest_parts;
-
-    for (const auto & key : keys)
+    /// For each partition path take only latest file.
+    struct FileInfo
     {
-        auto slash = key.find_last_of("/");
-        std::string path;
-        if (slash == std::string::npos)
-        {
-            path = "";
-        }
-        else
-        {
-            path = key.substr(0, slash);
-        }
+        String filename;
+        UInt64 timestamp;
+    };
+    std::unordered_map<String, FileInfo> latest_parts; /// Partition path (directory) -> latest part file info.
 
-        // every filename contains metadata split by "_", timestamp is after last "_"
-        uint64_t timestamp = std::stoul(key.substr(key.find_last_of("_") + 1));
+    /// Make format lowercase.
+    const auto expected_extension= "." + Poco::toLower(format);
+    /// Filter only files with specific format.
+    auto keys_filter = [&](const String & key) { return std::filesystem::path(key).extension() == expected_extension; };
 
-        auto it = latest_parts.find(path);
+    for (const auto & key : keys | std::views::filter(keys_filter))
+    {
+        const auto key_path = fs::path(key);
+        const String filename = key_path.filename();
+        const String partition_path = key_path.parent_path();
 
-        if (it != latest_parts.end())
+        /// Every filename contains metadata split by "_", timestamp is after last "_".
+        const auto delim = key.find_last_of("_") + 1;
+        if (delim == std::string::npos)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format of metadata files");
+        const auto timestamp = parse<UInt64>(key.substr(delim + 1));
+
+        auto it = latest_parts.find(partition_path);
+        if (it == latest_parts.end())
         {
-            if (it->second.second < timestamp)
-            {
-                it->second = {key, timestamp};
-            }
+            latest_parts.emplace(partition_path, FileInfo{filename, timestamp});
         }
-        else
+        else if (it->second.timestamp < timestamp)
         {
-            latest_parts[path] = {key, timestamp};
+            it->second = {filename, timestamp};
         }
     }
 
-    std::vector<std::string> filtered_keys;
-    std::transform(
-        latest_parts.begin(), latest_parts.end(), std::back_inserter(filtered_keys), [](const auto & kv) { return kv.second.first; });
+    std::string list_of_keys;
 
-    std::string new_query;
-
-    for (auto && key : filtered_keys)
+    for (const auto & [directory, file_info] : latest_parts)
     {
-        if (!new_query.empty())
-        {
-            new_query += ",";
-        }
-        new_query += key;
-    }
-    new_query = "{" + new_query + "}";
+        if (!list_of_keys.empty())
+            list_of_keys += ",";
 
-    return new_query;
+        list_of_keys += std::filesystem::path(directory) / file_info.filename;
+    }
+
+    return "{" + list_of_keys + "}";
 }
 
 
@@ -207,7 +199,6 @@ void registerStorageHudi(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Storage Hudi requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
-
             StorageS3Configuration configuration;
 
             configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
@@ -216,10 +207,11 @@ void registerStorageHudi(StorageFactory & factory)
 
             if (engine_args.size() == 4)
                 configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
-
-            // Apache Hudi uses Parquet by default
-            if (configuration.format == "auto")
+            else
+            {
+                // Apache Hudi uses Parquet by default
                 configuration.format = "Parquet";
+            }
 
             auto format_settings = getFormatSettings(args.getContext());
 
