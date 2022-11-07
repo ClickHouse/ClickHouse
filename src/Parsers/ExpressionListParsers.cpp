@@ -694,7 +694,7 @@ public:
             return false;
 
         /// 2. If there is already tuple do nothing
-        if (elements.size() == 1 && tryGetFunctionName(elements.back()) == "tuple")
+        if (tryGetFunctionName(elements.back()) == "tuple")
         {
             pushOperand(elements.back());
             elements.pop_back();
@@ -1050,11 +1050,19 @@ public:
                 if (!mergeElement())
                     return false;
 
-            // Special case for (('a', 'b')) -> tuple(('a', 'b'))
             if (!is_tuple && elements.size() == 1)
+            {
+                // Special case for (('a', 'b')) = tuple(('a', 'b'))
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
                         is_tuple = true;
+
+                // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
+                auto test_pos = pos;
+                auto test_expected = expected;
+                if (parseOperator(test_pos, "->", test_expected))
+                    is_tuple = true;
+            }
 
             finished = true;
         }
