@@ -22,7 +22,7 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 -   The dictionary being accessed could not be loaded.
 -   Error querying a `cached` dictionary.
 
-You can view the list of external dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
 
 :::tip
 If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
