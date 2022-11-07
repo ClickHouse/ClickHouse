@@ -323,7 +323,7 @@ public:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
+        size_t /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
@@ -357,7 +357,7 @@ private:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
+        size_t /*num_streams*/);
 
 public:
     /// Other version of read which adds reading step to query plan.
@@ -370,7 +370,7 @@ public:
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        unsigned /*num_streams*/);
+        size_t /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.

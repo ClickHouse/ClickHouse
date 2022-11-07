@@ -79,7 +79,7 @@ static capnp::DynamicValue::Builder initStructFieldBuilder(const ColumnPtr & col
     if (const auto * array_column = checkAndGetColumn<ColumnArray>(*column))
     {
         size_t size = array_column->getOffsets()[row_num] - array_column->getOffsets()[row_num - 1];
-        return struct_builder.init(field, size);
+        return struct_builder.init(field, static_cast<unsigned>(size));
     }
 
     if (field.getType().isStruct())
@@ -200,7 +200,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
             size_t size = offsets[row_num] - offset;
 
             const auto * nested_array_column = checkAndGetColumn<ColumnArray>(*nested_column);
-            for (size_t i = 0; i != size; ++i)
+            for (unsigned i = 0; i != static_cast<unsigned>(size); ++i)
             {
                 capnp::DynamicValue::Builder value_builder;
                 /// For nested arrays we need to initialize nested list builder.
@@ -208,7 +208,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
                 {
                     const auto & nested_offset = nested_array_column->getOffsets();
                     size_t nested_array_size = nested_offset[offset + i] - nested_offset[offset + i - 1];
-                    value_builder = list_builder.init(i, nested_array_size);
+                    value_builder = list_builder.init(i, static_cast<unsigned>(nested_array_size));
                 }
                 else
                     value_builder = list_builder[i];

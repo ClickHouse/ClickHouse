@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 Block ArrayJoinTransform::transformHeader(Block header, const ArrayJoinActionPtr & array_join)
 {
     array_join->execute(header);

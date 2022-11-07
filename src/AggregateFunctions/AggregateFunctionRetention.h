@@ -44,7 +44,7 @@ struct AggregateFunctionRetentionData
 
     void serialize(WriteBuffer & buf) const
     {
-        UInt32 event_value = events.to_ulong();
+        UInt32 event_value = static_cast<UInt32>(events.to_ulong());
         writeBinary(event_value, buf);
     }
 

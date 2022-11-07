@@ -138,12 +138,12 @@ private:
 
 
 BackupImpl::BackupImpl(
-    const String & backup_name_,
+    const String & backup_name_for_logging_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_)
-    : backup_name(backup_name_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::READ)
@@ -158,7 +158,7 @@ BackupImpl::BackupImpl(
 
 
 BackupImpl::BackupImpl(
-    const String & backup_name_,
+    const String & backup_name_for_logging_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupWriter> writer_,
@@ -166,7 +166,7 @@ BackupImpl::BackupImpl(
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_)
-    : backup_name(backup_name_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::WRITE)
@@ -225,10 +225,19 @@ void BackupImpl::open(const ContextPtr & context)
         base_backup = BackupFactory::instance().createBackup(params);
 
         if (open_mode == OpenMode::WRITE)
+        {
             base_backup_uuid = base_backup->getUUID();
+        }
         else if (base_backup_uuid != base_backup->getUUID())
-            throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: The base backup {} has different UUID ({} != {})",
-                            backup_name, base_backup->getName(), toString(base_backup->getUUID()), (base_backup_uuid ? toString(*base_backup_uuid) : ""));
+        {
+            throw Exception(
+                ErrorCodes::WRONG_BASE_BACKUP,
+                "Backup {}: The base backup {} has different UUID ({} != {})",
+                backup_name_for_logging,
+                base_backup->getNameForLogging(),
+                toString(base_backup->getUUID()),
+                (base_backup_uuid ? toString(*base_backup_uuid) : ""));
+        }
     }
 }
 
@@ -349,14 +358,14 @@ void BackupImpl::readBackupMetadata()
     if (use_archives)
     {
         if (!reader->fileExists(archive_params.archive_name))
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         setCompressedSize();
         in = getArchiveReader("")->readFile(".backup");
     }
     else
     {
         if (!reader->fileExists(".backup"))
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         in = reader->readFile(".backup");
     }
 
@@ -369,7 +378,8 @@ void BackupImpl::readBackupMetadata()
 
     version = config->getInt("version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
-        throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name, version);
+        throw Exception(
+            ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name_for_logging, version);
 
     timestamp = parse<LocalDateTime>(config->getString("timestamp")).to_time_t();
     uuid = parse<UUID>(config->getString("uuid"));
@@ -400,7 +410,13 @@ void BackupImpl::readBackupMetadata()
                     use_base = true;
 
                 if (info.base_size > info.size)
-                    throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Base size must not be greater than the size of entry {}", backup_name, quoteString(info.file_name));
+                {
+                    throw Exception(
+                        ErrorCodes::BACKUP_DAMAGED,
+                        "Backup {}: Base size must not be greater than the size of entry {}",
+                        backup_name_for_logging,
+                        quoteString(info.file_name));
+                }
 
                 if (use_base)
                 {
@@ -436,14 +452,14 @@ void BackupImpl::checkBackupDoesntExist() const
         file_name_to_check_existence = ".backup";
 
     if (writer->fileExists(file_name_to_check_existence))
-        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!is_internal_backup)
     {
         assert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name);
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
 }
 
@@ -455,6 +471,7 @@ void BackupImpl::createLockFile()
     assert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);
+    out->finalize();
 }
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
@@ -465,8 +482,16 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
     if (throw_if_failed)
     {
         if (!writer->fileExists(lock_file_name))
-            throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lock file {} suddenly disappeared while writing backup {}", lock_file_name, backup_name);
-        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "A concurrent backup writing to the same destination {} detected", backup_name);
+        {
+            throw Exception(
+                ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                "Lock file {} suddenly disappeared while writing backup {}",
+                lock_file_name,
+                backup_name_for_logging);
+        }
+
+        throw Exception(
+            ErrorCodes::BACKUP_ALREADY_EXISTS, "A concurrent backup writing to the same destination {} detected", backup_name_for_logging);
     }
     return false;
 }
@@ -513,8 +538,13 @@ UInt64 BackupImpl::getFileSize(const String & file_name) const
     auto adjusted_path = removeLeadingSlash(file_name);
     auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
+    {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+            "Backup {}: Entry {} not found in the backup",
+            backup_name_for_logging,
+            quoteString(file_name));
+    }
     return info->size;
 }
 
@@ -524,8 +554,13 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
     auto adjusted_path = removeLeadingSlash(file_name);
     auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
+    {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+            "Backup {}: Entry {} not found in the backup",
+            backup_name_for_logging,
+            quoteString(file_name));
+    }
     return info->checksum;
 }
 
@@ -535,8 +570,13 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     auto adjusted_path = removeLeadingSlash(file_name);
     auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
+    {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+            "Backup {}: Entry {} not found in the backup",
+            backup_name_for_logging,
+            quoteString(file_name));
+    }
     return {info->size, info->checksum};
 }
 
@@ -559,8 +599,13 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
 
     auto info_opt = coordination->getFileInfo(size_and_checksum);
     if (!info_opt)
+    {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, formatSizeAndChecksum(size_and_checksum));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+            "Backup {}: Entry {} not found in the backup",
+            backup_name_for_logging,
+            formatSizeAndChecksum(size_and_checksum));
+    }
 
     const auto & info = *info_opt;
 
@@ -576,7 +621,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
         throw Exception(
             ErrorCodes::NO_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
-            backup_name, formatSizeAndChecksum(size_and_checksum));
+            backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
     }
 
     if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
@@ -584,7 +629,7 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
-            backup_name, formatSizeAndChecksum(size_and_checksum));
+            backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
     }
 
     auto base_entry = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
@@ -694,9 +739,12 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     LOG_TRACE(log, "Writing backup for file {} from {}", file_name, from_file_name);
 
     auto adjusted_path = removeLeadingSlash(file_name);
+
     if (coordination->getFileInfo(adjusted_path))
+    {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name, quoteString(file_name));
+            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name_for_logging, quoteString(file_name));
+    }
 
     FileInfo info
     {
@@ -892,12 +940,12 @@ void BackupImpl::finalizeWriting()
 
     if (!is_internal_backup)
     {
-        LOG_TRACE(log, "Finalizing backup {}", backup_name);
+        LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
         writeBackupMetadata();
         closeArchives();
         setCompressedSize();
         removeLockFile();
-        LOG_TRACE(log, "Finalized backup {}", backup_name);
+        LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
 
     writing_finalized = true;
@@ -970,7 +1018,7 @@ void BackupImpl::removeAllFilesAfterFailure()
 
     try
     {
-        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
+        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name_for_logging);
 
         Strings files_to_remove;
         if (use_archives)

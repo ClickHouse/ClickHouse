@@ -34,7 +34,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -56,9 +55,9 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 #include <Common/ProfileEvents.h>
 
-#include <Common/SensitiveDataMasker.h>
 #include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -77,7 +76,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryMaskingRulesMatch;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -106,37 +104,6 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkDepth(settings.max_ast_depth);
     if (settings.max_ast_elements)
         ast.checkSize(settings.max_ast_elements);
-}
-
-
-/// Makes a version of a query without sensitive information (e.g. passwords) for logging.
-/// The parameter `parsed query` can be nullptr if the query cannot be parsed.
-static String prepareQueryForLogging(const String & query, const ASTPtr & parsed_query, ContextPtr context)
-{
-    String res = query;
-
-    // Wiping a password or hash from CREATE/ALTER USER query because we don't want it to go to logs.
-    if (parsed_query && canContainPassword(*parsed_query))
-    {
-        ASTPtr ast_for_logging = parsed_query->clone();
-        wipePasswordFromQuery(ast_for_logging);
-        res = serializeAST(*ast_for_logging);
-    }
-
-    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
-    // otherwise something like credit card without last digit can go to log.
-    if (auto * masker = SensitiveDataMasker::getInstance())
-    {
-        auto matches = masker->wipeSensitiveData(res);
-        if (matches > 0)
-        {
-            ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
-        }
-    }
-
-    res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
-
-    return res;
 }
 
 
@@ -425,14 +392,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = prepareQueryForLogging(query, ast, context);
+        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
     }
     catch (...)
     {
         /// Anyway log the query.
         if (query.empty())
             query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-        query_for_logging = prepareQueryForLogging(query, ast, context);
+        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
 
         logQuery(query_for_logging, context, internal, stage);
 
@@ -537,7 +504,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context);
-            context->setProcessListElement(&process_list_entry->get());
+            context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         /// Load external tables if they were provided
@@ -582,10 +549,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
 
+        bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        const bool async_insert = queue
-            && insert_query && !insert_query->select
-            && insert_query->hasInlinedData() && settings.async_insert;
+
+        if (insert_query && settings.async_insert)
+        {
+            String reason;
+
+            if (!queue)
+                reason = "asynchronous insert queue is not configured";
+            else if (insert_query->select)
+                reason = "insert query has select";
+            else if (!insert_query->hasInlinedData())
+                reason = "insert query doesn't have inlined data";
+            else
+                async_insert = true;
+
+            if (!async_insert)
+            {
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"),
+                    "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            }
+        }
 
         if (async_insert)
         {
@@ -695,9 +680,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if ((*process_list_entry)->isKilled())
-                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
-                    ErrorCodes::QUERY_WAS_CANCELLED);
+            if (process_list_entry->getQueryStatus()->isKilled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
         }
 
         /// Hold element of process list till end of query execution.
@@ -841,7 +826,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                QueryStatus * process_list_elem = context->getProcessListElement();
+                QueryStatusPtr process_list_elem = context->getProcessListElement();
 
                 if (process_list_elem)
                 {
@@ -926,9 +911,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                                 processor_elem.processor_name = processor->getName();
 
-                                processor_elem.elapsed_us = processor->getElapsedUs();
-                                processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
-                                processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+                                /// NOTE: convert this to UInt64
+                                processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
+                                processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
+                                processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
 
                                 auto stats = processor->getProcessorDataStats();
                                 processor_elem.input_rows = stats.input_rows;
@@ -1007,7 +993,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
 
-                QueryStatus * process_list_elem = context->getProcessListElement();
+                QueryStatusPtr process_list_elem = context->getProcessListElement();
                 const Settings & current_settings = context->getSettingsRef();
 
                 /// Update performance counters before logging to query_log
