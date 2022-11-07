@@ -19,6 +19,7 @@ namespace ErrorCodes
 }
 
 /** Union node represents union of queries in query tree.
+  * Union node must be initialized with normalized union mode.
   *
   * Example: (SELECT id FROM test_table) UNION ALL (SELECT id FROM test_table_2);
   * Example: (SELECT id FROM test_table) UNION DISTINCT (SELECT id FROM test_table_2);
@@ -41,7 +42,8 @@ using UnionNodePtr = std::shared_ptr<UnionNode>;
 class UnionNode final : public IQueryTreeNode
 {
 public:
-    explicit UnionNode();
+    /// Construct union node with normalized union mode
+    explicit UnionNode(SelectUnionMode union_mode_);
 
     /// Returns true if union node is subquery, false otherwise
     bool isSubquery() const
@@ -85,25 +87,6 @@ public:
         return union_mode;
     }
 
-    /// Set union mode value
-    void setUnionMode(SelectUnionMode union_mode_value)
-    {
-        union_mode = union_mode_value;
-    }
-
-    /// Get union modes
-    const SelectUnionModes & getUnionModes() const
-    {
-        return union_modes;
-    }
-
-    /// Set union modes value
-    void setUnionModes(const SelectUnionModes & union_modes_value)
-    {
-        union_modes = union_modes_value;
-        union_modes_set = SelectUnionModesSet(union_modes.begin(), union_modes.end());
-    }
-
     /// Get union node queries
     const ListNode & getQueries() const
     {
@@ -128,24 +111,6 @@ public:
         return children[queries_child_index];
     }
 
-    /// Return true if union node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
-    {
-        return table_expression_modifiers.has_value();
-    }
-
-    /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
-    {
-        return table_expression_modifiers;
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
-
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
@@ -153,8 +118,6 @@ public:
     {
         return QueryTreeNodeType::UNION;
     }
-
-    String getName() const override;
 
     DataTypePtr getResultType() const override
     {
@@ -191,10 +154,7 @@ private:
     bool is_cte = false;
     std::string cte_name;
     SelectUnionMode union_mode;
-    SelectUnionModes union_modes;
-    SelectUnionModesSet union_modes_set;
     ConstantValuePtr constant_value;
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t children_size = queries_child_index + 1;

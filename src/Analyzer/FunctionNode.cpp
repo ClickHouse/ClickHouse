@@ -93,27 +93,6 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-String FunctionNode::getName() const
-{
-    String name = function_name;
-
-    const auto & parameters = getParameters();
-    const auto & parameters_nodes = parameters.getNodes();
-    if (!parameters_nodes.empty())
-    {
-        name += '(';
-        name += parameters.getName();
-        name += ')';
-    }
-
-    const auto & arguments = getArguments();
-    name += '(';
-    name += arguments.getName();
-    name += ')';
-
-    return name;
-}
-
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
