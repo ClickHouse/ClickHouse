@@ -3,6 +3,7 @@
 #endif
 #include <unistd.h>
 #include <base/safeExit.h>
+#include <base/defines.h> /// for THREAD_SANITIZER
 
 [[noreturn]] void safeExit(int code)
 {
