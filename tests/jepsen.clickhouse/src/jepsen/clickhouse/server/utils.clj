@@ -11,7 +11,7 @@
     (let [c (chc/open-connection node)]
       (jdbc/query c "SELECT 1")
       (chc/close-connection c))
-    (catch Exception e (do (info e) false))))
+    (catch Exception e false)))
 
 (defn start-clickhouse!
   [node test]
