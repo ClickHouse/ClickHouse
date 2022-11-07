@@ -46,15 +46,15 @@ d5	1	0
 d6	2	1
 === Replicated case ===
 == Replica 1 ==
+d1	2	1
 d2	1	0
 d3	2	1
 d4	1	0
-d1	2	1
 == Replica 2 ==
+d1	2	1
 d2	1	0
 d3	2	1
 d4	1	0
-d1	2	1
 == OPTIMIZE on replicas ==
 == Replica 1 ==
 d2	1	0
