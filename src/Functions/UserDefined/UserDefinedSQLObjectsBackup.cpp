@@ -87,7 +87,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
                     parser,
                     statement_def.data(),
                     statement_def.data() + statement_def.size(),
-                    "in file " + filepath + " from backup " + backup->getName(),
+                    "in file " + filepath + " from backup " + backup->getNameForLogging(),
                     0,
                     context->getSettingsRef().max_parser_depth);
                 break;
