@@ -93,7 +93,7 @@ public:
         if (arguments.size() < 2 || 3 < arguments.size())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3.",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                 getName(), arguments.size());
 
         if (!isStringOrFixedString(arguments[0]))
