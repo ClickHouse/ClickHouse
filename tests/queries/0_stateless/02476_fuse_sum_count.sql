@@ -7,11 +7,26 @@ CREATE TABLE fuse_tbl(a Nullable(Int8), b Int8) Engine = Log;
 
 INSERT INTO fuse_tbl VALUES (1, 1), (2, 2), (NULL, 3);
 
+SELECT avg(a), sum(a) FROM (SELECT a FROM fuse_tbl);
+SELECT avg(a), sum(a) FROM (SELECT a FROM fuse_tbl WHERE isNull(a));
+SELECT avg(a), sum(a) FROM (SELECT a FROM fuse_tbl WHERE isNotNull(a));
+
+SELECT avg(b), sum(b) FROM (SELECT b FROM fuse_tbl);
+SELECT avg(b) * 3, sum(b) + 1 + count(b), count(b) * count(b) FROM (SELECT b FROM fuse_tbl);
+
+-- TODO(@vdimir): uncomment after https://github.com/ClickHouse/ClickHouse/pull/42865
+-- SELECT sum(b), count(b) from (SELECT x as b FROM (SELECT sum(b) as x, count(b)  FROM fuse_tbl) );
+
 SELECT sum(a + 1), sum(b), count(b), avg(b), count(a + 1), sum(a + 2), count(a) from fuse_tbl SETTINGS optimize_syntax_fuse_functions = 0;
 SELECT sum(a + 1), sum(b), count(b), avg(b), count(a + 1), sum(a + 2), count(a) from fuse_tbl;
 
+EXPLAIN QUERY TREE run_passes = 1 SELECT sum(a), avg(a) from fuse_tbl;
+EXPLAIN QUERY TREE run_passes = 1 SELECT sum(b), avg(b) from fuse_tbl;
 EXPLAIN QUERY TREE run_passes = 1 SELECT sum(a + 1), sum(b), count(b), avg(b), count(a + 1), sum(a + 2), count(a) from fuse_tbl;
-EXPLAIN QUERY TREE run_passes = 1 SELECT sum(a), avg(b) from fuse_tbl;
+EXPLAIN QUERY TREE run_passes = 1 SELECT avg(b) * 3, sum(b) + 1 + count(b), count(b) * count(b) FROM (SELECT b FROM fuse_tbl);
+
+-- TODO(@vdimir): uncomment after https://github.com/ClickHouse/ClickHouse/pull/42865
+-- EXPLAIN QUERY TREE run_passes = 1 SELECT sum(b), count(b) from (SELECT x as b FROM (SELECT sum(b) as x, count(b)  FROM fuse_tbl) );
 
 SELECT sum(x), count(x), avg(x) FROM (SELECT number :: Decimal32(0) AS x FROM numbers(0)) SETTINGS optimize_syntax_fuse_functions = 0;
 SELECT sum(x), count(x), avg(x) FROM (SELECT number :: Decimal32(0) AS x FROM numbers(0));
