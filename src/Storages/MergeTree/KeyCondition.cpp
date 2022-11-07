@@ -61,7 +61,7 @@ String Range::toString() const
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool require_perfect_prefix)
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -74,7 +74,7 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
         {
             case '%':
             case '_':
-                if (require_perfect_prefix)
+                if (requires_perfect_prefix)
                 {
                     bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
                     return is_prefect_prefix ? fixed_prefix : "";
@@ -92,7 +92,7 @@ String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool req
         ++pos;
     }
     /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
-    if (require_perfect_prefix)
+    if (requires_perfect_prefix)
         return "";
     return fixed_prefix;
 }
@@ -356,7 +356,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*required_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -377,7 +377,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*required_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
