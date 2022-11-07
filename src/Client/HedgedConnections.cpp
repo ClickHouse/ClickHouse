@@ -338,7 +338,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
             offset_states[location.offset].next_replica_in_process = true;
-            offsets_queue.push(location.offset);
+            offsets_queue.push(static_cast<int>(location.offset));
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }

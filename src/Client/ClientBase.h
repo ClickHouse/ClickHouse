@@ -15,6 +15,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
 
+
 namespace po = boost::program_options;
 
 
@@ -35,9 +36,18 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+enum ProgressOption
+{
+    OFF,
+    TTY,
+    ERR,
+};
+std::istream& operator>> (std::istream & in, ProgressOption & progress);
+
 void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
+class WriteBufferFromFileDescriptor;
 
 class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
@@ -72,7 +82,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -143,6 +153,7 @@ private:
 
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
+    void initTtyBuffer(bool to_err = false);
 
     String prompt() const;
 
@@ -217,6 +228,10 @@ protected:
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
     std::unique_ptr<InternalTextLogs> logs_out_stream;
+
+    /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
+    std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

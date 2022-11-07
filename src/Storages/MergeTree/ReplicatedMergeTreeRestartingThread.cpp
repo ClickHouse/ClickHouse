@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
+#include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
 
@@ -26,19 +27,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int REPLICA_STATUS_CHANGED;
-
-}
-
-namespace
-{
-    constexpr auto retry_period_ms = 1000;
 }
 
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
-    return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
+    return Field(ServerUUID::get()).dump();
 }
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
@@ -58,27 +52,34 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    size_t reschedule_period_ms = check_period_ms;
+    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
+    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
+    const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
+    const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
     try
     {
         bool replica_is_active = runImpl();
-        if (!replica_is_active)
-            reschedule_period_ms = retry_period_ms;
-    }
-    catch (const Exception & e)
-    {
-        /// We couldn't activate table let's set it into readonly mode
-        partialShutdown();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-        if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
-            reschedule_period_ms = 0;
+        if (replica_is_active)
+        {
+            consecutive_check_failures = 0;
+            task->scheduleAfter(check_period_ms);
+        }
+        else
+        {
+            consecutive_check_failures++;
+            task->scheduleAfter(next_failure_retry_ms);
+        }
     }
     catch (...)
     {
+        consecutive_check_failures++;
+        task->scheduleAfter(next_failure_retry_ms);
+
+        /// We couldn't activate table let's set it into readonly mode if necessary
+        /// We do this after scheduling the task in case it throws
         partialShutdown();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        tryLogCurrentException(log, "Failed to restart the table. Will try again");
     }
 
     if (first_time)
@@ -92,14 +93,6 @@ void ReplicatedMergeTreeRestartingThread::run()
         storage.startup_event.set();
         first_time = false;
     }
-
-    if (need_stop)
-        return;
-
-    if (reschedule_period_ms)
-        task->scheduleAfter(reschedule_period_ms);
-    else
-        task->schedule();
 }
 
 bool ReplicatedMergeTreeRestartingThread::runImpl()
@@ -132,8 +125,8 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     }
     catch (const Coordination::Exception &)
     {
-        /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
+        tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
         assert(storage.is_readonly);
         return false;
     }
@@ -158,12 +151,15 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
 
+    LOG_DEBUG(log, "Table started successfully");
+
     return true;
 }
 
 
 bool ReplicatedMergeTreeRestartingThread::tryStartup()
 {
+    LOG_DEBUG(log, "Trying to start replica up");
     try
     {
         removeFailedQuorumParts();
@@ -177,9 +173,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         try
         {
             storage.queue.initialize(zookeeper);
-
             storage.queue.load(zookeeper);
-
             storage.queue.createLogEntriesToFetchBrokenParts();
 
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
@@ -302,7 +296,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->waitForEphemeralToDisappearIfAny(is_active_path);
+    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
@@ -348,7 +342,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
-
     storage.merge_selecting_task->deactivate();
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
