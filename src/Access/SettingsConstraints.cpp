@@ -110,7 +110,7 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    const String & setting_name = change.name;
+    const String & setting_name = change.getName();
 
     if (setting_name == "profile")
         return true;
@@ -145,7 +145,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
             {
-                if (const auto hints = current_settings.getHints(change.name); !hints.empty())
+                if (const auto hints = current_settings.getHints(change.getName()); !hints.empty())
                 {
                       e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
                 }
@@ -160,16 +160,16 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     if (current_settings.tryGet(setting_name, current_value))
     {
         /// Setting isn't checked if value has not changed.
-        if (change.value == current_value)
+        if (change.getFieldValue() == current_value)
             return false;
 
-        new_value = cast_value(change.value);
+        new_value = cast_value(change.getFieldValue());
         if ((new_value == current_value) || cannot_cast)
             return false;
     }
     else
     {
-        new_value = cast_value(change.value);
+        new_value = cast_value(change.getFieldValue());
         if (cannot_cast)
             return false;
     }
@@ -179,7 +179,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 
 bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
 {
-    const String & setting_name = change.name;
+    const String & setting_name = change.getName();
 
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
@@ -234,7 +234,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         }
         else
-            change.value = min_value;
+            change.setFieldValue(min_value);
     }
 
     if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
@@ -246,7 +246,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         }
         else
-            change.value = max_value;
+            change.setFieldValue(max_value);
     }
 
     return true;

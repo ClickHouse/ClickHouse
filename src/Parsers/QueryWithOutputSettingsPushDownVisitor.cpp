@@ -44,12 +44,12 @@ void QueryWithOutputSettingsPushDownMatcher::visit(ASTSelectQuery & select_query
     {
         auto it = std::find_if(select_settings.begin(), select_settings.end(), [&](auto & select_setting)
         {
-            return select_setting.name == setting.name;
+            return select_setting.getName() == setting.getName();
         });
         if (it == select_settings.end())
             select_settings.push_back(setting);
         else
-            it->value = setting.value;
+            it->setFieldValue(setting.getFieldValue());
     }
 }
 

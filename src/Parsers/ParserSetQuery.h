@@ -7,7 +7,7 @@
 namespace DB
 {
 
-struct SettingChange;
+class SettingChange;
 
 /** Query like this:
   * SET name1 = value1, name2 = value2, ...

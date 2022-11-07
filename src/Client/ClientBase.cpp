@@ -1536,8 +1536,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : set_query->changes)
             {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
+                if (change.getName() == "profile")
+                    current_profile = change.getFieldValue().safeGet<String>();
                 else
                     global_context->applySettingChange(change);
             }

@@ -83,12 +83,12 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         for (const auto & setting : settings)
         {
 #define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
-            if (setting.name == #NAME) \
-                res.NAME = SettingField##TYPE{setting.value}.value; \
+            if (setting.getName() == #NAME) \
+                res.NAME = SettingField##TYPE{setting.getFieldValue()}.value; \
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.getName());
         }
     }
 

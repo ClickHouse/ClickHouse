@@ -506,11 +506,11 @@ void buildSourceConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value, _] : settings->changes)
+        for (const auto & change : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            AutoPtr<Element> setting_change_element(doc->createElement(change.getName()));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(change.getFieldValue())));
             setting_change_element->appendChild(setting_value);
         }
     }
