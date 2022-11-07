@@ -139,17 +139,18 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
     for (const auto & change : settings_changes)
     {
-        if (!settings->has(change.name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
+        if (!settings->has(change.getName()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.getName());
 
-        if ((change.name == "materialized_postgresql_tables_list"))
+        if ((change.getName() == "materialized_postgresql_tables_list"))
         {
             if (!query_context->isInternalQuery())
-                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.getName());
 
             need_update_on_disk = true;
         }
-        else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
+        else if ((change.getName() == "materialized_postgresql_allow_automatic_update")
+                 || (change.getName() == "materialized_postgresql_max_block_size"))
         {
             replication_handler->setSetting(change);
             need_update_on_disk = true;

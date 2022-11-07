@@ -7,7 +7,7 @@ namespace DB
 {
 
 class ASTSelectQuery;
-struct SettingChange;
+class SettingChange;
 class SettingsChanges;
 
 /// Pushdown SETTINGS clause that goes after FORMAT to the SELECT query:

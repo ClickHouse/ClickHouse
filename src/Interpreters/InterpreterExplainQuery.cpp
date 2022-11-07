@@ -240,21 +240,25 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
     for (const auto & change : set_query.changes)
     {
-        if (!settings.has(change.name))
-            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN " + Settings::name + " query. "
-                            "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
+        if (!settings.has(change.getName()))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING,
+                "Unknown setting {} for EXPLAIN {} query. Supported settings: {}",
+                doubleQuoteString(change.getName()), Settings::name, settings.getSettingsList());
 
-        if (change.value.getType() != Field::Types::UInt64)
+        if (change.getFieldValue().getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Invalid type {} for setting \"{}\" only boolean settings are supported",
-                change.value.getTypeName(), change.name);
+                change.getFieldValue().getTypeName(), change.getName());
 
-        auto value = change.value.get<UInt64>();
+        auto value = change.getFieldValue().get<UInt64>();
         if (value > 1)
-            throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
-                            "\". Only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid value {} for setting {}. Only boolean settings are supported",
+                value, doubleQuoteString(change.getName()));
 
-        settings.setBooleanSetting(change.name, value);
+        settings.setBooleanSetting(change.getName(), value);
     }
 
     return settings;

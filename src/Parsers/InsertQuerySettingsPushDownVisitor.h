@@ -7,7 +7,7 @@ namespace DB
 {
 
 class ASTSelectQuery;
-struct SettingChange;
+class SettingChange;
 class SettingsChanges;
 
 /// Pushdown SETTINGS clause to the INSERT from the SELECT query:

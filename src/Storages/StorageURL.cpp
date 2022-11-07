@@ -955,9 +955,9 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
         const auto & changes = args.getContext()->getSettingsRef().changes();
         for (const auto & change : changes)
         {
-            if (user_format_settings.has(change.name))
+            if (user_format_settings.has(change.getName()))
             {
-                user_format_settings.set(change.name, change.value);
+                user_format_settings.set(change.getName(), change.getFieldValue());
             }
         }
 

@@ -376,7 +376,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     StoragePolicyPtr storage_policy;
 
     if (settings->disk.changed)
-        storage_policy = context->getOrCreateStoragePolicyForSingleDisk(settings->disk);
+        storage_policy = context->getStoragePolicyFromDisk(settings->disk);
     else
         storage_policy = context->getStoragePolicy(settings->storage_policy);
 
@@ -2607,8 +2607,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         for (const auto & changed_setting : new_changes)
         {
-            const auto & setting_name = changed_setting.name;
-            const auto & new_value = changed_setting.value;
+            const auto & setting_name = changed_setting.getName();
+            const auto & new_value = changed_setting.getFieldValue();
             MergeTreeSettings::checkCanSet(setting_name, new_value);
             const Field * current_value = current_changes.tryGet(setting_name);
 
@@ -2635,7 +2635,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// Check if it is safe to reset the settings
         for (const auto & current_setting : current_changes)
         {
-            const auto & setting_name = current_setting.name;
+            const auto & setting_name = current_setting.getName();
             const Field * new_value = new_changes.tryGet(setting_name);
             /// Prevent unsetting readonly setting
             if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
@@ -2765,9 +2765,9 @@ void MergeTreeData::changeSettings(
 
         for (const auto & change : new_changes)
         {
-            if (change.name == "storage_policy")
+            if (change.getName() == "storage_policy")
             {
-                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
+                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.getFieldValue().safeGet<String>());
                 StoragePolicyPtr old_storage_policy = getStoragePolicy();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer
