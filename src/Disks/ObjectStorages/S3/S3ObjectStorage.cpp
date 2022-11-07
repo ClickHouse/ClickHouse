@@ -175,7 +175,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             bucket,
             path,
             version_id,
-            settings_ptr->s3_settings.max_single_read_retries,
+            settings_ptr->s3_settings,
             disk_read_settings,
             /* use_external_buffer */true,
             /* offset */0,
@@ -212,7 +212,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         bucket,
         object.absolute_path,
         version_id,
-        settings_ptr->s3_settings.max_single_read_retries,
+        settings_ptr->s3_settings,
         patchSettings(read_settings));
 }
 
@@ -627,17 +627,20 @@ void S3ObjectStorage::startup()
 
 void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    s3_settings.set(getSettings(config, config_prefix, context));
-    client.set(getClient(config, config_prefix, context));
+    auto new_s3_settings = getSettings(config, config_prefix, context);
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    s3_settings.set(std::move(new_s3_settings));
+    client.set(std::move(new_client));
     applyRemoteThrottlingSettings(context);
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
+    auto new_s3_settings = getSettings(config, config_prefix, context);
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
     return std::make_unique<S3ObjectStorage>(
-        getClient(config, config_prefix, context),
-        getSettings(config, config_prefix, context),
+        std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
         S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
 }

@@ -7,6 +7,7 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Throttler_fwd.h>
 #include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
@@ -33,6 +34,8 @@ struct S3Settings
         size_t max_connections = 0;
         bool check_objects_after_upload = false;
         size_t max_unexpected_write_error_retries = 0;
+        ThrottlerPtr get_request_throttler;
+        ThrottlerPtr put_request_throttler;
 
         ReadWriteSettings() = default;
         explicit ReadWriteSettings(const Settings & settings);
@@ -46,7 +49,9 @@ struct S3Settings
                 && max_single_part_upload_size == other.max_single_part_upload_size
                 && max_connections == other.max_connections
                 && check_objects_after_upload == other.check_objects_after_upload
-                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries;
+                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries
+                && get_request_throttler == other.get_request_throttler
+                && put_request_throttler == other.put_request_throttler;
         }
 
         void updateFromSettingsIfEmpty(const Settings & settings);

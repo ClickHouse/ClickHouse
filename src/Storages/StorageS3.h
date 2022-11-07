@@ -43,7 +43,8 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
-            Strings * read_keys_ = nullptr);
+            Strings * read_keys_ = nullptr,
+            const S3Settings::ReadWriteSettings & rw_settings_ = {});
 
         String next();
 
@@ -79,7 +80,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
-        UInt64 max_single_read_retries_,
+        const S3Settings::ReadWriteSettings & rw_settings_,
         String compression_hint_,
         const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
@@ -102,7 +103,7 @@ private:
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
-    UInt64 max_single_read_retries;
+    S3Settings::ReadWriteSettings rw_settings;
     String compression_hint;
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
