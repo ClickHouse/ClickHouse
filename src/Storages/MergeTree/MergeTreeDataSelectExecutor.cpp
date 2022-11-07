@@ -1078,6 +1078,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto current_rows_estimate = ranges.getRowsCount();
                     size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
                     size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
+                    if (query_info.limit > 0 && total_rows_estimate > query_info.limit)
+                    {
+                        total_rows_estimate = query_info.limit;
+                    }
                     limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
                     leaf_limits.check(
                         total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
@@ -1290,6 +1294,7 @@ static void selectColumnNames(
 
 MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
+    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1314,7 +1319,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        query_info.prewhere_info,
+        prewhere_info,
         added_filter_nodes,
         metadata_snapshot_base,
         metadata_snapshot,
@@ -1635,10 +1640,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
 {
-    if (!index_helper->getDeserializedFormat(part->data_part_storage, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part->data_part_storage->getFullPath()) / index_helper->getFileName()).string());
+            (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
         return ranges;
     }
 
@@ -1753,7 +1758,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 {
     for (const auto & index_helper : indices)
     {
-        if (!part->data_part_storage->exists(index_helper->getFileName() + ".idx"))
+        if (!part->getDataPartStorage().exists(index_helper->getFileName() + ".idx"))
         {
             LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
             return ranges;
