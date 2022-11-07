@@ -1004,6 +1004,12 @@ void FileCache::remove(
     }
 }
 
+bool FileCache::hasKey(const Key & key) const
+{
+    std::lock_guard cache_lock(mutex);
+    return files.contains(key);
+}
+
 void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock)
 {
     Key key;

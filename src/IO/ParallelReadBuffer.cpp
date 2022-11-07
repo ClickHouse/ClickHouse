@@ -13,6 +13,52 @@ namespace ErrorCodes
 
 }
 
+class ParallelReadBuffer::RangeReader final : public WithFileSize
+{
+public:
+    RangeReader(
+        ReadBufferCreator && read_buffer_creator_,
+        const std::string & filename_,
+        size_t range_step_,
+        size_t object_size_)
+        : read_buffer_creator(std::move(read_buffer_creator_))
+        , filename(filename_)
+        , range_generator(object_size_, range_step_)
+        , range_step(range_step_)
+        , object_size(object_size_)
+    {
+        assert(range_step > 0);
+        assert(range_step < object_size);
+    }
+
+    SeekableReadBufferPtr getReadBuffer()
+    {
+        const auto next_range = range_generator.nextRange();
+        if (!next_range)
+            return nullptr;
+
+        return read_buffer_creator(next_range->first, next_range->second);
+    }
+
+    off_t seek(off_t off, int /* whence */)
+    {
+        range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
+        return off;
+    }
+
+    size_t getFileSize() override { return object_size; }
+
+    String getFileName() const { return filename; }
+
+private:
+    ReadBufferCreator read_buffer_creator;
+    const std::string filename;
+
+    RangeGenerator range_generator;
+    size_t range_step;
+    size_t object_size;
+};
+
 struct ParallelReadBuffer::ReadWorker
 {
     explicit ReadWorker(SeekableReadBufferPtr reader_) : reader(std::move(reader_)), range(reader->getRemainingReadRange())
@@ -43,11 +89,15 @@ struct ParallelReadBuffer::ReadWorker
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_)
+    ReadBufferCreator && read_buffer_creator_,
+    const std::string & filename_,
+    size_t range_step_,
+    size_t object_size_,
+    ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
-    , reader_factory(std::move(reader_factory_))
+    , range_reader(std::make_unique<RangeReader>(std::move(read_buffer_creator_), filename_, range_step_, object_size_))
 {
     try
     {
@@ -60,15 +110,25 @@ ParallelReadBuffer::ParallelReadBuffer(
     }
 }
 
+ParallelReadBuffer::~ParallelReadBuffer()
+{
+    finishAndWait();
+}
+
+SeekableReadBufferPtr ParallelReadBuffer::getReadBuffer() const
+{
+    return range_reader->getReadBuffer();
+}
+
 bool ParallelReadBuffer::addReaderToPool()
 {
-    auto reader = reader_factory->getReader();
-    if (!reader)
+    auto read_buffer = range_reader->getReadBuffer();
+    if (!read_buffer)
     {
         return false;
     }
 
-    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
+    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(read_buffer)));
 
     ++active_working_reader;
     schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); }, 0);
@@ -137,7 +197,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
     finishAndWait();
 
-    reader_factory->seek(offset, whence);
+    range_reader->seek(offset, whence);
     all_completed = false;
     read_workers.clear();
 
@@ -152,7 +212,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
 size_t ParallelReadBuffer::getFileSize()
 {
-    return reader_factory->getFileSize();
+    return range_reader->getFileSize();
 }
 
 off_t ParallelReadBuffer::getPosition()

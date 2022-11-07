@@ -35,7 +35,7 @@ size_t getFileSizeFromReadBuffer(ReadBuffer & in)
     }
     else if (auto * parallel = dynamic_cast<ParallelReadBuffer *>(&in))
     {
-        return getFileSize(parallel->getReadBufferFactory());
+        return getFileSize(*parallel->getReadBuffer());
     }
 
     return getFileSize(in);
@@ -53,7 +53,7 @@ bool isBufferWithFileSize(const ReadBuffer & in)
     }
     else if (const auto * parallel = dynamic_cast<const ParallelReadBuffer *>(&in))
     {
-        return dynamic_cast<const WithFileSize *>(&parallel->getReadBufferFactory()) != nullptr;
+        return dynamic_cast<const WithFileSize *>(parallel->getReadBuffer().get()) != nullptr;
     }
 
     return dynamic_cast<const WithFileSize *>(&in) != nullptr;

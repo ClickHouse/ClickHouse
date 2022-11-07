@@ -89,44 +89,6 @@ private:
     bool restricted_seek;
 };
 
-/// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
-{
-public:
-    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
-
-    explicit ReadBufferS3Factory(
-        ReadBufferCreator && read_buffer_creator_,
-        const std::string & filename_,
-        size_t range_step_,
-        size_t object_size_)
-        : read_buffer_creator(std::move(read_buffer_creator_))
-        , filename(filename_)
-        , range_generator(object_size_, range_step_)
-        , range_step(range_step_)
-        , object_size(object_size_)
-    {
-        assert(range_step > 0);
-        assert(range_step < object_size);
-    }
-
-    SeekableReadBufferPtr getReader() override;
-
-    off_t seek(off_t off, [[maybe_unused]] int whence) override;
-
-    size_t getFileSize() override { return object_size; } /// Fixme: make this method const?
-
-    String getFileName() const override { return filename; }
-
-private:
-    ReadBufferCreator read_buffer_creator;
-    const std::string filename;
-
-    RangeGenerator range_generator;
-    size_t range_step;
-    size_t object_size;
-};
-
 }
 
 #endif

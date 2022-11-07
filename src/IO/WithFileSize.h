@@ -7,6 +7,7 @@ namespace DB
 
 class ReadBuffer;
 
+
 class WithFileSize
 {
 public:

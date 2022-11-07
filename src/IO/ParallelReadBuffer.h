@@ -6,13 +6,14 @@
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ThreadPool.h>
+#include <Common/RangeGenerator.h>
 
 namespace DB
 {
 
 /**
  * Reads from multiple ReadBuffers in parallel.
- * Preserves order of readers obtained from ReadBufferFactory.
+ * Preserves order of read buffers obtained from Reader.
  *
  * It consumes multiple readers and yields data from them in order as it passed.
  * Each working reader save segments of data to internal queue.
@@ -30,25 +31,23 @@ private:
     bool nextImpl() override;
 
 public:
-    class ReadBufferFactory : public WithFileSize
-    {
-    public:
-        ~ReadBufferFactory() override = default;
+    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
 
-        virtual SeekableReadBufferPtr getReader() = 0;
-        virtual off_t seek(off_t off, int whence) = 0;
-    };
+    ParallelReadBuffer(
+        ReadBufferCreator && read_buffer_creator_,
+        const std::string & filename_,
+        size_t range_step_,
+        size_t object_size_,
+        ThreadPoolCallbackRunner<void> schedule_,
+        size_t max_working_readers);
 
-    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
-
-    ~ParallelReadBuffer() override { finishAndWait(); }
+    ~ParallelReadBuffer() override;
 
     off_t seek(off_t off, int whence) override;
     size_t getFileSize();
     off_t getPosition() override;
 
-    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
-    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
+    SeekableReadBufferPtr getReadBuffer() const;
 
 private:
     /// Reader in progress with a list of read segments
@@ -78,7 +77,10 @@ private:
 
     ThreadPoolCallbackRunner<void> schedule;
 
-    std::unique_ptr<ReadBufferFactory> reader_factory;
+    class RangeReader;
+    using RangeReaderPtr = std::unique_ptr<RangeReader>;
+
+    RangeReaderPtr range_reader;
 
     /**
      * FIFO queue of readers.

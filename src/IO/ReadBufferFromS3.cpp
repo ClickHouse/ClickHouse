@@ -336,23 +336,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     }
 }
 
-SeekableReadBufferPtr ReadBufferS3Factory::getReader()
-{
-    const auto next_range = range_generator.nextRange();
-    if (!next_range)
-    {
-        return nullptr;
-    }
-
-    return read_buffer_creator(next_range->first, next_range->second);
-}
-
-off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
-{
-    range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
-    return off;
-}
-
 }
 
 #endif

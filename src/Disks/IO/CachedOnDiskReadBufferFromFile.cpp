@@ -520,9 +520,9 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
         appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
     }
 
-    /// If getOrSet() method was not called, we will not call on_key_eviction_func,
-    /// which will result in memory leaks, so do it here.
-    if (on_key_eviction_func)
+    /// If getOrSet() method was not called or failed with exception before we put key in cache,
+    /// we will not call on_key_eviction_func, which will result in memory leaks, so do it here.
+    if (on_key_eviction_func && !cache->hasKey(cache_key))
         on_key_eviction_func();
 }
 

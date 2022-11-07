@@ -790,51 +790,6 @@ public:
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
-{
-public:
-    using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
-
-    RangedReadWriteBufferFromHTTPFactory(
-        ReadBufferCreator && read_buffer_creator_,
-        const std::string & filename_,
-        size_t total_object_size_,
-        size_t range_step_)
-        : read_buffer_creator(read_buffer_creator_)
-        , filename(filename_)
-        , range_generator(total_object_size_, range_step_)
-        , total_object_size(total_object_size_)
-        , range_step(range_step_)
-    {
-    }
-
-    SeekableReadBufferPtr getReader() override
-    {
-        const auto next_range = range_generator.nextRange();
-        if (!next_range)
-            return nullptr;
-
-        return read_buffer_creator(next_range->first, next_range->second);
-    }
-
-    off_t seek(off_t off, [[maybe_unused]] int whence) override
-    {
-        range_generator = RangeGenerator{total_object_size, range_step, static_cast<size_t>(off)};
-        return off;
-    }
-
-    size_t getFileSize() override { return total_object_size; }
-
-    String getFileName() const override { return filename; }
-
-private:
-    ReadBufferCreator read_buffer_creator;
-    std::string filename;
-    RangeGenerator range_generator;
-    size_t total_object_size;
-    size_t range_step;
-};
-
 class UpdatablePooledSession : public UpdatableSessionBase<PooledHTTPSessionPtr>
 {
     using Parent = UpdatableSessionBase<PooledHTTPSessionPtr>;
