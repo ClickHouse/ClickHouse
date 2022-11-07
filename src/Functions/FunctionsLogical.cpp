@@ -168,10 +168,7 @@ public:
     inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
-        if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
-        else
-            return Op::apply(a, next.apply(i));
+        return Op::apply(a, next.apply(i));
     }
 
 private:
