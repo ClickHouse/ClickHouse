@@ -152,6 +152,11 @@ public:
         return popFirst(1);
     }
 
+    void pop_front() /// NOLINT
+    {
+        return popFirst();
+    }
+
     void popLast(size_t parts_to_remove_size)
     {
         assert(parts_to_remove_size <= parts.size());
@@ -364,6 +369,26 @@ inline std::ostream & operator<<(std::ostream & stream, const IdentifierView & i
 }
 
 }
+
+template <>
+struct std::hash<DB::Identifier>
+{
+    size_t operator()(const DB::Identifier & identifier) const
+    {
+        std::hash<std::string> hash;
+        return hash(identifier.getFullName());
+    }
+};
+
+template <>
+struct std::hash<DB::IdentifierView>
+{
+    size_t operator()(const DB::IdentifierView & identifier) const
+    {
+        std::hash<std::string_view> hash;
+        return hash(identifier.getFullName());
+    }
+};
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 

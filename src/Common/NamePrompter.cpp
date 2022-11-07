@@ -1,9 +1,10 @@
 #include <IO/WriteHelpers.h>
 #include <Common/NamePrompter.h>
 
-namespace DB::detail
+namespace DB
 {
-void appendHintsMessageImpl(String & message, const std::vector<String> & hints)
+
+void appendHintsMessage(String & message, const std::vector<String> & hints)
 {
     if (hints.empty())
     {
@@ -12,4 +13,5 @@ void appendHintsMessageImpl(String & message, const std::vector<String> & hints)
 
     message += ". Maybe you meant: " + toString(hints);
 }
+
 }
