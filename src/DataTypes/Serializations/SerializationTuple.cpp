@@ -31,7 +31,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & tuple = field.get<const Tuple &>();
+    const auto & tuple = get<const Tuple &>(field);
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
@@ -44,7 +44,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) con
     const size_t size = elems.size();
 
     field = Tuple();
-    Tuple & tuple = field.get<Tuple &>();
+    Tuple & tuple = get<Tuple &>(field);
     tuple.reserve(size);
     for (size_t i = 0; i < size; ++i)
         elems[i]->deserializeBinary(tuple.emplace_back(), istr);
@@ -283,7 +283,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 }
 
 void SerializationTuple::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
@@ -293,12 +293,15 @@ void SerializationTuple::enumerateStreams(
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto next_data = SubstreamData(elems[i])
-            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
-            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
-            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr);
+        SubstreamData next_data =
+        {
+            elems[i],
+            type_tuple ? type_tuple->getElement(i) : nullptr,
+            column_tuple ? column_tuple->getColumnPtr(i) : nullptr,
+            info_tuple ? info_tuple->getElementInfo(i) : nullptr,
+        };
 
-        elems[i]->enumerateStreams(settings, callback, next_data);
+        elems[i]->enumerateStreams(path, callback, next_data);
     }
 }
 

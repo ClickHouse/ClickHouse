@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/update
 sidebar_position: 47
 sidebar_label: ClickHouse Upgrade
 ---

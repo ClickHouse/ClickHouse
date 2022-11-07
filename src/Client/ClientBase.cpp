@@ -1,13 +1,13 @@
 #include <Client/ClientBase.h>
 
 #include <iostream>
+#include <iomanip>
 #include <filesystem>
 #include <map>
 #include <unordered_map>
 
-#include "config.h"
-
 #include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
 #include <Common/MemoryTracker.h>
 #include <base/argsToConfig.h>
 #include <base/LineReader.h>
@@ -17,19 +17,20 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
+#include <Common/config.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Formats/FormatFactory.h>
 
-#include "config_version.h"
-
+#include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Config/configReadClient.h>
 #include <Common/NetException.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -67,8 +68,8 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <IO/ForkWriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 
 
 namespace fs = std::filesystem;
@@ -88,6 +89,13 @@ static const NameSet exit_strings
     "exit", "quit", "logout", "учше", "йгше", "дщпщге",
     "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
+
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
 };
 
 
@@ -291,7 +299,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    std::unique_ptr<IParserBase> parser;
+    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -300,17 +308,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
-    const Dialect & dialect = settings.dialect;
-
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    else
-        parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
-
     if (is_interactive || ignore_error)
     {
         String message;
-        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -320,7 +321,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)
@@ -337,7 +338,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
 
 /// Consumes trailing semicolons and tries to consume the same-line trailing comment.
-void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth)
+void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
 {
     // We have to skip the trailing semicolon that might be left
     // after VALUES parsing or just after a normal semicolon-terminated query.
@@ -550,7 +551,7 @@ try
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     compression_method,
-                    static_cast<int>(compression_level)
+                    compression_level
                 );
 
                 if (query_with_output->is_into_outfile_with_stdout)
@@ -1086,20 +1087,6 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 }
 
 
-void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
-{
-    if (!global_context->hasInsertionTable() && insert_query.table)
-    {
-        String table = insert_query.table->as<ASTIdentifier &>().shortName();
-        if (!table.empty())
-        {
-            String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            global_context->setInsertionTable(StorageID(database, table));
-        }
-    }
-}
-
-
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
@@ -1149,8 +1136,6 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        setInsertionTable(parsed_insert_query);
-
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
     }
@@ -1495,7 +1480,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             if (!old_settings)
                 old_settings.emplace(global_context->getSettingsRef());
             global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            global_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -1541,7 +1525,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 else
                     global_context->applySettingChange(change);
             }
-            global_context->resetSettingsToDefaultValue(set_query->default_settings);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -1602,8 +1585,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
-    unsigned max_parser_depth = static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth);
-
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
     // expects that there is some query that it can parse.
@@ -1613,7 +1594,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // and it makes more sense to treat them as such.
     {
         Tokens tokens(this_query_begin, all_queries_end);
-        IParser::Pos token_iterator(tokens, max_parser_depth);
+        IParser::Pos token_iterator(tokens, global_context->getSettingsRef().max_parser_depth);
         if (!token_iterator.isValid())
             return MultiQueryProcessingStage::QUERIES_END;
     }
@@ -1634,7 +1615,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         if (ignore_error)
         {
             Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth);
+            IParser::Pos token_iterator(tokens, global_context->getSettingsRef().max_parser_depth);
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
@@ -1674,7 +1655,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // after we have processed the query. But even this guess is
     // beneficial so that we see proper trailing comments in "echo" and
     // server log.
-    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth);
+    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
     return MultiQueryProcessingStage::EXECUTE_QUERY;
 }
 
@@ -1868,9 +1849,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
                 {
                     this_query_end = insert_ast->end;
-                    adjustQueryEnd(
-                        this_query_end, all_queries_end,
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth));
+                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
                 }
 
                 // Report error.
@@ -1926,7 +1905,7 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::prompt() const
 {
-    return prompt_by_server_display_name;
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
 }
 
 
@@ -1973,7 +1952,7 @@ void ClientBase::runInteractive()
 
     if (home_path.empty())
     {
-        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+        const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
@@ -1983,7 +1962,7 @@ void ClientBase::runInteractive()
         history_file = config().getString("history_file");
     else
     {
-        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
+        auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
         if (history_file_from_env)
             history_file = history_file_from_env;
         else if (!home_path.empty())
@@ -2020,21 +1999,6 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr.enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
-        {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
-        };
-
-    static const std::initializer_list<String> repeat_last_input_aliases =
-        {
-            ".",  /// Vim shortcut
-            "/"   /// Oracle SQL Plus shortcut
-        };
-
-    String last_input;
-
     do
     {
         auto input = lr.readLine(prompt(), ":-] ");
@@ -2052,7 +2016,7 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto& [alias, command] : backslash_aliases)
         {
             auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
@@ -2070,20 +2034,10 @@ void ClientBase::runInteractive()
             }
         }
 
-        for (const auto & alias : repeat_last_input_aliases)
-        {
-            if (input == alias)
-            {
-                input  = last_input;
-                break;
-            }
-        }
-
         try
         {
             if (!processQueryText(input))
                 break;
-            last_input = input;
         }
         catch (const Exception & e)
         {
@@ -2306,13 +2260,13 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("version") || options.count("V"))
     {
         showClientVersion();
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     if (options.count("version-clean"))
     {
         std::cout << VERSION_STRING;
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     /// Output of help message.
@@ -2320,7 +2274,7 @@ void ClientBase::init(int argc, char ** argv)
         || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     /// Common options for clickhouse-client and clickhouse-local.
@@ -2351,7 +2305,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("print-profile-events"))
         config().setBool("print-profile-events", true);
     if (options.count("profile-events-delay-ms"))
-        config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
+        config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
         config().setBool("progress", true);
     if (options.count("echo"))

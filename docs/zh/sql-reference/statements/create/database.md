@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/create/database
 sidebar_position: 35
 sidebar_label: DATABASE
 ---

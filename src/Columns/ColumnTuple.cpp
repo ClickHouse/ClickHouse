@@ -109,7 +109,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.get<Tuple &>();
+    Tuple & res_tuple = DB::get<Tuple &>(res);
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -137,7 +137,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.get<const Tuple &>();
+    const auto & tuple = DB::get<const Tuple &>(x);
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)

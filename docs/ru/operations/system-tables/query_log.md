@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/query_log
----
 # system.query_log {#system_tables-query_log}
 
 Содержит информацию о выполняемых запросах, например, время начала обработки, продолжительность обработки, сообщения об ошибках.

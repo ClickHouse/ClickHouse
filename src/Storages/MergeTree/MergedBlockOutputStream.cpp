@@ -33,7 +33,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         storage.getContext()->getSettings(),
         write_settings,
         storage.getSettings(),
-        data_part->index_granularity_info.mark_type.adaptive,
+        data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 

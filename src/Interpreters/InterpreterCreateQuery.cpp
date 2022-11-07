@@ -12,14 +12,17 @@
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -34,6 +37,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -55,6 +59,7 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -69,10 +74,7 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypeFixedString.h>
 
-
-#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
 namespace DB
 {
@@ -479,8 +481,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (attach)
-                setVersionToAggregateFunctions(column_type, true);
+            const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+            if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
+                aggregate_function_type->setVersion(0, /* if_empty */true);
 
             if (col_decl.null_modifier)
             {
@@ -576,15 +579,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.default_expression)
         {
-            if (context_->hasQueryContext() && context_->getQueryContext().get() == context_.get())
-            {
-                /// Normalize query only for original CREATE query, not on metadata loading.
-                /// And for CREATE query we can pass local context, because result will not change after restart.
-                NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context_};
-                NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-                visitor.visit(col_decl.default_expression);
-            }
-
             ASTPtr default_expr =
                 col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
                     std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
@@ -667,9 +661,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
             throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
 
-        /// Dictionaries have dictionary_attributes_list instead of columns_list
-        assert(!create.is_dictionary);
-
         if (create.columns_list->columns)
         {
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
@@ -677,12 +668,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
-            {
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
-                    if (properties.indices.back().type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
-                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
-            }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -731,21 +718,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.is_dictionary)
     {
-        if (!create.dictionary || !create.dictionary->source)
-            return {};
-
-        /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
-        NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
-        NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.dictionary->source->ptr());
-
         return {};
     }
-    else if (!create.storage || !create.storage->engine)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
-    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
+    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name)) // NOLINT
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
@@ -836,22 +813,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                     "because experimental Object type is not allowed. "
                     "Set setting allow_experimental_object_type = 1 in order to allow it",
                     name, type->getName());
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_suspicious_fixed_string_types)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            auto basic_type = removeLowCardinality(removeNullable(type));
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
-            {
-                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because fixed string with size > {} is suspicious. "
-                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                        name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
             }
         }
     }
@@ -1698,12 +1659,8 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         return;
 
     auto ast_storage = std::make_shared<ASTStorage>();
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto query_from_storage = DB::getCreateQueryFromStorage(storage,
-                                                            ast_storage,
-                                                            false,
-                                                            max_parser_depth,
-                                                            true);
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, true);
     auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
 
     if (!create.columns_list)

@@ -71,8 +71,7 @@ public:
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        KeeperSnapshotManagerS3 & snapshot_manager_s3);
+        SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);

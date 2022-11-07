@@ -1,13 +1,9 @@
 ---
-slug: /en/operations/external-authenticators/
 sidebar_position: 48
 sidebar_label: External User Authenticators and Directories
-title: "External User Authenticators and Directories"
-pagination_next: 'en/operations/external-authenticators/kerberos'
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
-<SelfManaged />
+# External User Authenticators and Directories 
 
 ClickHouse supports authenticating and managing users using external services.
 

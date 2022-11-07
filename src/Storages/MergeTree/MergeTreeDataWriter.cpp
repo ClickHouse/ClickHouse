@@ -244,7 +244,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     };
 
     auto merging_algorithm = get_merging_algorithm();
@@ -481,6 +481,16 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
 
     return temp_part;
+}
+
+void MergeTreeDataWriter::deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block)
+{
+    if (!storage_snapshot->object_columns.empty())
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto storage_columns = storage_snapshot->getColumns(options);
+        convertObjectsToTuples(block, storage_columns);
+    }
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(

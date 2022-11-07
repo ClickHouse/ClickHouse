@@ -61,7 +61,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 

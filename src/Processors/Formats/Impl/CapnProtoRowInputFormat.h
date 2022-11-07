@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Core/Block.h>

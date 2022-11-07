@@ -139,21 +139,21 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    Int64 result = 0;
+    int result = 0;
 
     if constexpr (std::is_same_v<T, double>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
+        if (DecomposedFloat64(x).is_integer_in_representable_range())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
+        if (DecomposedFloat32(x).is_integer_in_representable_range())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -372,7 +372,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+        || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);

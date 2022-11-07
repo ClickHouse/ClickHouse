@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/file
 sidebar_position: 37
 sidebar_label: file
 ---
@@ -13,7 +12,7 @@ sidebar_label: file
 **Синтаксис**
 
 ``` sql
-file(path [,format] [,structure])
+file(path, format, structure)
 ```
 
 **Параметры**

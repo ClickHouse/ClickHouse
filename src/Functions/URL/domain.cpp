@@ -7,15 +7,12 @@ namespace DB
 {
 
 struct NameDomain { static constexpr auto name = "domain"; };
-using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false, false>>, NameDomain>;
+using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false>>, NameDomain>;
 
-struct NameDomainRFC { static constexpr auto name = "domainRFC"; };
-using FunctionDomainRFC = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false, true>>, NameDomainRFC>;
 
 REGISTER_FUNCTION(Domain)
 {
     factory.registerFunction<FunctionDomain>();
-    factory.registerFunction<FunctionDomainRFC>();
 }
 
 }

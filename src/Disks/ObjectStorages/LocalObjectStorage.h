@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -12,13 +12,10 @@ class Logger;
 namespace DB
 {
 
-/// Treat local disk as an object storage (for interface compatibility).
 class LocalObjectStorage : public IObjectStorage
 {
 public:
     LocalObjectStorage();
-
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "LocalObjectStorage"; }
 
@@ -89,7 +86,6 @@ public:
 
 private:
     Poco::Logger * log;
-    DataSourceDescription data_source_description;
 };
 
 }

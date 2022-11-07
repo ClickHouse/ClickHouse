@@ -216,27 +216,27 @@ TEST(HashTable, Erase)
         using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
         Cont cont;
 
-        for (int i = 0; i < 5000; ++i)
+        for (size_t i = 0; i < 5000; ++i)
         {
             cont.insert(i);
         }
 
-        for (int i = 0; i < 2500; ++i)
+        for (size_t i = 0; i < 2500; ++i)
         {
             cont.erase(i);
         }
 
-        for (int i = 5000; i < 10000; ++i)
+        for (size_t i = 5000; i < 10000; ++i)
         {
             cont.insert(i);
         }
 
-        for (int i = 5000; i < 10000; ++i)
+        for (size_t i = 5000; i < 10000; ++i)
         {
             cont.erase(i);
         }
 
-        for (int i = 2500; i < 5000; ++i)
+        for (size_t i = 2500; i < 5000; ++i)
         {
             cont.erase(i);
         }

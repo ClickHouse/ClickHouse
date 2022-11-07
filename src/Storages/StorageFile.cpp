@@ -209,7 +209,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
@@ -579,7 +579,7 @@ public:
                 if (num_rows)
                 {
                     auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
-                    size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row));
+                    size_t total_rows_approx = std::ceil(static_cast<double>(files_info->total_bytes_to_read) / bytes_per_row);
                     total_rows_approx_accumulated += total_rows_approx;
                     ++total_rows_count_times;
                     total_rows_approx = total_rows_approx_accumulated / total_rows_count_times;
@@ -645,7 +645,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     if (use_table_fd)
     {

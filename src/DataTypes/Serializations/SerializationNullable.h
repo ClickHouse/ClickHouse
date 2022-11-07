@@ -14,7 +14,7 @@ public:
     explicit SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
     void enumerateStreams(
-        EnumerateStreamsSettings & settings,
+        SubstreamPath & path,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 

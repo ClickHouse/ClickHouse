@@ -11,11 +11,12 @@
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/config.h>
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
 
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -207,7 +208,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     {
         ids.reset(new unsigned int[patterns.size()]);
         for (size_t i = 0; i < patterns.size(); ++i)
-            ids[i] = static_cast<unsigned>(i + 1);
+            ids[i] = i + 1;
     }
 
     hs_error_t err;
@@ -216,7 +217,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
             patterns.data(),
             flags.data(),
             ids.get(),
-            static_cast<unsigned>(patterns.size()),
+            patterns.size(),
             HS_MODE_BLOCK,
             nullptr,
             &db,
@@ -227,7 +228,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
             flags.data(),
             ids.get(),
             ext_exprs_ptrs.data(),
-            static_cast<unsigned>(patterns.size()),
+            patterns.size(),
             HS_MODE_BLOCK,
             nullptr,
             &db,

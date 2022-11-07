@@ -18,7 +18,7 @@ public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
-        EnumerateStreamsSettings & settings,
+        SubstreamPath & path,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 

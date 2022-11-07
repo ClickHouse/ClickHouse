@@ -3,9 +3,7 @@
 #include <typeinfo>
 #include <vector>
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Parsers/DumpASTNode.h>
-
 
 namespace DB
 {
@@ -26,7 +24,6 @@ public:
 
     void visit(T & ast)
     {
-        checkStackSize();
         DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
 
         if constexpr (!_top_to_bottom)

@@ -50,11 +50,7 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     if (line_size > 0 && buf.position()[line_size - 1] == '\r')
         --line_to_match;
 
-    bool match = re2_st::RE2::FullMatchN(
-        re2_st::StringPiece(buf.position(), line_to_match),
-        regexp,
-        re2_arguments_ptrs.data(),
-        static_cast<int>(re2_arguments_ptrs.size()));
+    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_to_match), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
 
     if (!match && !skip_unmatched)
         throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
@@ -178,7 +174,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
     });
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool need_more_data = true;
@@ -186,28 +182,17 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
             throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
         else if (pos == in.buffer().end())
             continue;
 
-        ++number_of_rows;
-        if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows))
+        if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
             need_more_data = false;
 
-        if (*pos == '\n')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\r')
-                ++pos;
-        }
-        else if (*pos == '\r')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                ++pos;
-        }
+        ++pos;
+        ++number_of_rows;
     }
 
     saveUpToPosition(in, memory, pos);

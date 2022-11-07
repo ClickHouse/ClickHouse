@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/parts
----
 # system.parts {#system_tables-parts}
 
 Содержит информацию о кусках данных таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
