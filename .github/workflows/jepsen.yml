@@ -45,8 +45,8 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/keeper_jepsen
-          REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
+          TEMP_PATH=${{runner.temp}}/server_jepsen
+          REPO_COPY=${{runner.temp}}/server_jepsen/ClickHouse
           EOF
       - name: Clear repository
         run: |
@@ -60,8 +60,9 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          docker build -f "$REPO_COPY/docker/test/server-jepsen/Dockerfile" -t clickhouse/server-jepsen-test "$REPO_COPY/docker/test/server-jepsen"
           cd "$REPO_COPY/tests/ci"
-          python3 jepsen_check.py keeper
+          python3 jepsen_check.py server
       - name: Cleanup
         if: always()
         run: |
