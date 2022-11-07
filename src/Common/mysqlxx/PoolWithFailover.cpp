@@ -42,8 +42,8 @@ PoolWithFailover::PoolWithFailover(
         /// which triggers massive re-constructing of connection pools.
         /// The state of PRNGs like std::mt19937 is considered to be quite heavy
         /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
+        static thread_local std::mt19937 rnd_generator(static_cast<uint_fast32_t>(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock()));
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)

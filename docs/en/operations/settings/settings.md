@@ -668,7 +668,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
 
 Possible values:
 
@@ -1599,7 +1599,7 @@ Right now it requires `optimize_skip_unused_shards` (the reason behind this is t
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) query didn’t perform a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn’t perform a merge.
 
 By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
@@ -2629,12 +2629,6 @@ Sets the maximum number of inserted blocks after which mergeable blocks are drop
 
 Default value: `64`.
 
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
-
-Default value: `5`.
-
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
 Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
@@ -2945,7 +2939,7 @@ Possible values:
 -   0 — Projection optimization disabled.
 -   1 — Projection optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
@@ -3147,12 +3141,14 @@ Result:
 
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
-Enables or disables returning results of type `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
+Enables or disables returning results of type:
+-   `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
+-   `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
 
 Possible values:
 
--   0 — Functions return `Date` for all types of arguments.
--   1 — Functions return `Date32` for `Date32` or `DateTime64` arguments and `Date` otherwise.
+-   0 — Functions return `Date` or `DateTime` for all types of arguments.
+-   1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
 
@@ -3905,6 +3901,13 @@ Result:
 Controls validation of UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate UTF-8.
 
 Disabled by default.
+
+### format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
+
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md#jsonobjecteachrow) format.
+Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
+
+Default value: ''.
 
 ## TSV format settings {#tsv-format-settings}
 

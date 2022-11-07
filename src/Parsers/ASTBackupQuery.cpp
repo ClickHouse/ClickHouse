@@ -245,7 +245,21 @@ String ASTBackupQuery::getID(char) const
 
 ASTPtr ASTBackupQuery::clone() const
 {
-    return std::make_shared<ASTBackupQuery>(*this);
+    auto res = std::make_shared<ASTBackupQuery>(*this);
+
+    if (backup_name)
+        res->backup_name = backup_name->clone();
+
+    if (base_backup_name)
+        res->base_backup_name = base_backup_name->clone();
+
+    if (cluster_host_ids)
+        res->cluster_host_ids = cluster_host_ids->clone();
+
+    if (settings)
+        res->settings = settings->clone();
+
+    return res;
 }
 
 

@@ -7,12 +7,7 @@ include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-if (USE_MUSL)
-    # Only clickhouse-keeper can be built with musl currently
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
-endif ()
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
@@ -194,7 +189,7 @@ else()
     message(STATUS "ClickHouse su: OFF")
 endif()
 
-configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
+configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
     if(NOT CLICKHOUSE_ONE_SHARED)

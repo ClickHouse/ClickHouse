@@ -43,6 +43,17 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState & state,
             format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.getFieldValue());
     }
 
+    for (const auto & setting_name : default_settings)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(setting_name, format.ostr);
+        format.ostr << " = DEFAULT";
+    }
+
     for (const auto & [name, value] : query_parameters)
     {
         if (!first)
