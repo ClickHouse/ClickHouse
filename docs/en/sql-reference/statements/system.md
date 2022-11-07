@@ -282,7 +282,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
-Initialization replication queue based on ZooKeeper date happens in the same way as for `ATTACH TABLE` statement. For a short time, the table will be unavailable for any operations.
+Initialization of replication queue based on ZooKeeper data happens in the same way as for `ATTACH TABLE` statement. For a short time, the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
