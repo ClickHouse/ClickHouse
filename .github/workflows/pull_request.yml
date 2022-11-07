@@ -106,7 +106,6 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
     needs: [DockerHubPush]
     uses: ./.github/workflows/jepsen.yml
-
   FinishCheck:
     needs:
       - StyleCheck
@@ -181,6 +180,8 @@ jobs:
       - SharedBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
+      - SQLancerTestRelease
+      - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
