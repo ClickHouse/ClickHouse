@@ -1,6 +1,7 @@
 -- Tags: long, replica
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
+SET replication_alter_partitions_sync=2;
 
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
@@ -10,7 +11,6 @@ CREATE TABLE test2 (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = Replica
 INSERT INTO test VALUES ('hello', 'test');
 
 SELECT * FROM test;
-SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
@@ -19,7 +19,6 @@ ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2, 'goodbye' = 3);
 INSERT INTO test VALUES ('goodbye', 'test');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
-SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
@@ -33,7 +32,6 @@ ALTER TABLE test MODIFY COLUMN x Int8;
 INSERT INTO test VALUES (111, 'abc');
 OPTIMIZE TABLE test FINAL;
 SELECT * FROM test ORDER BY x;
-SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;

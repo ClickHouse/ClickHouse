@@ -42,7 +42,7 @@ INSERT INTO partitioned_by_week_replica1 VALUES ('2000-01-03', 4), ('2000-01-03'
 
 SELECT 'Parts before OPTIMIZE:'; -- Select parts on the first replica to avoid waiting for replication.
 SELECT partition, name FROM system.parts WHERE database = currentDatabase() AND table = 'partitioned_by_week_replica1' AND active ORDER BY name;
-SYSTEM SYNC REPLICA partitioned_by_week_replica1;
+SYSTEM SYNC REPLICA partitioned_by_week_replica2;
 OPTIMIZE TABLE partitioned_by_week_replica1 PARTITION '2000-01-03' FINAL;
 SELECT 'Parts after OPTIMIZE:'; -- After OPTIMIZE with replication_alter_partitions_sync=2 replicas must be in sync.
 SELECT partition, name FROM system.parts WHERE database = currentDatabase() AND table = 'partitioned_by_week_replica2' AND active ORDER BY name;
