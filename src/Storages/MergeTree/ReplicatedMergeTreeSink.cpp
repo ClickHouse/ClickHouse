@@ -469,7 +469,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
                 }
                 else
                 {
@@ -636,7 +636,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 storage.updateQuorum(part->name, false);
         }
 
-        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num);
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num);
     }
 }
 
@@ -658,7 +658,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    const std::string & is_active_node_value,
+    Int32 is_active_node_version,
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
@@ -691,9 +691,10 @@ void ReplicatedMergeTreeSink::waitForQuorum(
 
         /// And what if it is possible that the current replica at this time has ceased to be active
         /// and the quorum is marked as failed and deleted?
+        Coordination::Stat stat;
         String value;
-        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
-            || value != is_active_node_value)
+        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
+            || stat.version != is_active_node_version)
             throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
     }
     catch (...)

@@ -141,6 +141,7 @@ void EphemeralLocksInAllPartitions::unlock()
         return;
 
     std::vector<zkutil::ZooKeeper::FutureRemove> futures;
+    futures.reserve(locks.size());
     for (const auto & lock : locks)
     {
         futures.push_back(zookeeper->asyncRemove(lock.path));
