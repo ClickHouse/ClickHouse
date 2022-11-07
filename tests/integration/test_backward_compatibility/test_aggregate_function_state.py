@@ -80,3 +80,27 @@ def test_backward_compatability(start_cluster):
     node2.query("drop table tab")
     node3.query("drop table tab")
     node4.query("drop table tab")
+
+
+@pytest.mark.parametrize("uniq_keys", [1000, 1000000])
+def test_backward_compatability_for_uniq(start_cluster, uniq_keys):
+    node1.query(
+        f"CREATE TABLE state_{uniq_keys} (x AggregateFunction(uniqExact, UInt64)) Engine = Log"
+    )
+    node1.query(
+        f"INSERT INTO state_{uniq_keys} SELECT uniqExactState(number) FROM numbers({uniq_keys})"
+    )
+
+    assert (
+        node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
+        == f"{uniq_keys}\n"
+    )
+
+    node1.restart_with_latest_version(fix_metadata=False)
+
+    assert (
+        node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
+        == f"{uniq_keys}\n"
+    )
+
+    node1.query(f"DROP TABLE state_{uniq_keys}")

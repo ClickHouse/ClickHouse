@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -64,6 +65,40 @@ public:
 };
 
 
+template <
+    typename Key,
+    typename TCell,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+class TwoLevelHashSetTable
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>,
+      protected TCell::State
+{
+public:
+    using Self = TwoLevelHashSetTable;
+    using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
+
+    using Base::Base;
+
+    /// Writes its content in a way that it will be correctly read by HashSetTable.
+    /// Used by uniqExact to preserve backward compatibility.
+    void writeAsSingleLevel(DB::WriteBuffer & wb)
+    {
+        TCell::State::write(wb);
+        DB::writeVarUInt(this->size(), wb);
+
+        for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+            if (this->impls[i].hasZero())
+                this->impls[i].zeroValue()->write(wb);
+
+        for (auto ptr = this->begin(); ptr != this->end(); ++ptr)
+            if (!ptr->isZero(*this))
+                ptr->write(wb);
+    }
+};
+
+
 template <typename Key, typename Hash, typename TState = HashTableNoState>
 struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 {
@@ -88,6 +123,13 @@ template <
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
 using HashSet = HashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
+
+template <
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+using TwoLevelHashSet = TwoLevelHashSetTable<Key, HashTableCell<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithStackMemory = HashSet<
