@@ -21,7 +21,7 @@ using DiskConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
  * </root_name>
  *
  * Used in case disk configuration is passed via AST when creating
- * a disk object on-the-fky without any configuration file.
+ * a disk object on-the-fly without any configuration file.
  */
 DiskConfigurationPtr getDiskConfigurationFromAST(const std::string & root_name, const ASTs & disk_args, ContextPtr context);
 

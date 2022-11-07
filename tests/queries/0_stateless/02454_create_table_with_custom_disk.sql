@@ -11,6 +11,10 @@ CREATE TABLE test (a Int32)
 ENGINE = MergeTree() order by tuple()
 SETTINGS disk = disk(type=local, path='/var/lib/clickhouse/disks/local/');
 
+CREATE TABLE test (a Int32)
+ENGINE = MergeTree() order by tuple()
+SETTINGS disk = disk(type=local, path='/local/'); -- { serverError BAD_ARGUMENTS }
+
 INSERT INTO test SELECT number FROM numbers(100);
 SELECT count() FROM test;
 
