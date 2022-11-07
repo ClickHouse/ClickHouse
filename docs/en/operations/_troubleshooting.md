@@ -1,9 +1,5 @@
----
-slug: /en/operations/troubleshooting
-sidebar_position: 46
-sidebar_label: Troubleshooting
-title: Troubleshooting
----
+
+[//]: # (This file is included in FAQ > Troubleshooting)
 
 -   [Installation](#troubleshooting-installation-errors)
 -   [Connecting to the server](#troubleshooting-accepts-no-connections)
