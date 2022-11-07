@@ -4,6 +4,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     SettingChange * find(SettingsChanges & changes, std::string_view name)
@@ -22,6 +28,7 @@ namespace
         return &*it;
     }
 }
+
 String SettingChange::getValueString() const
 {
     if (ast_value)
@@ -33,7 +40,7 @@ void SettingChange::throwIfASTValue() const
 {
     if (getASTValue() != nullptr)
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
+            ErrorCodes::LOGICAL_ERROR,
             "AST value of the setting must be converted to Field value");
 }
 
