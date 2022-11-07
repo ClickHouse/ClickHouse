@@ -308,7 +308,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         if (change.getFieldValue().getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Invalid type {} for setting \"{}\" only integer settings are supported",
-                change.value.getTypeName(), change.name);
+                change.getFieldValue().getTypeName(), change.getName());
 
         if (settings.hasBooleanSetting(change.getName()))
         {

@@ -145,7 +145,7 @@ void registerDiskS3(DiskFactory & factory)
                 getSettings(config, config_prefix, context),
                 uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
 
-            auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
+            auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context->getPath());
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 

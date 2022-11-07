@@ -156,11 +156,11 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
     else if (!value_p.parse(pos, value, expected))
         return false;
 
-    tryGetIdentifierNameInto(name, change.name);
+    tryGetIdentifierNameInto(name, change.getName());
     if (is_default)
-        default_settings = change.name;
+        default_settings = change.getName();
     else
-        change.value = value->as<ASTLiteral &>().value;
+        change.setFieldValue(value->as<ASTLiteral &>().value);
 
     return true;
 }
