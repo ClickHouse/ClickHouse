@@ -2,8 +2,8 @@
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 
-DROP TABLE IF EXISTS test;
-DROP TABLE IF EXISTS test2;
+DROP TABLE IF EXISTS test SYNC;
+DROP TABLE IF EXISTS test2 SYNC;
 
 CREATE TABLE test (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01346/table', 'r1') PARTITION BY x ORDER BY y;
 CREATE TABLE test2 (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01346/table', 'r2') PARTITION BY x ORDER BY y;
@@ -50,5 +50,5 @@ ALTER TABLE test RENAME COLUMN y TO z; -- { serverError 524 }
 ALTER TABLE test DROP COLUMN x; -- { serverError 47 }
 ALTER TABLE test DROP COLUMN y; -- { serverError 47 }
 
-DROP TABLE test;
-DROP TABLE test2;
+DROP TABLE test SYNC;
+DROP TABLE test2 SYNC;
