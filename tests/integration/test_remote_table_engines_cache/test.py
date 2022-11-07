@@ -13,6 +13,7 @@ CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
 hive_instance = "roottestremotetableenginescache_hdfs1_1"
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -23,36 +24,40 @@ def cluster():
                 "configs/config.d/remote_table_engines_cache.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/cache_log.xml",
-                "configs/config.d/hdfs.xml",
             ],
-            #extra_configs=["configs/hdfs-site.xml", "data/prepare_hive_data.sh"],
+            # extra_configs=["configs/hdfs-site.xml", "data/prepare_hive_data.sh"],
             with_minio=True,
             with_hdfs=True,
-            #with_hive=True,
+            # with_hive=True,
         )
 
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
+        disable_auth_for_s3_bucket(cluster)
+
         # for hive
-        #prepare_file_name = "prepare_hive_data.sh"
-        #cluster.copy_file_to_container(
+        # prepare_file_name = "prepare_hive_data.sh"
+        # cluster.copy_file_to_container(
         #    hive_instance,
         #    f"{CURRENT_TEST_DIR}/data/{prepare_file_name}",
         #    f"/{prepare_file_name}",
-        #)
-        #cluster.exec_in_container(
+        # )
+        # cluster.exec_in_container(
         #    hive_instance,
         #    ["bash", "-c", f"bash /{prepare_file_name}"],
-        #)
+        # )
 
         yield cluster
     finally:
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("engine, max_download_threads", [("s3", 0), ("s3", 1), ("hdfs", 0), ("url", 0), ("url", 1)])
+@pytest.mark.parametrize(
+    "engine, max_download_threads",
+    [("s3", 0), ("s3", 1), ("hdfs", 0), ("url", 0), ("url", 1)],
+)
 def test_simple(cluster, engine, max_download_threads):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     name = "test"

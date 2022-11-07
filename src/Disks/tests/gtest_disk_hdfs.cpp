@@ -22,8 +22,8 @@ TEST(DiskTestHDFS, RemoveFileHDFS)
     auto settings = std::make_unique<DB::DiskHDFSSettings>(1024 * 1024);
     auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, std::move(settings), metadata_path, *config);
 
-    DB::HDFSBuilderWrapper builder = DB::createHDFSBuilder(hdfs_uri, *config);
-    DB::HDFSFSPtr fs = DB::createHDFSFS(builder.get());
+    DB::HDFSBuilderWrapperPtr builder_wrapper = DB::createHDFSBuilder(hdfs_uri, *config);
+    DB::HDFSFSPtr fs = DB::createHDFSFS(builder_wrapper.getBuilder());
 
     disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
     auto metadata = disk.readMeta(file_name);

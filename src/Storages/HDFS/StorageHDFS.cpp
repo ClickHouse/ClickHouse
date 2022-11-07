@@ -260,9 +260,10 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
         if (it == paths.end())
             return nullptr;
 
-        auto impl = createHDFSReadBuffer(uri_without_path, *it++, object_infos, ctx);
+        auto impl = createHDFSReadBuffer(uri_without_path, *it, object_infos, ctx);
         const auto compression = chooseCompressionMethod(*it, compression_method);
         const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+        ++it;
 
         return wrapReadBufferWithCompressionMethod(
             std::move(impl), compression, static_cast<int>(zstd_window_log_max));
@@ -409,8 +410,6 @@ bool HDFSSource::initialize()
 
     auto impl = StorageHDFS::createHDFSReadBuffer(uri_without_path, path_from_uri, object_infos, context);
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
-    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
 
     read_buf = wrapReadBufferWithCompressionMethod(
         std::move(impl), compression, static_cast<int>(context->getSettingsRef().zstd_window_log_max));
@@ -635,7 +634,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageHDFS::createHDFSReadBuffer(
         if (settings.enable_cache_for_hdfs_table_engine)
         {
             auto result_buffer = wrapWithCachedReadBuffer(
-                std::move(impl_buffer_creator), full_path, object_size, object_modification_time, read_settings);
+                impl_buffer_creator, full_path, object_size, object_modification_time, read_settings);
 
             if (result_buffer)
                 return result_buffer;

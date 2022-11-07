@@ -1240,16 +1240,16 @@ std::unique_ptr<ReadBuffer> StorageS3::createS3ReadBuffer(
         download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     }
 
-    auto factory = std::make_unique<ReadBufferS3Factory>(
-        std::move(read_buffer_creator),
-        /* filename */object_path,
-        /* range_step */download_buffer_size,
-        object_size);
-
     LOG_TRACE(
         log, "Downloading from S3 in {} threads. Object size: {}, Range size: {}", download_thread_num, object_size, download_buffer_size);
 
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
+    return std::make_unique<ParallelReadBuffer>(
+        std::move(read_buffer_creator),
+        /* filename */object_path,
+        /* range_step */download_buffer_size,
+        /* file_size */object_size,
+        threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"),
+        download_thread_num);
 }
 
 bool StorageS3::shouldCollectObjectInfos(ContextPtr local_context)

@@ -556,13 +556,11 @@ IStorageURLBase::ObjectInfo IStorageURLBase::getObjectInfo(
     Poco::Net::HTTPResponse response;
     buf.getHeadResponse(response);
 
-    const std::optional<size_t> file_size = ReadWriteBufferFromHTTP::getFileSizeImpl(response);
-    const std::optional<time_t> last_modification_time = ReadWriteBufferFromHTTP::getLastModificationTimeImpl(response);
-    const bool supports_ranges = (response.has("Accept-Ranges") && response.get("Accept-Ranges") == "bytes")
-        || (response.has("Content-Range") && response.get("Content-Range").starts_with("bytes"));
-    /// FIXME: res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
-
-    return {file_size, last_modification_time, supports_ranges};
+    return ObjectInfo{
+        .size = ReadWriteBufferFromHTTP::getFileSizeImpl(response),
+        .last_modification_time = ReadWriteBufferFromHTTP::getLastModificationTimeImpl(response),
+        .supports_ranges = response.has("Accept-Ranges") && response.get("Accept-Ranges") == "bytes",
+    };
 }
 
 IStorageURLBase::ObjectInfo IStorageURLBase::getAndCacheObjectInfo(
@@ -626,7 +624,8 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
     const auto & settings = context->getSettings();
 
     using ReadBufferCreator = std::function<std::unique_ptr<SeekableReadBuffer>(size_t, size_t)>;
-    ReadBufferCreator read_buffer_creator = [=](size_t start_offset, size_t end_offset_non_included) -> std::unique_ptr<SeekableReadBuffer>
+    ReadBufferCreator read_buffer_creator = [=]
+        (size_t start_offset, size_t end_offset_non_included) -> std::unique_ptr<SeekableReadBuffer>
     {
         ReadWriteBufferFromHTTP::Range range;
         if (end_offset_non_included)
@@ -639,7 +638,7 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
             connection_params->timeouts,
             connection_params->credentials,
             settings.max_http_get_redirects,
-            DBMS_DEFAULT_BUFFER_SIZE,
+            settings.max_read_buffer_size,
             context->getReadSettings(),
             connection_params->headers,
             range,
@@ -649,7 +648,6 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
             connection_params->skip_url_not_found_error);
     };
 
-    const bool use_parallel_read_buffer = download_threads_num && file_info.supports_ranges && file_info.size;
     const bool use_cached_read_buffer = cache_result && file_info.supports_ranges && file_info.size;
 
     if (use_cached_read_buffer)
@@ -657,23 +655,43 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
         read_buffer_creator = [=, read_buffer_creator = std::move(read_buffer_creator)]
             (size_t start_offset, size_t end_offset_non_including)
         {
-            auto impl_buffer_creator = [&](){ return read_buffer_creator(0, 0); };
             std::unique_ptr<SeekableReadBuffer> result_buffer = wrapWithCachedReadBuffer(
-                impl_buffer_creator, uri_str, *file_info.size, *file_info.last_modification_time, context->getReadSettings());
+                /* impl_buffer_creator */[=](){ return read_buffer_creator(0, 0); },
+                uri_str,
+                *file_info.size,
+                *file_info.last_modification_time,
+                context->getReadSettings());
 
             if (!result_buffer)
-                result_buffer = impl_buffer_creator();
+            {
+                LOG_TRACE(log, "Using non-cached read buffer");
+                return read_buffer_creator(start_offset, end_offset_non_including);
+            }
 
-            result_buffer->setReadUntilPosition(end_offset_non_including);
+            if (end_offset_non_including)
+                result_buffer->setReadUntilPosition(end_offset_non_including);
 
             if (start_offset)
                 result_buffer->seek(start_offset, SEEK_SET);
 
+            LOG_TRACE(log, "Using cached read buffer");
             return result_buffer;
         };
     }
-    else
+
+    auto download_buffer_size = settings.max_download_buffer_size;
+    const bool object_too_small = file_info.size < download_threads_num * download_buffer_size;
+    const bool use_parallel_read_buffer = download_threads_num
+        && download_buffer_size > 0
+        && download_threads_num > 1
+        && file_info.supports_ranges
+        && file_info.size
+        && !object_too_small;
+
+    if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
     {
+        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes", download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+        download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     }
 
     if (use_parallel_read_buffer)
@@ -684,12 +702,11 @@ std::unique_ptr<ReadBuffer> IStorageURLBase::createHTTPReadBuffer(
             download_threads_num,
             settings.max_download_buffer_size);
 
-        auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
-            std::move(read_buffer_creator), uri_str, *file_info.size, settings.max_download_buffer_size);
-
         return std::make_unique<ParallelReadBuffer>(
-            std::move(read_buffer_factory),
-
+            std::move(read_buffer_creator),
+            /* filename */uri_str,
+            /* range_step */settings.max_download_buffer_size,
+            /* file_size */*file_info.size,
             threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
             download_threads_num);
     }
