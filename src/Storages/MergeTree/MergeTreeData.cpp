@@ -6615,7 +6615,11 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
 
     // Register in global moves list (StorageSystemMoves)
     for (auto & moving_part : parts_to_move)
-        moving_part.moves_list_entry = data.getContext()->getMovesList().insert(data.getStorageID(), moving_part.part->name);
+        moving_part.moves_list_entry = data.getContext()->getMovesList().insert(
+            data.getStorageID(),
+            moving_part.part->name,
+            moving_part.reserved_space->getDisk()->getPath(),
+            moving_part.part->getBytesOnDisk());
 }
 
 MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()

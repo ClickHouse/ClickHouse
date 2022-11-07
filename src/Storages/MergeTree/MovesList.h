@@ -19,9 +19,7 @@ struct MoveInfo
     std::string database;
     std::string table;
     std::string partition_id;
-
-    std::string result_part_name;
-    std::string result_part_path;
+    std::string target_disk_path;
     UInt64 part_size;
 
     Float64 elapsed;
@@ -32,18 +30,17 @@ struct MovesListElement : private boost::noncopyable
 {
     const StorageID table_id;
     const std::string partition_id;
-
-    // TODO(serxa): fill it
-    std::string result_part_name;
-    std::string result_part_path;
-    UInt64 part_size{};
+    const std::string target_disk_path;
+    const UInt64 part_size;
 
     Stopwatch watch;
     const UInt64 thread_id;
 
     MovesListElement(
         const StorageID & table_id_,
-        const std::string & partition_id_);
+        const std::string & partition_id_,
+        const std::string & target_disk_path_,
+        UInt64 part_size_);
 
     MoveInfo getInfo() const;
 };
