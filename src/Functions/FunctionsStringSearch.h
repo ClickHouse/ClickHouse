@@ -66,7 +66,17 @@ class FunctionsStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
+    const bool allow_hyperscan;
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionsStringSearch>(settings.allow_hyperscan);
+    }
+
+    explicit FunctionsStringSearch(bool allow_hyperscan_)
+        : allow_hyperscan(allow_hyperscan_)
+    {}
 
     String getName() const override { return name; }
 
@@ -172,14 +182,16 @@ public:
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                allow_hyperscan);
         else if (col_haystack_vector && col_needle_const)
             Impl::vectorConstant(
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_const->getValue<String>(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                allow_hyperscan);
         else if (col_haystack_vector_fixed && col_needle_vector)
             Impl::vectorFixedVector(
                 col_haystack_vector_fixed->getChars(),
@@ -187,20 +199,23 @@ public:
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                allow_hyperscan);
         else if (col_haystack_vector_fixed && col_needle_const)
             Impl::vectorFixedConstant(
                 col_haystack_vector_fixed->getChars(),
                 col_haystack_vector_fixed->getN(),
                 col_needle_const->getValue<String>(),
-                vec_res);
+                vec_res,
+                allow_hyperscan);
         else if (col_haystack_const && col_needle_vector)
             Impl::constantVector(
                 col_haystack_const->getValue<String>(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 column_start_pos,
-                vec_res);
+                vec_res,
+                allow_hyperscan);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

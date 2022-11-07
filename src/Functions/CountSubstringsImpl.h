@@ -36,7 +36,8 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt64> & res,
+        bool /*allow_hyperscan*/)
     {
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -138,7 +139,8 @@ struct CountSubstringsImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt64> & res,
+        bool /*allow_hyperscan*/)
     {
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
@@ -191,7 +193,8 @@ struct CountSubstringsImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt64> & res,
+        bool /*allow_hyperscan*/)
     {
         /// NOTE You could use haystack indexing. But this is a rare case.
 

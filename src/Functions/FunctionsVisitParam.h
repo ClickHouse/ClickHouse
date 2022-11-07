@@ -91,7 +91,8 @@ struct ExtractParamImpl
         const ColumnString::Offsets & haystack_offsets,
         std::string needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        bool /*allow_hyperscan*/)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);

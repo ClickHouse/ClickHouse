@@ -31,7 +31,8 @@ struct HasTokenImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::string & pattern,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        bool /*allow_hyperscan*/)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);

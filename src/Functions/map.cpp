@@ -311,7 +311,7 @@ public:
         const ColumnString * column_string = checkAndGetColumn<ColumnString>(column_tuple.getColumn(0));
         const ColumnFixedString * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column_tuple.getColumn(0));
 
-        FunctionLike func_like;
+        FunctionLike func_like(/*allow_hyperscan*/ false);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -451,7 +451,7 @@ public:
         const ColumnString * keys_string_column = checkAndGetColumn<ColumnString>(keys_column);
         const ColumnFixedString * keys_fixed_string_column = checkAndGetColumn<ColumnFixedString>(keys_column);
 
-        FunctionLike func_like;
+        FunctionLike func_like(/*allow_hyperscan*/ false);
 
         //create result data
         MutableColumnPtr keys_data = key_type->createColumn();

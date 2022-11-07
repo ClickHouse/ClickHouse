@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <base/scope_guard.h>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
@@ -8,7 +9,11 @@
 #include "Regexps.h"
 
 #include "config.h"
+
 #include <re2_st/re2.h>
+#if USE_VECTORSCAN
+#    include <hs.h>
+#endif
 
 
 namespace DB
@@ -16,6 +21,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -115,12 +122,38 @@ struct MatchImpl
         res = negate ^ match;
     }
 
+#if USE_VECTORSCAN
+    static void searchStringWithVectorscan(
+        const hs_database_t * db, hs_scratch_t * scratch,
+        const char * haystack_data, size_t haystack_length,
+        UInt8 & res)
+    {
+        bool match = false;
+
+        auto on_match = [](unsigned int /*id*/,
+                unsigned long long /*from*/, // NOLINT(google-runtime-int)
+                unsigned long long /*to*/, // NOLINT(google-runtime-int)
+                unsigned int /*flags*/,
+                void * context) -> int
+        {
+            *reinterpret_cast<bool *>(context) = true;
+            return 1; /// Cease processing after first match.
+        };
+
+        hs_error_t err = hs_scan(db, haystack_data, static_cast<unsigned>(haystack_length), 0, scratch, on_match, &match);
+        if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED) [[unlikely]]
+            throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+        res = negate ^ match;
+    }
+#endif
+
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const String & needle,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] bool allow_hyperscan)
     {
         const size_t haystack_size = haystack_offsets.size();
 
@@ -179,6 +212,65 @@ struct MatchImpl
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
+#if USE_VECTORSCAN
+        // TODO check empty pattern // TODO check if we can pass string_view to get() // TODO pull
+        // initialization out (it is not needed in all cases) // TODO find good benchmark queries, check against no use of cache
+        // TODO checkHyperscanRegexp()
+
+
+        /// Without internal regex cache:
+
+        /// hs_database_t * db = nullptr;
+        /// hs_compile_error_t * compile_error = nullptr;
+        ///
+        /// String like_as_regexp = likePatternToRegexp(needle);
+        /// hs_error_t err = hs_compile(
+        ///     like_as_regexp.c_str(),
+        ///     HS_FLAG_SINGLEMATCH | HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8,
+        ///     HS_MODE_BLOCK,
+        ///     nullptr, &db, &compile_error);
+        ///
+        /// if (err != HS_SUCCESS)
+        /// {
+        ///     SCOPE_EXIT({ hs_free_compile_error(compile_error); });
+        ///     throw Exception(
+        ///         ErrorCodes::BAD_ARGUMENTS,
+        ///         compile_error->message);
+        /// }
+        ///
+        /// SCOPE_EXIT({ hs_free_database(db); });
+        ///
+        /// hs_scratch_t * scratch = nullptr;
+        /// err = hs_alloc_scratch(db, &scratch);
+        /// if (err != HS_SUCCESS)
+        ///     throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+        ///
+        /// SCOPE_EXIT({ hs_free_scratch(scratch); });
+
+        /// With internal regex cache:
+
+        MultiRegexps::Regexps * regexps = nullptr;
+        MultiRegexps::ScratchPtr smart_scratch;
+
+        if (allow_hyperscan)
+        {
+            String like_pattern_as_regexp = likePatternToRegexp(needle);
+
+            std::vector<std::string_view> like_pattern_as_regexp_vec;
+            like_pattern_as_regexp_vec.push_back(like_pattern_as_regexp);
+
+            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*save_indices*/ false, /*with_edit_distance*/ false>(like_pattern_as_regexp_vec, /*edit_distance*/{});
+
+            regexps = deferred_constructed_regexps->get();
+
+            hs_scratch_t * scratch = nullptr;
+            hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
+            if (err != HS_SUCCESS)
+                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+            smart_scratch.reset(scratch);
+        }
+#endif
         if (required_substring.empty())
         {
             if (!regexp.getRE2()) /// An empty regexp. Always matches.
@@ -190,7 +282,14 @@ struct MatchImpl
                 {
                     const char * cur_haystack_data = reinterpret_cast<const char *>(&haystack_data[prev_offset]);
                     size_t cur_haystack_length = haystack_offsets[i] - prev_offset - 1;
-                    searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
+#if USE_VECTORSCAN
+                    if (allow_hyperscan)
+                        searchStringWithVectorscan(regexps->getDB(), smart_scratch.get(), cur_haystack_data, cur_haystack_length, res[i]);
+                        /// searchStringWithVectorscan(db, scratch, cur_haystack_data, cur_haystack_length, res[i]);
+                    else
+#endif
+                        searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
+
                     prev_offset = haystack_offsets[i];
                 }
             }
@@ -233,7 +332,13 @@ struct MatchImpl
                           *  so that it can match when `required_substring` occurs into the string several times,
                           *  and at the first occurrence, the regexp is not a match.
                           */
-                        searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
+#if USE_VECTORSCAN
+                        if (allow_hyperscan)
+                            searchStringWithVectorscan(regexps->getDB(), smart_scratch.get(), cur_haystack_data, cur_haystack_length, res[i]);
+                            /// searchStringWithVectorscan(db, scratch, cur_haystack_data, cur_haystack_length, res[i]);
+                        else
+#endif
+                            searchStringWithRe2(regexp, cur_haystack_data, cur_haystack_length, res[i]);
                     }
                 }
                 else
@@ -254,7 +359,8 @@ struct MatchImpl
         const ColumnString::Chars & haystack,
         size_t N,
         const String & needle,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        bool /*allow_hyperscan*/)
     {
         const size_t haystack_size = haystack.size() / N;
 
@@ -398,7 +504,8 @@ struct MatchImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        bool /*allow_hyperscan*/)
     {
         const size_t haystack_size = haystack_offsets.size();
 
@@ -486,7 +593,8 @@ struct MatchImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        bool /*allow_hyperscan*/)
     {
         const size_t haystack_size = haystack.size()/N;
 
