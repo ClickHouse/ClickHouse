@@ -36,28 +36,11 @@ static void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & fr
     /// Files or directories of detached part may not exist. Only count the size of existing files.
     if (disk->isFile(from))
     {
-        try
-        {
-            total_size += disk->getFileSize(from);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        total_size += disk->getFileSize(from);
     }
     else
     {
-        DirectoryIteratorPtr it;
-        try
-        {
-            it = disk->iterateDirectory(from);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        for (; it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(from); it->isValid(); it->next())
             calculateTotalSizeOnDiskImpl(disk, fs::path(from) / it->name(), total_size);
     }
 }
@@ -65,7 +48,14 @@ static void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & fr
 static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
     UInt64 total_size = 0;
-    calculateTotalSizeOnDiskImpl(disk, from, total_size);
+    try
+    {
+        calculateTotalSizeOnDiskImpl(disk, from, total_size);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
     return total_size;
 }
 
