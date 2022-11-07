@@ -30,7 +30,7 @@ class OptimizeRedundantFunctionsInOrderByVisitor : public InDepthQueryTreeVisito
         if (function->getArguments().getNodes().empty())
             return makeNonRedundant();
 
-        if (function->getFunction()->isDeterministicInScopeOfQuery())
+        if (!function->getFunction()->isDeterministicInScopeOfQuery())
             return makeNonRedundant();
 
         // TODO: handle constants here
@@ -90,13 +90,13 @@ public:
 
         for (auto & elem : order_by.getNodes())
         {
-            auto * order_by_elem = elem->as<SortNode>();
-            if (auto * expr = order_by_elem->getExpression()->as<FunctionNode>())
+            auto & order_by_expr = elem->as<SortNode>()->getExpression();
+            if (auto * expr = order_by_expr->as<FunctionNode>())
             {
                 if (isRedundantExpression(expr).redundant)
                     continue;
             }
-            else if (auto * column = elem->as<ColumnNode>())
+            else if (auto * column = order_by_expr->as<ColumnNode>())
             {
                 existing_keys.insert(column->getColumnName());
             }
