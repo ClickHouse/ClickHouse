@@ -2289,7 +2289,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
         {
             IdentifierView nested_path(identifier_view);
             nested_path.popFirst();
-            auto tuple_element_result = wrapExpressionNodeInTupleElement(result_expression, identifier_view);
+            auto tuple_element_result = wrapExpressionNodeInTupleElement(result_expression, nested_path);
             resolveFunction(tuple_element_result, scope);
             result_expression = std::move(tuple_element_result);
             clone_is_needed = false;
@@ -3758,6 +3758,9 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
   */
 ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
+    std::cout << "QueryAnalyzer::resolveFunction " << std::endl;
+    std::cout << node->dumpTree() << std::endl;
+
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
