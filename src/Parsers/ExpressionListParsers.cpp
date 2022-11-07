@@ -1205,6 +1205,9 @@ public:
                 if (!mergeElement())
                     return false;
 
+                if (elements.size() != 2)
+                    return false;
+
                 elements = {makeASTFunction("CAST", elements[0], elements[1])};
                 finished = true;
                 return true;
@@ -1414,7 +1417,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (state == 2)
+        if (state == 2 && elements.size() == 2)
             std::swap(elements[1], elements[0]);
 
         node = makeASTFunction("position", std::move(elements));
