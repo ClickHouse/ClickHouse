@@ -178,7 +178,7 @@ function fuzz
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db 2>> server.log &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db 2>&1 > server.log &
     server_pid=$!
 
     kill -0 $server_pid
