@@ -19,6 +19,9 @@ set param_price=10;
 SELECT Price FROM v1;  -- { serverError UNKNOWN_QUERY_PARAMETER}
 SELECT Price FROM v1(price={price:UInt64});
 
+set param_limit=1;
+SELECT Price FROM v1(price=50) LIMIT {limit:UInt64};
+
 DETACH TABLE v1;
 ATTACH TABLE v1;
 

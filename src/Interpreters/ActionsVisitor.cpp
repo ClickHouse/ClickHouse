@@ -765,9 +765,9 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     if (const auto * node = index.tryGetNode(child_column_name))
         return NameAndTypePair(child_column_name, node->result_type);
 
-    /// For parameterized view, we allow query parameters in create which will be substituted by select queries
-    /// so these cannot be evaluated. But if its a parameterized view with sub part ast which does not contain query parameters
-    /// then it can be evaluated
+    /// For parameterized view, we allow query parameters in CREATE which will be substituted by SELECT queries
+    /// so these cannot be evaluated at this point. But if it's a parameterized view with sub part ast which does
+    /// not contain query parameters then it can be evaluated
     /// Eg : CREATE VIEW v1 AS SELECT * FROM t1 WHERE Column1={c1:UInt64} AND Column2=3; - Column2=3 should get NameAndTypePair
     if (!data.only_consts && (data.is_create_parameterized_view && analyzeReceiveQueryParams(ast).empty()))
     {

@@ -141,8 +141,6 @@ public:
     void setFinal();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
-
-    mutable std::optional<bool> has_query_parameters;
     bool hasQueryParameters() const;
 
 protected:
@@ -150,6 +148,11 @@ protected:
 
 private:
     std::unordered_map<Expression, size_t> positions;
+
+    /// This variable is optional as we want to set it on the first call to hasQueryParameters
+    /// and return the same variable on future calls to hasQueryParameters
+    /// its mutable as we set it in const function
+    mutable std::optional<bool> has_query_parameters;
 
     ASTPtr & getExpression(Expression expr);
 };

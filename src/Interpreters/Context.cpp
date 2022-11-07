@@ -1232,7 +1232,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
-    const ASTFunction * function = assert_cast<const ASTFunction *>(table_expression.get());
+    ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
     String database_name = getCurrentDatabase();
     String table_name = function->name;
 
@@ -1252,7 +1252,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
+        {
+            function->is_parameterized_view = true;
             return table;
+        }
     }
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);

@@ -2034,15 +2034,7 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     else if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
     else
-    {
-        bool has_database_name = false;
-        if (const auto *ast_identifier  = identifier->as<ASTIdentifier>())
-        {
-            if (ast_identifier->compound())
-                has_database_name = true;
-        }
-        return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, has_database_name);
-    }
+        return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
 }
 
 

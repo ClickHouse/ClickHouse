@@ -1,6 +1,7 @@
 20
 20
 10
+50
 SELECT
     Name,
     Price,
