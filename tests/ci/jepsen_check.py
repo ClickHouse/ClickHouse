@@ -57,8 +57,7 @@ def _parse_jepsen_output(path):
                 current_type = "FAIL"
 
             if (
-                line.startswith("store/clickhouse")
-                or line.startswith("clickhouse")
+                line.startswith("store/clickhouse") or line.startswith("clickhouse")
             ) and current_type:
                 test_results.append((line.strip(), current_type))
 
@@ -153,12 +152,15 @@ def get_run_command(
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
-                    prog = 'Jepsen Check',
-                    description = 'Check that uses Jepsen. Both Keeper and Server can be tested.')
-    parser.add_argument('program', help='What should be tested. Valid values "keeper", "server"')
+        prog="Jepsen Check",
+        description="Check that uses Jepsen. Both Keeper and Server can be tested.",
+    )
+    parser.add_argument(
+        "program", help='What should be tested. Valid values "keeper", "server"'
+    )
     args = parser.parse_args()
 
-    if args.program != 'server' and args.program != 'keeper':
+    if args.program != "server" and args.program != "keeper":
         logging.warning(f"Invalid argument '{args.program}'")
         sys.exit(0)
 
@@ -179,7 +181,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token(), per_page=100)
 
-    check_name = KEEPER_CHECK_NAME if args.program == 'keeper' else SERVER_CHECK_NAME
+    check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -193,11 +195,17 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    instances = prepare_autoscaling_group_and_get_hostnames(KEEPER_DESIRED_INSTANCE_COUNT if args.program == 'keeper' else SERVER_DESIRED_INSTANCE_COUNT)
-    nodes_path = save_nodes_to_file(instances[:KEEPER_DESIRED_INSTANCE_COUNT], TEMP_PATH)
+    instances = prepare_autoscaling_group_and_get_hostnames(
+        KEEPER_DESIRED_INSTANCE_COUNT
+        if args.program == "keeper"
+        else SERVER_DESIRED_INSTANCE_COUNT
+    )
+    nodes_path = save_nodes_to_file(
+        instances[:KEEPER_DESIRED_INSTANCE_COUNT], TEMP_PATH
+    )
 
     # always use latest
-    docker_image = KEEPER_IMAGE_NAME if args.program == 'keeper' else SERVER_IMAGE_NAME
+    docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
 
     build_name = get_build_name_for_check(check_name)
 
@@ -223,9 +231,9 @@ if __name__ == "__main__":
             logging.warning("Cannot fetch build in 30 minutes, exiting")
             sys.exit(0)
 
-    extra_args = ''
-    if args.program == 'server':
-        extra_args = f'-e KEEPER_NODE={instances[-1]}'
+    extra_args = ""
+    if args.program == "server":
+        extra_args = f"-e KEEPER_NODE={instances[-1]}"
 
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
