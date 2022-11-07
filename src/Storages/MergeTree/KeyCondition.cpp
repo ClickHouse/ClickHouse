@@ -57,8 +57,8 @@ String Range::toString() const
 
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
-/// We call a prefix "perfect" if:
-/// - (1) the prefix must have willcard
+/// We call a pattern "perfect prefix" if:
+/// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
 String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool require_perfect_prefix)
