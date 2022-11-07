@@ -45,7 +45,7 @@ StorageHudi::StorageHudi(
     StorageS3::updateS3Configuration(context_, base_configuration);
 
     auto keys = getKeysFromS3();
-    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys), configuration_.format);
+    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(keys, configuration_.format);
 
     LOG_DEBUG(log, "New uri: {}", new_uri);
     LOG_DEBUG(log, "Table path: {}", table_path);
@@ -158,7 +158,7 @@ String StorageHudi::generateQueryFromKeys(const std::vector<std::string> & keys,
         const String partition_path = key_path.parent_path();
 
         /// Every filename contains metadata split by "_", timestamp is after last "_".
-        const auto delim = key.find_last_of("_") + 1;
+        const auto delim = key.find_last_of('_') + 1;
         if (delim == std::string::npos)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format of metadata files");
         const auto timestamp = parse<UInt64>(key.substr(delim + 1));
