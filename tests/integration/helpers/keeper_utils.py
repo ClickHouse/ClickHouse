@@ -1,6 +1,6 @@
 import socket
 import time
-import csv
+
 
 def get_keeper_socket(cluster, node, port=9181):
     hosts = cluster.get_instance_ip(node.name)
