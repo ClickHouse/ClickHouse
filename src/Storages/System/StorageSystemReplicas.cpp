@@ -66,7 +66,7 @@ Pipe StorageSystemReplicas::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

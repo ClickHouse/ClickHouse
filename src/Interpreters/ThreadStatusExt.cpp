@@ -17,7 +17,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/noexcept_scope.h>
-#include <Common/DateLUT.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -55,12 +54,12 @@ void ThreadStatus::applyQuerySettings()
 
 #if defined(OS_LINUX)
     /// Set "nice" value if required.
-    Int32 new_os_thread_priority = static_cast<Int32>(settings.os_thread_priority);
+    Int32 new_os_thread_priority = settings.os_thread_priority;
     if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
     {
         LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
-        if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
+        if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
             throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
 
         os_thread_priority = new_os_thread_priority;
@@ -109,7 +108,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         std::lock_guard lock(thread_group->mutex);
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_ids.insert(thread_id);
+        thread_group->thread_ids.emplace_back(thread_id);
         thread_group->threads.insert(this);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
@@ -155,6 +154,22 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+inline UInt64 time_in_nanoseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 void ThreadStatus::initPerformanceCounters()
 {
     performance_counters_finalized = false;
@@ -169,9 +184,9 @@ void ThreadStatus::initPerformanceCounters()
     // to ensure that they are all equal up to the precision of a second.
     const auto now = std::chrono::system_clock::now();
 
-    query_start_time_nanoseconds = timeInNanoseconds(now);
-    query_start_time = timeInSeconds(now);
-    query_start_time_microseconds = timeInMicroseconds(now);
+    query_start_time_nanoseconds = time_in_nanoseconds(now);
+    query_start_time = time_in_seconds(now);
+    query_start_time_microseconds = time_in_microseconds(now);
     ++queries_started;
 
     // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
@@ -246,7 +261,7 @@ void ThreadStatus::finalizePerformanceCounters()
             if (settings.log_queries && settings.log_query_threads)
             {
                 const auto now = std::chrono::system_clock::now();
-                Int64 query_duration_ms = (timeInMicroseconds(now) - query_start_time_microseconds) / 1000;
+                Int64 query_duration_ms = (time_in_microseconds(now) - query_start_time_microseconds) / 1000;
                 if (query_duration_ms >= settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
                     if (auto thread_log = global_context_ptr->getQueryThreadLog())
@@ -335,10 +350,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     /// Avoid leaking of ThreadGroupStatus::finished_threads_counters_memory
     /// (this is in case someone uses system thread but did not call getProfileEventsCountersAndMemoryForThreads())
-    {
-        std::lock_guard guard(thread_group->mutex);
-        auto stats = std::move(thread_group->finished_threads_counters_memory);
-    }
+    thread_group->getProfileEventsCountersAndMemoryForThreads();
 
     thread_group.reset();
 
@@ -349,7 +361,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     {
         LOG_TRACE(log, "Resetting nice");
 
-        if (0 != setpriority(PRIO_PROCESS, static_cast<int>(thread_id), 0))
+        if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
             LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
 
         os_thread_priority = 0;
@@ -363,14 +375,14 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
     // construct current_time and current_time_microseconds using the same time point
     // so that the two times will always be equal up to a precision of a second.
-    auto current_time = timeInSeconds(now);
-    auto current_time_microseconds = timeInMicroseconds(now);
+    auto current_time = time_in_seconds(now);
+    auto current_time_microseconds = time_in_microseconds(now);
 
     elem.event_time = current_time;
     elem.event_time_microseconds = current_time_microseconds;
     elem.query_start_time = query_start_time;
     elem.query_start_time_microseconds = query_start_time_microseconds;
-    elem.query_duration_ms = (timeInNanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
+    elem.query_duration_ms = (time_in_nanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
@@ -432,8 +444,8 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 
     QueryViewsLogElement element;
 
-    element.event_time = timeInSeconds(vinfo.runtime_stats->event_time);
-    element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats->event_time);
+    element.event_time = time_in_seconds(vinfo.runtime_stats->event_time);
+    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats->event_time);
     element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
 
     element.initial_query_id = query_id;

@@ -103,8 +103,6 @@ public:
     ColumnPtr compress() const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
-    void finalize() override;
-    bool isFinalized() const override;
 
     size_t tupleSize() const { return columns.size(); }
 

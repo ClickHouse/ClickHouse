@@ -570,15 +570,4 @@ void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, siz
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
-void ColumnTuple::finalize()
-{
-    for (auto & column : columns)
-        column->finalize();
-}
-
-bool ColumnTuple::isFinalized() const
-{
-    return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
-}
-
 }

@@ -2,16 +2,11 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Common/checkStackSize.h>
-
 
 namespace DB
 {
-
 void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
 {
-    checkStackSize();
-
     if (auto * node_select = ast->as<ASTSelectQuery>())
     {
         std::optional<Data> new_data;

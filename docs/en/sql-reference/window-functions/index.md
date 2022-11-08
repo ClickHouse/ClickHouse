@@ -430,9 +430,9 @@ FROM
 ### Cumulative sum.
 
 ```sql
-CREATE TABLE warehouse
+CREATE TABLE events
 (
-    `item` String,
+    `metric` String,
     `ts` DateTime,
     `value` Float
 )

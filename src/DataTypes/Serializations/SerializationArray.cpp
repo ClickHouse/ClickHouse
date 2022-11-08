@@ -246,13 +246,11 @@ void SerializationArray::enumerateStreams(
 }
 
 void SerializationArray::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     settings.path.push_back(Substream::ArrayElements);
-    const auto & column_array = assert_cast<const ColumnArray &>(column);
-    nested->serializeBinaryBulkStatePrefix(column_array.getData(), settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 

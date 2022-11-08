@@ -61,11 +61,11 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "DocsCheck",
-    "DocsReleaseChecks",
+    "Docs",
+    "DocsRelease",
     "MasterCI",
     "PullRequestCI",
-    "ReleaseBranchCI",
+    "ReleaseCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.

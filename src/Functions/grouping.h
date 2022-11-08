@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 class FunctionGroupingBase : public IFunction
 {
 protected:
@@ -73,22 +68,6 @@ public:
             result_data.push_back(value);
         }
         return result;
-    }
-};
-
-class FunctionGrouping : public FunctionGroupingBase
-{
-public:
-    explicit FunctionGrouping(bool force_compatibility_)
-        : FunctionGroupingBase(ColumnNumbers(), force_compatibility_)
-    {}
-
-    String getName() const override { return "grouping"; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Method executeImpl is not supported for 'grouping' function");
     }
 };
 
