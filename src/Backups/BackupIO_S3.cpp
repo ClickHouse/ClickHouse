@@ -125,6 +125,7 @@ BackupWriterS3::BackupWriterS3(
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
+    , log(&Poco::Logger::get("BackupWriterS3"))
 {
     request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
 }
@@ -145,9 +146,12 @@ void BackupWriterS3::copyObjectImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
-    std::optional<ObjectAttributes> metadata) const
+    const Aws::S3::Model::HeadObjectResult & head,
+    const std::optional<ObjectAttributes> & metadata) const
 {
+    size_t size = head.GetContentLength();
+    LOG_TRACE(log, "Copying {} bytes using single-operation copy", size);
+
     Aws::S3::Model::CopyObjectRequest request;
     request.SetCopySource(src_bucket + "/" + src_key);
     request.SetBucket(dst_bucket);
@@ -185,13 +189,11 @@ void BackupWriterS3::copyObjectMultipartImpl(
     const String & src_key,
     const String & dst_bucket,
     const String & dst_key,
-    std::optional<Aws::S3::Model::HeadObjectResult> head,
-    std::optional<ObjectAttributes> metadata) const
+    const Aws::S3::Model::HeadObjectResult & head,
+    const std::optional<ObjectAttributes> & metadata) const
 {
-    if (!head)
-        head = requestObjectHeadData(src_bucket, src_key).GetResult();
-
-    size_t size = head->GetContentLength();
+    size_t size = head.GetContentLength();
+    LOG_TRACE(log, "Copying {} bytes using multipart upload copy", size);
 
     String multipart_upload_id;
 
@@ -212,16 +214,20 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
+    size_t position = 0;
     size_t upload_part_size = request_settings.min_upload_part_size;
-    for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
+
+    for (size_t part_number = 1; position < size; ++part_number)
     {
+        size_t next_position = std::min(position + upload_part_size, size);
+
         Aws::S3::Model::UploadPartCopyRequest part_request;
         part_request.SetCopySource(src_bucket + "/" + src_key);
         part_request.SetBucket(dst_bucket);
         part_request.SetKey(dst_key);
         part_request.SetUploadId(multipart_upload_id);
         part_request.SetPartNumber(static_cast<int>(part_number));
-        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
+        part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, next_position - 1));
 
         auto outcome = client->UploadPartCopy(part_request);
         if (!outcome.IsSuccess())
@@ -238,6 +244,14 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
         auto etag = outcome.GetResult().GetCopyPartResult().GetETag();
         part_tags.push_back(etag);
+
+        position = next_position;
+
+        if (part_number % rw_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        {
+            upload_part_size *= rw_settings.upload_part_size_multiply_factor;
+            upload_part_size = std::min(upload_part_size, rw_settings.max_upload_part_size);
+        }
     }
 
     {
@@ -279,15 +293,14 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
         auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
-        static constexpr int64_t multipart_upload_threashold = 5UL * 1024 * 1024 * 1024;
-        if (head.GetContentLength() >= multipart_upload_threashold)
+        if (static_cast<size_t>(head.GetContentLength()) < rw_settings.max_single_operation_copy_size)
         {
-            copyObjectMultipartImpl(
+            copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
         else
         {
-            copyObjectImpl(
+            copyObjectMultipartImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
         }
     }

@@ -12,6 +12,7 @@
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
+    M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.") \
     M(QueryTimeMicroseconds, "Total time of all queries.") \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.") \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.") \
