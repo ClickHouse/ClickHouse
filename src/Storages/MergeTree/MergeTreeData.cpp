@@ -1034,12 +1034,13 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (!part_opt)
             return;
 
-        LOG_TRACE(log, "Loading part {} from disk {}", part_name, part_disk_ptr->getName());
         const auto & part_info = *part_opt;
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
         auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, part_name);
         auto part = createPart(part_name, part_info, data_part_storage);
         bool broken = false;
+
+        LOG_TRACE(log, "Loading part {} ({}) from disk {}", part_name, part->getType().toString(), part_disk_ptr->getName());
 
         String part_path = fs::path(relative_data_path) / part_name;
         String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -1145,8 +1146,11 @@ void MergeTreeData::loadDataPartsFromDisk(
     {
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            pool.scheduleOrThrowOnError([&, thread]
+            pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+
                 while (true)
                 {
                     std::pair<String, DiskPtr> thread_part;
