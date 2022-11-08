@@ -655,5 +655,8 @@ def test_cmd_rqld(started_cluster):
                 time.sleep(0.1)
                 retry += 1
             if retry == 20:
-                print(node.name + " does not become leader after 2s, maybe there is something wrong.")
+                print(
+                    node.name
+                    + " does not become leader after 2s, maybe there is something wrong."
+                )
             assert keeper_utils.is_leader(cluster, node)
