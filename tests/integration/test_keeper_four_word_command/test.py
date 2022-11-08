@@ -641,3 +641,22 @@ def test_cmd_lgif(started_cluster):
         assert int(result["last_snapshot_idx"]) >= 1
     finally:
         destroy_zk_client(zk)
+
+
+def test_cmd_rqld(started_cluster):
+    for node in [node1, node2, node3]:
+        stat = keeper_utils.send_4lw_cmd(cluster, node, cmd="stat")
+        stats = [n for n in stat.split("\n") if "=" not in n]
+        reader = csv.reader(stats, delimiter=":")
+        result = {}
+
+        for row in reader:
+            if len(row) != 0:
+                result[row[0].strip()] = row[1].strip()
+
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="rqld")
+
+        if result["Mode"] == "leader":
+            assert data == "Failed to send leadership request to leader."
+        else:
+            assert data == "Sent leadership request to leader."
