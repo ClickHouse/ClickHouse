@@ -13,6 +13,6 @@ alter table t materialize projection p_norm settings mutations_sync = 1;
 
 SYSTEM FLUSH LOGS;
 
-SELECT * FROM system.text_log WHERE event_time >= now() - 30 and message like '%BAD_DATA_PART_NAME%';
+SELECT * FROM system.text_log WHERE event_time >= now() - 30 and level == 'Error' and message like '%BAD_DATA_PART_NAME%';
 
 DROP TABLE IF EXISTS t;
