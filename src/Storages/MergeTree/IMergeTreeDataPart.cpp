@@ -1629,6 +1629,8 @@ void IMergeTreeDataPart::remove()
 
     auto can_remove_callback = [this] ()
     {
+        /// Temporary projections are "subparts" which are generated during projections materialization
+        /// We can always remove them without any additional checks.
         if (isProjectionPart() && is_temp)
         {
             LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
@@ -1648,6 +1650,8 @@ void IMergeTreeDataPart::remove()
     if (!isStoredOnDisk())
         return;
 
+    /// Projections should be never removed by themselves, they will be removed
+    /// with by parent part.
     if (isProjectionPart() && !is_temp)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
 
