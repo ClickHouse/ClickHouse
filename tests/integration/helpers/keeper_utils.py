@@ -1,6 +1,6 @@
 import socket
 import time
-
+import csv
 
 def get_keeper_socket(cluster, node, port=9181):
     hosts = cluster.get_instance_ip(node.name)
@@ -39,3 +39,16 @@ def wait_until_quorum_lost(cluster, node, port=9181):
 def wait_nodes(cluster, nodes):
     for node in nodes:
         wait_until_connected(cluster, node)
+
+
+def is_leader(cluster, node, port=9181):
+    stat = send_4lw_cmd(cluster, node, "stat", port)
+    stats = [n for n in stat.split("\n") if "=" not in n]
+    reader = csv.reader(stats, delimiter=":")
+    result = {}
+
+    for row in reader:
+        if len(row) != 0:
+            result[row[0].strip()] = row[1].strip()
+
+    return result["Mode"] == "leader"

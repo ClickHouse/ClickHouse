@@ -328,7 +328,7 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-- `rqld`: Request to become new leader. Return `Sent leadership request to leader.` if request sent or `Failed to send leadership request to leader.` if request not sent. Note that if node is already leader it will not send the request. 
+- `rqld`: Request to become new leader. Return `Sent leadership request to leader.` if request sent or `Failed to send leadership request to leader.` if request not sent. Note that if node is already leader the outcome is same as the request is sent. 
 
 ```
 Sent leadership request to leader.
