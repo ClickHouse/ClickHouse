@@ -40,7 +40,7 @@ private:
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
     ReadSettings read_settings;
-    S3Settings::ReadWriteSettings rw_settings;
+    S3Settings::RequestSettings request_settings;
 };
 
 
@@ -83,7 +83,7 @@ private:
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
     ReadSettings read_settings;
-    S3Settings::ReadWriteSettings rw_settings;
+    S3Settings::RequestSettings request_settings;
 };
 
 }

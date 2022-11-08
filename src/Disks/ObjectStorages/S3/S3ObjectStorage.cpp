@@ -175,7 +175,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             bucket,
             path,
             version_id,
-            settings_ptr->s3_settings,
+            settings_ptr->request_settings,
             disk_read_settings,
             /* use_external_buffer */true,
             /* offset */0,
@@ -212,7 +212,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         bucket,
         object.absolute_path,
         version_id,
-        settings_ptr->s3_settings,
+        settings_ptr->request_settings,
         patchSettings(read_settings));
 }
 
@@ -238,7 +238,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         client.get(),
         bucket,
         object.absolute_path,
-        settings_ptr->s3_settings,
+        settings_ptr->request_settings,
         attributes,
         buf_size,
         std::move(scheduler),
@@ -473,7 +473,7 @@ void S3ObjectStorage::copyObjectImpl(
     throwIfError(outcome);
 
     auto settings_ptr = s3_settings.get();
-    if (settings_ptr->s3_settings.check_objects_after_upload)
+    if (settings_ptr->request_settings.check_objects_after_upload)
     {
         auto object_head = requestObjectHeadData(dst_bucket, dst_key);
         if (!object_head.IsSuccess())
@@ -517,7 +517,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings_ptr->s3_settings.min_upload_part_size;
+    size_t upload_part_size = settings_ptr->request_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
@@ -570,7 +570,7 @@ void S3ObjectStorage::copyObjectMultipartImpl(
         throwIfError(outcome);
     }
 
-    if (settings_ptr->s3_settings.check_objects_after_upload)
+    if (settings_ptr->request_settings.check_objects_after_upload)
     {
         auto object_head = requestObjectHeadData(dst_bucket, dst_key);
         if (!object_head.IsSuccess())
