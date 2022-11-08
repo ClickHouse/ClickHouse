@@ -5,6 +5,11 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+
+#include <Functions/FunctionHelpers.h>
+
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -287,6 +292,30 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
+}
+
+bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier)
+{
+    const IDataType * current_type = compound_type.get();
+
+    for (const auto & identifier_part : nested_identifier)
+    {
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
+            current_type = array->getNestedType().get();
+
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(current_type);
+
+        if (!tuple)
+            return false;
+
+        auto position = tuple->tryGetPositionByName(identifier_part);
+        if (!position)
+            return false;
+
+        current_type = tuple->getElements()[*position].get();
+    }
+
+    return true;
 }
 
 }
