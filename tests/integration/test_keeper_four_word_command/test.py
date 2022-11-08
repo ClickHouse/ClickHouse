@@ -11,7 +11,6 @@ from helpers.test_tools import assert_eq_with_retry
 from io import StringIO
 import csv
 import re
-from datetime import datetime
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -351,8 +350,8 @@ def test_cmd_stat(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="stat")
 
-        # print("stat output -------------------------------------")
-        # print(data)
+        print("stat output -------------------------------------")
+        print(data)
 
         # keeper statistics
         stats = [n for n in data.split("\n") if "=" not in n]
@@ -650,7 +649,11 @@ def test_cmd_rqld(started_cluster):
         assert data == "Sent leadership request to leader."
         if not keeper_utils.is_leader(cluster, node):
             # pull wait to become leader
-            start = datetime.now()
-            while datatime.now() - start <= 2:
+            retry = 0
+            # TODO not a restrict way
+            while not keeper_utils.is_leader(cluster, node) and retry < 20:
                 time.sleep(0.1)
+                retry += 1
+            if retry == 20:
+                print(node.name + " does not become leader after 2s, maybe there is something wrong.")
             assert keeper_utils.is_leader(cluster, node)
