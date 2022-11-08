@@ -5,11 +5,17 @@ SELECT divideDecimal(toDecimal64(123.123, 3), toDecimal64(0, 1)); -- { serverErr
 SELECT multiplyDecimal(toDecimal32(0, 2), toDecimal128(11.123456, 6));
 SELECT multiplyDecimal(toDecimal32(123.123, 3), toDecimal128(0, 1));
 
-SELECT (toDecimal256(bitShiftRight(toUInt256(-1), 4), 0) - multiplyDecimal(divideDecimal(toDecimal256(bitShiftRight(toUInt256(-1), 4), 0), toDecimal32(2, 0)), toDecimal32(2, 0))) == 1;
-SELECT (toDecimal256(bitShiftRight(-1 * toUInt256(-1), 4), 0) - multiplyDecimal(divideDecimal(toDecimal256(bitShiftRight(-1 * toUInt256(-1), 4), 0), toDecimal32(2, 0)), toDecimal32(2, 0))) == 0;
+-- don't look at strange query result -- it happens due to bad float precision: toUInt256(1e38) == 99999999999999997752612184630461283328
+SELECT multiplyDecimal(toDecimal256(1e38, 0), toDecimal256(1e38, 0));
+SELECT divideDecimal(toDecimal256(1e66, 0), toDecimal256(1e-10, 10), 0);
 
-SELECT multiplyDecimal(toDecimal256(bitShiftRight(toUInt256(-1), 4), 0), toDecimal128(1000000000000000000, 2)); -- { serverError 407 }
-SELECT divideDecimal(toDecimal256(bitShiftRight(toUInt256(-1), 4), 0), toDecimal128(1e-15, 20)); -- { serverError 407 }
+-- fits Decimal256, but scale is too big to fit
+SELECT multiplyDecimal(toDecimal256(1e38, 0), toDecimal256(1e38, 0), 2); -- { serverError 407 }
+SELECT divideDecimal(toDecimal256(1e72, 0), toDecimal256(1e-5, 5), 2); -- { serverError 407 }
+
+-- does not fit Decimal256
+SELECT multiplyDecimal(toDecimal256(1e39, 0), toDecimal256(1e39, 0), 0); -- { serverError 407 }
+SELECT divideDecimal(toDecimal256(1e39, 0), toDecimal256(1e-38, 39)); -- { serverError 407 }
 
 SELECT divideDecimal(toDecimal128(123.76, 2), toDecimal128(11.123456, 6));
 SELECT divideDecimal(toDecimal32(123.123, 3), toDecimal128(11.4, 1), 2);
