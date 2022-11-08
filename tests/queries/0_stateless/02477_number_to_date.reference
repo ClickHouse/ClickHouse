@@ -1,0 +1,25 @@
+-- { echoOn }
+select toDate(1666249120::Float);
+2022-10-20
+select toDate(1666249120::Double);
+2022-10-20
+select toDate(1666249120::UInt32);
+2022-10-20
+select toDate32(1666249120::Float);
+2022-10-20
+select toDate32(1666249120::Double);
+2022-10-20
+select toDate32(1666249120::UInt32);
+2022-10-20
+select toDateTime(1666249120::Float);
+2022-10-20 06:58:08
+select toDateTime(1666249120::Double);
+2022-10-20 06:58:40
+select toDateTime(1666249120::UInt32);
+2022-10-20 06:58:40
+select toDateTime64(1666249120::Float, 3);
+2022-10-20 06:58:49.984
+select toDateTime64(1666249120::Double, 3);
+2022-10-20 06:58:40.000
+select toDateTime64(1666249120::UInt32, 3);
+2022-10-20 06:58:40.000
