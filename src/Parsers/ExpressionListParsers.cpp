@@ -1197,6 +1197,9 @@ public:
                 if (!mergeElement())
                     return false;
 
+                if (elements.size() != 2)
+                    return false;
+
                 elements = {makeASTFunction("CAST", elements[0], elements[1])};
                 finished = true;
                 return true;
@@ -1406,7 +1409,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (state == 2)
+        if (state == 2 && elements.size() == 2)
             std::swap(elements[1], elements[0]);
 
         node = makeASTFunction("position", std::move(elements));
@@ -1731,49 +1734,54 @@ public:
 
         if (state == 0)
         {
+            state = 1;
+
             auto begin = pos;
             auto init_expected = expected;
             ASTPtr string_literal;
+            String literal;
+
             //// A String literal followed INTERVAL keyword,
             /// the literal can be a part of an expression or
             /// include Number and INTERVAL TYPE at the same time
-            if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+            if (ParserStringLiteral{}.parse(pos, string_literal, expected)
+                && string_literal->as<ASTLiteral &>().value.tryGet(literal))
             {
-                String literal;
-                if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+                Tokens tokens(literal.data(), literal.data() + literal.size());
+                IParser::Pos token_pos(tokens, 0);
+                Expected token_expected;
+                ASTPtr expr;
+
+                if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                    return false;
+
+                /// case: INTERVAL '1' HOUR
+                /// back to begin
+                if (!token_pos.isValid())
                 {
-                    Tokens tokens(literal.data(), literal.data() + literal.size());
-                    IParser::Pos token_pos(tokens, 0);
-                    Expected token_expected;
-                    ASTPtr expr;
-
-                    if (!ParserNumber{}.parse(token_pos, expr, token_expected))
-                    {
-                        return false;
-                    }
-                    else
-                    {
-                        /// case: INTERVAL '1' HOUR
-                        /// back to begin
-                        if (!token_pos.isValid())
-                        {
-                            pos = begin;
-                            expected = init_expected;
-                        }
-                        else
-                        {
-                            /// case: INTERVAL '1 HOUR'
-                            if (!parseIntervalKind(token_pos, token_expected, interval_kind))
-                                return false;
-
-                            elements = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
-                            finished = true;
-                            return true;
-                        }
-                    }
+                    pos = begin;
+                    expected = init_expected;
+                    return true;
                 }
+
+                /// case: INTERVAL '1 HOUR'
+                if (!parseIntervalKind(token_pos, token_expected, interval_kind))
+                    return false;
+
+                pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
+
+                /// case: INTERVAL '1 HOUR 1 SECOND ...'
+                while (token_pos.isValid())
+                {
+                    if (!ParserNumber{}.parse(token_pos, expr, token_expected) ||
+                        !parseIntervalKind(token_pos, token_expected, interval_kind))
+                        return false;
+
+                    pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
+                }
+
+                finished = true;
             }
-            state = 1;
             return true;
         }
 
@@ -1788,6 +1796,17 @@ public:
                 finished = true;
             }
         }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (elements.size() == 1)
+            node = elements[0];
+        else
+            node = makeASTFunction("tuple", std::move(elements));
 
         return true;
     }
