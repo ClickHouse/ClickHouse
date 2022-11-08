@@ -5527,9 +5527,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * 3. Check that there are no columns that are not specified in GROUP BY keys.
       * 4. Validate GROUP BY modifiers.
       */
-    assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-    assertNoGroupingFunction(query_node_typed.getJoinTree(), "in JOIN TREE");
-    assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+    auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
+    bool join_tree_is_subquery = join_tree_node_type == QueryTreeNodeType::QUERY || join_tree_node_type == QueryTreeNodeType::UNION;
+
+    if (!join_tree_is_subquery)
+    {
+        assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+        assertNoGroupingFunction(query_node_typed.getJoinTree(), "in JOIN TREE");
+        assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+    }
 
     if (query_node_typed.hasWhere())
     {
