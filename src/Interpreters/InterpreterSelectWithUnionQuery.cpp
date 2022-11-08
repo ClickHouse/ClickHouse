@@ -390,9 +390,9 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
 {
     elem.query_kind = "Select";
 
-    for (auto & interpreter : nested_interpreters)
+    for (const auto & interpreter : nested_interpreters)
     {
-        if (auto select_interpreter = dynamic_cast<InterpreterSelectQuery *>(interpreter.get()))
+        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
         {
             auto filter = select_interpreter->getRowPolicyFilter();
             if (filter)
