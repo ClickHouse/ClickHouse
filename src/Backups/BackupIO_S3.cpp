@@ -87,7 +87,7 @@ BackupReaderS3::BackupReaderS3(
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
-    , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
+    , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
 {
 }
 
@@ -115,7 +115,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, rw_settings, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
 }
 
 
@@ -124,9 +124,9 @@ BackupWriterS3::BackupWriterS3(
     : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
-    , rw_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).rw_settings)
+    , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
 {
-    rw_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
+    request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
 }
 
 DataSourceDescription BackupWriterS3::getDataSourceDescription() const
@@ -212,7 +212,7 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = rw_settings.min_upload_part_size;
+    size_t upload_part_size = request_settings.min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         Aws::S3::Model::UploadPartCopyRequest part_request;
@@ -317,7 +317,7 @@ bool BackupWriterS3::fileContentsEqual(const String & file_name, const String & 
     try
     {
         auto in = std::make_unique<ReadBufferFromS3>(
-            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, rw_settings, read_settings);
+            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
         String actual_file_contents(expected_file_contents.size(), ' ');
         return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
             && (actual_file_contents == expected_file_contents) && in->eof();
@@ -335,7 +335,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         client,
         s3_uri.bucket,
         fs::path(s3_uri.key) / file_name,
-        rw_settings,
+        request_settings,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
         threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));

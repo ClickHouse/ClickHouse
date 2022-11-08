@@ -24,7 +24,7 @@ struct Settings;
 
 struct S3Settings
 {
-    struct ReadWriteSettings
+    struct RequestSettings
     {
         size_t max_single_read_retries = 0;
         size_t min_upload_part_size = 0;
@@ -37,10 +37,10 @@ struct S3Settings
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
-        ReadWriteSettings() = default;
-        explicit ReadWriteSettings(const Settings & settings);
+        RequestSettings() = default;
+        explicit RequestSettings(const Settings & settings);
 
-        inline bool operator==(const ReadWriteSettings & other) const
+        inline bool operator==(const RequestSettings & other) const
         {
             return max_single_read_retries == other.max_single_read_retries
                 && min_upload_part_size == other.min_upload_part_size
@@ -58,11 +58,11 @@ struct S3Settings
     };
 
     S3::AuthSettings auth_settings;
-    ReadWriteSettings rw_settings;
+    RequestSettings request_settings;
 
     inline bool operator==(const S3Settings & other) const
     {
-        return auth_settings == other.auth_settings && rw_settings == other.rw_settings;
+        return auth_settings == other.auth_settings && request_settings == other.request_settings;
     }
 };
 

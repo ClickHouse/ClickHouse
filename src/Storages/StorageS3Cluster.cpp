@@ -46,7 +46,7 @@ StorageS3Cluster::StorageS3Cluster(
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : IStorage(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , filename(configuration_.url)
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)

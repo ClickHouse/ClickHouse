@@ -115,14 +115,14 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     ASSERT_TRUE(client);
 
     DB::ReadSettings read_settings;
-    DB::S3Settings::ReadWriteSettings rw_settings;
-    rw_settings.max_single_read_retries = max_single_read_retries;
+    DB::S3Settings::RequestSettings request_settings;
+    request_settings.max_single_read_retries = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(
         client,
         uri.bucket,
         uri.key,
         version_id,
-        rw_settings,
+        request_settings,
         read_settings
     );
 
