@@ -2742,7 +2742,10 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
 
     auto disk = disk_selector->tryGet(name);
     if (!disk)
-        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, creator(getDisksMap(lock)));
+    {
+        disk = creator(getDisksMap(lock));
+        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+    }
 
     return disk;
 }
