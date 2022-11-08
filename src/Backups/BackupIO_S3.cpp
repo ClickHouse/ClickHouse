@@ -247,10 +247,10 @@ void BackupWriterS3::copyObjectMultipartImpl(
 
         position = next_position;
 
-        if (part_number % rw_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        if (part_number % request_settings.upload_part_size_multiply_parts_count_threshold == 0)
         {
-            upload_part_size *= rw_settings.upload_part_size_multiply_factor;
-            upload_part_size = std::min(upload_part_size, rw_settings.max_upload_part_size);
+            upload_part_size *= request_settings.upload_part_size_multiply_factor;
+            upload_part_size = std::min(upload_part_size, request_settings.max_upload_part_size);
         }
     }
 
@@ -293,7 +293,7 @@ void BackupWriterS3::copyFileNative(DiskPtr from_disk, const String & file_name_
         auto file_path = fs::path(s3_uri.key) / file_name_to;
 
         auto head = requestObjectHeadData(source_bucket, objects[0].absolute_path).GetResult();
-        if (static_cast<size_t>(head.GetContentLength()) < rw_settings.max_single_operation_copy_size)
+        if (static_cast<size_t>(head.GetContentLength()) < request_settings.max_single_operation_copy_size)
         {
             copyObjectImpl(
                 source_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, head);
