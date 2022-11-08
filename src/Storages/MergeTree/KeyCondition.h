@@ -485,6 +485,6 @@ private:
     bool strict;
 };
 
-String extractFixedPrefixFromLikePattern(const String & like_pattern);
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }
