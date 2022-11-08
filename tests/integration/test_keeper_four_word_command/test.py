@@ -11,6 +11,7 @@ from helpers.test_tools import assert_eq_with_retry
 from io import StringIO
 import csv
 import re
+from datetime import datetime
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -350,8 +351,8 @@ def test_cmd_stat(started_cluster):
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="stat")
 
-        print("stat output -------------------------------------")
-        print(data)
+        # print("stat output -------------------------------------")
+        # print(data)
 
         # keeper statistics
         stats = [n for n in data.split("\n") if "=" not in n]
@@ -645,18 +646,11 @@ def test_cmd_lgif(started_cluster):
 
 def test_cmd_rqld(started_cluster):
     for node in [node1, node2, node3]:
-        stat = keeper_utils.send_4lw_cmd(cluster, node, cmd="stat")
-        stats = [n for n in stat.split("\n") if "=" not in n]
-        reader = csv.reader(stats, delimiter=":")
-        result = {}
-
-        for row in reader:
-            if len(row) != 0:
-                result[row[0].strip()] = row[1].strip()
-
         data = keeper_utils.send_4lw_cmd(cluster, node, cmd="rqld")
-
-        if result["Mode"] == "leader":
-            assert data == "Failed to send leadership request to leader."
-        else:
-            assert data == "Sent leadership request to leader."
+        assert data == "Sent leadership request to leader."
+        if not keeper_utils.is_leader(cluster, node):
+            # pull wait to become leader
+            start = datetime.now()
+            while datatime.now() - start <= 2:
+                time.sleep(0.1)
+            assert keeper_utils.is_leader(cluster, node)
