@@ -43,12 +43,4 @@ def wait_nodes(cluster, nodes):
 
 def is_leader(cluster, node, port=9181):
     stat = send_4lw_cmd(cluster, node, "stat", port)
-    stats = [n for n in stat.split("\n") if "=" not in n]
-    reader = csv.reader(stats, delimiter=":")
-    result = {}
-
-    for row in reader:
-        if len(row) != 0:
-            result[row[0].strip()] = row[1].strip()
-
-    return result["Mode"] == "leader"
+    return "Mode: leader" in stat
