@@ -1,0 +1,6 @@
+SELECT a
+FROM t_logical_expressions_optimizer_low_cardinality
+WHERE a IN (\'x\', \'y\')
+SELECT a
+FROM t_logical_expressions_optimizer_low_cardinality
+WHERE (b = 0) OR (b = 1)
