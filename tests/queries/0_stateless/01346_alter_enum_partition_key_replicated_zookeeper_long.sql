@@ -11,6 +11,7 @@ CREATE TABLE test2 (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = Replica
 INSERT INTO test VALUES ('hello', 'test');
 
 SELECT * FROM test;
+SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test' AND active ORDER BY partition;
 SELECT name, partition, partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'test2' AND active ORDER BY partition;
