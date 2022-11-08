@@ -2330,30 +2330,43 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const Identifi
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
 
-    /** Special case when qualified or unqualified identifier point to array join expression without alias.
-      *
-      * CREATE TABLE test_table (id UInt64, value String, value_array Array(UInt8)) ENGINE=TinyLog;
-      * SELECT id, value, value_array, test_table.value_array, default.test_table.value_array FROM test_table ARRAY JOIN value_array;
-      *
-      * value_array, test_table.value_array, default.test_table.value_array must be resolved into array join expression.
-      */
-    if (!scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) && resolved_identifier)
+    if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()))
+        return resolved_identifier;
+
+    for (const auto & array_join_expression : from_array_join_node.getJoinExpressions().getNodes())
     {
-        for (const auto & array_join_expression : from_array_join_node.getJoinExpressions().getNodes())
+        /** Allow JOIN with USING with ARRAY JOIN.
+          *
+          * SELECT * FROM test_table_1 AS t1 ARRAY JOIN [1,2,3] AS id INNER JOIN test_table_2 AS t2 ON t1.id = t2.id
+          * SELECT * FROM test_table_1 AS t1 ARRAY JOIN t1.id AS id INNER JOIN test_table_2 AS t2 ON t1.id = t2.id
+          */
+        if (identifier_lookup.identifier.isShort() &&
+            array_join_expression->getAlias() == identifier_lookup.identifier.getFullName())
         {
-            auto & array_join_column_expression = array_join_expression->as<ColumnNode &>();
-            if (array_join_column_expression.hasAlias())
-                continue;
+            resolved_identifier = array_join_expression;
+            break;
+        }
 
-            auto & array_join_column_inner_expression = array_join_column_expression.getExpressionOrThrow();
-            if (array_join_column_inner_expression.get() == resolved_identifier.get() ||
-                array_join_column_inner_expression->isEqual(*resolved_identifier))
-            {
-                auto array_join_column = array_join_column_expression.getColumn();
-                auto result = std::make_shared<ColumnNode>(array_join_column, table_expression_node);
+        if (!resolved_identifier)
+            continue;
 
-                return result;
-            }
+        /** Special case when qualified or unqualified identifier point to array join expression without alias.
+          *
+          * CREATE TABLE test_table (id UInt64, value String, value_array Array(UInt8)) ENGINE=TinyLog;
+          * SELECT id, value, value_array, test_table.value_array, default.test_table.value_array FROM test_table ARRAY JOIN value_array;
+          *
+          * value_array, test_table.value_array, default.test_table.value_array must be resolved into array join expression.
+          */
+        auto & array_join_column_expression = array_join_expression->as<ColumnNode &>();
+        if (array_join_column_expression.hasAlias())
+            continue;
+
+        auto & array_join_column_inner_expression = array_join_column_expression.getExpressionOrThrow();
+        if (array_join_column_inner_expression.get() == resolved_identifier.get() ||
+            array_join_column_inner_expression->isEqual(*resolved_identifier))
+        {
+            resolved_identifier = array_join_expression;
+            break;
         }
     }
 
@@ -2868,6 +2881,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope_query_node->getJoinTree());
     std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
 
+    std::unordered_set<std::string> left_table_expression_column_names_to_skip;
+    std::unordered_set<std::string> right_table_expression_column_names_to_skip;
+
     for (auto & table_expression : table_expressions_stack)
     {
         QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
@@ -2893,8 +2909,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             auto left_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
             table_expressions_column_nodes_with_names_stack.pop_back();
 
-            std::unordered_set<std::string> column_names_to_skip;
+            left_table_expression_column_names_to_skip.clear();
+            right_table_expression_column_names_to_skip.clear();
 
+            /** If there is JOIN with USING we need to match only single USING column and do not use left table expression
+              * and right table expression column with same name.
+              *
+              * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
+              */
             if (!table_expression_in_resolve_process && join_node->isUsingJoinExpression())
             {
                 auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
@@ -2902,22 +2924,64 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                 for (auto & join_using_node : join_using_list.getNodes())
                 {
                     auto & column_node = join_using_node->as<ColumnNode &>();
-                    const auto & column_name = column_node.getColumnName();
+                    const auto & using_column_name = column_node.getColumnName();
 
-                    if (!matcher_node_typed.isMatchingColumn(column_name))
+                    if (!matcher_node_typed.isMatchingColumn(using_column_name))
                         continue;
 
-                    column_names_to_skip.insert(column_name);
+                    const auto & join_using_column_nodes_list = column_node.getExpressionOrThrow()->as<ListNode &>();
+                    const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
 
-                    QueryTreeNodePtr column_source = getColumnSourceForJoinNodeWithUsing(table_expression);
-                    auto matched_column_node = std::make_shared<ColumnNode>(column_node.getColumn(), column_source);
-                    matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), column_name);
+                    QueryTreeNodePtr matched_column_node;
+
+                    if (isRight(join_node->getKind()))
+                        matched_column_node = join_using_column_nodes.at(1);
+                    else
+                        matched_column_node = join_using_column_nodes.at(0);
+
+                    /** It is possible that in USING there is JOIN with array joined column.
+                      * SELECT * FROM (SELECT [0] AS value) AS t1 ARRAY JOIN value AS id INNER JOIN test_table USING (id);
+                      * In such example match `value` column from t1, and all columns from test_table except `id`.
+                      *
+                      * SELECT * FROM (SELECT [0] AS id) AS t1 ARRAY JOIN id INNER JOIN test_table USING (id);
+                      * In such example, match `id` column from ARRAY JOIN, and all columns from test_table except `id`.
+                      *
+                      * SELECT * FROM (SELECT [0] AS id) AS t1 ARRAY JOIN id AS id INNER JOIN test_table USING (id);
+                      * In such example match `id` column from ARRAY JOIN, and all columns from test_table except `id`.
+                      *
+                      * SELECT * FROM (SELECT [0] AS id) AS t1 ARRAY JOIN [1] AS id INNER JOIN test_table USING (id);
+                      * In such example match `id` column from t1, and all columns from test_table except `id`.
+                      */
+                    auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+                    auto matched_column_source = matched_column_node->as<ColumnNode &>().getColumnSource();
+
+                    if (matched_column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                    {
+                        auto * array_join_inner_expression_column = matched_column_node_typed.getExpressionOrThrow()->as<ColumnNode>();
+
+                        if (array_join_inner_expression_column && array_join_inner_expression_column->getColumnName() == using_column_name)
+                        {
+                            left_table_expression_column_names_to_skip.insert(using_column_name);
+                            right_table_expression_column_names_to_skip.insert(using_column_name);
+                            matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), using_column_name);
+                        }
+                        else
+                        {
+                            right_table_expression_column_names_to_skip.insert(using_column_name);
+                        }
+                    }
+                    else
+                    {
+                        left_table_expression_column_names_to_skip.insert(using_column_name);
+                        right_table_expression_column_names_to_skip.insert(using_column_name);
+                        matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), using_column_name);
+                    }
                 }
             }
 
             for (auto && left_table_column : left_table_expression_columns)
             {
-                if (column_names_to_skip.contains(left_table_column.second))
+                if (left_table_expression_column_names_to_skip.contains(left_table_column.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(left_table_column));
@@ -2925,7 +2989,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             for (auto && right_table_column : right_table_expression_columns)
             {
-                if (column_names_to_skip.contains(right_table_column.second))
+                if (right_table_expression_column_names_to_skip.contains(right_table_column.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(right_table_column));
@@ -5056,8 +5120,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     if (!common_type)
                         throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                            "JOIN {} cannot infer common type in USING for identifier '{}'. In scope {}",
+                            "JOIN {} cannot infer common type for {} and {} in USING for identifier '{}'. In scope {}",
                             join_node.formatASTForErrorMessage(),
+                            result_left_table_expression->getResultType()->getName(),
+                            result_right_table_expression->getResultType()->getName(),
                             identifier_full_name,
                             scope.scope_node->formatASTForErrorMessage());
 
