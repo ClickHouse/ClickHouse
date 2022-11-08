@@ -1826,10 +1826,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.finalize();
 
-        /// For creating parameterized view, query parameters are allowed in select
-        /// As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
-        if (!query_analyzer.query_options.is_create_parameterized_view)
-            finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
+        finalize(chain, prewhere_step_num, where_step_num, having_step_num, query, query_analyzer.query_options.is_create_parameterized_view);
 
         chain.clear();
     };
@@ -1915,7 +1912,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
                     /// For creating parameterized view, query parameters are allowed in select
                     /// As select will be stored without substituting query parameters, we don't want to evaluate the where expression
-                    if (!query_analyzer.query_options.is_create_parameterized_view)
+                    const bool can_evaluate_filter_column = !query_analyzer.query_options.is_create_parameterized_view;
+                    if (can_evaluate_filter_column)
                     {
                         auto & column_elem
                             = before_where_sample.getByName(query.where()->getColumnName());
@@ -2081,7 +2079,8 @@ void ExpressionAnalysisResult::finalize(
     ssize_t & prewhere_step_num,
     ssize_t & where_step_num,
     ssize_t & having_step_num,
-    const ASTSelectQuery & query)
+    const ASTSelectQuery & query,
+    bool is_create_parameterized_view)
 {
     if (prewhere_step_num >= 0)
     {
@@ -2101,7 +2100,9 @@ void ExpressionAnalysisResult::finalize(
         prewhere_step_num = -1;
     }
 
-    if (where_step_num >= 0)
+    /// For creating parameterized view, query parameters are allowed in select
+    /// As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
+    if (where_step_num >= 0 && !is_create_parameterized_view)
     {
         where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
