@@ -3047,6 +3047,7 @@ jobs:
       - DockerServerImages
       - CheckLabels
       - BuilderReport
+      - BuilderSpecialReport
       - FastTest
       - FunctionalStatelessTestDebug0
       - FunctionalStatelessTestDebug1
