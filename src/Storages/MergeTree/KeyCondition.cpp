@@ -29,6 +29,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 
+#include <algorithm>
 #include <cassert>
 #include <stack>
 #include <limits>
@@ -55,10 +56,15 @@ String Range::toString() const
 }
 
 
-/// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-String extractFixedPrefixFromLikePattern(const String & like_pattern)
+/// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
+/// We call a pattern "perfect prefix" if:
+/// - (1) the pattern has a wildcard
+/// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
+/// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
+    fixed_prefix.reserve(like_pattern.size());
 
     const char * pos = like_pattern.data();
     const char * end = pos + like_pattern.size();
@@ -67,10 +73,13 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern)
         switch (*pos)
         {
             case '%':
-                [[fallthrough]];
             case '_':
+                if (requires_perfect_prefix)
+                {
+                    bool is_prefect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
+                    return is_prefect_prefix ? fixed_prefix : "";
+                }
                 return fixed_prefix;
-
             case '\\':
                 ++pos;
                 if (pos == end)
@@ -78,12 +87,13 @@ String extractFixedPrefixFromLikePattern(const String & like_pattern)
                 [[fallthrough]];
             default:
                 fixed_prefix += *pos;
-                break;
         }
 
         ++pos;
     }
-
+    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
+    if (requires_perfect_prefix)
+        return "";
     return fixed_prefix;
 }
 
@@ -346,13 +356,34 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
             String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
 
             out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
+        "notLike",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ true);
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = !right_bound.empty()
                 ? Range(prefix, true, right_bound, false)
                 : Range::createLeftBounded(prefix, true);
