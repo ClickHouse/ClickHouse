@@ -30,19 +30,19 @@ public:
 
     friend bool operator !=(const SettingChange & lhs, const SettingChange & rhs) { return !(lhs == rhs); }
 
-    void throwIfASTValue() const;
+    void throwIfASTValueNotConvertedToField() const;
 
     const String & getName() const { return name; }
     String & getName() { return name; }
 
-    const Field & getFieldValue() const { throwIfASTValue(); return field_value; }
-    Field & getFieldValue() { throwIfASTValue(); return field_value; }
+    const Field & getFieldValue() const;
+    Field & getFieldValue();
 
     const ASTPtr & getASTValue() const { return ast_value; }
     ASTPtr & getASTValue() { return ast_value; }
 
-    void setFieldValue(const Field & field) { field_value = field; }
-    void setASTValue(const ASTPtr & ast) { ast_value = ast->clone(); }
+    void setFieldValue(const Field & field);
+    void setASTValue(const ASTPtr & ast);
 
     String getValueString() const;
 };
