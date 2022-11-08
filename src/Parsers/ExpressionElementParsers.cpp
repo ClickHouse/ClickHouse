@@ -1096,6 +1096,9 @@ template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & n
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 
+namespace
+{
+
 class ICollection;
 using Collections = std::vector<std::unique_ptr<ICollection>>;
 
@@ -1215,6 +1218,9 @@ bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr 
 
     return true;
 }
+
+}
+
 
 bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
