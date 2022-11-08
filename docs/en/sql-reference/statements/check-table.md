@@ -8,7 +8,7 @@ title: "CHECK TABLE Statement"
 Checks if the data in the table is corrupted.
 
 ``` sql
-CHECK TABLE [db.]name
+CHECK TABLE [db.]name [PARTITION partition_expr]
 ```
 
 The `CHECK TABLE` query compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
