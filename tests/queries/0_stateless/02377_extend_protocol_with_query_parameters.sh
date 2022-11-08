@@ -91,15 +91,4 @@ $CLICKHOUSE_CLIENT \
   --param_map_map_arr="{'ghj': {'klm': [16, 17]}, 'nop': {'rst': [18]}}" \
   -q "describe table(select {id: Int64}, {arr: Array(UInt8)}, {map: Map(String, UInt8)}, {mul_arr: Array(Array(UInt8))}, {map_arr: Map(UInt8, Array(UInt8))}, {map_map_arr: Map(String, Map(String, Array(UInt8)))})"
 
-# parameters can be set without manual string serialisation
-$CLICKHOUSE_CLIENT -n -q "
-  set param_id = 42;
-  set param_arr = [1, 2, 3];
-  set param_map = {'abc': 22, 'def': 33};
-  set param_mul_arr = [[4, 5, 6], [7], [8, 9]];
-  set param_map_arr = {10: [11, 12], 13: [14, 15]};
-  set param_map_map_arr = {'ghj': {'klm': [16, 17]}, 'nop': {'rst': [18]}};
-  describe table(select {id: Int64}, {arr: Array(UInt8)}, {map: Map(String, UInt8)}, {mul_arr: Array(Array(UInt8))}, {map_arr: Map(UInt8, Array(UInt8))}, {map_map_arr: Map(String, Map(String, Array(UInt8)))});"
-
-
 $CLICKHOUSE_CLIENT --param_p=42 -q "describe table (select * from (select {p:Int8} as a group by a) order by a)"
