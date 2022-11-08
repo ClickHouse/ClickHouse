@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/IntervalKind.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -35,7 +36,8 @@ namespace
 {
 
 /** dateDiff('unit', t1, t2, [timezone])
-  * t1 and t2 can be Date or DateTime
+  * age('unit', t1, t2, [timezone])
+  * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
   * If timezone is specified, it applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
@@ -43,10 +45,11 @@ namespace
   *
   * Timezone matters because days can have different length.
   */
+template <bool is_date_diff>
 class FunctionDateDiff : public IFunction
 {
 public:
-    static constexpr auto name = "dateDiff";
+    static constexpr auto name = is_date_diff ? "dateDiff" : "age";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
@@ -111,30 +114,58 @@ public:
         const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
-        if (unit == "year" || unit == "yy" || unit == "yyyy")
-            dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "quarter" || unit == "qq" || unit == "q")
-            dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "month" || unit == "mm" || unit == "m")
-            dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "week" || unit == "wk" || unit == "ww")
-            dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hh" || unit == "h")
-            dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "minute" || unit == "mi" || unit == "n")
-            dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "second" || unit == "ss" || unit == "s")
-            dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        if constexpr (is_date_diff)
+        {
+            if (unit == "year" || unit == "yy" || unit == "yyyy")
+                dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "quarter" || unit == "qq" || unit == "q")
+                dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "month" || unit == "mm" || unit == "m")
+                dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "week" || unit == "wk" || unit == "ww")
+                dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "day" || unit == "dd" || unit == "d")
+                dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "hour" || unit == "hh" || unit == "h")
+                dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "minute" || unit == "mi" || unit == "n")
+                dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else if (unit == "second" || unit == "ss" || unit == "s")
+                dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Function {} does not support '{}' unit", getName(), unit);
+        }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} does not support '{}' unit", getName(), unit);
+        {
+            if (unit == "year" || unit == "yy" || unit == "yyyy")
+                UnitDivisor = IntervalKind(IntervalKind::Year).toAvgSeconds();
+            else if (unit == "quarter" || unit == "qq" || unit == "q")
+                UnitDivisor = IntervalKind(IntervalKind::Quarter).toAvgSeconds();
+            else if (unit == "month" || unit == "mm" || unit == "m")
+                UnitDivisor = IntervalKind(IntervalKind::Month).toAvgSeconds();
+            else if (unit == "week" || unit == "wk" || unit == "ww")
+                UnitDivisor = IntervalKind(IntervalKind::Week).toAvgSeconds();
+            else if (unit == "day" || unit == "dd" || unit == "d")
+                UnitDivisor = IntervalKind(IntervalKind::Day).toAvgSeconds();
+            else if (unit == "hour" || unit == "hh" || unit == "h")
+                UnitDivisor = IntervalKind(IntervalKind::Hour).toAvgSeconds();
+            else if (unit == "minute" || unit == "mi" || unit == "n")
+                UnitDivisor = IntervalKind(IntervalKind::Minute).toAvgSeconds();
+            else if (unit == "second" || unit == "ss" || unit == "s")
+                UnitDivisor = IntervalKind(IntervalKind::Second).toAvgSeconds();
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Function {} does not support '{}' unit", getName(), unit);
 
+            dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        }
         return res;
     }
 
 private:
+    mutable Int32 UnitDivisor = 1;
+
     template <typename Transform>
     void dispatchForColumns(
         const IColumn & x, const IColumn & y,
@@ -259,8 +290,12 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        return static_cast<Int64>(transform_y.execute(y, timezone_y))
-             - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        if constexpr (is_date_diff)
+            return static_cast<Int64>(transform_y.execute(y, timezone_y))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        else
+            return (static_cast<Int64>(transform_y.execute(y, timezone_y))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x))) / UnitDivisor;
     }
 
     template <typename T>
@@ -287,7 +322,12 @@ private:
 
 REGISTER_FUNCTION(DateDiff)
 {
-    factory.registerFunction<FunctionDateDiff>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+}
+
+REGISTER_FUNCTION(Age)
+{
+    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::CaseInsensitive);
 }
 
 }
