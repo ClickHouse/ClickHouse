@@ -1629,6 +1629,12 @@ void IMergeTreeDataPart::remove()
 
     auto can_remove_callback = [this] ()
     {
+        if (isProjectionPart() && is_temp)
+        {
+            LOG_TRACE(storage.log, "Temporary projection part {} can be removed", name);
+            return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
+        }
+
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
             LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
@@ -1642,8 +1648,8 @@ void IMergeTreeDataPart::remove()
     if (!isStoredOnDisk())
         return;
 
-    if (isProjectionPart())
-        LOG_WARNING(storage.log, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
+    if (isProjectionPart() && !is_temp)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
 
     metadata_manager->deleteAll(false);
     metadata_manager->assertAllDeleted(false);
