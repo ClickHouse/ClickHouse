@@ -616,7 +616,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     const auto & ast_value = assert_cast<const ASTFunction &>(*change.getASTValue());
                     auto value = createDiskFromDiskAST(ast_value, context);
                     change.setFieldValue(value);
-                    change.setASTValue(nullptr);
                     break;
                 }
             }

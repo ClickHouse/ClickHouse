@@ -36,9 +36,31 @@ String SettingChange::getValueString() const
     return convertFieldToString(field_value);
 }
 
-void SettingChange::throwIfASTValue() const
+const Field & SettingChange::getFieldValue() const
 {
-    if (getASTValue() != nullptr)
+    throwIfASTValueNotConvertedToField();
+    return field_value;
+}
+
+Field & SettingChange::getFieldValue()
+{
+    throwIfASTValueNotConvertedToField();
+    return field_value;
+}
+
+void SettingChange::setFieldValue(const Field & field)
+{
+    field_value = field;
+}
+
+void SettingChange::setASTValue(const ASTPtr & ast)
+{
+    ast_value = ast ? ast->clone() : ast;
+}
+
+void SettingChange::throwIfASTValueNotConvertedToField() const
+{
+    if (getASTValue() != nullptr && field_value == Field{})
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "AST value of the setting must be converted to Field value");
