@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/anylast
 sidebar_position: 104
 ---
 

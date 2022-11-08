@@ -6,7 +6,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB
@@ -92,11 +91,5 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     return res;
 }
 
-
-String BackupInfo::toStringForLogging(const ContextPtr & context) const
-{
-    ASTPtr ast = toAST();
-    return maskSensitiveInfoInBackupNameForLogging(serializeAST(*ast), ast, context);
-}
 
 }

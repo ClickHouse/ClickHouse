@@ -97,7 +97,7 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
             return disks_by_size.top().disk;
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
@@ -137,7 +137,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 bool VolumeJBOD::areMergesAvoided() const

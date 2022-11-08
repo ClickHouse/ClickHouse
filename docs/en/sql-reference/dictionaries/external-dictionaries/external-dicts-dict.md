@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
 sidebar_position: 40
 sidebar_label: Configuring an External Dictionary
 ---

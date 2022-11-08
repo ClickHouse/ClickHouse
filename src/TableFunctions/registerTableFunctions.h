@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
@@ -56,8 +57,6 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctionFormat(TableFunctionFactory & factory);
-
-void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

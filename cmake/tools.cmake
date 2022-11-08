@@ -94,13 +94,8 @@ if (LINKER_NAME)
         if (NOT LLD_PATH)
             message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
         endif ()
-
-        # This a temporary quirk to emit .debug_aranges with ThinLTO
-        set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
-        configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
-
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_PATH}")
     else ()
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
@@ -117,7 +112,7 @@ endif()
 # Archiver
 
 if (COMPILER_GCC)
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-15" "llvm-ar-14" "llvm-ar-13" "llvm-ar-12")
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-14" "llvm-ar-13" "llvm-ar-12")
 else ()
     find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
 endif ()
@@ -131,7 +126,7 @@ message(STATUS "Using archiver: ${CMAKE_AR}")
 # Ranlib
 
 if (COMPILER_GCC)
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-15" "llvm-ranlib-14" "llvm-ranlib-13" "llvm-ranlib-12")
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-14" "llvm-ranlib-13" "llvm-ranlib-12")
 else ()
     find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
 endif ()
@@ -145,7 +140,7 @@ message(STATUS "Using ranlib: ${CMAKE_RANLIB}")
 # Install Name Tool
 
 if (COMPILER_GCC)
-    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool" "llvm-install-name-tool-15" "llvm-install-name-tool-14" "llvm-install-name-tool-13" "llvm-install-name-tool-12")
+    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool" "llvm-install-name-tool-14" "llvm-install-name-tool-13" "llvm-install-name-tool-12")
 else ()
     find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool-${COMPILER_VERSION_MAJOR}" "llvm-install-name-tool")
 endif ()
@@ -159,7 +154,7 @@ message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 # Objcopy
 
 if (COMPILER_GCC)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-15" "llvm-objcopy-14" "llvm-objcopy-13" "llvm-objcopy-12" "objcopy")
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-14" "llvm-objcopy-13" "llvm-objcopy-12" "objcopy")
 else ()
     find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
 endif ()
@@ -173,7 +168,7 @@ endif ()
 # Strip
 
 if (COMPILER_GCC)
-    find_program (STRIP_PATH NAMES "llvm-strip" "llvm-strip-15" "llvm-strip-14" "llvm-strip-13" "llvm-strip-12" "strip")
+    find_program (STRIP_PATH NAMES "llvm-strip" "llvm-strip-14" "llvm-strip-13" "llvm-strip-12" "strip")
 else ()
     find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
 endif ()

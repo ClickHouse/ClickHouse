@@ -196,14 +196,13 @@
   [url]
   (let [encoded-url (md5 url)
         expected-file-name (.getName (io/file url))
-        dest-folder (str binaries-cache-dir "/" encoded-url)
-        dest-file (str dest-folder "/clickhouse")
+        dest-file (str binaries-cache-dir "/" encoded-url)
         dest-symlink (str common-prefix "/" expected-file-name)
         wget-opts (concat cu/std-wget-opts [:-O dest-file])]
     (when-not (cu/exists? dest-file)
       (info "Downloading" url)
-      (do (c/exec :mkdir :-p dest-folder)
-          (c/cd dest-folder
+      (do (c/exec :mkdir :-p binaries-cache-dir)
+          (c/cd binaries-cache-dir
                 (cu/wget-helper! wget-opts url))))
     (c/exec :rm :-rf dest-symlink)
     (c/exec :ln :-s dest-file dest-symlink)

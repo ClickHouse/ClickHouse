@@ -43,8 +43,6 @@
 
 #include <IO/WriteBufferFromOStream.h>
 
-#include <Storages/MergeTree/CommonANNIndexes.h>
-
 namespace DB
 {
 
@@ -107,12 +105,14 @@ static std::string toString(const RelativeSize & x)
 }
 
 /// Converts sample size to an approximate number of rows (ex. `SAMPLE 1000000`) to relative value (ex. `SAMPLE 0.1`).
-static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTSampleRatio::Rational & ratio, size_t approx_total_rows)
+static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, size_t approx_total_rows)
 {
     if (approx_total_rows == 0)
         return 1;
 
-    auto absolute_sample_size = ratio.numerator / ratio.denominator;
+    const auto & node_sample = node->as<ASTSampleRatio &>();
+
+    auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
     return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
 }
 
@@ -138,7 +138,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
-    const size_t num_streams,
+    const unsigned num_streams,
     QueryProcessingStage::Enum processed_stage,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     bool enable_parallel_reading) const
@@ -242,7 +242,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             auto sorting_step = std::make_unique<SortingStep>(
                 projection_plan->getCurrentDataStream(),
-                query_info.projection->input_order_info->sort_description_for_merging,
+                query_info.projection->input_order_info->order_key_prefix_descr,
                 output_order_descr,
                 settings.max_block_size,
                 limit);
@@ -308,13 +308,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.group_by_two_level_threshold_bytes,
                 settings.max_bytes_before_external_group_by,
                 settings.empty_result_for_aggregation_by_empty_set,
-                context->getTempDataOnDisk(),
+                context->getTemporaryVolume(),
                 settings.max_threads,
                 settings.min_free_disk_space_for_temporary_data,
                 settings.compile_aggregate_expressions,
                 settings.min_count_to_compile_aggregate_expression,
-                settings.max_block_size,
-                settings.enable_software_prefetch_in_aggregation,
                 only_merge);
 
             return std::make_pair(params, only_merge);
@@ -465,7 +463,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 }
 
 MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
-    const SelectQueryInfo & select_query_info,
+    const ASTSelectQuery & select,
     NamesAndTypesList available_real_columns,
     const MergeTreeData::DataPartsVector & parts,
     KeyCondition & key_condition,
@@ -482,42 +480,23 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    bool final = false;
-    std::optional<ASTSampleRatio::Rational> sample_size_ratio;
-    std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
+    auto select_sample_size = select.sampleSize();
+    auto select_sample_offset = select.sampleOffset();
 
-    if (select_query_info.table_expression_modifiers)
+    if (select_sample_size)
     {
-        const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        final = table_expression_modifiers.hasFinal();
-        sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
-        sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
-    }
-    else
-    {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
-
-        final = select.final();
-        auto select_sample_size = select.sampleSize();
-        auto select_sample_offset = select.sampleOffset();
-
-        if (select_sample_size)
-            sample_size_ratio = select_sample_size->as<ASTSampleRatio &>().ratio;
-
-        if (select_sample_offset)
-            sample_offset_ratio = select_sample_offset->as<ASTSampleRatio &>().ratio;
-    }
-
-    if (sample_size_ratio)
-    {
-        relative_sample_size.assign(sample_size_ratio->numerator, sample_size_ratio->denominator);
+        relative_sample_size.assign(
+            select_sample_size->as<ASTSampleRatio &>().ratio.numerator,
+            select_sample_size->as<ASTSampleRatio &>().ratio.denominator);
 
         if (relative_sample_size < 0)
             throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         relative_sample_offset = 0;
-        if (sample_offset_ratio)
-            relative_sample_offset.assign(sample_offset_ratio->numerator, sample_offset_ratio->denominator);
+        if (select_sample_offset)
+            relative_sample_offset.assign(
+                select_sample_offset->as<ASTSampleRatio &>().ratio.numerator,
+                select_sample_offset->as<ASTSampleRatio &>().ratio.denominator);
 
         if (relative_sample_offset < 0)
             throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -530,7 +509,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         if (relative_sample_size > 1)
         {
-            relative_sample_size = convertAbsoluteSampleSizeToRelative(*sample_size_ratio, approx_total_rows);
+            relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
             LOG_DEBUG(log, "Selected relative sample size: {}", toString(relative_sample_size));
         }
 
@@ -543,7 +522,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         if (relative_sample_offset > 1)
         {
-            relative_sample_offset = convertAbsoluteSampleSizeToRelative(*sample_offset_ratio, approx_total_rows);
+            relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
             LOG_DEBUG(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
         }
     }
@@ -677,7 +656,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// So, assume that we already have calculated column.
             ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
 
-            if (final)
+            if (select.final())
             {
                 sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
                 /// We do spoil available_real_columns here, but it is not used later.
@@ -947,7 +926,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         Strings forced_indices;
         {
             Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
-            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+            IParser::Pos pos(tokens, settings.max_parser_depth);
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
@@ -1078,10 +1057,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto current_rows_estimate = ranges.getRowsCount();
                     size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
                     size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
-                    if (query_info.limit > 0 && total_rows_estimate > query_info.limit)
-                    {
-                        total_rows_estimate = query_info.limit;
-                    }
                     limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
                     leaf_limits.check(
                         total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
@@ -1294,14 +1269,13 @@ static void selectColumnNames(
 
 MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
-    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const ActionDAGNodes & added_filter_nodes,
     ContextPtr context,
-    size_t num_streams,
+    unsigned num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     size_t total_parts = parts.size();
@@ -1319,7 +1293,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        prewhere_info,
+        query_info.prewhere_info,
         added_filter_nodes,
         metadata_snapshot_base,
         metadata_snapshot,
@@ -1340,7 +1314,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const SelectQueryInfo & query_info,
     ContextPtr context,
     const UInt64 max_block_size,
-    const size_t num_streams,
+    const unsigned num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading) const
@@ -1640,10 +1614,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
 {
-    if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->data_part_storage, index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
+            (fs::path(part->data_part_storage->getFullPath()) / index_helper->getFileName()).string());
         return ranges;
     }
 
@@ -1695,31 +1669,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            // Cast to Ann condition
-            auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
-            if (ann_condition != nullptr)
-            {
-                // vector of indexes of useful ranges
-                auto result = ann_condition->getUsefulRanges(granule);
-                if (result.empty())
-                {
-                    ++granules_dropped;
-                }
-
-                for (auto range : result)
-                {
-                    // range for corresponding index
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * index_granularity + range),
-                        std::min(ranges[i].end, index_mark * index_granularity + range + 1));
-
-                    if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
-                        res.push_back(data_range);
-                    else
-                        res.back().end = data_range.end;
-                }
-                continue;
-            }
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
@@ -1758,7 +1707,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
 {
     for (const auto & index_helper : indices)
     {
-        if (!part->getDataPartStorage().exists(index_helper->getFileName() + ".idx"))
+        if (!part->data_part_storage->exists(index_helper->getFileName() + ".idx"))
         {
             LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
             return ranges;

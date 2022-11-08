@@ -425,8 +425,6 @@ public:
 
     void finalize();
 
-    bool isFinalized() const;
-
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.

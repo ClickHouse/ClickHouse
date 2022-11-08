@@ -79,8 +79,6 @@ public:
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
-    bool hasSubcolumn(const String & subcolumn_name) const;
-
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
 
@@ -290,9 +288,6 @@ public:
 
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
-
-    /// Object, Array(Object), Tuple(..., Object, ...)
-    virtual bool hasDynamicSubcolumns() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);

@@ -668,7 +668,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)). 
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
 
 Possible values:
 
@@ -747,14 +747,7 @@ Default value: 268435456.
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
-Sets the time in seconds. If a replica's lag is greater than or equal to the set value, this replica is not used.
-
-Possible values:
-
--   Positive integer.
--   0 — Replica lags are not checked.
-
-To prevent the use of any replica with a non-zero lag, set this parameter to 1.
+Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
 Default value: 300.
 
@@ -1176,9 +1169,8 @@ Enables the quorum writes.
 
 -   If `insert_quorum < 2`, the quorum writes are disabled.
 -   If `insert_quorum >= 2`, the quorum writes are enabled.
--   If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
 
-Default value: 0 - disabled.
+Default value: 0.
 
 Quorum writes
 
@@ -1261,8 +1253,6 @@ Possible values:
 Default value: 1.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 ## deduplicate_blocks_in_dependent_materialized_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -1295,9 +1285,6 @@ Possilbe values:
 Default value: empty string (disabled)
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
-
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 Example:
 
@@ -1599,7 +1586,7 @@ Right now it requires `optimize_skip_unused_shards` (the reason behind this is t
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn’t perform a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) query didn’t perform a merge.
 
 By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
@@ -2629,6 +2616,12 @@ Sets the maximum number of inserted blocks after which mergeable blocks are drop
 
 Default value: `64`.
 
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+
+Default value: `5`.
+
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
 Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
@@ -2939,7 +2932,7 @@ Possible values:
 -   0 — Projection optimization disabled.
 -   1 — Projection optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
@@ -3139,19 +3132,6 @@ Result:
 └─────┴─────┴───────┘
 ```
 
-## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
-
-Enables or disables returning results of type:
--   `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) and [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
--   `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
-
-Possible values:
-
--   0 — Functions return `Date` or `DateTime` for all types of arguments.
--   1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
-
-Default value: `0`.
-
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -3256,7 +3236,7 @@ Possible values:
 -   Positive integer.
 -   0 — Asynchronous insertions are disabled.
 
-Default value: `100000`.
+Default value: `1000000`.
 
 ## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
@@ -3429,7 +3409,7 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+Default value: 0.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 
@@ -3537,8 +3517,8 @@ desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings
 
 Result:
 ```sql
-x	UInt8
-y	Nullable(String)
+x	UInt8					
+y	Nullable(String)					
 z	IPv4
 ```
 
@@ -3701,19 +3681,6 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
-### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
-
-Allow parsing numbers as strings in JSON input formats.
-
-Disabled by default.
-
-### input_format_json_validate_types_from_metadata {#input_format_json_validate_types_from_metadata}
-
-For JSON/JSONCompact/JSONColumnsWithMetadata input formats, if this setting is set to 1,
-the types from metadata in input data will be compared with the types of the corresponding columns from the table.
-
-Enabled by default.
-
 ### output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
@@ -3725,12 +3692,6 @@ Possible values:
 -   1 — Integers are enclosed in quotes.
 
 Default value: 1.
-
-### output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
-
-Controls quoting of 64-bit [floats](../../sql-reference/data-types/float.md) when they are output in JSON* formats.
-
-Disabled by default.
 
 ### output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
@@ -3831,12 +3792,6 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 }
 ```
 
-### output_format_json_quote_decimals {#output_format_json_quote_decimals}
-
-Controls quoting of decimals in JSON output formats.
-
-Disabled by default.
-
 ### output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
 
 Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.
@@ -3895,19 +3850,6 @@ Result:
 {"number":"1"}
 {"number":"2"}
 ```
-
-### output_format_json_validate_utf8 {#output_format_json_validate_utf8}
-
-Controls validation of UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate UTF-8.
-
-Disabled by default.
-
-### format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
-
-The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md#jsonobjecteachrow) format.
-Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
-
-Default value: ''.
 
 ## TSV format settings {#tsv-format-settings}
 

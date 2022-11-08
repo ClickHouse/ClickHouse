@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/ip-address-functions
 sidebar_position: 55
 sidebar_label: IP Addresses
 ---

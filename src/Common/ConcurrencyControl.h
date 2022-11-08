@@ -250,7 +250,7 @@ private:
         }
     }
 
-    SlotCount available(std::unique_lock<std::mutex> &) const
+    SlotCount available(std::unique_lock<std::mutex> &)
     {
         if (cur_concurrency < max_concurrency)
             return max_concurrency - cur_concurrency;

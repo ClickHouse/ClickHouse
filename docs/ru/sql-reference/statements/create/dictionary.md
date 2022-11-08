@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/dictionary
 sidebar_position: 38
 sidebar_label: "Словарь"
 ---

@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -9,6 +9,7 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/MultiVersion.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -57,8 +58,6 @@ public:
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "AzureObjectStorage"; }
 
     bool exists(const StoredObject & object) const override;
@@ -84,7 +83,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children) const override;
+    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;
@@ -130,8 +129,6 @@ private:
     MultiVersion<AzureObjectStorageSettings> settings;
 
     Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
 };
 
 }
