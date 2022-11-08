@@ -87,7 +87,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fiexd_columns)
+void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -107,7 +107,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
-                bool is_singe = true;
+                bool is_single = true;
                 for (const auto & child : node->children)
                 {
                     if (!child->column)
@@ -115,14 +115,14 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                         if (!maybe_fixed_column)
                             maybe_fixed_column = child;
                         else
-                            is_singe = false;
+                            is_single = false;
                     }
                 }
 
-                if (maybe_fixed_column && is_singe)
+                if (maybe_fixed_column && is_single)
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
-                    fiexd_columns.insert(maybe_fixed_column);
+                    fixed_columns.insert(maybe_fixed_column);
 
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
@@ -130,7 +130,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                         && maybe_injective->function_base->isInjective({}))
                     {
                         maybe_injective = maybe_injective->children.front();
-                        fiexd_columns.insert(maybe_injective);
+                        fixed_columns.insert(maybe_injective);
                     }
                 }
             }
@@ -364,15 +364,20 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 auto it = matches.find(child);
                 if (it == matches.end())
                 {
+                    /// If match map does not contain a child, it was not visited.
                     stack.push(Frame{child, {}});
                     break;
                 }
+                /// A node from found match may be nullptr.
+                /// It means that node is visited, but no match was found.
                 frame.mapped_children.push_back(it->second.node);
             }
 
             if (frame.mapped_children.size() < frame.node->children.size())
                 continue;
 
+            /// Create an empty match for current node.
+            /// natch.node will be set if match is found.
             auto & match = matches[frame.node];
 
             if (frame.node->type == ActionsDAG::ActionType::INPUT)
@@ -567,6 +572,9 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (!dag)
         {
+            /// This is possible if there were no Expression or Filter steps in Plan.
+            /// Examlpe: SELECT * FROM tab ORDER BY a, b
+
             if (sort_column_node->type != ActionsDAG::ActionType::INPUT)
                 break;
 
