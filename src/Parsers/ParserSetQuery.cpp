@@ -8,7 +8,9 @@
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
@@ -20,6 +22,76 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+
+class ParameterFieldVisitorToString : public StaticVisitor<String>
+{
+public:
+    template <class T>
+    String operator() (const T & x) const
+    {
+        FieldVisitorToString visitor;
+        return visitor(x);
+    }
+
+    String operator() (const Array & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '[';
+        for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb.write(", ", 2);
+            wb << applyVisitor(*this, *it);
+        }
+        wb << ']';
+
+        return wb.str();
+    }
+
+    String operator() (const Map & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '{';
+
+        auto it = x.begin();
+        while (it != x.end())
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(*this, *it);
+            ++it;
+
+            if (it != x.end())
+            {
+                wb << ':';
+                wb << applyVisitor(*this, *it);
+                ++it;
+            }
+        }
+        wb << '}';
+
+        return wb.str();
+    }
+
+    String operator() (const Tuple & x) const
+    {
+        WriteBufferFromOwnString wb;
+
+        wb << '(';
+        for (auto it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(*this, *it);
+        }
+        wb << ')';
+
+        return wb.str();
+    }
+};
 
 
 class ParserLiteralOrMap : public IParserBase
@@ -74,13 +146,12 @@ protected:
     }
 };
 
-/// Parse Literal, Array/Tuple/Map of literals, Identifier
+/// Parse Identifier, Literal, Array/Tuple/Map of literals
 bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
-    /// Identifier
-
+    /// 1. Identifier
     ParserCompoundIdentifier identifier_p;
 
     if (identifier_p.parse(pos, node, expected))
@@ -89,17 +160,10 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
         return true;
     }
 
-    /// Literal, Array/Tuple of literals
-
+    /// 2. Literal
     ParserLiteral literal_p;
-    ParserArrayOfLiterals array_p;
-    ParserTupleOfLiterals tuple_p;
-
-    if (literal_p.parse(pos, node, expected) ||
-        array_p.parse(pos, node, expected) ||
-        tuple_p.parse(pos, node, expected))
+    if (literal_p.parse(pos, node, expected))
     {
-
         value = applyVisitor(FieldVisitorToString(), node->as<ASTLiteral>()->value);
 
         /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
@@ -112,65 +176,16 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
         return true;
     }
 
-    /// Map of literals
+    /// 3. Map, Array, Tuple of literals and their combination
+    ParserAllCollectionsOfLiterals all_collections_p;
 
-    ParserToken l_br_p(TokenType::OpeningCurlyBrace);
-    ParserToken r_br_p(TokenType::ClosingCurlyBrace);
-    ParserToken comma_p(TokenType::Comma);
-    ParserToken colon_p(TokenType::Colon);
-
-    if (!l_br_p.ignore(pos, expected))
-        return false;
-
-    int depth = 1;
-
-    value = '{';
-
-    while (depth > 0)
+    if (all_collections_p.parse(pos, node, expected))
     {
-        if (r_br_p.ignore(pos, expected))
-        {
-            value += '}';
-            --depth;
-            continue;
-        }
-
-        if (value.back() != '{')
-        {
-            if (!comma_p.ignore(pos, expected))
-                return false;
-
-            value += ',';
-        }
-
-        ASTPtr key;
-        ASTPtr val;
-
-        if (!literal_p.parse(pos, key, expected))
-            return false;
-
-        if (!colon_p.ignore(pos, expected))
-            return false;
-
-        value += applyVisitor(FieldVisitorToString(), key->as<ASTLiteral>()->value);
-        value += ":";
-
-        if (l_br_p.ignore(pos, expected))
-        {
-            value += '{';
-            ++depth;
-            continue;
-        }
-
-        if (!literal_p.parse(pos, val, expected)
-            && !array_p.parse(pos, val, expected)
-            && !tuple_p.parse(pos, val, expected))
-            return false;
-
-        value += applyVisitor(FieldVisitorToString(), val->as<ASTLiteral>()->value);
+        value = applyVisitor(ParameterFieldVisitorToString(), node->as<ASTLiteral>()->value);
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 /// Parse `name = value`.
