@@ -136,10 +136,12 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
     ParserToken s_eq(TokenType::Equals);
+    ParserFunction function_p;
 
     ASTPtr name;
     ASTPtr value;
     bool is_default = false;
+    ASTPtr function_ast;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -153,6 +155,14 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     else if (ParserKeyword("DEFAULT").ignore(pos, expected))
         is_default = true;
+    /// for SETTINGS disk=disk(type='s3', path='', ...)
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+    {
+        tryGetIdentifierNameInto(name, change.getName());
+        change.setASTValue(function_ast);
+
+        return true;
+    }
     else if (!value_p.parse(pos, value, expected))
         return false;
 
