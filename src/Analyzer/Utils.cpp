@@ -98,6 +98,11 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
 
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
+        if (auto * query_node = table_expression_node->as<QueryNode>())
+            table_expression_modifiers = query_node->getTableExpressionModifiers();
+        else if (auto * union_node = table_expression_node->as<UnionNode>())
+            table_expression_modifiers = union_node->getTableExpressionModifiers();
+
         result_table_expression->subquery = result_table_expression->children.back();
     }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)

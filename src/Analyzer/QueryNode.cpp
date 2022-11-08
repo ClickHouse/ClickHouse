@@ -32,6 +32,100 @@ QueryNode::QueryNode()
     children[limit_by_child_index] = std::make_shared<ListNode>();
 }
 
+String QueryNode::getName() const
+{
+    WriteBufferFromOwnString buffer;
+
+    if (hasWith())
+    {
+        buffer << getWith().getName();
+        buffer << ' ';
+    }
+
+    buffer << "SELECT ";
+    buffer << getProjection().getName();
+
+    if (getJoinTree())
+    {
+        buffer << " FROM ";
+        buffer << getJoinTree()->getName();
+    }
+
+    if (getPrewhere())
+    {
+        buffer << " PREWHERE ";
+        buffer << getPrewhere()->getName();
+    }
+
+    if (getWhere())
+    {
+        buffer << " WHERE ";
+        buffer << getWhere()->getName();
+    }
+
+    if (hasGroupBy())
+    {
+        buffer << " GROUP BY ";
+        buffer << getGroupBy().getName();
+    }
+
+    if (hasHaving())
+    {
+        buffer << " HAVING ";
+        buffer << getHaving()->getName();
+    }
+
+    if (hasWindow())
+    {
+        buffer << " WINDOW ";
+        buffer << getWindow().getName();
+    }
+
+    if (hasOrderBy())
+    {
+        buffer << " ORDER BY ";
+        buffer << getOrderByNode()->getName();
+    }
+
+    if (hasInterpolate())
+    {
+        buffer << " INTERPOLATE ";
+        buffer << getInterpolate()->getName();
+    }
+
+    if (hasLimitByLimit())
+    {
+        buffer << "LIMIT ";
+        buffer << getLimitByLimit()->getName();
+    }
+
+    if (hasLimitByOffset())
+    {
+        buffer << "OFFSET ";
+        buffer << getLimitByOffset()->getName();
+    }
+
+    if (hasLimitBy())
+    {
+        buffer << " BY ";
+        buffer << getLimitBy().getName();
+    }
+
+    if (hasLimit())
+    {
+        buffer << " LIMIT ";
+        buffer << getLimit()->getName();
+    }
+
+    if (hasOffset())
+    {
+        buffer << " OFFSET ";
+        buffer << getOffset()->getName();
+    }
+
+    return buffer.str();
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
@@ -72,6 +166,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << ", constant_value: " << constant_value->getValue().dump();
         buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    }
+
+    if (table_expression_modifiers)
+    {
+        buffer << ", ";
+        table_expression_modifiers->dump(buffer);
     }
 
     if (hasWith())
@@ -189,6 +289,13 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
     else if (!constant_value && rhs_typed.constant_value)
         return false;
 
+    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
+        return false;
+    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
+        return false;
+    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
+        return false;
+
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
         cte_name == rhs_typed.cte_name &&
@@ -237,6 +344,9 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
         state.update(constant_value_type_name.size());
         state.update(constant_value_type_name);
     }
+
+    if (table_expression_modifiers)
+        table_expression_modifiers->updateTreeHash(state);
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -254,6 +364,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->constant_value = constant_value;
+    result_query_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_query_node;
 }

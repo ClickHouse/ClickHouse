@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -39,7 +40,6 @@
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <IO/readDecimalText.h>
 #include <Interpreters/Context.h>
 
 
@@ -191,7 +191,7 @@ private:
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
             const auto & column = columns[i];
-            if (!isString(column.type) && !isNativeInteger(column.type))
+            if (!isString(column.type) && !isInteger(column.type))
                 throw Exception{"The argument " + std::to_string(i + 1) + " of function " + String(function_name)
                                     + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -623,32 +623,24 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
     {
         UInt8 type;
-        switch (element.type())
-        {
-            case ElementType::INT64:
-                type = 'i';
-                break;
-            case ElementType::UINT64:
-                type = 'u';
-                break;
-            case ElementType::DOUBLE:
-                type = 'd';
-                break;
-            case ElementType::STRING:
-                type = '"';
-                break;
-            case ElementType::ARRAY:
-                type = '[';
-                break;
-            case ElementType::OBJECT:
-                type = '{';
-                break;
-            case ElementType::NULL_VALUE:
-                type = 0;
-                break;
-            default:
-                return false;
-        }
+        if (element.isInt64())
+            type = 'i';
+        else if (element.isUInt64())
+            type = 'u';
+        else if (element.isDouble())
+            type = 'd';
+        else if (element.isBool())
+            type = 'b';
+        else if (element.isString())
+            type = '"';
+        else if (element.isArray())
+            type = '[';
+        else if (element.isObject())
+            type = '{';
+        else if (element.isNull())
+            type = 0;
+        else
+            return false;
 
         ColumnVector<Int8> & col_vec = assert_cast<ColumnVector<Int8> &>(dest);
         col_vec.insertValue(type);
@@ -674,51 +666,34 @@ public:
     {
         NumberType value;
 
-        switch (element.type())
+        if (element.isInt64())
         {
-            case ElementType::DOUBLE:
-                if constexpr (std::is_floating_point_v<NumberType>)
-                {
-                    /// We permit inaccurate conversion of double to float.
-                    /// Example: double 0.1 from JSON is not representable in float.
-                    /// But it will be more convenient for user to perform conversion.
-                    value = static_cast<NumberType>(element.getDouble());
-                }
-                else if (!accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
-                    return false;
-                break;
-            case ElementType::UINT64:
-                if (!accurate::convertNumeric<UInt64, NumberType, false>(element.getUInt64(), value))
-                    return false;
-                break;
-            case ElementType::INT64:
-                if (!accurate::convertNumeric<Int64, NumberType, false>(element.getInt64(), value))
-                    return false;
-                break;
-            case ElementType::BOOL:
-                if constexpr (is_integer<NumberType> && convert_bool_to_integer)
-                {
-                    value = static_cast<NumberType>(element.getBool());
-                    break;
-                }
-                return false;
-            case ElementType::STRING: {
-                auto rb = ReadBufferFromMemory{element.getString()};
-                if constexpr (std::is_floating_point_v<NumberType>)
-                {
-                    if (!tryReadFloatText(value, rb) || !rb.eof())
-                        return false;
-                }
-                else
-                {
-                    if (!tryReadIntText(value, rb) || !rb.eof())
-                        return false;
-                }
-                break;
-            }
-            default:
+            if (!accurate::convertNumeric(element.getInt64(), value))
                 return false;
         }
+        else if (element.isUInt64())
+        {
+            if (!accurate::convertNumeric(element.getUInt64(), value))
+                return false;
+        }
+        else if (element.isDouble())
+        {
+            if constexpr (std::is_floating_point_v<NumberType>)
+            {
+                /// We permit inaccurate conversion of double to float.
+                /// Example: double 0.1 from JSON is not representable in float.
+                /// But it will be more convenient for user to perform conversion.
+                value = static_cast<NumberType>(element.getDouble());
+            }
+            else if (!accurate::convertNumeric(element.getDouble(), value))
+                return false;
+        }
+        else if (element.isBool() && is_integer<NumberType> && convert_bool_to_integer)
+        {
+            value = static_cast<NumberType>(element.getBool());
+        }
+        else
+            return false;
 
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
@@ -744,25 +719,9 @@ using JSONExtractInt64Impl = JSONExtractNumericImpl<JSONParser, Int64>;
 template <typename JSONParser>
 using JSONExtractUInt64Impl = JSONExtractNumericImpl<JSONParser, UInt64>;
 template <typename JSONParser>
-using JSONExtractInt128Impl = JSONExtractNumericImpl<JSONParser, Int128>;
-template <typename JSONParser>
-using JSONExtractUInt128Impl = JSONExtractNumericImpl<JSONParser, UInt128>;
-template <typename JSONParser>
-using JSONExtractInt256Impl = JSONExtractNumericImpl<JSONParser, Int256>;
-template <typename JSONParser>
-using JSONExtractUInt256Impl = JSONExtractNumericImpl<JSONParser, UInt256>;
-template <typename JSONParser>
 using JSONExtractFloat32Impl = JSONExtractNumericImpl<JSONParser, Float32>;
 template <typename JSONParser>
 using JSONExtractFloat64Impl = JSONExtractNumericImpl<JSONParser, Float64>;
-template <typename JSONParser>
-using JSONExtractDecimal32Impl = JSONExtractNumericImpl<JSONParser, Decimal32>;
-template <typename JSONParser>
-using JSONExtractDecimal64Impl = JSONExtractNumericImpl<JSONParser, Decimal64>;
-template <typename JSONParser>
-using JSONExtractDecimal128Impl = JSONExtractNumericImpl<JSONParser, Decimal128>;
-template <typename JSONParser>
-using JSONExtractDecimal256Impl = JSONExtractNumericImpl<JSONParser, Decimal256>;
 
 
 template <typename JSONParser>
@@ -780,22 +739,11 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
     {
-        bool value;
-        switch (element.type())
-        {
-            case ElementType::BOOL:
-                value = element.getBool();
-                break;
-            case ElementType::INT64:
-            case ElementType::UINT64:
-                value = element.getUInt64() != 0;
-                break;
-            default:
-                return false;
-        }
+        if (!element.isBool())
+            return false;
 
         auto & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
-        col_vec.insertValue(static_cast<UInt8>(value));
+        col_vec.insertValue(static_cast<UInt8>(element.getBool()));
         return true;
     }
 };
@@ -897,35 +845,12 @@ struct JSONExtractTree
         explicit DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
+            if (!element.isDouble())
+                return false;
+
             const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
-
-            DecimalType value{};
-
-            switch (element.type())
-            {
-                case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(
-                        element.getDouble(), type->getScale());
-                    break;
-                case ElementType::UINT64:
-                    value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(
-                        element.getUInt64(), type->getScale());
-                    break;
-                case ElementType::INT64:
-                    value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(
-                        element.getInt64(), type->getScale());
-                    break;
-                case ElementType::STRING: {
-                    auto rb = ReadBufferFromMemory{element.getString()};
-                    if (!SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, type->getScale()))
-                        return false;
-                    break;
-                }
-                default:
-                    return false;
-            }
-
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(value);
+            auto result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale());
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
             return true;
         }
     private:
@@ -1163,14 +1088,10 @@ struct JSONExtractTree
             case TypeIndex::UInt16: return std::make_unique<NumericNode<UInt16>>();
             case TypeIndex::UInt32: return std::make_unique<NumericNode<UInt32>>();
             case TypeIndex::UInt64: return std::make_unique<NumericNode<UInt64>>();
-            case TypeIndex::UInt128: return std::make_unique<NumericNode<UInt128>>();
-            case TypeIndex::UInt256: return std::make_unique<NumericNode<UInt256>>();
             case TypeIndex::Int8: return std::make_unique<NumericNode<Int8>>();
             case TypeIndex::Int16: return std::make_unique<NumericNode<Int16>>();
             case TypeIndex::Int32: return std::make_unique<NumericNode<Int32>>();
             case TypeIndex::Int64: return std::make_unique<NumericNode<Int64>>();
-            case TypeIndex::Int128: return std::make_unique<NumericNode<Int128>>();
-            case TypeIndex::Int256: return std::make_unique<NumericNode<Int256>>();
             case TypeIndex::Float32: return std::make_unique<NumericNode<Float32>>();
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
             case TypeIndex::String: return std::make_unique<StringNode>();

@@ -69,7 +69,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)

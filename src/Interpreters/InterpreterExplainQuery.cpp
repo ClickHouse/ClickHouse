@@ -419,7 +419,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (getContext()->getSettingsRef().use_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
                 plan = std::move(interpreter).extractQueryPlan();
@@ -462,7 +462,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (getContext()->getSettingsRef().use_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
                     plan = std::move(interpreter).extractQueryPlan();

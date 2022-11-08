@@ -66,6 +66,18 @@ public:
         std::shared_ptr<Impl> pimpl;
     };
 
+    class ReadTasksIterator
+    {
+    public:
+        ReadTasksIterator(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -212,8 +224,6 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class StorageHudi;
-    friend class StorageDelta;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;
@@ -228,6 +238,8 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
+    std::vector<String> read_tasks_used_in_schema_inference;
+
     std::unordered_map<String, S3::ObjectInfo> object_infos;
 
     static void updateS3Configuration(ContextPtr, S3Configuration &);
@@ -240,6 +252,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
+        const std::vector<String> & read_tasks = {},
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
         Strings * read_keys = nullptr);
 
@@ -251,6 +264,7 @@ private:
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
+        std::vector<String> * read_keys_in_distributed_processing = nullptr,
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
     bool supportsSubsetOfColumns() const override;

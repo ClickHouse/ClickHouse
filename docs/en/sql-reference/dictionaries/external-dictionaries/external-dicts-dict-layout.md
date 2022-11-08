@@ -303,25 +303,17 @@ or
 CREATE DICTIONARY somedict (
     id UInt64,
     first Date,
-    last Date,
-    advertiser_id UInt64
+    last Date
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'date_table'))
-LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
+To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
 
 ``` sql
-dictGet('dict_name', 'attr_name', id, date)
-```
-Query example:
-
-``` sql
-SELECT dictGet('somedict', 'advertiser_id', 1, '2022-10-20 23:20:10.000'::DateTime64::UInt64);
+dictGetT('dict_name', 'attr_name', id, date)
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.

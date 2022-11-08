@@ -2939,7 +2939,7 @@ Possible values:
 -   0 — Projection optimization disabled.
 -   1 — Projection optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## force_optimize_projection {#force-optimize-projection}
 

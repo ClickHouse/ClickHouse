@@ -1088,8 +1088,7 @@ void Client::processConfig()
     }
     else
     {
-        std::string progress = config().getString("progress", "tty");
-        need_render_progress = (Poco::icompare(progress, "off") && Poco::icompare(progress, "no") && Poco::icompare(progress, "false") && Poco::icompare(progress, "0"));
+        need_render_progress = config().getBool("progress", false);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 

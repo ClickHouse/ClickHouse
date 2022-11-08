@@ -32,6 +32,7 @@
 #include <Core/Block.h>
 #include <base/StringRef.h>
 #include <Common/DateLUT.h>
+#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -277,9 +278,9 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = std::bit_cast<UInt>(x);
+    UInt x_uint = bit_cast<UInt>(x);
     x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
-    return std::bit_cast<Float>(x_uint);
+    return bit_cast<Float>(x_uint);
 }
 
 

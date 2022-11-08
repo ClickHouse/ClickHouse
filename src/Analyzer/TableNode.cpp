@@ -66,6 +66,11 @@ void TableNode::updateTreeHashImpl(HashState & state) const
         table_expression_modifiers->updateTreeHash(state);
 }
 
+String TableNode::getName() const
+{
+    return storage->getStorageID().getFullNameNotQuoted();
+}
+
 QueryTreeNodePtr TableNode::cloneImpl() const
 {
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);

@@ -316,9 +316,9 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Возвращается дата.
 
 :::note "Attention"
-Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
+    Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
 :::
-
+    
 ## toMonday {#tomonday}
 
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
@@ -1126,7 +1126,8 @@ SELECT FROM_UNIXTIME(423543535);
 └──────────────────────────┘
 ```
 
-В случае, когда есть два или три аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md), а второй является строкой постоянного формата и третий является строкой постоянной временной зоны — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+
 
 Запрос:
 

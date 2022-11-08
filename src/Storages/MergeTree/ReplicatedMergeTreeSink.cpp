@@ -1,10 +1,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 
@@ -165,9 +165,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       */
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
 
-    if (!storage_snapshot->object_columns.empty())
-        convertDynamicColumnsToTuples(block, storage_snapshot);
-
+    deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition>;
@@ -270,7 +268,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
+            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder, delayed_chunk->replicas_num);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -303,7 +301,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", replicas_num);
+        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder(), replicas_num);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -317,6 +315,7 @@ void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
+    DataPartStorageBuilderPtr builder,
     size_t replicas_num)
 {
     /// It is possible that we alter a part with different types of source columns.
@@ -327,7 +326,7 @@ void ReplicatedMergeTreeSink::commitPart(
 
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
+    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -500,7 +499,7 @@ void ReplicatedMergeTreeSink::commitPart(
         try
         {
             auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
+            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
         }
         catch (const Exception & e)
         {
@@ -564,7 +563,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
+                part->renameTo(temporary_part_relative_path, false, builder);
+                builder->commit();
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next itration.

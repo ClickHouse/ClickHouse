@@ -859,7 +859,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
                 " null_representation={}, delimiter={}, tuple_delimiter={}",
-                settings.csv.use_best_effort_in_schema_inference,
+                settings.tsv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,

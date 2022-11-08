@@ -62,7 +62,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    if (!context->getSettings().optimize_read_in_window_order || context->getSettingsRef().allow_experimental_analyzer)
+    if (!context->getSettings().optimize_read_in_window_order || context->getSettingsRef().use_analyzer)
     {
         return 0;
     }

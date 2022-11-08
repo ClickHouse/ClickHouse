@@ -34,6 +34,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/wipePasswordFromQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -55,9 +56,9 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 #include <Common/ProfileEvents.h>
 
+#include <Common/SensitiveDataMasker.h>
 #include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -76,6 +77,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event QueryMaskingRulesMatch;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -104,6 +106,37 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkDepth(settings.max_ast_depth);
     if (settings.max_ast_elements)
         ast.checkSize(settings.max_ast_elements);
+}
+
+
+/// Makes a version of a query without sensitive information (e.g. passwords) for logging.
+/// The parameter `parsed query` can be nullptr if the query cannot be parsed.
+static String prepareQueryForLogging(const String & query, const ASTPtr & parsed_query, ContextPtr context)
+{
+    String res = query;
+
+    // Wiping a password or hash from CREATE/ALTER USER query because we don't want it to go to logs.
+    if (parsed_query && canContainPassword(*parsed_query))
+    {
+        ASTPtr ast_for_logging = parsed_query->clone();
+        wipePasswordFromQuery(ast_for_logging);
+        res = serializeAST(*ast_for_logging);
+    }
+
+    // Wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log.
+    if (auto * masker = SensitiveDataMasker::getInstance())
+    {
+        auto matches = masker->wipeSensitiveData(res);
+        if (matches > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
+        }
+    }
+
+    res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
+
+    return res;
 }
 
 
@@ -392,14 +425,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
+        query_for_logging = prepareQueryForLogging(query, ast, context);
     }
     catch (...)
     {
         /// Anyway log the query.
         if (query.empty())
             query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
+        query_for_logging = prepareQueryForLogging(query, ast, context);
 
         logQuery(query_for_logging, context, internal, stage);
 

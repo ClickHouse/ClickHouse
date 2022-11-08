@@ -146,7 +146,7 @@ public:
             auto extended_storage_columns = storage_snapshot->getColumns(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-            convertDynamicColumnsToTuples(block, storage_snapshot);
+            convertObjectsToTuples(block, extended_storage_columns);
         }
 
         if (storage.compress)
@@ -212,10 +212,10 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
 
-    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
+    if (!hasObjectColumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
-    auto object_columns = getConcreteObjectColumns(
+    auto object_columns = getObjectColumns(
         snapshot_data->blocks->begin(),
         snapshot_data->blocks->end(),
         metadata_snapshot->getColumns(),

@@ -123,10 +123,7 @@ void WriteBufferFromS3::nextImpl()
 void WriteBufferFromS3::allocateBuffer()
 {
     if (total_parts_uploaded != 0 && total_parts_uploaded % s3_settings.upload_part_size_multiply_parts_count_threshold == 0)
-    {
         upload_part_size *= s3_settings.upload_part_size_multiply_factor;
-        upload_part_size = std::min(upload_part_size, s3_settings.max_upload_part_size);
-    }
 
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);

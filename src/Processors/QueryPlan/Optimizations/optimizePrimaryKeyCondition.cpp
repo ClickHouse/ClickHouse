@@ -17,7 +17,7 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
         size_t next_child = 0;
     };
 
-    std::vector<Frame> stack;
+    std::deque<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -27,29 +27,29 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
         {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            stack.push_back({.node = frame.node->children[frame.next_child]});
+
             ++frame.next_child;
-            stack.push_back(next_frame);
             continue;
         }
 
-        auto add_read_from_storage_filter = [&](auto & storage)
+        auto add_filter = [&](auto & storage)
         {
-            for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+            for (auto iter=stack.rbegin() + 1; iter!=stack.rend(); ++iter)
             {
                 if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
                     storage.addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
                 else if (typeid_cast<ExpressionStep *>(iter->node->step.get()))
-                    continue;
+                    ;
                 else
                     break;
             }
         };
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
-            add_read_from_storage_filter(*read_from_merge_tree);
+            add_filter(*read_from_merge_tree);
         else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(frame.node->step.get()))
-            add_read_from_storage_filter(*read_from_merge);
+            add_filter(*read_from_merge);
 
         stack.pop_back();
     }

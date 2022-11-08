@@ -31,8 +31,6 @@
 * Add OpenTelemetry support to ON CLUSTER DDL (require `distributed_ddl_entry_format_version` to be set to 4). [#41484](https://github.com/ClickHouse/ClickHouse/pull/41484) ([Frank Chen](https://github.com/FrankChen021)).
 * Added system table `asynchronous_insert_log`. It contains information about asynchronous inserts (including results of queries in fire-and-forget mode (with `wait_for_async_insert=0`)) for better introspection. [#42040](https://github.com/ClickHouse/ClickHouse/pull/42040) ([Anton Popov](https://github.com/CurtizJ)).
 * Add support for methods `lz4`, `bz2`, `snappy` in HTTP's `Accept-Encoding` which is a non-standard extension to HTTP protocol. [#42071](https://github.com/ClickHouse/ClickHouse/pull/42071) ([Nikolay Degterinsky](https://github.com/evillique)).
-* Adds Morton Coding (ZCurve) encode/decode functions. [#41753](https://github.com/ClickHouse/ClickHouse/pull/41753) ([Constantine Peresypkin](https://github.com/pkit)).
-* Add support for `SET setting_name = DEFAULT`. [#42187](https://github.com/ClickHouse/ClickHouse/pull/42187) ([Filatenkov Artur](https://github.com/FArthur-cmd)).
 
 #### Experimental Feature
 * Added new infrastructure for query analysis and planning under the `allow_experimental_analyzer` setting. [#31796](https://github.com/ClickHouse/ClickHouse/pull/31796) ([Maksim Kita](https://github.com/kitaisreal)).
@@ -68,7 +66,8 @@
 * Allow readable size values (like `1TB`) in cache config. [#41688](https://github.com/ClickHouse/ClickHouse/pull/41688) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * ClickHouse could cache stale DNS entries for some period of time (15 seconds by default) until the cache won't be updated asynchronously. During these periods ClickHouse can nevertheless try to establish a connection and produce errors. This behavior is fixed. [#41707](https://github.com/ClickHouse/ClickHouse/pull/41707) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Add interactive history search with fzf-like utility (fzf/sk) for `clickhouse-client`/`clickhouse-local` (note you can use `FZF_DEFAULT_OPTS`/`SKIM_DEFAULT_OPTIONS` to additionally configure the behavior). [#41730](https://github.com/ClickHouse/ClickHouse/pull/41730) ([Azat Khuzhin](https://github.com/azat)).
-* Only allow clients connecting to a secure server with an invalid certificate only to proceed with the '--accept-certificate' flag. [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 
+Only allow clients connecting to a secure server with an invalid certificate only to proceed with the '--accept-certificate' flag. [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * Add function `tryBase58Decode`, similar to the existing function `tryBase64Decode`. [#41824](https://github.com/ClickHouse/ClickHouse/pull/41824) ([Robert Schulze](https://github.com/rschu1ze)).
 * Improve feedback when replacing partition with different primary key. Fixes [#34798](https://github.com/ClickHouse/ClickHouse/issues/34798). [#41838](https://github.com/ClickHouse/ClickHouse/pull/41838) ([Salvatore](https://github.com/tbsal)).
 * Fix parallel parsing: segmentator now checks `max_block_size`. This fixed memory overallocation in case of parallel parsing and small LIMIT. [#41852](https://github.com/ClickHouse/ClickHouse/pull/41852) ([Vitaly Baranov](https://github.com/vitlibar)).
@@ -87,8 +86,6 @@
 * Fix rarely invalid cast of aggregate state types with complex types such as Decimal. This fixes [#42408](https://github.com/ClickHouse/ClickHouse/issues/42408). [#42417](https://github.com/ClickHouse/ClickHouse/pull/42417) ([Amos Bird](https://github.com/amosbird)).
 * Allow to use `Date32` arguments for `dateName` function. [#42554](https://github.com/ClickHouse/ClickHouse/pull/42554) ([Roman Vasin](https://github.com/rvasin)).
 * Now filters with NULL literals will be used during index analysis. [#34063](https://github.com/ClickHouse/ClickHouse/issues/34063). [#41842](https://github.com/ClickHouse/ClickHouse/pull/41842) ([Amos Bird](https://github.com/amosbird)).
-* Merge parts if every part in the range is older than a certain threshold. The threshold can be set by using `min_age_to_force_merge_seconds`. This closes [#35836](https://github.com/ClickHouse/ClickHouse/issues/35836). [#42423](https://github.com/ClickHouse/ClickHouse/pull/42423) ([Antonio Andelic](https://github.com/antonio2368)). This is continuation of [#39550i](https://github.com/ClickHouse/ClickHouse/pull/39550) by [@fastio](https://github.com/fastio) who implemented most of the logic.
-* Improve the time to recover lost keeper connections. [#42541](https://github.com/ClickHouse/ClickHouse/pull/42541) ([Raúl Marín](https://github.com/Algunenano)).
 
 #### Build/Testing/Packaging Improvement
 * Add fuzzer for table definitions [#40096](https://github.com/ClickHouse/ClickHouse/pull/40096) ([Anton Popov](https://github.com/CurtizJ)). This represents the biggest advancement for ClickHouse testing in this year so far.

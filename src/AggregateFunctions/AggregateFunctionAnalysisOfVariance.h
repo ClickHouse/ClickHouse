@@ -77,7 +77,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto f_stat = data(place).getFStatistic();
-        if (std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0)
+        if (std::isinf(f_stat) || isNaN(f_stat))
             throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
 
         auto p_value = data(place).getPValue(f_stat);

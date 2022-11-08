@@ -2173,10 +2173,6 @@ struct ToNumberMonotonicity
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
-        /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64))
-            return {};
-
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
             : (left.get<Int64>() >= 0);
@@ -3360,8 +3356,9 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
-                res->finalize();
+                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count);
+                auto & res_object = assert_cast<ColumnObject &>(res->assumeMutableRef());
+                res_object.finalize();
                 return res;
             };
         }

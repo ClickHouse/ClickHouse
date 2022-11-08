@@ -71,7 +71,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
         }
     }
 
-    /// Add direct edges from output ports.
+    /// Add direct edges form output ports.
     auto & outputs = from->getOutputs();
     auto from_output = nodes[node]->direct_edges.size();
 
@@ -109,13 +109,6 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 
     {
         std::lock_guard guard(processors_mutex);
-        /// Do not add new processors to existing list, since the query was already cancelled.
-        if (cancelled)
-        {
-            for (auto & processor : new_processors)
-                processor->cancel();
-            return false;
-        }
         processors->insert(processors->end(), new_processors.begin(), new_processors.end());
     }
 
@@ -395,7 +388,6 @@ void ExecutingGraph::cancel()
     std::lock_guard guard(processors_mutex);
     for (auto & processor : *processors)
         processor->cancel();
-    cancelled = true;
 }
 
 }
