@@ -213,7 +213,9 @@ public:
     template <class ...Args>
     S3PlainObjectStorage(Args && ...args)
         : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...)
-    {}
+    {
+        data_source_description.type = DataSourceType::S3_Plain;
+    }
 };
 
 }
