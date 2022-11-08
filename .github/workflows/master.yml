@@ -3086,6 +3086,7 @@ jobs:
     needs:
       - DockerHubPush
       - BuilderReport
+      - BuilderSpecialReport
       - MarkReleaseReady
       - FunctionalStatelessTestDebug0
       - FunctionalStatelessTestDebug1
