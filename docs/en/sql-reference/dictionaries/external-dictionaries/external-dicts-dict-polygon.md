@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-polygon
-sidebar_position: 46
-sidebar_label: Polygon Dictionaries With Grids
-title: "Polygon dictionaries"
+toc_priority: 46
+toc_title: Polygon Dictionaries With Grids
 ---
+
+# Polygon dictionaries {#polygon-dictionaries}
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
@@ -14,10 +14,8 @@ Example of a polygon dictionary configuration:
 <dictionary>
     <structure>
         <key>
-            <attribute>
-                <name>key</name>
-                <type>Array(Array(Array(Array(Float64))))</type>
-            </attribute>
+            <name>key</name>
+            <type>Array(Array(Array(Array(Float64))))</type>
         </key>
 
         <attribute>

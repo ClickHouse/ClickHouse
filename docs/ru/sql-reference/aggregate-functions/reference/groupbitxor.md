@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/groupbitxor
-sidebar_position: 127
+toc_priority: 127
 ---
 
 # groupBitXor {#groupbitxor}

@@ -1,10 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/replacingmergetree
-sidebar_position: 40
-sidebar_label:  ReplacingMergeTree
+toc_priority: 33
+toc_title: ReplacingMergeTree
 ---
 
-# ReplacingMergeTree
+# ReplacingMergeTree {#replacingmergetree}
 
 The engine differs from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -30,65 +29,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
 
-:::warning
-Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
-:::
+!!! note "Attention"
+    Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 
-## ReplacingMergeTree Parameters
+**ReplacingMergeTree Parameters**
 
-### ver
+-   `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
-`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+    When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
+    -   The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+    -   With the maximum version, if `ver` specified.
 
-   - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
-   - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
-
-Example: 
-
-```sql
--- without ver - the last inserted 'wins'
-CREATE TABLE myFirstReplacingMT
-(
-    `key` Int64,
-    `someCol` String,
-    `eventTime` DateTime
-)
-ENGINE = ReplacingMergeTree
-ORDER BY key;
-
-INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
-INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
-
-SELECT * FROM myFirstReplacingMT FINAL;
-
-┌─key─┬─someCol─┬───────────eventTime─┐
-│   1 │ second  │ 2020-01-01 00:00:00 │
-└─────┴─────────┴─────────────────────┘
-
-
--- with ver - the row with the biggest ver 'wins'
-CREATE TABLE mySecondReplacingMT
-(
-    `key` Int64,
-    `someCol` String,
-    `eventTime` DateTime
-)
-ENGINE = ReplacingMergeTree(eventTime)
-ORDER BY key;
-
-INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
-INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
-
-SELECT * FROM mySecondReplacingMT FINAL;
-
-┌─key─┬─someCol─┬───────────eventTime─┐
-│   1 │ first   │ 2020-01-01 01:01:01 │
-└─────┴─────────┴─────────────────────┘
-```
-
-## Query clauses
+**Query clauses**
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
@@ -96,9 +49,8 @@ When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

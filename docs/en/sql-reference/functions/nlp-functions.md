@@ -1,15 +1,14 @@
 ---
-slug: /en/sql-reference/functions/nlp-functions
-sidebar_position: 67
-sidebar_label: NLP
-title: "[experimental] Natural Language Processing functions"
+toc_priority: 67
+toc_title: NLP
 ---
 
-:::warning    
-This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+# [experimental] Natural Language Processing functions {#nlp-functions}
 
-## stem
+!!! warning "Warning"
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
+
+## stem {#stem}
 
 Performs stemming on a given word.
 
@@ -40,7 +39,7 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## lemmatize
+## lemmatize {#lemmatize}
 
 Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
@@ -81,7 +80,7 @@ Configuration:
 </lemmatizers>
 ```
 
-## synonyms
+## synonyms {#synonyms}
 
 Finds synonyms to a given word. There are two types of synonym extensions: `plain` and `wordnet`.
 

@@ -1,7 +1,6 @@
 ---
-slug: /zh/operations/access-rights
-sidebar_position: 48
-sidebar_label: "访问权限和账户管理"
+toc_priority: 48
+toc_title: "访问权限和账户管理"
 ---
 
 # 访问权限和账户管理 {#access-rights}

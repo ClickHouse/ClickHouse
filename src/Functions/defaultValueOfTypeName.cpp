@@ -63,7 +63,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(DefaultValueOfTypeName)
+void registerFunctionDefaultValueOfTypeName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDefaultValueOfTypeName>();
 }

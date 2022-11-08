@@ -1,10 +1,45 @@
 ---
-slug: /ru/sql-reference/statements/system
-sidebar_position: 36
-sidebar_label: SYSTEM
+toc_priority: 36
+toc_title: SYSTEM
 ---
 
 # Запросы SYSTEM {#query-language-system}
+
+-   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
+-   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
+-   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [RELOAD MODELS](#query_language-system-reload-models)
+-   [RELOAD MODEL](#query_language-system-reload-model)
+-   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
+-   [RELOAD FUNCTION](#query_language-system-reload-functions)
+-   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
+-   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
+-   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
+-   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
+-   [DROP REPLICA](#query_language-system-drop-replica)
+-   [FLUSH LOGS](#query_language-system-flush_logs)
+-   [RELOAD CONFIG](#query_language-system-reload-config)
+-   [SHUTDOWN](#query_language-system-shutdown)
+-   [KILL](#query_language-system-kill)
+-   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
+-   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
+-   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+-   [STOP MERGES](#query_language-system-stop-merges)
+-   [START MERGES](#query_language-system-start-merges)
+-   [STOP TTL MERGES](#query_language-stop-ttl-merges)
+-   [START TTL MERGES](#query_language-start-ttl-merges)
+-   [STOP MOVES](#query_language-stop-moves)
+-   [START MOVES](#query_language-start-moves)
+-   [STOP FETCHES](#query_language-system-stop-fetches)
+-   [START FETCHES](#query_language-system-start-fetches)
+-   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
+-   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
+-   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
+-   [SYNC REPLICA](#query_language-system-sync-replica)
+-   [RESTART REPLICA](#query_language-system-restart-replica)
+-   [RESTORE REPLICA](#query_language-system-restore-replica)
+-   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries}
 Перегружает все [Встроенные словари](../dictionaries/internal-dicts.md).
@@ -29,12 +64,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS {#query_language-system-reload-models}
 
-:::note
-Это утверждение и `SYSTEM RELOAD MODEL` просто выгружают модели catboost из clickhouse-library-bridge. Функция `catboostEvaluate()`
-загружает модель при первом обращении, если она еще не загружена.
-:::
-
-Разгрузите все модели CatBoost.
+Перегружает все модели [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse), если их конфигурация была обновлена, без перезагрузки сервера.
 
 **Синтаксис**
 
@@ -44,12 +74,12 @@ SYSTEM RELOAD MODELS
 
 ## RELOAD MODEL {#query_language-system-reload-model}
 
-Выгружает модель CatBoost по адресу `модель_путь`.
+Полностью перегружает модель [CatBoost](../../guides/apply-catboost-model.md#applying-catboost-model-in-clickhouse) `model_name`, если ее конфигурация была обновлена, без перезагрузки сервера.
 
 **Синтаксис**
 
 ```sql
-SYSTEM RELOAD MODEL <model_path>
+SYSTEM RELOAD MODEL <model_name>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
@@ -158,9 +188,9 @@ ClickHouse может управлять фоновыми процессами �
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-    :::note
+!!! note "Note"
     `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
-    :::
+
 ### START MERGES {#query_language-system-start-merges}
 
 Включает фоновые мержи для таблиц семейства MergeTree:
@@ -203,14 +233,6 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ``` sql
 SYSTEM START MOVES [[db.]merge_tree_family_table_name]
-```
-
-### SYSTEM UNFREEZE {#query_language-system-unfreeze}
-
-Удаляет с диска все "замороженные" партиции данного бэкапа. Про удаление партиций по отдельности смотрите запрос [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
-
-``` sql
-SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
@@ -301,7 +323,7 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 К реплике прикрепляются локально найденные куски, информация о них отправляется в Zookeeper.
 Если присутствующие в реплике до потери метаданных данные не устарели, они не скачиваются повторно с других реплик. Поэтому восстановление реплики не означает повторную загрузку всех данных по сети.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Потерянные данные в любых состояниях перемещаются в папку `detached/`. Куски, активные до потери данных (находившиеся в состоянии Committed), прикрепляются.
 
 **Синтаксис**

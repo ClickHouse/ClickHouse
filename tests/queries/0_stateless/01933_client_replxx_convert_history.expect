@@ -2,10 +2,6 @@
 # Tags: no-parallel
 # Tag no-parallel: Uses non unique history file
 
-set basedir [file dirname $argv0]
-set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
-
 log_user 0
 set timeout 60
 match_max 100000
@@ -15,6 +11,7 @@ expect_after {
     # A default timeout action is to do nothing, change it to fail
     timeout { exit 1 }
 }
+set basedir [file dirname $argv0]
 
 exec bash -c "echo select 1 > $argv0.txt"
 exec bash -c "echo select 1 >> $argv0.txt"

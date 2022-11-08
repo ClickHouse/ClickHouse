@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 namespace
 {
     bool parseUserNameWithHost(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast)
@@ -18,6 +17,8 @@ namespace
             String base_name;
             if (!parseIdentifierOrStringLiteral(pos, expected, base_name))
                 return false;
+
+            boost::algorithm::trim(base_name);
 
             String host_pattern;
             if (ParserToken{TokenType::At}.ignore(pos, expected))

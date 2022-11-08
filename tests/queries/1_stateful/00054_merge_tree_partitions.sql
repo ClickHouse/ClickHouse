@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS test.partitions;
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test.partitions (EventDate Date, CounterID UInt32) ENGINE = MergeTree(EventDate, CounterID, 8192);
 INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 1704509;
 

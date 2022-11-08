@@ -8,7 +8,6 @@ function perform()
 {
     local query=$1
     TZ=UTC $CLICKHOUSE_CLIENT \
-         --allow_deprecated_syntax_for_merge_tree=1 \
         --use_client_time_zone=1 \
         --input_format_values_interpret_expressions=0 \
         --query "$query" 2>/dev/null

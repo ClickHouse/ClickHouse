@@ -4,7 +4,7 @@ from unittest.mock import patch
 import os.path as p
 import unittest
 
-from git_helper import Git, Runner, CWD
+from git_helper import Git, Runner
 
 
 class TestRunner(unittest.TestCase):
@@ -19,18 +19,6 @@ class TestRunner(unittest.TestCase):
         output = runner.run("echo 1")
         self.assertEqual(output, "1")
 
-    def test_one_time_writeable_cwd(self):
-        runner = Runner()
-        self.assertEqual(runner.cwd, CWD)
-        runner.cwd = "/bin"
-        self.assertEqual(runner.cwd, "/bin")
-        runner.cwd = "/"
-        self.assertEqual(runner.cwd, "/bin")
-        runner = Runner("/")
-        self.assertEqual(runner.cwd, "/")
-        runner.cwd = "/bin"
-        self.assertEqual(runner.cwd, "/")
-
 
 class TestGit(unittest.TestCase):
     def setUp(self):
@@ -43,7 +31,6 @@ class TestGit(unittest.TestCase):
         self.addCleanup(update_patcher.stop)
         self.git = Git()
         update_mock.assert_called_once()
-        self.git.run("test")
         self.run_mock.assert_called_once()
         self.git.new_branch = "NEW_BRANCH_NAME"
         self.git.new_tag = "v21.12.333.22222-stable"

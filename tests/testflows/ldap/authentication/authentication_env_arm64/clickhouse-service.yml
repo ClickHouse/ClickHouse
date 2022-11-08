@@ -1,0 +1,29 @@
+version: '2.3'
+
+services:
+  clickhouse:
+    image: registry.gitlab.com/altinity-public/container-images/test/clickhouse-integration-test:21.12
+    privileged: true
+    expose:
+      - "9000"
+      - "9009"
+      - "8123"
+    volumes:
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.d:/etc/clickhouse-server/config.d"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/users.d/:/etc/clickhouse-server/users.d"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/ssl:/etc/clickhouse-server/ssl"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/config.xml:/etc/clickhouse-server/config.xml"
+      - "${CLICKHOUSE_TESTS_DIR}/configs/clickhouse/users.xml:/etc/clickhouse-server/users.xml"
+      - "${CLICKHOUSE_TESTS_SERVER_BIN_PATH:-/usr/bin/clickhouse}:/usr/bin/clickhouse"
+      - "${CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH:-/usr/bin/clickhouse-odbc-bridge}:/usr/bin/clickhouse-odbc-bridge"
+    entrypoint: bash -c "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
+    healthcheck:
+      test: clickhouse client --query='select 1'
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - label:disable

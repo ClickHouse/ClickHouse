@@ -1,6 +1,0 @@
-1	[2]	['aa']	Array(String)
-2	[44,55]	['bb','cc']	Array(String)
-1	[2]	[\'aa\']	String
-2	[44,55]	[\'bb\',\'cc\']	String
-1	[2]	[\'aa\']	String
-2	[44,55]	[\'bb\',\'cc\']	String

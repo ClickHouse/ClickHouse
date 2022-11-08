@@ -9,6 +9,7 @@ TEST_DIR = os.path.dirname(__file__)
 
 cluster = ClickHouseCluster(
     __file__,
+    name="secure",
     zookeeper_certfile=os.path.join(TEST_DIR, "configs_secure", "client.crt"),
     zookeeper_keyfile=os.path.join(TEST_DIR, "configs_secure", "client.key"),
 )
