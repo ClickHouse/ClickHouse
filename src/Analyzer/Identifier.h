@@ -182,23 +182,21 @@ public:
 
     void push_back(std::string && part) /// NOLINT
     {
-        parts.push_back(std::move(part));
-        full_name += '.';
-        full_name += parts.back();
+        emplace_back(std::move(part));
     }
 
     void push_back(const std::string & part) /// NOLINT
     {
-        parts.push_back(part);
-        full_name += '.';
-        full_name += parts.back();
+        emplace_back(part);
     }
 
     template <typename ...Args>
     void emplace_back(Args&&... args) /// NOLINT
     {
         parts.emplace_back(std::forward<Args>(args)...);
-        full_name += '.';
+        bool was_not_empty = parts.size() != 1;
+        if (was_not_empty)
+            full_name += '.';
         full_name += parts.back();
     }
 private:
