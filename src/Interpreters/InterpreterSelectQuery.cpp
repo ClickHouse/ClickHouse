@@ -502,10 +502,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ASTPtr view_table;
         if (view)
         {
-            NameToNameMap parameter_values = analyzeReceiveFunctionParamValues(query_ptr);
             query_info.is_parameterized_view = view->isParameterizedView();
+            NameToNameMap parameter_values;
+            if (view->isParameterizedView())
+                parameter_values = analyzeReceiveFunctionParamValues(query_ptr);
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-            view->replaceQueryParametersIfParametrizedView(query_ptr, parameter_values);
+            if (view->isParameterizedView())
+                view->replaceQueryParametersIfParametrizedView(query_ptr, parameter_values);
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(

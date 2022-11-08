@@ -293,7 +293,8 @@ struct ExpressionAnalysisResult
         ssize_t & prewhere_step_num,
         ssize_t & where_step_num,
         ssize_t & having_step_num,
-        const ASTSelectQuery & query);
+        const ASTSelectQuery & query,
+        bool is_create_parameterized_view);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.

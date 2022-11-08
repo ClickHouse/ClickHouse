@@ -178,11 +178,8 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
 
 void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values) const
 {
-    if (is_parameterized_view)
-    {
-        ReplaceQueryParameterVisitor visitor(parameter_values);
-        visitor.visit(outer_query);
-    }
+    ReplaceQueryParameterVisitor visitor(parameter_values);
+    visitor.visit(outer_query);
 }
 
 void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view)
