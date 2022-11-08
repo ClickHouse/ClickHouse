@@ -6426,7 +6426,7 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
             paths_to_get.push_back(partition_path / block);
     }
 
-    auto results = zookeeper.get(paths_to_get);
+    auto results = zookeeper.tryGet(paths_to_get);
     for (size_t i = 0; i < paths_to_get.size(); ++i)
     {
         auto & result = results[i];
@@ -6454,7 +6454,7 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 "probably it is created by a replica that running newer version of ClickHouse. "
                 "Cannot remove it, will wait for this lock to disappear. Upgrade remaining hosts in the cluster to address this warning.";
 
-            if (result.data.starts_with(zookeeper_path + "/temp/abandonable_lock-"))
+            if (result.data.starts_with(zookeeper_path + EphemeralLockInZooKeeper::LEGACY_LOCK_PREFIX))
                 LOG_WARNING(log, old_version_warning, paths_to_get[i], result.data);
             else
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);

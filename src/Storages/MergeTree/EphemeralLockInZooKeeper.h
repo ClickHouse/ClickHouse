@@ -35,6 +35,7 @@ public:
     /// Fake "secondary node" names for blocks with and without "deduplication_path"
     static constexpr const char * LEGACY_LOCK_INSERT = "abandonable_lock-insert";
     static constexpr const char * LEGACY_LOCK_OTHER = "abandonable_lock-other";
+    static constexpr const char * LEGACY_LOCK_PREFIX = "/temp/abandonable_lock-";
 
     EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {

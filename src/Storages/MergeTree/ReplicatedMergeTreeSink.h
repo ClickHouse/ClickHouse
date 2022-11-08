@@ -63,7 +63,6 @@ private:
     struct QuorumInfo
     {
         String status_path;
-        String is_active_node_value;
         int is_active_node_version = -1;
         int host_node_version = -1;
     };
