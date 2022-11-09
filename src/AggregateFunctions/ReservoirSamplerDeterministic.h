@@ -115,7 +115,13 @@ public:
     double quantileInterpolated(double level)
     {
         if (samples.empty())
-            return onEmpty<double>();
+        {
+            [[maybe_unused]] auto nan = onEmpty<T>();
+            if constexpr (DB::is_decimal<T>)
+                return 0;
+            else
+                return nan;
+        }
 
         sortIfNeeded();
 
@@ -259,9 +265,9 @@ private:
     template <typename ResultType>
     ResultType onEmpty() const
     {
-        if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
+        if constexpr (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSamplerDeterministic");
         else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+            return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };

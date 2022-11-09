@@ -44,23 +44,6 @@ namespace ReservoirSamplerOnEmpty
     };
 }
 
-template <typename ResultType, bool is_float>
-struct NanLikeValueConstructor
-{
-    static ResultType getValue()
-    {
-        return std::numeric_limits<ResultType>::quiet_NaN();
-    }
-};
-template <typename ResultType>
-struct NanLikeValueConstructor<ResultType, false>
-{
-    static ResultType getValue()
-    {
-        return ResultType();
-    }
-};
-
 template <typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T>>
 class ReservoirSampler
 {
@@ -123,9 +106,11 @@ public:
     {
         if (samples.empty())
         {
-            if (DB::is_decimal<T>)
+            [[maybe_unused]] auto nan = onEmpty<T>();
+            if constexpr (DB::is_decimal<T>)
                 return 0;
-            return onEmpty<double>();
+            else
+                return nan;
         }
         sortIfNeeded();
 
@@ -262,9 +247,9 @@ private:
     template <typename ResultType>
     ResultType onEmpty() const
     {
-        if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
+        if constexpr (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
         else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+            return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };
