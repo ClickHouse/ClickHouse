@@ -45,7 +45,8 @@ public:
 
         const auto & argument_nodes = function_node->getArguments().getNodes();
         if (argument_nodes.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function '{}' should have exactly one argument", function_node->getFunctionName());
+            /// Do not apply for `count()` with without arguments or `count(*)`, only `count(x)` is supported.
+            return;
 
         mapping[QueryTreeNodeWithHash(argument_nodes[0])].push_back(&node);
     }
