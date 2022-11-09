@@ -16,6 +16,11 @@ namespace Poco
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// standalone clickhouse-keeper server (replacement for ZooKeeper). Uses the same
 /// config as clickhouse-server. Serves requests on TCP ports with or without
 /// SSL using ZooKeeper protocol.
