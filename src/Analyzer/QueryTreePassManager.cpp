@@ -78,7 +78,6 @@ public:
   * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Support setting optimize_if_transform_strings_to_enum.
-  * TODO: Support fuse quantile functions optimize_syntax_fuse_functions.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */

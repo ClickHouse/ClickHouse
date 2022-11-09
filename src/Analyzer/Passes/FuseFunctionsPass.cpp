@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -42,11 +43,11 @@ public:
             /// Do not apply to functions with Nullable result type, because `sumCount` handles it different from `sum` and `avg`.
             return;
 
-        const auto & arguments = function_node->getArgumentsNode()->getChildren();
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} should have exactly one argument", function_node->getFunctionName());
+        const auto & argument_nodes = function_node->getArguments().getNodes();
+        if (argument_nodes.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function '{}' should have exactly one argument", function_node->getFunctionName());
 
-        mapping[QueryTreeNodeWithHash(arguments[0])].push_back(&node);
+        mapping[QueryTreeNodeWithHash(argument_nodes[0])].push_back(&node);
     }
 
     struct QueryTreeNodeWithHash
@@ -81,8 +82,8 @@ QueryTreeNodePtr createResolvedFunction(ContextPtr context, const String & name,
 {
     auto function_node = std::make_shared<FunctionNode>(name);
     auto function = FunctionFactory::instance().get(name, context);
-    function_node->resolveAsFunction(function, result_type);
-    function_node->getArgumentsNode() = std::make_shared<ListNode>(std::move(arguments));
+    function_node->resolveAsFunction(std::move(function), result_type);
+    function_node->getArguments().getNodes() = std::move(arguments);
     return function_node;
 }
 
@@ -115,7 +116,7 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     if (!sum_count_result_type || sum_count_result_type->getElements().size() != 2)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unexpected return type '{}' of function {}, should be tuple of two elements",
+            "Unexpected return type '{}' of function '{}', should be tuple of two elements",
             sum_count_node->getResultType(), sum_count_node->getFunctionName());
     }
 
@@ -152,6 +153,7 @@ FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> n
     for (const auto * node : nodes)
     {
         const FunctionNode & function_node = (*node)->as<const FunctionNode &>();
+        const auto & function_name = function_node.getFunctionName();
 
         const auto & parameter_nodes = function_node.getParameters().getNodes();
         if (parameter_nodes.empty())
@@ -161,11 +163,11 @@ FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> n
         }
 
         if (parameter_nodes.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should have exactly one parameter", function_node.getFunctionName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have exactly one parameter", function_name);
 
         const auto & constant_value = parameter_nodes.front()->getConstantValueOrNull();
         if (!constant_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should have constant parameter", function_node.getFunctionName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
         parameters.push_back(constant_value->getValue());
     }
@@ -173,7 +175,6 @@ FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> n
 }
 
 
-/// Replace `sum(x), count(x), avg(x)` with `sumCount(x).1, sumCount(x).2, sumCount(x).1 / toFloat64(sumCount(x).2)`
 void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     FuseFunctionsVisitor visitor({"sum", "count", "avg"});
@@ -193,7 +194,6 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
     }
 }
 
-/// Replace `quantile(0.5)(x), quantile(0.9)(x)` with `quantiles(0.5, 0.9)(x)[1], quantiles(0.5, 0.9)(x)[2]`
 void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     FuseFunctionsVisitor visitor_quantile({"quantile"});
@@ -208,7 +208,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (!result_array_type)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected return type '{}' of function {}, should be array",
+                "Unexpected return type '{}' of function '{}', should be array",
                 quantiles_node->getResultType(), quantiles_node->getFunctionName());
         }
 
