@@ -2227,7 +2227,7 @@ Default value: `0`.
 
 ## mutations_sync {#mutations_sync}
 
-Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/overview.md/#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
 
 Possible values:
 
@@ -2239,8 +2239,8 @@ Default value: `0`.
 
 **See Also**
 
--   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/overview.md/#synchronicity-of-alter-queries)
--   [Mutations](../../sql-reference/statements/alter/overview.md/#mutations)
+-   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md/#synchronicity-of-alter-queries)
+-   [Mutations](../../sql-reference/statements/alter/index.md/#mutations)
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
@@ -2954,7 +2954,7 @@ Default value: `0`.
 
 ## replication_alter_partitions_sync {#replication-alter-partitions-sync}
 
-Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/overview.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
@@ -2966,7 +2966,7 @@ Default value: `1`.
 
 ## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
 
-Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/overview.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 

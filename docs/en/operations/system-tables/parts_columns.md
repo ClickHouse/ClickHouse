@@ -9,7 +9,7 @@ Each row describes one data part.
 
 Columns:
 
--   `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/overview.md/#query_language_queries_alter) query.
+-   `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md/#query_language_queries_alter) query.
 
     Formats:
 
