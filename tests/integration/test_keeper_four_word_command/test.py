@@ -651,12 +651,12 @@ def test_cmd_rqld(started_cluster):
             # pull wait to become leader
             retry = 0
             # TODO not a restrict way
-            while not keeper_utils.is_leader(cluster, node) and retry < 20:
+            while not keeper_utils.is_leader(cluster, node) and retry < 100:
                 time.sleep(0.1)
                 retry += 1
-            if retry == 20:
+            if retry == 100:
                 print(
                     node.name
-                    + " does not become leader after 2s, maybe there is something wrong."
+                    + " does not become leader after 10s, maybe there is something wrong."
                 )
             assert keeper_utils.is_leader(cluster, node)
