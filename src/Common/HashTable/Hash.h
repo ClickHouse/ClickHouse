@@ -224,14 +224,9 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
-    union
-    {
-        T in;
-        DB::UInt64 out;
-    } u;
-    u.out = 0;
-    u.in = key;
-    return intHashCRC32(u.out, updated_value);
+    DB::UInt64 out {0};
+    std::memcpy(&out, &key, sizeof(T));
+    return intHashCRC32(out, updated_value);
 }
 
 template <typename T>
