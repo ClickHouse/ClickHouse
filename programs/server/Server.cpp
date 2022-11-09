@@ -1878,15 +1878,15 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -1925,6 +1925,60 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     }
 
     return stack;
+}
+
+struct Server::ServerHTTPContext : public IHTTPContext
+{
+    explicit ServerHTTPContext(ContextPtr context_)
+        : context(Context::createCopy(context_))
+    {}
+
+    uint64_t getMaxHstsAge() const override
+    {
+        return context->getSettingsRef().hsts_max_age;
+    }
+
+    uint64_t getMaxUriSize() const override
+    {
+        return context->getSettingsRef().http_max_uri_size;
+    }
+
+    uint64_t getMaxFields() const override
+    {
+        return context->getSettingsRef().http_max_fields;
+    }
+
+    uint64_t getMaxFieldNameSize() const override
+    {
+        return context->getSettingsRef().http_max_field_name_size;
+    }
+
+    uint64_t getMaxFieldValueSize() const override
+    {
+        return context->getSettingsRef().http_max_field_value_size;
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getSettingsRef().http_max_chunk_size;
+    }
+
+    Poco::Timespan getReceiveTimeout() const override
+    {
+        return context->getSettingsRef().http_receive_timeout;
+    }
+
+    Poco::Timespan getSendTimeout() const override
+    {
+        return context->getSettingsRef().http_send_timeout;
+    }
+
+    ContextPtr context;
+};
+
+HTTPContextPtr Server::httpContext() const
+{
+    return std::make_shared<ServerHTTPContext>(context());
 }
 
 void Server::createServers(
@@ -2009,7 +2063,7 @@ void Server::createServers(
                 port_name,
                 "http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
         });
 
         /// HTTPS
@@ -2026,7 +2080,7 @@ void Server::createServers(
                 port_name,
                 "https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
             throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -2151,7 +2205,7 @@ void Server::createServers(
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -2171,7 +2225,7 @@ void Server::createServers(
                 port_name,
                 "replica communication (interserver): http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
@@ -2191,7 +2245,7 @@ void Server::createServers(
                 port_name,
                 "secure replica communication (interserver): https://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    context(),
+                    httpContext(),
                     createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,

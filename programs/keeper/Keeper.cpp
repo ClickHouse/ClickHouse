@@ -24,6 +24,9 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
+#include <Server/HTTP/HTTPServer.h>
+
+#include "Core/Defines.h"
 #include "config.h"
 #include "config_version.h"
 
@@ -273,6 +276,54 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
+struct Keeper::KeeperHTTPContext : public IHTTPContext
+{
+    uint64_t getMaxHstsAge() const override
+    {
+        return 0;
+    }
+
+    uint64_t getMaxUriSize() const override
+    {
+        return 1048576;
+    }
+
+    uint64_t getMaxFields() const override
+    {
+        return 1000000;
+    }
+
+    uint64_t getMaxFieldNameSize() const override
+    {
+        return 1048576;
+    }
+
+    uint64_t getMaxFieldValueSize() const override
+    {
+        return 1048576;
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return 100_GiB;
+    }
+
+    Poco::Timespan getReceiveTimeout() const override
+    {
+        return DEFAULT_HTTP_READ_BUFFER_TIMEOUT;
+    }
+
+    Poco::Timespan getSendTimeout() const override
+    {
+        return DEFAULT_HTTP_READ_BUFFER_TIMEOUT;
+    }
+};
+
+HTTPContextPtr Keeper::httpContext()
+{
+    return std::make_shared<KeeperHTTPContext>();
+}
+
 int Keeper::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
@@ -411,6 +462,29 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                 ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
+        });
+
+        const auto & config = config_getter();
+        Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+        Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+        http_params->setTimeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
+        http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+        /// Prometheus (if defined and not setup yet with http_port)
+        port_name = "prometheus.port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            // TODO(antonio2368): use config
+            socket.setReceiveTimeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
+            socket.setSendTimeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "Prometheus: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(), createHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 

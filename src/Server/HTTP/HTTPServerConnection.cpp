@@ -7,12 +7,12 @@ namespace DB
 {
 
 HTTPServerConnection::HTTPServerConnection(
-    ContextPtr context_,
+    HTTPContextPtr context_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
     HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(Context::createCopy(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
+    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -36,7 +36,7 @@ void HTTPServerConnection::run()
 
                 if (request.isSecure())
                 {
-                    size_t hsts_max_age = context->getSettingsRef().hsts_max_age.value;
+                    size_t hsts_max_age = context->getMaxHstsAge();
 
                     if (hsts_max_age > 0)
                         response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));
