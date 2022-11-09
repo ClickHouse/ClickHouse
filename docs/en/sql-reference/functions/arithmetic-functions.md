@@ -66,7 +66,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
 
 ## positive_modulo(a, b)
-Calculates the remainder when dividing `a` by `b`. Similiar to function `modulo` except that `positive_modulo` always return non-negative number.
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
 
 Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get positive result and don't care about performance too much.
 
