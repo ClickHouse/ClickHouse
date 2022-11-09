@@ -1058,31 +1058,31 @@ private:
         const ProjectionName & fill_to_expression_projection_name,
         const ProjectionName & fill_step_expression_projection_name);
 
-    static void getCompoundExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+    static void collectCompoundExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
         const DataTypePtr & compound_expression_type,
         const Identifier & compound_expression_identifier,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
-    static void getTableExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+    static void collectTableExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
         const QueryTreeNodePtr & table_expression,
         const TableExpressionData & table_expression_data,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
-    static void getScopeValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+    static void collectScopeValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
         const IdentifierResolveScope & scope,
         bool allow_expression_identifiers,
         bool allow_function_identifiers,
         bool allow_table_expression_identifiers,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
-    static void getScopeWithParentScopesValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+    static void collectScopeWithParentScopesValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
         const IdentifierResolveScope & scope,
         bool allow_expression_identifiers,
         bool allow_function_identifiers,
         bool allow_table_expression_identifiers,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
-    static std::vector<String> getIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers);
+    static std::vector<String> collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers);
 
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path);
 
@@ -1393,7 +1393,7 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeN
 }
 
 /// Get valid identifiers for typo correction from compound expression
-void QueryAnalyzer::getCompoundExpressionValidIdentifiersForTypoCorrection(
+void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
     const Identifier & unresolved_identifier,
     const DataTypePtr & compound_expression_type,
     const Identifier & compound_expression_identifier,
@@ -1436,7 +1436,7 @@ void QueryAnalyzer::getCompoundExpressionValidIdentifiersForTypoCorrection(
 }
 
 /// Get valid identifiers for typo correction from table expression
-void QueryAnalyzer::getTableExpressionValidIdentifiersForTypoCorrection(
+void QueryAnalyzer::collectTableExpressionValidIdentifiersForTypoCorrection(
     const Identifier & unresolved_identifier,
     const QueryTreeNodePtr & table_expression,
     const TableExpressionData & table_expression_data,
@@ -1448,7 +1448,7 @@ void QueryAnalyzer::getTableExpressionValidIdentifiersForTypoCorrection(
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
             valid_identifiers_result.insert(column_identifier);
 
-        getCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+        collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
             column_node->getColumnType(),
             column_identifier,
             valid_identifiers_result);
@@ -1461,6 +1461,11 @@ void QueryAnalyzer::getTableExpressionValidIdentifiersForTypoCorrection(
 
             if (unresolved_identifier.getPartsSize() == column_identifier_with_alias.getPartsSize())
                 valid_identifiers_result.insert(column_identifier_with_alias);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_alias,
+                valid_identifiers_result);
         }
 
         if (!table_expression_data.table_name.empty())
@@ -1471,6 +1476,11 @@ void QueryAnalyzer::getTableExpressionValidIdentifiersForTypoCorrection(
 
             if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name.getPartsSize())
                 valid_identifiers_result.insert(column_identifier_with_table_name);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_table_name,
+                valid_identifiers_result);
         }
 
         if (!table_expression_data.database_name.empty() && !table_expression_data.table_name.empty())
@@ -1481,12 +1491,17 @@ void QueryAnalyzer::getTableExpressionValidIdentifiersForTypoCorrection(
 
             if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name_and_database_name.getPartsSize())
                 valid_identifiers_result.insert(column_identifier_with_table_name_and_database_name);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_table_name_and_database_name,
+                valid_identifiers_result);
         }
     }
 }
 
 /// Get valid identifiers for typo correction from scope without looking at parent scopes
-void QueryAnalyzer::getScopeValidIdentifiersForTypoCorrection(
+void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
     const Identifier & unresolved_identifier,
     const IdentifierResolveScope & scope,
     bool allow_expression_identifiers,
@@ -1494,53 +1509,81 @@ void QueryAnalyzer::getScopeValidIdentifiersForTypoCorrection(
     bool allow_table_expression_identifiers,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
+    bool identifier_is_short = unresolved_identifier.isShort();
+    bool identifier_is_compound = unresolved_identifier.isCompound();
+
     if (allow_expression_identifiers)
     {
-        if (unresolved_identifier.isShort())
+        for (const auto & [name, expression] : scope.alias_name_to_expression_node)
+        {
+            auto expression_identifier = Identifier(name);
+            valid_identifiers_result.insert(expression_identifier);
+
+            auto expression_node_type = expression->getNodeType();
+
+            if (identifier_is_compound && isExpressionNodeType(expression_node_type))
+            {
+                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                    expression->getResultType(),
+                    expression_identifier,
+                    valid_identifiers_result);
+            }
+        }
+
+        for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
+        {
+            collectTableExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                table_expression,
+                table_expression_data,
+                valid_identifiers_result);
+        }
+    }
+
+    if (identifier_is_short)
+    {
+        if (allow_function_identifiers)
         {
             for (const auto & [name, _] : scope.alias_name_to_expression_node)
                 valid_identifiers_result.insert(Identifier(name));
         }
 
-        for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
+        if (allow_table_expression_identifiers)
         {
-            getTableExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                table_expression,
-                table_expression_data,
-                valid_identifiers_result);
+            for (const auto & [name, _] : scope.alias_name_to_table_expression_node)
+                valid_identifiers_result.insert(Identifier(name));
         }
-
     }
 
-    if (allow_function_identifiers && unresolved_identifier.isShort())
+    for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
-        for (const auto & [name, _] : scope.alias_name_to_expression_node)
-            valid_identifiers_result.insert(Identifier(name));
-    }
+        auto expression_node_type = expression->getNodeType();
 
-    if (allow_table_expression_identifiers && unresolved_identifier.isShort())
-    {
-        for (const auto & [name, _] : scope.alias_name_to_table_expression_node)
-            valid_identifiers_result.insert(Identifier(name));
-    }
-
-    if (unresolved_identifier.isShort())
-    {
-        for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
+        if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
         {
-            auto expression_node_type = expression->getNodeType();
+            auto expression_identifier = Identifier(argument_name);
 
-            if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
-                valid_identifiers_result.insert(Identifier(argument_name));
-            else if (allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
-                valid_identifiers_result.insert(Identifier(argument_name));
-            else if (allow_table_expression_identifiers && isTableExpressionNodeType(expression_node_type))
-                valid_identifiers_result.insert(Identifier(argument_name));
+            if (identifier_is_compound)
+            {
+                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                    expression->getResultType(),
+                    expression_identifier,
+                    valid_identifiers_result);
+            }
+
+            valid_identifiers_result.insert(expression_identifier);
+        }
+        else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
+        {
+            valid_identifiers_result.insert(Identifier(argument_name));
+        }
+        else if (allow_table_expression_identifiers && isTableExpressionNodeType(expression_node_type))
+        {
+            valid_identifiers_result.insert(Identifier(argument_name));
         }
     }
 }
 
-void QueryAnalyzer::getScopeWithParentScopesValidIdentifiersForTypoCorrection(
+void QueryAnalyzer::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(
     const Identifier & unresolved_identifier,
     const IdentifierResolveScope & scope,
     bool allow_expression_identifiers,
@@ -1552,7 +1595,7 @@ void QueryAnalyzer::getScopeWithParentScopesValidIdentifiersForTypoCorrection(
 
     while (current_scope)
     {
-        getScopeValidIdentifiersForTypoCorrection(unresolved_identifier,
+        collectScopeValidIdentifiersForTypoCorrection(unresolved_identifier,
             *current_scope,
             allow_expression_identifiers,
             allow_function_identifiers,
@@ -1563,7 +1606,7 @@ void QueryAnalyzer::getScopeWithParentScopesValidIdentifiersForTypoCorrection(
     }
 }
 
-std::vector<String> QueryAnalyzer::getIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
+std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
 {
     std::vector<String> prompting_strings;
     prompting_strings.reserve(valid_identifiers.size());
@@ -1937,12 +1980,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
     if (!nestedIdentifierCanBeResolved(expression_type, nested_path))
     {
         std::unordered_set<Identifier> valid_identifiers;
-        getCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
+        collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
             expression_type,
             compound_expression_identifier,
             valid_identifiers);
 
-        auto hints = getIdentifierTypoHints(expression_identifier, valid_identifiers);
+        auto hints = collectIdentifierTypoHints(expression_identifier, valid_identifiers);
 
         String compound_expression_from_error_message;
         if (!compound_expression_source.empty())
@@ -2367,11 +2410,12 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
         if (!result_expression)
         {
             std::unordered_set<Identifier> valid_identifiers;
-            getTableExpressionValidIdentifiersForTypoCorrection(identifier,
+            collectTableExpressionValidIdentifiersForTypoCorrection(identifier,
                 table_expression_node,
                 table_expression_data,
                 valid_identifiers);
-            auto hints = getIdentifierTypoHints(identifier, valid_identifiers);
+
+            auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
                 identifier.getFullName(),
@@ -4595,14 +4639,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::TABLE_EXPRESSION);
 
                 std::unordered_set<Identifier> valid_identifiers;
-                getScopeWithParentScopesValidIdentifiersForTypoCorrection(unresolved_identifier,
+                collectScopeWithParentScopesValidIdentifiersForTypoCorrection(unresolved_identifier,
                     scope,
                     true,
                     allow_lambda_expression,
                     allow_table_expression,
                     valid_identifiers);
 
-                auto hints = getIdentifierTypoHints(unresolved_identifier, valid_identifiers);
+                auto hints = collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier '{}' in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
