@@ -270,7 +270,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 ## UPDATE IN PARTITION
 
-Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/overview.md/#mutations).
+Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md/#mutations).
 
 Syntax:
 
@@ -290,7 +290,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 
 ## DELETE IN PARTITION
 
-Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/overview.md/#mutations).
+Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md/#mutations).
 
 Syntax:
 
