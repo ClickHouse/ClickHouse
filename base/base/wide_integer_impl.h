@@ -227,6 +227,8 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
+        /// NOTE: this can be called with DB::Decimal, and in this case, result
+        /// will be wrong
         if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
