@@ -49,7 +49,7 @@ void TableFunctionDelta::parseArgumentsImpl(
 
     std::map<String, size_t> args_to_idx;
     /// For 4 arguments we support 2 possible variants:
-    /// hudi(source, format, structure, compression_method) and hudi(source, access_key_id, access_key_id, format)
+    /// deltaLake(source, format, structure, compression_method) and deltaLake(source, access_key_id, access_key_id, format)
     /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
     if (args.size() == 4)
     {
@@ -61,7 +61,7 @@ void TableFunctionDelta::parseArgumentsImpl(
             args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
     }
     /// For 3 arguments we support 2 possible variants:
-    /// hudi(source, format, structure) and hudi(source, access_key_id, access_key_id)
+    /// deltaLake(source, format, structure) and deltaLake(source, access_key_id, access_key_id)
     /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
     else if (args.size() == 3)
     {
