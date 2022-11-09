@@ -4,6 +4,7 @@
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ThreadFuzzer.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_DATA_PART;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 struct ReplicatedMergeTreeSink::DelayedChunk
@@ -144,7 +146,6 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & z
     if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);
 
-    quorum_info.is_active_node_value = is_active.data;
     quorum_info.is_active_node_version = is_active.stat.version;
     quorum_info.host_node_version = host.stat.version;
 
@@ -346,12 +347,14 @@ void ReplicatedMergeTreeSink::commitPart(
         bool deduplicate_block = !block_id.empty();
         String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
         auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        ThreadFuzzer::maybeInjectSleep();
 
         /// Prepare transaction to ZooKeeper
         /// It will simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
         Coordination::Requests ops;
 
         Int64 block_number = 0;
+        size_t block_unlock_op_idx = std::numeric_limits<size_t>::max();
         String existing_part_name;
         if (block_number_lock)
         {
@@ -395,7 +398,8 @@ void ReplicatedMergeTreeSink::commitPart(
                 zkutil::CreateMode::PersistentSequential));
 
             /// Deletes the information that the block number is used for writing.
-            block_number_lock->getUnlockOps(ops);
+            block_unlock_op_idx = ops.size();
+            block_number_lock->getUnlockOp(ops);
 
             /** If we need a quorum - create a node in which the quorum is monitored.
               * (If such a node already exists, then someone has managed to make another quorum record at the same time,
@@ -464,7 +468,7 @@ void ReplicatedMergeTreeSink::commitPart(
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value, replicas_num);
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
                 }
                 else
                 {
@@ -522,7 +526,11 @@ void ReplicatedMergeTreeSink::commitPart(
                     part->name);
         }
 
+        ThreadFuzzer::maybeInjectSleep();
+
         storage.lockSharedData(*part, false, {});
+
+        ThreadFuzzer::maybeInjectSleep();
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
@@ -535,6 +543,11 @@ void ReplicatedMergeTreeSink::commitPart(
             /// Lock nodes have been already deleted, do not delete them in destructor
             if (block_number_lock)
                 block_number_lock->assumeUnlocked();
+        }
+        else if (multi_code == Coordination::Error::ZNONODE && zkutil::getFailedOpIndex(multi_code, responses) == block_unlock_op_idx)
+        {
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                            "Insert query (for block {}) was cancelled by concurrent ALTER PARTITION", block_number_lock->getPath());
         }
         else if (multi_code == Coordination::Error::ZCONNECTIONLOSS
             || multi_code == Coordination::Error::ZOPERATIONTIMEOUT)
@@ -622,7 +635,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 storage.updateQuorum(part->name, false);
         }
 
-        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value, replicas_num);
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num);
     }
 }
 
@@ -644,7 +657,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    const std::string & is_active_node_value,
+    Int32 is_active_node_version,
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
@@ -677,9 +690,10 @@ void ReplicatedMergeTreeSink::waitForQuorum(
 
         /// And what if it is possible that the current replica at this time has ceased to be active
         /// and the quorum is marked as failed and deleted?
+        Coordination::Stat stat;
         String value;
-        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
-            || value != is_active_node_value)
+        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
+            || stat.version != is_active_node_version)
             throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
     }
     catch (...)

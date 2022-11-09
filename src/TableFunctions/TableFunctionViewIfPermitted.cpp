@@ -107,7 +107,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>();
+    factory.registerFunction<TableFunctionViewIfPermitted>({.documentation = {}, .allow_readonly = true});
 }
 
 }
