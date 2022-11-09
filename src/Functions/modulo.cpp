@@ -191,7 +191,7 @@ REGISTER_FUNCTION(PositiveModulo)
     factory.registerFunction<FunctionPositiveModulo>(
         {
             R"(
-Calculates the remainder when dividing `a` by `b`. Similiar to function `modulo` except that `positive_modulo` always return non-negative number.
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
         )",
             Documentation::Examples{{"positive_modulo", "SELECT positive_modulo(-1000, 32);"}},
             Documentation::Categories{"Arithmetic"}},
