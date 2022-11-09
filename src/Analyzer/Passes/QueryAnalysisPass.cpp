@@ -347,14 +347,14 @@ struct IdentifierResolveResult
 
 struct IdentifierResolveSettings
 {
-    /// Allow to check parent scopes during identifier resolution
-    bool allow_to_check_parent_scopes = true;
-
     /// Allow to check join tree during identifier resolution
     bool allow_to_check_join_tree = true;
 
     /// Allow to check CTEs during table identifier resolution
     bool allow_to_check_cte = true;
+
+    /// Allow to check parent scopes during identifier resolution
+    bool allow_to_check_parent_scopes = true;
 
     /// Allow to check database catalog during table identifier resolution
     bool allow_to_check_database_catalog = true;
@@ -429,48 +429,53 @@ public:
     {
         if (node->hasAlias())
         {
-            expressions.emplace_back(node.get(), node->getAlias());
-            ++alias_name_to_expressions_size[expressions.back().second];
-            return;
+            const auto & node_alias = node->getAlias();
+            alias_name_to_expressions[node_alias].push_back(node);
         }
 
-        expressions.emplace_back(node.get(), std::string());
+        expressions.emplace_back(node);
     }
 
     void popNode()
     {
-        const auto & [_, top_expression_alias] = expressions.back();
+        const auto & top_expression = expressions.back();
+        const auto & top_expression_alias = top_expression->getAlias();
+
         if (!top_expression_alias.empty())
         {
-            auto it = alias_name_to_expressions_size.find(top_expression_alias);
-            --it->second;
+            auto it = alias_name_to_expressions.find(top_expression_alias);
+            auto & alias_expressions = it->second;
+            alias_expressions.pop_back();
 
-            if (it->second == 0)
-                alias_name_to_expressions_size.erase(it);
+            if (alias_expressions.empty())
+                alias_name_to_expressions.erase(it);
         }
 
         expressions.pop_back();
     }
 
-    const IQueryTreeNode * getRoot() const
+    [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
-        if (expressions.empty())
-            return nullptr;
-
-        return expressions.front().first;
+        return expressions.front();
     }
 
-    const IQueryTreeNode * getTop() const
+    const QueryTreeNodePtr & getTop() const
     {
-        if (expressions.empty())
-            return nullptr;
-
-        return expressions.back().first;
+        return expressions.back();
     }
 
-    bool hasExpressionWithAlias(const std::string & alias) const
+    [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
-        return alias_name_to_expressions_size.find(alias) != alias_name_to_expressions_size.end();
+        return alias_name_to_expressions.contains(alias);
+    }
+
+    QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
+    {
+        auto expression_it = alias_name_to_expressions.find(alias);
+        if (expression_it == alias_name_to_expressions.end())
+            return {};
+
+        return expression_it->second.front();
     }
 
     [[maybe_unused]] size_t size() const
@@ -487,11 +492,12 @@ public:
     {
         buffer << expressions.size() << '\n';
 
-        for (const auto & [expression, alias] : expressions)
+        for (const auto & expression : expressions)
         {
             buffer << "Expression ";
             buffer << expression->formatASTForErrorMessage();
 
+            const auto & alias = expression->getAlias();
             if (!alias.empty())
                 buffer << " alias " << alias;
 
@@ -508,8 +514,8 @@ public:
     }
 
 private:
-    std::vector<std::pair<const IQueryTreeNode *, std::string>> expressions;
-    std::unordered_map<std::string, size_t> alias_name_to_expressions_size;
+    QueryTreeNodes expressions;
+    std::unordered_map<std::string, std::vector<QueryTreeNodePtr>> alias_name_to_expressions;
 };
 
 /** Projection names is name of query tree node that is used in projection part of query node.
@@ -1775,7 +1781,7 @@ bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifi
 /** Resolve identifier from scope aliases.
   *
   * Resolve strategy:
-  * 1. If alias is registered current expressions that are in resolve process and if last expression is not part of first expression subtree
+  * 1. If alias is registered in current expressions that are in resolve process and if top expression is not part of bottom expression with the same alias subtree
   * throw cyclic aliases exception.
   * Otherwise prevent cache usage for identifier lookup and return nullptr.
   *
@@ -1800,24 +1806,22 @@ bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifi
   *
   * 2. Depending on IdentifierLookupContext get alias name to node map from IdentifierResolveScope.
   * 3. Try to bind identifier to alias name in map. If there are no such binding return nullptr.
-  * 4. Add node into current expressions to resolve. TODO: Handle lambdas and tables properly.
-  *
-  * 5. If node in map is not resolved, resolve it. It is important because for result type of identifier lookup node can depend on it.
+  * 4. If node in map is not resolved, resolve it. It is important in case of compound expressions.
   * Example: SELECT value.a, cast('(1)', 'Tuple(a UInt64)') AS value;
   *
-  * Special case for IdentifierNode, if node is identifier depending on lookup context we need to erase entry from expression or lambda map.
-  * Check QueryExpressionsAliasVisitor documentation.
+  * Special case if node is identifier node.
+  * Example: SELECT value, id AS value FROM test_table;
   *
-  * Special case for QueryNode, if lookup context is expression, evaluate it as scalar subquery.
+  * Add node in current scope expressions in resolve process stack.
+  * Try to resolve identifier.
+  * If identifier is resolved, depending on lookup context, erase entry from expression or lambda map. Check QueryExpressionsAliasVisitor documentation.
+  * Pop node from current scope expressions in resolve process stack.
   *
-  * 6. Pop node from current expressions to resolve.
-  * 7. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap alias node
+  * 5. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap alias node
   * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
   *
   * Example: SELECT value AS alias, alias.nested_path.
   * Result: SELECT value AS alias, tupleElement(value, 'nested_path') value.nested_path.
-  *
-  * 8. If identifier lookup is in expression context, clone result expression.
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings)
 {
@@ -1845,12 +1849,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
             identifier_bind_part,
             scope.scope_node->formatASTForErrorMessage());
 
-    if (scope.expressions_in_resolve_process_stack.hasExpressionWithAlias(identifier_bind_part))
+    if (auto root_expression_wih_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
     {
-        const auto * root_expression = scope.expressions_in_resolve_process_stack.getRoot();
-        const auto * top_expression = scope.expressions_in_resolve_process_stack.getTop();
+        const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
 
-        if (!isNodePartOfTree(top_expression, root_expression))
+        if (!isNodePartOfTree(top_expression.get(), root_expression_wih_alias.get()))
             throw Exception(ErrorCodes::CYCLIC_ALIASES,
                 "Cyclic aliases for identifier '{}'. In scope {}",
                 identifier_lookup.identifier.getFullName(),
@@ -4611,6 +4614,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
                 auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
 
+                auto from_table_identifier_alias = from_table_identifier.getAlias();
+
                 IdentifierResolveSettings resolve_settings;
                 /// In join tree initialization ignore join tree as identifier lookup source
                 resolve_settings.allow_to_check_join_tree = false;
@@ -4621,7 +4626,15 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                   */
                 resolve_settings.allow_to_resolve_subquery_during_identifier_resolution = false;
 
+                scope.expressions_in_resolve_process_stack.pushNode(current_join_tree_node);
+
                 auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, resolve_settings);
+
+                scope.expressions_in_resolve_process_stack.popNode();
+                bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
+                if (expression_was_root)
+                    scope.non_cached_identifier_lookups_during_expression_resolve.clear();
+
                 auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
 
                 if (!resolved_identifier)
@@ -4631,6 +4644,11 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
 
                 resolved_identifier = resolved_identifier->clone();
+
+                /// Update alias name to table expression map
+                auto table_expression_it = scope.alias_name_to_table_expression_node.find(from_table_identifier_alias);
+                if (table_expression_it != scope.alias_name_to_table_expression_node.end())
+                    table_expression_it->second = resolved_identifier;
 
                 auto table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
 
