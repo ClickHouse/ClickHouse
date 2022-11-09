@@ -11,7 +11,7 @@ Statements represent various kinds of action you can perform using SQL queries. 
 -   [SELECT](/docs/en/sql-reference/statements/select/index.md)
 -   [INSERT INTO](/docs/en/sql-reference/statements/insert-into.md)
 -   [CREATE](/docs/en/sql-reference/statements/create/index.md)
--   [ALTER](/docs/en/sql-reference/statements/alter/overview.md)
+-   [ALTER](/docs/en/sql-reference/statements/alter/index.md)
 -   [SYSTEM](/docs/en/sql-reference/statements/system.md)
 -   [SHOW](/docs/en/sql-reference/statements/show.md)
 -   [GRANT](/docs/en/sql-reference/statements/grant.md)
