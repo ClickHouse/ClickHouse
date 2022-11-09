@@ -73,7 +73,6 @@ private:
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
 
-    struct ServerHTTPContext;
     HTTPContextPtr httpContext() const;
 
     Poco::Net::SocketAddress socketBindListen(

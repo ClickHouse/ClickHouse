@@ -7,7 +7,7 @@ namespace DB
 {
 
 class KeeperDispatcher;
-void updateKeeperInformation(const KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values);
+void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values);
 
 class KeeperAsynchronousMetrics : public AsynchronousMetrics
 {

@@ -52,7 +52,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     , WithContext(global_context_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {}
- 
+
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values)
 {
     if (auto mark_cache = getContext()->getMarkCache())
