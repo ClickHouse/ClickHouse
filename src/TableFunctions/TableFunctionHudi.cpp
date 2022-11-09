@@ -119,7 +119,7 @@ void TableFunctionHudi::parseArguments(const ASTPtr & ast_function, ContextPtr c
         getName());
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
 
     auto & args = args_func.at(0)->children;
 
@@ -140,8 +140,8 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
 StoragePtr TableFunctionHudi::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri (configuration.url);
-    S3::URI s3_uri (uri);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")

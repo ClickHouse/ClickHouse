@@ -133,15 +133,25 @@ def test_select_query(started_cluster):
 
     select_query = "SELECT {} FROM hudi FORMAT TSV"
 
+    select_table_function_query = f"""SELECT {} FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
+
     for column_name in columns:
         result = run_query(instance, select_query.format(column_name)).splitlines()
+        assert len(result) > 0
+
+    for column_name in columns:
+        result = run_query(instance, select_table_function_query.format(column_name)).splitlines()
         assert len(result) > 0
 
     # test if all partition paths is presented in result
     distinct_select_query = (
         "SELECT DISTINCT partitionpath FROM hudi ORDER BY partitionpath FORMAT TSV"
     )
+
+    distinct_select_table_function_query = f"""SELECT DISTINCT partitionpath FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') ORDER BY partitionpath FORMAT TSV"""
+
     result = run_query(instance, distinct_select_query)
+    result_table_function = run_query(instance, distinct_select_query)
     expected = [
         "americas/brazil/sao_paulo",
         "americas/united_states/san_francisco",
@@ -149,3 +159,4 @@ def test_select_query(started_cluster):
     ]
 
     assert TSV(result) == TSV(expected)
+    assert TSV(result_table_function) == TSV(expected)
