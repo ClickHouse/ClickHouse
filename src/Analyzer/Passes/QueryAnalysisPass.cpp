@@ -1421,7 +1421,8 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
         const auto & tuple_element_names = tuple->getElementNames();
         size_t tuple_element_names_size = tuple_element_names.size();
 
-        for (size_t i = 0; i < tuple_element_names_size; ++i) {
+        for (size_t i = 0; i < tuple_element_names_size; ++i)
+        {
             const auto & element_name = tuple_element_names[i];
             const auto & element_type = tuple->getElements()[i];
 
