@@ -147,13 +147,16 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 
 /// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns)
+void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         if (const auto * prewhere_info = reading->getPrewhereInfo())
         {
+            /// Should ignore limit if there is filtering.
+            limit = 0;
+
             if (prewhere_info->prewhere_actions)
             {
                 //std::cerr << "====== Adding prewhere " << std::endl;
@@ -168,13 +171,24 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
     if (node.children.size() != 1)
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
-        appendExpression(dag, expression->getExpression());
+    {
+        const auto & actions = expression->getExpression();
+
+        /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
+        if (actions->hasArrayJoin())
+            limit = 0;
+
+        appendExpression(dag, actions);
+    }
 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
+        /// Should ignore limit if there is filtering.
+        limit = 0;
+
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
             appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
@@ -182,6 +196,11 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(step))
     {
+        /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
+        /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
+        if (!array_join->arrayJoin()->is_left)
+            limit = 0;
+
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
 
         /// Remove array joined columns from outputs.
@@ -725,7 +744,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
     ActionsDAGPtr dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns);
+    buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
         enreachFixedColumns(*dag, fixed_columns);
