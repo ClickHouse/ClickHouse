@@ -297,7 +297,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(const ZooKeeperWithFaultInjecti
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num);
+            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -331,7 +331,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", replicas_num);
+        commitPart(zookeeper, part, "", replicas_num, true);
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -345,7 +345,8 @@ void ReplicatedMergeTreeSink::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const String & block_id,
-    size_t replicas_num)
+    size_t replicas_num,
+    bool writing_existing_part)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -377,8 +378,13 @@ void ReplicatedMergeTreeSink::commitPart(
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
-            retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-            return;
+            /// When we attach existing parts it's okay to be in read-only mode
+            /// For example during RESTORE REPLICA.
+            if (!writing_existing_part)
+            {
+                retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                return;
+            }
         }
 
         if (retries_ctl.isRetry())

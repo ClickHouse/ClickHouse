@@ -82,7 +82,8 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
-        size_t replicas_num);
+        size_t replicas_num,
+        bool writing_existing_part);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
