@@ -66,7 +66,6 @@ private:
     struct QuorumInfo
     {
         String status_path;
-        String is_active_node_value;
         int is_active_node_version = -1;
         int host_node_version = -1;
     };
@@ -91,7 +90,7 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         const std::string & part_name,
         const std::string & quorum_path,
-        const std::string & is_active_node_value,
+        int is_active_node_version,
         size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
