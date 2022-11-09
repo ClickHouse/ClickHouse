@@ -133,7 +133,7 @@ def test_select_query(started_cluster):
 
     select_query = "SELECT {} FROM hudi FORMAT TSV"
 
-    select_table_function_query = f"""SELECT {} FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
+    select_table_function_query = "SELECT {} FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"
 
     for column_name in columns:
         result = run_query(instance, select_query.format(column_name)).splitlines()
@@ -148,7 +148,7 @@ def test_select_query(started_cluster):
         "SELECT DISTINCT partitionpath FROM hudi ORDER BY partitionpath FORMAT TSV"
     )
 
-    distinct_select_table_function_query = f"""SELECT DISTINCT partitionpath FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') ORDER BY partitionpath FORMAT TSV"""
+    distinct_select_table_function_query = "SELECT DISTINCT partitionpath FROM hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') ORDER BY partitionpath FORMAT TSV"
 
     result = run_query(instance, distinct_select_query)
     result_table_function = run_query(instance, distinct_select_query)
