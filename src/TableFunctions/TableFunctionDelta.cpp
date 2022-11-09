@@ -79,13 +79,23 @@ void TableFunctionDelta::parseArgumentsImpl(
     /// This argument is always the first
     base_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
 
-    static constexpr std::array possible_args{"format", "structure", "compression_method", "access_key_id", "secret_access_key"};
+    if (args_to_idx.contains("format"))
+        base_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
 
-    for (const auto * possible_arg : possible_args)
-    {
-        if (args_to_idx.contains(possible_arg))
-            base_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx[possible_arg]], possible_arg);
-    }
+    if (args_to_idx.contains("structure"))
+        base_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
+
+    if (args_to_idx.contains("compression_method"))
+        base_configuration.compression_method
+            = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
+
+    if (args_to_idx.contains("access_key_id"))
+        base_configuration.auth_settings.access_key_id
+            = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
+
+    if (args_to_idx.contains("secret_access_key"))
+        base_configuration.auth_settings.secret_access_key
+            = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
 
     if (base_configuration.format == "auto")
         base_configuration.format = FormatFactory::instance().getFormatFromFileName(base_configuration.url, true);
@@ -109,7 +119,7 @@ void TableFunctionDelta::parseArguments(const ASTPtr & ast_function, ContextPtr 
         getName());
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
 
     auto & args = args_func.at(0)->children;
 
