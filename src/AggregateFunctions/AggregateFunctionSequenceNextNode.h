@@ -81,7 +81,7 @@ struct NodeBase
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
-        buf.read(node->data(), size);
+        buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
         UInt64 ulong_bitset;
