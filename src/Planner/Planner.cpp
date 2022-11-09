@@ -571,14 +571,7 @@ void Planner::buildQueryPlanIfNeeded()
             if (!window_description.full_sort_description.empty() &&
                 (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
             {
-                SortingStep::Settings sort_settings;
-                sort_settings.max_block_size = settings.max_block_size;
-                sort_settings.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-                sort_settings.max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
-                sort_settings.remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
-                sort_settings.max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
-                sort_settings.tmp_data = query_context->getTempDataOnDisk();
-                sort_settings.min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+                SortingStep::Settings sort_settings(*query_context);
 
                 auto sorting_step = std::make_unique<SortingStep>(
                     query_plan.getCurrentDataStream(),
@@ -676,14 +669,7 @@ void Planner::buildQueryPlanIfNeeded()
 
         const Settings & settings = query_context->getSettingsRef();
 
-        SortingStep::Settings sort_settings;
-        sort_settings.max_block_size = settings.max_block_size;
-        sort_settings.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-        sort_settings.max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
-        sort_settings.remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
-        sort_settings.max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
-        sort_settings.tmp_data = query_context->getTempDataOnDisk();
-        sort_settings.min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+        SortingStep::Settings sort_settings(*query_context);
 
         /// Merge the sorted blocks
         auto sorting_step = std::make_unique<SortingStep>(

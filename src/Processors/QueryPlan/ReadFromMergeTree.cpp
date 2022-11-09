@@ -441,7 +441,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (info.sum_marks == 0)
         return {};
 
-    bool added_prewhere_output = false;
+    /// PREWHERE actions can remove some input columns (which are needed only for prewhere condition).
+    /// In case of read-in-order, PREWHERE is executed before sorting. But removed columns could be needed for sorting key.
+    /// To fix this, we prohibit removing any input in prewhere actions. Instead, projection actions will be added after sorting.
+    /// See 02354_read_in_order_prewhere.sql as an example.
+    bool have_input_columns_removed_after_prewhere = false;
     if (prewhere_info && prewhere_info->prewhere_actions)
     {
         auto & outputs = prewhere_info->prewhere_actions->getOutputs();
@@ -451,7 +455,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             if (!outputs_set.contains(input))
             {
                 outputs.push_back(input);
-                added_prewhere_output = true;
+                have_input_columns_removed_after_prewhere = true;
             }
         }
     }
@@ -626,7 +630,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
-    if (!pipes.empty() && (need_preliminary_merge || added_prewhere_output))
+    if (!pipes.empty() && (need_preliminary_merge || have_input_columns_removed_after_prewhere))
         /// Drop temporary columns, added by 'sorting_key_prefix_expr'
         out_projection = createProjection(pipe_header);
 

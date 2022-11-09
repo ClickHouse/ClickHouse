@@ -87,6 +87,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
+/// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
@@ -107,23 +108,21 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
-                bool is_single = true;
+                size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
-                    if (!child->column)
-                    {
-                        if (!maybe_fixed_column)
-                            maybe_fixed_column = child;
-                        else
-                            is_single = false;
-                    }
+                    if (child->column)
+                        ++num_constant_columns;
+                    else
+                        maybe_fixed_column = child;
                 }
 
-                if (maybe_fixed_column && is_single)
+                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
 
+                    /// Support injective functions chain.
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
@@ -146,6 +145,8 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
         dag = expression->clone();
 }
 
+/// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
+/// Additionally, build a set of fixed columns.
 void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns)
 {
     IQueryPlanStep * step = node.step.get();
@@ -274,7 +275,7 @@ void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 /// * Input nodes are mapped by name.
 /// * Function is mapped to function if all children are mapped and function names are same.
 /// * Alias is mapped to it's children mapping.
-/// * Monotonic function can be mapped to it's children mapping if dirrect mapping does not exist.
+/// * Monotonic function can be mapped to it's children mapping if direct mapping does not exist.
 ///   In this case, information about monotonicity is filled.
 /// * Mapped node is nullptr if there is no mapping found.
 ///
@@ -345,13 +346,13 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
     };
 
     MatchedTrees::Matches matches;
+    std::stack<Frame> stack;
 
     for (const auto & node : outer_dag.getNodes())
     {
         if (matches.contains(&node))
             continue;
 
-        std::stack<Frame> stack;
         stack.push(Frame{&node, {}});
         while (!stack.empty())
         {
@@ -410,8 +411,9 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                     if (frame.mapped_children.size() > 1)
                     {
                         std::vector<Parents *> other_parents;
-                        other_parents.reserve(frame.mapped_children.size());
-                        for (size_t i = 1; i < frame.mapped_children.size(); ++i)
+                        size_t mapped_children_size = frame.mapped_children.size();
+                        other_parents.reserve(mapped_children_size);
+                        for (size_t i = 1; i < mapped_children_size; ++i)
                             other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
 
                         for (const auto * parent : *intersection)
@@ -548,17 +550,17 @@ InputOrderInfoPtr buildInputOrderInfo(
     ///
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
     int read_direction = 0;
-    size_t next_descr_column = 0;
+    size_t next_description_column = 0;
     size_t next_sort_key = 0;
 
-    while (next_descr_column < description.size() && next_sort_key < sorting_key_columns.size())
+    while (next_description_column < description.size() && next_sort_key < sorting_key_columns.size())
     {
         const auto & sorting_key_column = sorting_key_columns[next_sort_key];
-        const auto & descr = description[next_descr_column];
+        const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.
         /// Because primary keys cannot have collations.
-        if (descr.collator)
+        if (sort_column_description.collator)
             break;
 
         /// Direction for current sort key.
@@ -578,20 +580,20 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (sort_column_node->type != ActionsDAG::ActionType::INPUT)
                 break;
 
-            if (descr.column_name != sorting_key_column)
+            if (sort_column_description.column_name != sorting_key_column)
                 break;
 
-            current_direction = descr.direction;
+            current_direction = sort_column_description.direction;
 
 
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
-            ++next_descr_column;
+            ++next_description_column;
             ++next_sort_key;
         }
         else
         {
-            const ActionsDAG::Node * sort_node = dag->tryFindInOutputs(descr.column_name);
+            const ActionsDAG::Node * sort_node = dag->tryFindInOutputs(sort_column_description.column_name);
              /// It is possible when e.g. sort by array joined column.
             if (!sort_node)
                 break;
@@ -609,14 +611,14 @@ InputOrderInfoPtr buildInputOrderInfo(
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
 
-                current_direction = descr.direction;
+                current_direction = sort_column_description.direction;
                 if (match.monotonicity)
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
                 }
 
-                ++next_descr_column;
+                ++next_description_column;
                 ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
@@ -632,8 +634,8 @@ InputOrderInfoPtr buildInputOrderInfo(
                 if (!is_fixed_column)
                     break;
 
-                order_key_prefix_descr.push_back(descr);
-                ++next_descr_column;
+                order_key_prefix_descr.push_back(sort_column_description);
+                ++next_description_column;
             }
         }
 
@@ -646,7 +648,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             read_direction = current_direction;
 
         if (current_direction)
-            order_key_prefix_descr.push_back(descr);
+            order_key_prefix_descr.push_back(sort_column_description);
 
         if (current_direction && !strict_monotonic)
             break;
@@ -712,9 +714,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(
-    SortingStep & sorting,
-    QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
 {
     QueryPlan::Node * reading_node = findReadingStep(node);
     if (!reading_node)
