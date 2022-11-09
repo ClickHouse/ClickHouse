@@ -56,11 +56,8 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
     }
     if (*(src - 1) != '\0')
         return false;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    reverseMemcpy(dst, &result, sizeof(result));
-#else
+
     memcpy(dst, &result, sizeof(result));
-#endif
     return true;
 }
 
@@ -138,8 +135,9 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
         {
             if (!parseIPv4(curtok, tp))
                 return clear_dst();
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             std::reverse(tp, tp + IPV4_BINARY_LENGTH);
-
+#endif
             tp += IPV4_BINARY_LENGTH;
             saw_xdigit = false;
             break;    /* '\0' was seen by ipv4_scan(). */
@@ -207,7 +205,11 @@ inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail
     const size_t limit = std::min(IPV4_BINARY_LENGTH, IPV4_BINARY_LENGTH - mask_tail_octets);
     for (size_t octet = 0; octet < limit; ++octet)
     {
-        const uint8_t value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
+        uint8_t value = 0;
+        if (std::endian::native == std::endian::little)
+            value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
+        else
+            value = static_cast<uint8_t>(src[octet]);
         const auto * rep = one_byte_to_string_lookup_table[value];
         const uint8_t len = rep[0];
         const char* str = rep + 1;
