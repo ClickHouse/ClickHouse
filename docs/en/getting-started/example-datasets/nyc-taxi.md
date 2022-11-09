@@ -33,7 +33,7 @@ CREATE TABLE trips (
     tip_amount          Float32,
     tolls_amount        Float32,
     total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
     pickup_ntaname      LowCardinality(String),
     dropoff_ntaname     LowCardinality(String)
 )
@@ -63,7 +63,7 @@ SELECT
     payment_type,
     pickup_ntaname,
     dropoff_ntaname
-FROM url(
+FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
     'TabSeparatedWithNames'
 )

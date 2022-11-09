@@ -2939,7 +2939,7 @@ Possible values:
 -   0 — Projection optimization disabled.
 -   1 — Projection optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
@@ -3901,6 +3901,13 @@ Result:
 Controls validation of UTF-8 sequences in JSON output formats, doesn't impact formats JSON/JSONCompact/JSONColumnsWithMetadata, they always validate UTF-8.
 
 Disabled by default.
+
+### format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
+
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md#jsonobjecteachrow) format.
+Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
+
+Default value: ''.
 
 ## TSV format settings {#tsv-format-settings}
 

@@ -221,6 +221,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
+    const IColumn & /*column*/,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -385,13 +386,13 @@ namespace
                 }
                 else if (map[val] == 0 && val != zero_pos_value)
                 {
-                    map[val] = cur_pos;
+                    map[val] = static_cast<T>(cur_pos);
                     ++cur_pos;
                 }
             }
             else
             {
-                T shifted_val = val - dict_size;
+                T shifted_val = static_cast<T>(val - dict_size);
                 if (cur_overflowed_pos == 0)
                 {
                     zero_pos_overflowed_value = shifted_val;
@@ -399,7 +400,7 @@ namespace
                 }
                 else if (overflow_map[shifted_val] == 0 && shifted_val != zero_pos_overflowed_value)
                 {
-                    overflow_map[shifted_val] = cur_overflowed_pos;
+                    overflow_map[shifted_val] = static_cast<T>(cur_overflowed_pos);
                     ++cur_overflowed_pos;
                 }
             }
@@ -429,7 +430,7 @@ namespace
             if (val < dict_size)
                 val = map[val];
             else
-                val = overflow_map[val - dict_size] + cur_pos;
+                val = overflow_map[val - dict_size] + static_cast<T>(cur_pos);
         }
 
         return {std::move(dictionary_map), std::move(additional_keys_map)};
