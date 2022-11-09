@@ -140,7 +140,9 @@ def test_select_query(started_cluster):
         assert len(result) > 0
 
     for column_name in columns:
-        result = run_query(instance, select_table_function_query.format(column_name)).splitlines()
+        result = run_query(
+            instance, select_table_function_query.format(column_name)
+        ).splitlines()
         assert len(result) > 0
 
     # test if all partition paths is presented in result
