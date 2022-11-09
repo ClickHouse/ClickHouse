@@ -575,7 +575,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         if (!dag)
         {
             /// This is possible if there were no Expression or Filter steps in Plan.
-            /// Examlpe: SELECT * FROM tab ORDER BY a, b
+            /// Example: SELECT * FROM tab ORDER BY a, b
 
             if (sort_column_node->type != ActionsDAG::ActionType::INPUT)
                 break;
