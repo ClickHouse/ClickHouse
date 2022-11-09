@@ -298,7 +298,7 @@ This feature is helpful when using the [SummingMergeTree](/docs/en/engines/table
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER](/docs/en/sql-reference/statements/alter/overview.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
+[ALTER](/docs/en/sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
 ### Use of Indexes and Partitions in Queries {#use-of-indexes-and-partitions-in-queries}
 
@@ -860,7 +860,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 -   As a result of an insert (`INSERT` query).
--   During background merges and [mutations](/docs/en/sql-reference/statements/alter/overview.md/#alter-mutations).
+-   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md/#alter-mutations).
 -   When downloading from another replica.
 -   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 

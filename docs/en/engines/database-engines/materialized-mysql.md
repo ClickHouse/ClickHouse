@@ -133,7 +133,7 @@ Apart of the data types limitations there are few restrictions comparing to `MyS
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](/docs/en/sql-reference/statements/alter/overview.md), [CREATE](/docs/en/sql-reference/statements/create/index.md), [DROP](/docs/en/sql-reference/statements/drop.md), [RENAME](/docs/en/sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
+MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](/docs/en/sql-reference/statements/alter/index.md), [CREATE](/docs/en/sql-reference/statements/create/index.md), [DROP](/docs/en/sql-reference/statements/drop.md), [RENAME](/docs/en/sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
 ### Data Replication {#data-replication}
 
