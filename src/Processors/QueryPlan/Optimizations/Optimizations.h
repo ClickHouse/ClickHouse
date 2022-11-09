@@ -30,10 +30,10 @@ struct Optimization
     const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
-/// Move ARRAY JOIN up if possible.
+/// Move ARRAY JOIN up if possible
 size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// Move LimitStep down if possible.
+/// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
@@ -59,6 +59,10 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
 /// Put some steps under union, so that plan optimisation could be applied to union parts separately.
+/// For example, the plan can be rewritten like:
+///                      - Something -                    - Expression - Something -
+/// - Expression - Union - Something -     =>     - Union - Expression - Something -
+///                      - Something -                    - Expression - Something -
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
@@ -85,7 +89,7 @@ struct Frame
 
 using Stack = std::vector<Frame>;
 
-/// Second pass optimizations.
+/// Second pass optimizations
 void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

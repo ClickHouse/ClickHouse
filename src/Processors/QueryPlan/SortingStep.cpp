@@ -23,6 +23,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+SortingStep::Settings::Settings(const Context & context)
+{
+    const auto & settings = context.getSettingsRef();
+    max_block_size = settings.max_block_size;
+    size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+    max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
+    remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
+    max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
+    tmp_data = context.getTempDataOnDisk();
+    min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+}
+
+SortingStep::Settings::Settings(size_t max_block_size_)
+{
+    max_block_size = max_block_size_;
+}
+
 static ITransformingStep::Traits getTraits(size_t limit)
 {
     return ITransformingStep::Traits
@@ -71,8 +88,8 @@ SortingStep::SortingStep(
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
+    , sort_settings(max_block_size_)
 {
-    sort_settings.max_block_size = max_block_size_;
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
@@ -87,6 +104,7 @@ SortingStep::SortingStep(
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
+    , sort_settings(max_block_size_)
 {
     sort_settings.max_block_size = max_block_size_;
     /// TODO: check input_stream is partially sorted (each port) by the same description.
