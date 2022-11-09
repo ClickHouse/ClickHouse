@@ -77,7 +77,7 @@ While turning on `gtid_mode` you should also specify `enforce_gtid_consistency =
 
 ## Virtual Columns {#virtual-columns}
 
-When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](/docs/en/sql-reference/engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](/docs/en/engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
 ### \_version
 
@@ -187,19 +187,19 @@ These are the schema conversion manipulations you can do with table overrides fo
 
  * Modify column type. Must be compatible with the original type, or replication will fail. For example,
    you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
- * Modify [column TTL](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
+ * Modify [column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
  * Modify [column compression codec](/docs/en/sql-reference/statements/create/table.md/#codecs).
  * Add [ALIAS columns](/docs/en/sql-reference/statements/create/table.md/#alias).
- * Add [skipping indexes](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
- * Add [projections](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
+ * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
+ * Add [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
    disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
    `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
    may be more useful in this case.
- * Modify [PARTITION BY](/docs/en/sql-reference/table-engines/mergetree-family/custom-partitioning-key/)
- * Modify [ORDER BY](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Modify [PRIMARY KEY](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [SAMPLE BY](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
- * Add [table TTL](/docs/en/sql-reference/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Modify [PARTITION BY](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key/)
+ * Modify [ORDER BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Modify [PRIMARY KEY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Add [SAMPLE BY](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
+ * Add [table TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-query-clauses)
 
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
