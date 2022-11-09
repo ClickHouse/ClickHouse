@@ -454,6 +454,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
+
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {

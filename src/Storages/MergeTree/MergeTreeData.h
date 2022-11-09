@@ -337,7 +337,7 @@ public:
 
         Mode mode;
 
-        /// For Collapsing and VersionedCollapsing mode. Can be empty for Replacing.
+        /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
         /// For Replacing mode. Can be empty for Replacing.

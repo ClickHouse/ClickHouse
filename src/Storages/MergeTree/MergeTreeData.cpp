@@ -716,7 +716,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.",
                         ErrorCodes::LOGICAL_ERROR);
 
-   /// Check that if the sign column is needed, it exists and is of type Int8.
+    /// Check that if the sign column is needed, it exists and is of type Int8.
     auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
     {
         if (sign_column.empty())
