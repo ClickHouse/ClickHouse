@@ -9,25 +9,13 @@
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
 
-#if defined(__clang__)
-#include <experimental/coroutine>
-
-namespace std // NOLINT(cert-dcl58-cpp)
-{
-    using namespace experimental::coroutines_v1; // NOLINT(cert-dcl58-cpp)
-}
-
-#if __has_warning("-Wdeprecated-experimental-coroutine")
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-experimental-coroutine"
-#endif
-
-#else
 #include <coroutine>
+#include <libunwind.h>
+
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #endif
-
 
 template <typename T>
 struct suspend_value // NOLINT(readability-identifier-naming)
@@ -50,7 +38,22 @@ struct Task
     {
         using coro_handle = std::coroutine_handle<promise_type>;
         auto get_return_object() { return coro_handle::from_promise(*this); } // NOLINT(readability-identifier-naming)
-        auto initial_suspend() { return std::suspend_never(); } // NOLINT(readability-identifier-naming)
+        auto initial_suspend()
+        {
+            unw_context_t context;
+            unw_cursor_t cursor;
+            if (unw_getcontext(&context) == 0 && unw_init_local(&cursor, &context) == 0) {
+
+                unw_word_t ip;
+                if (unw_step(&cursor) > 0) {
+                    if (unw_get_reg(&cursor, UNW_REG_IP, &ip) == 0) {
+                        addr = reinterpret_cast<void *>(static_cast<uintptr_t>(ip));
+                    }
+                }
+            }
+
+            return std::suspend_never();
+        } // NOLINT(readability-identifier-naming)
         auto final_suspend() noexcept { return suspend_value<T>{*r->value}; } // NOLINT(readability-identifier-naming)
         //void return_void() {}
         void return_value(T value_) { r->value = value_; } // NOLINT(readability-identifier-naming)
@@ -62,6 +65,8 @@ struct Task
 
         explicit promise_type(std::string tag_) : tag(tag_) {}
         ~promise_type() { std::cout << "~promise_type " << tag << std::endl; }
+        //coro_handle self;
+        void * addr;
         std::string tag;
         coro_handle next;
         Task * r = nullptr;
@@ -75,6 +80,7 @@ struct Task
         std::cout << "  await_suspend " << my.promise().tag << std::endl;
         std::cout << "  g tag " << g.promise().tag << std::endl;
         g.promise().next = my;
+        //g.promise().self = g;
     }
     T await_resume() noexcept // NOLINT(readability-identifier-naming)
     {
@@ -132,18 +138,61 @@ struct Task
         std::cout << "    ~Task " << tag << std::endl;
     }
 
-private:
     coro_handle my;
+private:
     std::string tag;
     std::optional<T> value;
     std::exception_ptr exception;
 };
 
+struct co_gethandle_awaitable
+{
+    co_gethandle_awaitable()
+        : m_hWaiter(nullptr)
+    {
+    }
+    bool await_ready() const noexcept
+    {
+        return m_hWaiter != nullptr;
+    }
+    bool await_suspend(Task<int>::coro_handle hWaiter) noexcept
+    {
+        m_hWaiter = hWaiter;
+       return false;
+    }
+    auto await_resume() noexcept
+    {
+        return m_hWaiter;
+    }
+
+    Task<int>::coro_handle m_hWaiter;
+};
+
+void print_ptrs(void * addr, size_t count)
+{
+    char * ptr = static_cast<char *>(addr);
+    for (size_t i = 0; i < count; ++i)
+        std::cout << *reinterpret_cast<void **>(static_cast<void *>(ptr + i * 8)) << std::endl;
+}
+
 Task<int> boo([[maybe_unused]] std::string tag)
 {
     std::cout << "x" << std::endl;
     co_await std::suspend_always();
-    std::cout << StackTrace().toString();
+
+    auto my_handle = co_await co_gethandle_awaitable();
+
+    auto st = StackTrace();
+    auto frames = st.getFramePointers();
+    std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
+    std::cout << "----------\n";
+    frames[2] = my_handle.promise().addr;
+    std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
+    std::cout << "-=--------\n";
+    frames[2] = *reinterpret_cast<void **>(static_cast<char *>(*reinterpret_cast<void **>(&my_handle)) + sizeof(void *) * 2);
+    std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
+    //print_ptrs(*reinterpret_cast<void **>(&my_handle), 5);
+
     std::cout << "y" << std::endl;
     co_return 1;
 }
