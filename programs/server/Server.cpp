@@ -46,7 +46,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -751,7 +751,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
-    AsynchronousMetrics async_metrics(
+    ServerAsynchronousMetrics async_metrics(
         global_context,
         config().getUInt("asynchronous_metrics_update_period_s", 1),
         config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),

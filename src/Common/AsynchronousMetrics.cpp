@@ -1,29 +1,16 @@
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/AsynchronousMetrics.h>
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Coordination/Keeper4LWInfo.h>
-#include <Coordination/KeeperDispatcher.h>
+#include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
-#include <Storages/MarkCache.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
-#include <Databases/IDatabase.h>
 #include <chrono>
 
 
@@ -68,15 +55,11 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 
 
 AsynchronousMetrics::AsynchronousMetrics(
-    ContextPtr global_context_,
     int update_period_seconds,
-    int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : WithContext(global_context_)
-    , update_period(update_period_seconds)
-    , heavy_metric_update_period(heavy_metrics_update_period_seconds)
-    , protocol_server_metrics_func(protocol_server_metrics_func_)
+    : update_period(update_period_seconds)
     , log(&Poco::Logger::get("AsynchronousMetrics"))
+    , protocol_server_metrics_func(protocol_server_metrics_func_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/meminfo", meminfo);
@@ -360,22 +343,6 @@ void AsynchronousMetrics::run()
     }
 }
 
-
-template <typename Max, typename T>
-static void calculateMax(Max & max, T x)
-{
-    if (Max(x) > max)
-        max = x;
-}
-
-template <typename Max, typename Sum, typename T>
-static void calculateMaxAndSum(Max & max, Sum & sum, T x)
-{
-    sum += x;
-    if (Max(x) > max)
-        max = x;
-}
-
 #if USE_JEMALLOC
 uint64_t updateJemallocEpoch()
 {
@@ -571,85 +538,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     /// This is also a good indicator of system responsiveness.
     new_values["Jitter"] = std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9;
-
-    {
-        if (auto mark_cache = getContext()->getMarkCache())
-        {
-            new_values["MarkCacheBytes"] = mark_cache->weight();
-            new_values["MarkCacheFiles"] = mark_cache->count();
-        }
-    }
-
-    {
-        if (auto uncompressed_cache = getContext()->getUncompressedCache())
-        {
-            new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
-            new_values["UncompressedCacheCells"] = uncompressed_cache->count();
-        }
-    }
-
-    {
-        if (auto index_mark_cache = getContext()->getIndexMarkCache())
-        {
-            new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
-            new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
-        }
-    }
-
-    {
-        if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
-        {
-            new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
-            new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
-        }
-    }
-
-    {
-        if (auto mmap_cache = getContext()->getMMappedFileCache())
-        {
-            new_values["MMapCacheCells"] = mmap_cache->count();
-        }
-    }
-
-    {
-        auto caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache_data] : caches)
-        {
-            new_values["FilesystemCacheBytes"] = cache_data->cache->getUsedCacheSize();
-            new_values["FilesystemCacheFiles"] = cache_data->cache->getFileSegmentsNum();
-        }
-    }
-
-#if USE_ROCKSDB
-    {
-        if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
-        {
-            new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
-        }
-    }
-#endif
-
-#if USE_EMBEDDED_COMPILER
-    {
-        if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-        {
-            new_values["CompiledExpressionCacheBytes"] = compiled_expression_cache->weight();
-            new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
-        }
-    }
-#endif
-
-
-    new_values["Uptime"] = getContext()->getUptimeSeconds();
-
-    {
-        if (const auto stats = getHashTablesCacheStatistics())
-        {
-            new_values["HashTableStatsCacheEntries"] = stats->entries;
-            new_values["HashTableStatsCacheHits"] = stats->hits;
-            new_values["HashTableStatsCacheMisses"] = stats->misses;
-        }
-    }
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
@@ -1342,147 +1230,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
 #endif
 
-    /// Free space in filesystems at data path and logs path.
     {
-        auto stat = getStatVFS(getContext()->getPath());
-
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
-    }
-
-    {
-        /// Current working directory of the server is the directory with logs.
-        auto stat = getStatVFS(".");
-
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
-    }
-
-    /// Free and total space on every configured disk.
-    {
-        DisksMap disks_map = getContext()->getDisksMap();
-        for (const auto & [name, disk] : disks_map)
-        {
-            auto total = disk->getTotalSpace();
-
-            /// Some disks don't support information about the space.
-            if (!total)
-                continue;
-
-            auto available = disk->getAvailableSpace();
-            auto unreserved = disk->getUnreservedSpace();
-
-            new_values[fmt::format("DiskTotal_{}", name)] = total;
-            new_values[fmt::format("DiskUsed_{}", name)] = total - available;
-            new_values[fmt::format("DiskAvailable_{}", name)] = available;
-            new_values[fmt::format("DiskUnreserved_{}", name)] = unreserved;
-        }
-    }
-
-    {
-        auto databases = DatabaseCatalog::instance().getDatabases();
-
-        size_t max_queue_size = 0;
-        size_t max_inserts_in_queue = 0;
-        size_t max_merges_in_queue = 0;
-
-        size_t sum_queue_size = 0;
-        size_t sum_inserts_in_queue = 0;
-        size_t sum_merges_in_queue = 0;
-
-        size_t max_absolute_delay = 0;
-        size_t max_relative_delay = 0;
-
-        size_t max_part_count_for_partition = 0;
-
-        size_t number_of_databases = databases.size();
-        size_t total_number_of_tables = 0;
-
-        size_t total_number_of_bytes = 0;
-        size_t total_number_of_rows = 0;
-        size_t total_number_of_parts = 0;
-
-        for (const auto & db : databases)
-        {
-            /// Check if database can contain MergeTree tables
-            if (!db.second->canContainMergeTreeTables())
-                continue;
-
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            {
-                ++total_number_of_tables;
-                const auto & table = iterator->table();
-                if (!table)
-                    continue;
-
-                if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-                {
-                    const auto & settings = getContext()->getSettingsRef();
-
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
-                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getPartsCount();
-                }
-
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
-                {
-                    StorageReplicatedMergeTree::Status status;
-                    table_replicated_merge_tree->getStatus(status, false);
-
-                    calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
-                    calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
-                    calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
-
-                    if (!status.is_readonly)
-                    {
-                        try
-                        {
-                            time_t absolute_delay = 0;
-                            time_t relative_delay = 0;
-                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
-
-                            calculateMax(max_absolute_delay, absolute_delay);
-                            calculateMax(max_relative_delay, relative_delay);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
-                        }
-                    }
-                }
-            }
-        }
-
-        new_values["ReplicasMaxQueueSize"] = max_queue_size;
-        new_values["ReplicasMaxInsertsInQueue"] = max_inserts_in_queue;
-        new_values["ReplicasMaxMergesInQueue"] = max_merges_in_queue;
-
-        new_values["ReplicasSumQueueSize"] = sum_queue_size;
-        new_values["ReplicasSumInsertsInQueue"] = sum_inserts_in_queue;
-        new_values["ReplicasSumMergesInQueue"] = sum_merges_in_queue;
-
-        new_values["ReplicasMaxAbsoluteDelay"] = max_absolute_delay;
-        new_values["ReplicasMaxRelativeDelay"] = max_relative_delay;
-
-        new_values["MaxPartCountForPartition"] = max_part_count_for_partition;
-
-        new_values["NumberOfDatabases"] = number_of_databases;
-        new_values["NumberOfTables"] = total_number_of_tables;
-
-        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
-        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
-        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
-
         auto get_metric_name = [](const String & name) -> const char *
         {
             static std::map<String, const char *> metric_map =
@@ -1496,7 +1244,9 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 {"mysql_port", "MySQLThreads"},
                 {"postgresql_port", "PostgreSQLThreads"},
                 {"grpc_port", "GRPCThreads"},
-                {"prometheus.port", "PrometheusThreads"}
+                {"prometheus.port", "PrometheusThreads"},
+                {"keeper_server.tcp_port", "KeeperTCPThreads"},
+                {"keeper_server.tcp_port_secure", "KeeperTCPSecureThreads"}
             };
             auto it = metric_map.find(name);
             if (it == metric_map.end())
@@ -1512,180 +1262,20 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 new_values[name] = server_metric.current_threads;
         }
     }
-#if USE_NURAFT
-    {
-        auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
-        if (keeper_dispatcher)
-        {
-            size_t is_leader = 0;
-            size_t is_follower = 0;
-            size_t is_observer = 0;
-            size_t is_standalone = 0;
-            size_t znode_count = 0;
-            size_t watch_count =0;
-            size_t ephemerals_count = 0;
-            size_t approximate_data_size =0;
-            size_t key_arena_size = 0;
-            size_t latest_snapshot_size =0;
-            size_t open_file_descriptor_count =0;
-            size_t max_file_descriptor_count =0;
-            size_t followers =0;
-            size_t synced_followers = 0;
-            size_t zxid = 0;
-            size_t session_with_watches = 0;
-            size_t paths_watched = 0;
-            size_t snapshot_dir_size = 0;
-            size_t log_dir_size = 0;
-
-            if (keeper_dispatcher->isServerActive())
-            {
-                auto keeper_info = keeper_dispatcher -> getKeeper4LWInfo();
-                is_standalone = static_cast<size_t>(keeper_info.is_standalone);
-                is_leader = static_cast<size_t>(keeper_info.is_leader);
-                is_observer = static_cast<size_t>(keeper_info.is_observer);
-                is_follower = static_cast<size_t>(keeper_info.is_follower);
-
-                zxid = keeper_info.last_zxid;
-                const auto & state_machine = keeper_dispatcher->getStateMachine();
-                znode_count = state_machine.getNodesCount();
-                watch_count = state_machine.getTotalWatchesCount();
-                ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-                approximate_data_size = state_machine.getApproximateDataSize();
-                key_arena_size = state_machine.getKeyArenaSize();
-                latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
-                session_with_watches = state_machine.getSessionsWithWatchesCount();
-                paths_watched = state_machine.getWatchedPathsCount();
-                snapshot_dir_size = keeper_dispatcher->getSnapDirSize();
-                log_dir_size = keeper_dispatcher->getLogDirSize();
-
-                #if defined(__linux__) || defined(__APPLE__)
-                    open_file_descriptor_count = getCurrentProcessFDCount();
-                    max_file_descriptor_count = getMaxFileDescriptorCount();
-                #endif
-
-                if (keeper_info.is_leader)
-                {
-                    followers = keeper_info.follower_count;
-                    synced_followers = keeper_info.synced_follower_count;
-                }
-            }
-
-            new_values["KeeperIsLeader"] = is_leader;
-            new_values["KeeperIsFollower"] = is_follower;
-            new_values["KeeperIsObserver"] = is_observer;
-            new_values["KeeperIsStandalone"] = is_standalone;
-
-            new_values["KeeperZnodeCount"] = znode_count;
-            new_values["KeeperWatchCount"] = watch_count;
-            new_values["KeeperEphemeralsCount"] = ephemerals_count;
-
-            new_values["KeeperApproximateDataSize"] = approximate_data_size;
-            new_values["KeeperKeyArenaSize"] = key_arena_size;
-            new_values["KeeperLatestSnapshotSize"] = latest_snapshot_size;
-
-            new_values["KeeperOpenFileDescriptorCount"] = open_file_descriptor_count;
-            new_values["KeeperMaxFileDescriptorCount"] = max_file_descriptor_count;
-
-            new_values["KeeperFollowers"] = followers;
-            new_values["KeeperSyncedFollowers"] = synced_followers;
-            new_values["KeeperZxid"] = zxid;
-            new_values["KeeperSessionWithWatches"] = session_with_watches;
-            new_values["KeeperPathsWatched"] = paths_watched;
-            new_values["KeeperSnapshotDirSize"] = snapshot_dir_size;
-            new_values["KeeperLogDirSize"] = log_dir_size;
-        }
-    }
-#endif
-
-    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
 
     /// Add more metrics as you wish.
 
+    updateImpl(new_values);
+
     new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
 
-    /// Log the new metrics.
-    if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog())
-    {
-        asynchronous_metric_log->addValues(new_values);
-    }
+    logImpl(new_values);
 
     first_run = false;
 
     // Finally, update the current metrics.
     std::lock_guard lock(mutex);
     values = new_values;
-}
-
-void AsynchronousMetrics::updateDetachedPartsStats()
-{
-    DetachedPartsStats current_values{};
-
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
-    {
-        if (!db.second->canContainMergeTreeTables())
-            continue;
-
-        for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-        {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-            {
-                for (const auto & detached_part: table_merge_tree->getDetachedParts())
-                {
-                    if (!detached_part.valid_name)
-                        continue;
-
-                    if (detached_part.prefix.empty())
-                        ++current_values.detached_by_user;
-
-                    ++current_values.count;
-                }
-            }
-        }
-    }
-
-    detached_parts_stats = current_values;
-}
-
-void AsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
-{
-    const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
-
-    if (update_heavy_metric)
-    {
-        heavy_metric_previous_update_time = update_time;
-
-        Stopwatch watch;
-
-        /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateDetachedPartsStats();
-
-        watch.stop();
-
-        /// Normally heavy metrics don't delay the rest of the metrics calculation
-        /// otherwise log the warning message
-        auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
-        if (watch.elapsedSeconds() > (update_period.count() / 2.))
-            log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
-        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
-            log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
-        LOG_IMPL(log, log_level.first, log_level.second,
-                 "Update heavy metrics. "
-                 "Update period {} sec. "
-                 "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
-                 update_period.count(),
-                 heavy_metric_update_period.count(),
-                 watch.elapsedSeconds());
-
-    }
-
-    new_values["NumberOfDetachedParts"] = detached_parts_stats.count;
-    new_values["NumberOfDetachedByUserParts"] = detached_parts_stats.detached_by_user;
 }
 
 }
