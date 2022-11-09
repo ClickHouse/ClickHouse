@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Daemon/BaseDaemon.h>
 
 #include "PrometheusMetricsWriter.h"
 

@@ -144,15 +144,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-    {
-        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-        auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
-        handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
-        handler->allowGetAndHeadRequest();
-        factory->addHandler(handler);
-        return factory;
-    }
+        return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
 
     throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
 }

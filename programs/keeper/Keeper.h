@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Server/IServer.h>
+#include <Server/HTTP/HTTPContext.h>
 #include <Daemon/BaseDaemon.h>
 #include "TinyContext.h"
 
@@ -57,6 +58,9 @@ protected:
 
 private:
     TinyContext tiny_context;
+
+    struct KeeperHTTPContext;
+    static HTTPContextPtr httpContext();
 
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
