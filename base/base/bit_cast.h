@@ -3,7 +3,6 @@
 #include <cstring>
 #include <algorithm>
 #include <type_traits>
-#include <base/unaligned.h>
 
 
 /** Returns value `from` converted to type `To` while retaining bit representation.
