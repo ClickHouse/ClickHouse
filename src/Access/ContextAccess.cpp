@@ -465,6 +465,17 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 template <bool throw_if_denied, bool grant_option, typename... Args>
 bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... args) const
 {
+    if (user_was_dropped)
+    {
+        /// If the current user has been dropped we always throw an exception (even if `throw_if_denied` is false)
+        /// because dropping of the current user is considered as a situation which is exceptional enough to stop
+        /// query execution.
+        throw Exception(getUserName() + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
+    }
+
+    if (is_full_access)
+        return true;
+
     auto access_granted = [&]
     {
         if (trace_log)
@@ -482,12 +493,6 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             throw Exception(getUserName() + ": " + error_msg, error_code);
         return false;
     };
-
-    if (is_full_access)
-        return true;
-
-    if (user_was_dropped)
-        return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
