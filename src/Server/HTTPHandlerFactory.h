@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetrics.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>

@@ -13,7 +13,6 @@ clickhouse_embed_binaries(
 
 set(CLICKHOUSE_KEEPER_SOURCES
     Keeper.cpp
-    TinyContext.cpp
 )
 
 set (CLICKHOUSE_KEEPER_LINK
@@ -49,6 +48,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateMachine.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStateManager.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/KeeperStorage.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/TinyContext.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/pathUtils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SessionExpiryQueue.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/SummingStateMachine.cpp
@@ -96,7 +96,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Daemon/GitHash.generated.cpp
 
         Keeper.cpp
-        TinyContext.cpp
         clickhouse-keeper.cpp
 
     )

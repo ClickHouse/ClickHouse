@@ -3,7 +3,7 @@
 #include <Server/IServer.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Daemon/BaseDaemon.h>
-#include "TinyContext.h"
+#include <Coordination/TinyContext.h>
 
 namespace Poco
 {
@@ -19,24 +19,30 @@ namespace DB
 /// standalone clickhouse-keeper server (replacement for ZooKeeper). Uses the same
 /// config as clickhouse-server. Serves requests on TCP ports with or without
 /// SSL using ZooKeeper protocol.
-class Keeper : public BaseDaemon
+class Keeper : public BaseDaemon, public IServer
 {
 public:
     using ServerApplication::run;
 
-    Poco::Util::LayeredConfiguration & config() const
+    Poco::Util::LayeredConfiguration & config() const override
     {
         return BaseDaemon::config();
     }
 
-    Poco::Logger & logger() const
+    Poco::Logger & logger() const override
     {
         return BaseDaemon::logger();
     }
 
-    bool isCancelled() const
+    bool isCancelled() const override
     {
         return BaseDaemon::isCancelled();
+    }
+
+    /// Returns global application's context.
+    ContextMutablePtr context() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fetch context for Keeper");
     }
 
     void defineOptions(Poco::Util::OptionSet & _options) override;

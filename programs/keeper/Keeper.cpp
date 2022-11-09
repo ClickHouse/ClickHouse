@@ -6,7 +6,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Server/TCPServer.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
@@ -22,9 +21,13 @@
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
+
 #include <Coordination/FourLetterCommand.h>
+#include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Server/HTTP/HTTPServer.h>
+#include <Server/TCPServer.h>
+#include <Server/HTTPHandlerFactory.h>
 
 #include "Core/Defines.h"
 #include "config.h"
@@ -397,6 +400,25 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     DNSResolver::instance().setDisableCacheFlag();
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    std::mutex servers_lock;
+    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
+
+    /// This object will periodically calculate some metrics.
+    KeeperAsynchronousMetrics async_metrics(
+        tiny_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
+
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers->size());
+            for (const auto & server : *servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            return metrics;
+        }
+    );
+
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -407,8 +429,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
-
-    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
@@ -472,19 +492,19 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port) -> ProtocolServerAdapter
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
             // TODO(antonio2368): use config
             socket.setReceiveTimeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
             socket.setSendTimeout(DBMS_DEFAULT_SEND_TIMEOUT_SEC);
-            return ProtocolServerAdapter(
+            servers->emplace_back(
                 listen_host,
                 port_name,
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    httpContext(), createHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                    httpContext(), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
     }
 
@@ -493,6 +513,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         server.start();
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
+
+    async_metrics.start();
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
@@ -513,6 +535,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
         main_config_reloader.reset();
+
+        async_metrics.stop();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         size_t current_connections = 0;
