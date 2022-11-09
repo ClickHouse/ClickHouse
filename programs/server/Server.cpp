@@ -1927,58 +1927,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     return stack;
 }
 
-struct Server::ServerHTTPContext : public IHTTPContext
-{
-    explicit ServerHTTPContext(ContextPtr context_)
-        : context(Context::createCopy(context_))
-    {}
-
-    uint64_t getMaxHstsAge() const override
-    {
-        return context->getSettingsRef().hsts_max_age;
-    }
-
-    uint64_t getMaxUriSize() const override
-    {
-        return context->getSettingsRef().http_max_uri_size;
-    }
-
-    uint64_t getMaxFields() const override
-    {
-        return context->getSettingsRef().http_max_fields;
-    }
-
-    uint64_t getMaxFieldNameSize() const override
-    {
-        return context->getSettingsRef().http_max_field_name_size;
-    }
-
-    uint64_t getMaxFieldValueSize() const override
-    {
-        return context->getSettingsRef().http_max_field_value_size;
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
-    }
-
-    Poco::Timespan getReceiveTimeout() const override
-    {
-        return context->getSettingsRef().http_receive_timeout;
-    }
-
-    Poco::Timespan getSendTimeout() const override
-    {
-        return context->getSettingsRef().http_send_timeout;
-    }
-
-    ContextPtr context;
-};
-
 HTTPContextPtr Server::httpContext() const
 {
-    return std::make_shared<ServerHTTPContext>(context());
+    return std::make_shared<HTTPContext>(context());
 }
 
 void Server::createServers(

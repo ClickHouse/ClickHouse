@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void updateKeeperInformation(const KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values)
+void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values)
 {
 #if USE_NURAFT
     size_t is_leader = 0;
@@ -87,6 +87,23 @@ void updateKeeperInformation(const KeeperDispatcher & keeper_dispatcher, Asynchr
     new_values["KeeperPathsWatched"] = paths_watched;
     new_values["KeeperSnapshotDirSize"] = snapshot_dir_size;
     new_values["KeeperLogDirSize"] = log_dir_size;
+
+    auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
+
+    new_values["KeeperLastLogIdx"] = keeper_log_info.last_log_idx;
+    new_values["KeeperLastLogTerm"] = keeper_log_info.last_log_term;
+
+    new_values["KeeperLastCommittedLogIdx"] = keeper_log_info.last_committed_log_idx;
+    new_values["KeeperTargetCommitLogIdx"] = keeper_log_info.target_committed_log_idx;
+    new_values["KeeperLastSnapshotIdx"] = keeper_log_info.last_snapshot_idx;
+
+    auto & keeper_connection_stats = keeper_dispatcher.getKeeperConnectionStats();
+
+    new_values["KeeperMinLatency"] = keeper_connection_stats.getMinLatency();
+    new_values["KeeperMaxLatency"] = keeper_connection_stats.getMaxLatency();
+    new_values["KeeperAvgLatency"] = keeper_connection_stats.getAvgLatency();
+    new_values["KeeperPacketsReceived"] = keeper_connection_stats.getAvgLatency();
+    new_values["KeeperPacketsSent"] = keeper_connection_stats.getAvgLatency();
 #endif
 }
 

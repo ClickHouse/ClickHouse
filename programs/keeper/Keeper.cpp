@@ -281,50 +281,56 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
 
 struct Keeper::KeeperHTTPContext : public IHTTPContext
 {
+    explicit KeeperHTTPContext(const TinyContext & context_)
+        : context(context_)
+    {}
+
     uint64_t getMaxHstsAge() const override
     {
-        return 0;
+        return context.getConfigRef().getUInt64("keeper_server.hsts_max_age", 0);
     }
 
     uint64_t getMaxUriSize() const override
     {
-        return 1048576;
+        return context.getConfigRef().getUInt64("keeper_server.http_max_uri_size", 1048576);
     }
 
     uint64_t getMaxFields() const override
     {
-        return 1000000;
+        return context.getConfigRef().getUInt64("keeper_server.http_max_fields", 1000000);
     }
 
     uint64_t getMaxFieldNameSize() const override
     {
-        return 1048576;
+        return context.getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 1048576);
     }
 
     uint64_t getMaxFieldValueSize() const override
     {
-        return 1048576;
+        return context.getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 1048576);
     }
 
     uint64_t getMaxChunkSize() const override
     {
-        return 100_GiB;
+        return context.getConfigRef().getUInt64("keeper_server.http_max_chunk_size", 100_GiB);
     }
 
     Poco::Timespan getReceiveTimeout() const override
     {
-        return DEFAULT_HTTP_READ_BUFFER_TIMEOUT;
+        return context.getConfigRef().getUInt64("keeper_server.http_receive_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     }
 
     Poco::Timespan getSendTimeout() const override
     {
-        return DEFAULT_HTTP_READ_BUFFER_TIMEOUT;
+        return context.getConfigRef().getUInt64("keeper_server.http_send_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     }
+
+    const TinyContext & context;
 };
 
 HTTPContextPtr Keeper::httpContext()
 {
-    return std::make_shared<KeeperHTTPContext>();
+    return std::make_shared<KeeperHTTPContext>(tiny_context);
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
@@ -418,7 +424,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             return metrics;
         }
     );
-
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 

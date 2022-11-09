@@ -433,6 +433,15 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
     M(KeeperSaveSnapshot, "Number of snapshot save")\
+    M(KeeperCreateRequest, "Number of create requests")\
+    M(KeeperRemoveRequest, "Number of remove requests")\
+    M(KeeperSetRequest, "Number of set requests")\
+    M(KeeperCheckRequest, "Number of check requests")\
+    M(KeeperMultiRequest, "Number of multi requests")\
+    M(KeeperMultiReadRequest, "Number of multi read requests")\
+    M(KeeperGetRequest, "Number of get requests")\
+    M(KeeperListRequest, "Number of list requests")\
+    M(KeeperExistsRequest, "Number of exists requests")\
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
