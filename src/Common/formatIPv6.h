@@ -135,9 +135,10 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
         {
             if (!parseIPv4(curtok, tp))
                 return clear_dst();
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            std::reverse(tp, tp + IPV4_BINARY_LENGTH);
-#endif
+
+            if (std::endian::native == std::endian::little)
+                std::reverse(tp, tp + IPV4_BINARY_LENGTH);
+
             tp += IPV4_BINARY_LENGTH;
             saw_xdigit = false;
             break;    /* '\0' was seen by ipv4_scan(). */
