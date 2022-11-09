@@ -2,7 +2,8 @@
 \N	\N
 1.5	3
 2	6
-6	10	9
+6	10	9	3
+6	1
 5	6	3	2	2	7	2
 5	6	3	2	2	7	2
 QUERY id: 0
@@ -222,6 +223,60 @@ QUERY id: 0
           COLUMN id: 39, column_name: b, result_type: Int8, source_id: 40
       JOIN TREE
         TABLE id: 40, table_name: default.fuse_tbl
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(b) Int64
+    count(b) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: b, result_type: Int64, source_id: 7
+            CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 9, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 10, nodes: 2
+            FUNCTION id: 4, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: b, result_type: Int64, source_id: 7
+            CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    QUERY id: 7, is_subquery: 1
+      PROJECTION COLUMNS
+        b Int64
+      PROJECTION
+        LIST id: 12, nodes: 1
+          COLUMN id: 13, column_name: x, result_type: Int64, source_id: 14
+      JOIN TREE
+        QUERY id: 14, is_subquery: 1
+          PROJECTION COLUMNS
+            x Int64
+            count(b) UInt64
+          PROJECTION
+            LIST id: 15, nodes: 2
+              FUNCTION id: 16, function_name: tupleElement, function_type: ordinary, result_type: Int64
+                ARGUMENTS
+                  LIST id: 17, nodes: 2
+                    FUNCTION id: 18, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                      ARGUMENTS
+                        LIST id: 19, nodes: 1
+                          COLUMN id: 20, column_name: b, result_type: Int8, source_id: 21
+                    CONSTANT id: 22, constant_value: UInt64_1, constant_value_type: UInt8
+              FUNCTION id: 23, function_name: tupleElement, function_type: ordinary, result_type: UInt64
+                ARGUMENTS
+                  LIST id: 24, nodes: 2
+                    FUNCTION id: 18, function_name: sumCount, function_type: aggregate, result_type: Tuple(Int64, UInt64)
+                      ARGUMENTS
+                        LIST id: 19, nodes: 1
+                          COLUMN id: 20, column_name: b, result_type: Int8, source_id: 21
+                    CONSTANT id: 25, constant_value: UInt64_2, constant_value_type: UInt8
+          JOIN TREE
+            TABLE id: 21, table_name: default.fuse_tbl
 0	0	nan
 0	0	nan
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
