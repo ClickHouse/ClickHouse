@@ -682,7 +682,7 @@ public:
 
     bool parseLambda()
     {
-        // 0. If empty - create function tuple with 0 args
+        // 1. If empty - create function tuple with 0 args
         if (isCurrentElementEmpty())
         {
             auto function = makeASTFunction("tuple");
@@ -693,16 +693,16 @@ public:
         if (operands.size() != 1 || !operators.empty() || !mergeElement())
             return false;
 
-        /// 1. If there is already tuple do nothing
+        /// 2. If there is already tuple do nothing
         if (tryGetFunctionName(elements.back()) == "tuple")
         {
             pushOperand(elements.back());
             elements.pop_back();
         }
-        /// 2. Put all elements in a single tuple
+        /// 3. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", elements);
+            auto function = makeASTFunction("tuple", std::move(elements));
             elements.clear();
             pushOperand(function);
         }
@@ -1050,11 +1050,19 @@ public:
                 if (!mergeElement())
                     return false;
 
-            // Special case for (('a', 'b')) -> tuple(('a', 'b'))
             if (!is_tuple && elements.size() == 1)
+            {
+                // Special case for (('a', 'b')) = tuple(('a', 'b'))
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
                         is_tuple = true;
+
+                // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
+                auto test_pos = pos;
+                auto test_expected = expected;
+                if (parseOperator(test_pos, "->", test_expected))
+                    is_tuple = true;
+            }
 
             finished = true;
         }
