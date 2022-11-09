@@ -1060,7 +1060,7 @@ private:
 
     static void collectCompoundExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
         const DataTypePtr & compound_expression_type,
-        const Identifier & compound_expression_identifier,
+        const Identifier & valid_identifier_prefix,
         std::unordered_set<Identifier> & valid_identifiers_result);
 
     static void collectTableExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
@@ -1396,16 +1396,19 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeN
 void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
     const Identifier & unresolved_identifier,
     const DataTypePtr & compound_expression_type,
-    const Identifier & compound_expression_identifier,
+    const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
     std::vector<std::pair<Identifier, const IDataType *>> identifiers_with_types_to_process;
-    identifiers_with_types_to_process.emplace_back(compound_expression_identifier, compound_expression_type.get());
+    identifiers_with_types_to_process.emplace_back(valid_identifier_prefix, compound_expression_type.get());
 
     while (!identifiers_with_types_to_process.empty())
     {
         auto [identifier, type] = identifiers_with_types_to_process.back();
         identifiers_with_types_to_process.pop_back();
+
+        if (identifier.getPartsSize() + 1 > unresolved_identifier.getPartsSize())
+            continue;
 
         while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(type))
             type = array->getNestedType().get();
@@ -1423,9 +1426,6 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
             const auto & element_type = tuple->getElements()[i];
 
             identifier.push_back(element_name);
-
-            if (identifier.getPartsSize() > unresolved_identifier.getPartsSize())
-                break;
 
             valid_identifiers_result.insert(identifier);
             identifiers_with_types_to_process.emplace_back(identifier, element_type.get());
@@ -2199,12 +2199,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
 
     QueryTreeNodePtr result = it->second;
 
-    /** If identifier is compound and it is expression identifier lookup, wrap compound expression into
-      * tuple elements functions.
-      *
-      * Example: SELECT compound_expression AS alias, alias.first.second;
-      * Result: SELECT compound_expression AS alias, tupleElement(tupleElement(compound_expression, 'first'), 'second');
-      */
     if (identifier_lookup.identifier.isCompound() && result)
     {
         if (identifier_lookup.isExpressionLookup())
@@ -4292,16 +4286,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     possible_function_names.push_back(name);
             }
 
-            std::string error_message = fmt::format("Function with name {} does not exists. In scope {}",
-                function_name,
-                scope.scope_node->formatASTForErrorMessage());
-
             NamePrompter<2> name_prompter;
             auto hints = name_prompter.getHints(function_name, possible_function_names);
 
-            appendHintsMessage(error_message, hints);
-
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, error_message);
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Function with name {} does not exists. In scope {}{}",
+                function_name,
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
         }
 
         AggregateFunctionProperties properties;
