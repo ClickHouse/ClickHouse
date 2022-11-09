@@ -105,7 +105,10 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children) const override;
+    void getDirectoryContents(const std::string & path,
+        RelativePathsWithSize & files,
+        std::vector<std::string> & directories) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObject(const StoredObject & object) override;
@@ -210,7 +213,9 @@ public:
     template <class ...Args>
     S3PlainObjectStorage(Args && ...args)
         : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...)
-    {}
+    {
+        data_source_description.type = DataSourceType::S3_Plain;
+    }
 };
 
 }

@@ -3,10 +3,10 @@
 #include <cstring>
 #include <iostream>
 #include <Core/Defines.h>
-#include <Common/Stopwatch.h>
-#include <Common/TargetSpecific.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/Stopwatch.h>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -598,6 +598,9 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
         copy_end = op + length;
+
+        if (unlikely(copy_end > output_end))
+            return false;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4

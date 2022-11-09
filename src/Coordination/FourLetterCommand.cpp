@@ -136,6 +136,12 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
         factory.registerCommand(api_version_command);
 
+        FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
+        factory.registerCommand(create_snapshot_command);
+
+        FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
+        factory.registerCommand(log_info_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -470,6 +476,35 @@ String RecoveryCommand::run()
 String ApiVersionCommand::run()
 {
     return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+}
+
+String CreateSnapshotCommand::run()
+{
+    auto log_index = keeper_dispatcher.createSnapshot();
+    return log_index > 0 ? std::to_string(log_index) : "Failed to schedule snapshot creation task.";
+}
+
+String LogInfoCommand::run()
+{
+    KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
+    StringBuffer ret;
+
+    auto append = [&ret] (String key, uint64_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+    append("first_log_idx", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_idx);
+    append("last_log_idx", log_info.last_log_idx);
+    append("last_log_term", log_info.last_log_term);
+    append("last_committed_log_idx", log_info.last_committed_log_idx);
+    append("leader_committed_log_idx", log_info.leader_committed_log_idx);
+    append("target_committed_log_idx", log_info.target_committed_log_idx);
+    append("last_snapshot_idx", log_info.last_snapshot_idx);
+    return ret.str();
 }
 
 }
