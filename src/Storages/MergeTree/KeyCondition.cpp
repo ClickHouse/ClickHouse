@@ -783,7 +783,7 @@ KeyCondition::KeyCondition(
         context,
         key_column_names,
         key_expr_,
-        query_info.syntax_analyzer_result->getArrayJoinSourceNameSet(),
+        query_info.syntax_analyzer_result ? query_info.syntax_analyzer_result->getArrayJoinSourceNameSet() : NameSet{},
         single_point_,
         strict_)
 {
