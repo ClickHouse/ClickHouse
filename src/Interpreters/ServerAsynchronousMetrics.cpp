@@ -6,6 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Databases/IDatabase.h>
 
@@ -27,14 +28,14 @@ namespace
 {
 
 template <typename Max, typename T>
-static void calculateMax(Max & max, T x)
+void calculateMax(Max & max, T x)
 {
     if (Max(x) > max)
         max = x;
 }
 
 template <typename Max, typename Sum, typename T>
-static void calculateMaxAndSum(Max & max, Sum & sum, T x)
+void calculateMaxAndSum(Max & max, Sum & sum, T x)
 {
     sum += x;
     if (Max(x) > max)
