@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 02111_modify_table_comment;
-CREATE DATABASE 02111_modify_table_comment;
+DROP DATABASE IF EXISTS `02111_modify_table_comment`;
+CREATE DATABASE `02111_modify_table_comment`;
 
-USE 02111_modify_table_comment;
+USE `02111_modify_table_comment`;
 
 CREATE TABLE t
 (
@@ -31,4 +31,4 @@ ALTER TABLE t_merge
 
 SHOW CREATE t_merge;
 
-DROP DATABASE 02111_modify_table_comment;
+DROP DATABASE `02111_modify_table_comment`;

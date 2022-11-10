@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 02097_db;
-CREATE DATABASE 02097_db;
+DROP DATABASE IF EXISTS `02097_db`;
+CREATE DATABASE `02097_db`;
 
-USE 02097_db;
+USE `02097_db`;
 
 CREATE TABLE test_table
 (
@@ -27,7 +27,7 @@ SOURCE(CLICKHOUSE(TABLE 'test_table'));
 CREATE TABLE test_table_default
 (
     data_1 DEFAULT dictGetUInt64('02097_db.test_dictionary', 'data_column_1', toUInt64(0)),
-    data_2 DEFAULT dictGet(02097_db.test_dictionary, 'data_column_2', toUInt64(0))
+    data_2 DEFAULT dictGet(`02097_db`.test_dictionary, 'data_column_2', toUInt64(0))
 )
 ENGINE=TinyLog;
 
@@ -37,4 +37,4 @@ DROP TABLE test_table_default;
 DROP DICTIONARY test_dictionary;
 DROP TABLE test_table;
 
-DROP DATABASE IF EXISTS 02097_db;
+DROP DATABASE IF EXISTS `02097_db`;

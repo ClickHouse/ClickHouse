@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 01681_database_for_flat_dictionary;
-CREATE DATABASE 01681_database_for_flat_dictionary;
+DROP DATABASE IF EXISTS `01681_database_for_flat_dictionary`;
+CREATE DATABASE `01681_database_for_flat_dictionary`;
 
-CREATE TABLE 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table
+CREATE TABLE `01681_database_for_flat_dictionary`.simple_key_simple_attributes_source_table
 (
    id UInt64,
    value_first String,
@@ -11,11 +11,11 @@ CREATE TABLE 01681_database_for_flat_dictionary.simple_key_simple_attributes_sou
 )
 ENGINE = TinyLog;
 
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table VALUES(1, 'value_1', 'value_second_1');
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_simple_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_simple_attributes_source_table VALUES(1, 'value_1', 'value_second_1');
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_simple_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
-CREATE DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_simple_attributes
+CREATE DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_simple_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -42,10 +42,10 @@ SELECT dictGetOrDefault('01681_database_for_flat_dictionary.flat_dictionary_simp
 SELECT 'dictHas';
 SELECT dictHas('01681_database_for_flat_dictionary.flat_dictionary_simple_key_simple_attributes', number) FROM system.numbers LIMIT 4;
 
-DROP DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_simple_attributes;
-DROP TABLE 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table;
+DROP DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_simple_attributes;
+DROP TABLE `01681_database_for_flat_dictionary`.simple_key_simple_attributes_source_table;
 
-CREATE TABLE 01681_database_for_flat_dictionary.simple_key_complex_attributes_source_table
+CREATE TABLE `01681_database_for_flat_dictionary`.simple_key_complex_attributes_source_table
 (
    id UInt64,
    value_first String,
@@ -53,11 +53,11 @@ CREATE TABLE 01681_database_for_flat_dictionary.simple_key_complex_attributes_so
 )
 ENGINE = TinyLog;
 
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_complex_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_complex_attributes_source_table VALUES(1, 'value_1', NULL);
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_complex_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_complex_attributes_source_table VALUES(0, 'value_0', 'value_second_0');
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_complex_attributes_source_table VALUES(1, 'value_1', NULL);
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_complex_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
-CREATE DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_complex_attributes
+CREATE DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_complex_attributes
 (
    id UInt64,
    value_first String DEFAULT 'value_first_default',
@@ -84,21 +84,21 @@ SELECT dictGetOrDefault('01681_database_for_flat_dictionary.flat_dictionary_simp
 SELECT 'dictHas';
 SELECT dictHas('01681_database_for_flat_dictionary.flat_dictionary_simple_key_complex_attributes', number) FROM system.numbers LIMIT 4;
 
-DROP DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_complex_attributes;
-DROP TABLE 01681_database_for_flat_dictionary.simple_key_complex_attributes_source_table;
+DROP DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_complex_attributes;
+DROP TABLE `01681_database_for_flat_dictionary`.simple_key_complex_attributes_source_table;
 
-CREATE TABLE 01681_database_for_flat_dictionary.simple_key_hierarchy_table
+CREATE TABLE `01681_database_for_flat_dictionary`.simple_key_hierarchy_table
 (
     id UInt64,
     parent_id UInt64
 ) ENGINE = TinyLog();
 
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_hierarchy_table VALUES (1, 0);
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_hierarchy_table VALUES (2, 1);
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_hierarchy_table VALUES (3, 1);
-INSERT INTO 01681_database_for_flat_dictionary.simple_key_hierarchy_table VALUES (4, 2);
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_hierarchy_table VALUES (1, 0);
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_hierarchy_table VALUES (2, 1);
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_hierarchy_table VALUES (3, 1);
+INSERT INTO `01681_database_for_flat_dictionary`.simple_key_hierarchy_table VALUES (4, 2);
 
-CREATE DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_hierarchy
+CREATE DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_hierarchy
 (
    id UInt64,
    parent_id UInt64 HIERARCHICAL
@@ -115,7 +115,7 @@ SELECT 'dictGetHierarchy';
 SELECT dictGetHierarchy('01681_database_for_flat_dictionary.flat_dictionary_simple_key_hierarchy', toUInt64(1));
 SELECT dictGetHierarchy('01681_database_for_flat_dictionary.flat_dictionary_simple_key_hierarchy', toUInt64(4));
 
-DROP DICTIONARY 01681_database_for_flat_dictionary.flat_dictionary_simple_key_hierarchy;
-DROP TABLE 01681_database_for_flat_dictionary.simple_key_hierarchy_table;
+DROP DICTIONARY `01681_database_for_flat_dictionary`.flat_dictionary_simple_key_hierarchy;
+DROP TABLE `01681_database_for_flat_dictionary`.simple_key_hierarchy_table;
 
-DROP DATABASE 01681_database_for_flat_dictionary;
+DROP DATABASE `01681_database_for_flat_dictionary`;

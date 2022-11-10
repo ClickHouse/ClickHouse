@@ -1,9 +1,9 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 01766_db;
-CREATE DATABASE 01766_db;
+DROP DATABASE IF EXISTS `01766_db`;
+CREATE DATABASE `01766_db`;
 
-CREATE TABLE 01766_db.complex_key_simple_attributes_source_table
+CREATE TABLE `01766_db`.complex_key_simple_attributes_source_table
 (
    id UInt64,
    id_key String,
@@ -12,11 +12,11 @@ CREATE TABLE 01766_db.complex_key_simple_attributes_source_table
 )
 ENGINE = TinyLog;
 
-INSERT INTO 01766_db.complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
-INSERT INTO 01766_db.complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
-INSERT INTO 01766_db.complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
+INSERT INTO `01766_db`.complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
+INSERT INTO `01766_db`.complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
+INSERT INTO `01766_db`.complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
-CREATE DICTIONARY 01766_db.hashed_dictionary_complex_key_simple_attributes
+CREATE DICTIONARY `01766_db`.hashed_dictionary_complex_key_simple_attributes
 (
    id UInt64,
    id_key String,
@@ -44,13 +44,13 @@ SELECT dictGetOrDefault('01766_db.hashed_dictionary_complex_key_simple_attribute
 SELECT 'dictHas';
 SELECT dictHas('01766_db.hashed_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01766_db.hashed_dictionary_complex_key_simple_attributes ORDER BY (id, id_key);
+SELECT * FROM `01766_db`.hashed_dictionary_complex_key_simple_attributes ORDER BY (id, id_key);
 
-DROP DICTIONARY 01766_db.hashed_dictionary_complex_key_simple_attributes;
+DROP DICTIONARY `01766_db`.hashed_dictionary_complex_key_simple_attributes;
 
-DROP TABLE 01766_db.complex_key_simple_attributes_source_table;
+DROP TABLE `01766_db`.complex_key_simple_attributes_source_table;
 
-CREATE TABLE 01766_db.complex_key_complex_attributes_source_table
+CREATE TABLE `01766_db`.complex_key_complex_attributes_source_table
 (
    id UInt64,
    id_key String,
@@ -59,11 +59,11 @@ CREATE TABLE 01766_db.complex_key_complex_attributes_source_table
 )
 ENGINE = TinyLog;
 
-INSERT INTO 01766_db.complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
-INSERT INTO 01766_db.complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
-INSERT INTO 01766_db.complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
+INSERT INTO `01766_db`.complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'value_0', 'value_second_0');
+INSERT INTO `01766_db`.complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
+INSERT INTO `01766_db`.complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
-CREATE DICTIONARY 01766_db.hashed_dictionary_complex_key_complex_attributes
+CREATE DICTIONARY `01766_db`.hashed_dictionary_complex_key_complex_attributes
 (
     id UInt64,
     id_key String,
@@ -92,9 +92,9 @@ SELECT dictGetOrDefault('01766_db.hashed_dictionary_complex_key_complex_attribut
 SELECT 'dictHas';
 SELECT dictHas('01766_db.hashed_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01766_db.hashed_dictionary_complex_key_complex_attributes ORDER BY (id, id_key);
+SELECT * FROM `01766_db`.hashed_dictionary_complex_key_complex_attributes ORDER BY (id, id_key);
 
-DROP DICTIONARY 01766_db.hashed_dictionary_complex_key_complex_attributes;
-DROP TABLE 01766_db.complex_key_complex_attributes_source_table;
+DROP DICTIONARY `01766_db`.hashed_dictionary_complex_key_complex_attributes;
+DROP TABLE `01766_db`.complex_key_complex_attributes_source_table;
 
-DROP DATABASE 01766_db;
+DROP DATABASE `01766_db`;

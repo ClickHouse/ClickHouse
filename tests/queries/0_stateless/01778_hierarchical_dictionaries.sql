@@ -1,12 +1,12 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS 01778_db;
-CREATE DATABASE 01778_db;
+DROP DATABASE IF EXISTS `01778_db`;
+CREATE DATABASE `01778_db`;
 
-CREATE TABLE 01778_db.hierarchy_source_table (id UInt64, parent_id UInt64) ENGINE = TinyLog;
-INSERT INTO 01778_db.hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
+CREATE TABLE `01778_db`.hierarchy_source_table (id UInt64, parent_id UInt64) ENGINE = TinyLog;
+INSERT INTO `01778_db`.hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
 
-CREATE DICTIONARY 01778_db.hierarchy_flat_dictionary
+CREATE DICTIONARY `01778_db`.hierarchy_flat_dictionary
 (
     id UInt64,
     parent_id UInt64 HIERARCHICAL
@@ -29,9 +29,9 @@ SELECT dictGetDescendants('01778_db.hierarchy_flat_dictionary', number) FROM sys
 SELECT 'Get descendants at first level';
 SELECT dictGetDescendants('01778_db.hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
-DROP DICTIONARY 01778_db.hierarchy_flat_dictionary;
+DROP DICTIONARY `01778_db`.hierarchy_flat_dictionary;
 
-CREATE DICTIONARY 01778_db.hierarchy_hashed_dictionary
+CREATE DICTIONARY `01778_db`.hierarchy_hashed_dictionary
 (
     id UInt64,
     parent_id UInt64 HIERARCHICAL
@@ -54,9 +54,9 @@ SELECT dictGetDescendants('01778_db.hierarchy_hashed_dictionary', number) FROM s
 SELECT 'Get descendants at first level';
 SELECT dictGetDescendants('01778_db.hierarchy_hashed_dictionary', number, 1) FROM system.numbers LIMIT 6;
 
-DROP DICTIONARY 01778_db.hierarchy_hashed_dictionary;
+DROP DICTIONARY `01778_db`.hierarchy_hashed_dictionary;
 
-CREATE DICTIONARY 01778_db.hierarchy_cache_dictionary
+CREATE DICTIONARY `01778_db`.hierarchy_cache_dictionary
 (
     id UInt64,
     parent_id UInt64 HIERARCHICAL
@@ -73,9 +73,9 @@ SELECT dictGetHierarchy('01778_db.hierarchy_cache_dictionary', number) FROM syst
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('01778_db.hierarchy_cache_dictionary', number, number) FROM system.numbers LIMIT 6;
 
-DROP DICTIONARY 01778_db.hierarchy_cache_dictionary;
+DROP DICTIONARY `01778_db`.hierarchy_cache_dictionary;
 
-CREATE DICTIONARY 01778_db.hierarchy_direct_dictionary
+CREATE DICTIONARY `01778_db`.hierarchy_direct_dictionary
 (
     id UInt64,
     parent_id UInt64 HIERARCHICAL
@@ -91,7 +91,7 @@ SELECT dictGetHierarchy('01778_db.hierarchy_direct_dictionary', number) FROM sys
 SELECT 'Get is in hierarchy';
 SELECT dictIsIn('01778_db.hierarchy_direct_dictionary', number, number) FROM system.numbers LIMIT 6;
 
-DROP DICTIONARY 01778_db.hierarchy_direct_dictionary;
+DROP DICTIONARY `01778_db`.hierarchy_direct_dictionary;
 
-DROP TABLE 01778_db.hierarchy_source_table;
-DROP DATABASE 01778_db;
+DROP TABLE `01778_db`.hierarchy_source_table;
+DROP DATABASE `01778_db`;
