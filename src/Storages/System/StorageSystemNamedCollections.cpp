@@ -45,10 +45,10 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         auto & value_column = tuple_column.getColumn(1);
 
         size_t size = 0;
-        for (const auto & [key, value] : collection->dumpStructure())
+        for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            value_column.insert(convertFieldToString(value));
+            value_column.insert(collection->get<String>(key));
             size++;
         }
 
