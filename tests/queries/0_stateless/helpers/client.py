@@ -17,7 +17,7 @@ class client(object):
         self.client = uexpect.spawn(["/bin/bash", "--noediting"])
         if command is None:
             command = (
-                os.environ.get("CLICKHOUSE_BINARY", "clickhouse") + " client --progress"
+                os.environ.get("CLICKHOUSE_BINARY", "clickhouse") + " client"
             )
         self.client.command = command
         self.client.eol("\r")
