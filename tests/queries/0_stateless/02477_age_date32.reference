@@ -14,9 +14,9 @@ SELECT age('week', toDate32('1927-01-01', 'UTC'), toDate32('1927-01-08', 'UTC'),
 SELECT age('month', toDate32('1927-01-01', 'UTC'), toDate32('1927-02-01', 'UTC'), 'UTC');
 1
 SELECT age('quarter', toDate32('1927-01-01', 'UTC'), toDate32('1927-04-01', 'UTC'), 'UTC');
-0
+1
 SELECT age('year', toDate32('1927-01-01', 'UTC'), toDate32('1928-01-01', 'UTC'), 'UTC');
-0
+1
 -- With DateTime64
 -- Date32 vs DateTime64
 SELECT age('second', toDate32('1927-01-01', 'UTC'), toDateTime64('1927-01-02 00:00:00', 3, 'UTC'), 'UTC');
@@ -32,9 +32,9 @@ SELECT age('week', toDate32('1927-01-01', 'UTC'), toDateTime64('1927-01-08 00:00
 SELECT age('month', toDate32('1927-01-01', 'UTC'), toDateTime64('1927-02-01 00:00:00', 3, 'UTC'), 'UTC');
 1
 SELECT age('quarter', toDate32('1927-01-01', 'UTC'), toDateTime64('1927-04-01 00:00:00', 3, 'UTC'), 'UTC');
-0
+1
 SELECT age('year', toDate32('1927-01-01', 'UTC'), toDateTime64('1928-01-01 00:00:00', 3, 'UTC'), 'UTC');
-0
+1
 -- DateTime64 vs Date32
 SELECT age('second', toDateTime64('1927-01-01 00:00:00', 3, 'UTC'), toDate32('1927-01-02', 'UTC'), 'UTC');
 86400
@@ -49,9 +49,9 @@ SELECT age('week', toDateTime64('1927-01-01 00:00:00', 3, 'UTC'), toDate32('1927
 SELECT age('month', toDateTime64('1927-01-01 00:00:00', 3, 'UTC'), toDate32('1927-02-01', 'UTC'), 'UTC');
 1
 SELECT age('quarter', toDateTime64('1927-01-01 00:00:00', 3, 'UTC'), toDate32('1927-04-01', 'UTC'), 'UTC');
-0
+1
 SELECT age('year', toDateTime64('1927-01-01 00:00:00', 3, 'UTC'), toDate32('1928-01-01', 'UTC'), 'UTC');
-0
+1
 -- With DateTime
 -- Date32 vs DateTime
 SELECT age('second', toDate32('2015-08-18', 'UTC'), toDateTime('2015-08-19 00:00:00', 'UTC'), 'UTC');

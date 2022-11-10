@@ -114,58 +114,30 @@ public:
         const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
-        if constexpr (is_date_diff)
-        {
-            if (unit == "year" || unit == "yy" || unit == "yyyy")
-                dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "quarter" || unit == "qq" || unit == "q")
-                dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "month" || unit == "mm" || unit == "m")
-                dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "week" || unit == "wk" || unit == "ww")
-                dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "day" || unit == "dd" || unit == "d")
-                dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "hour" || unit == "hh" || unit == "h")
-                dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "minute" || unit == "mi" || unit == "n")
-                dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else if (unit == "second" || unit == "ss" || unit == "s")
-                dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Function {} does not support '{}' unit", getName(), unit);
-        }
-        else
-        {
-            if (unit == "year" || unit == "yy" || unit == "yyyy")
-                UnitDivisor = IntervalKind(IntervalKind::Year).toAvgSeconds();
-            else if (unit == "quarter" || unit == "qq" || unit == "q")
-                UnitDivisor = IntervalKind(IntervalKind::Quarter).toAvgSeconds();
-            else if (unit == "month" || unit == "mm" || unit == "m")
-                UnitDivisor = IntervalKind(IntervalKind::Month).toAvgSeconds();
-            else if (unit == "week" || unit == "wk" || unit == "ww")
-                UnitDivisor = IntervalKind(IntervalKind::Week).toAvgSeconds();
-            else if (unit == "day" || unit == "dd" || unit == "d")
-                UnitDivisor = IntervalKind(IntervalKind::Day).toAvgSeconds();
-            else if (unit == "hour" || unit == "hh" || unit == "h")
-                UnitDivisor = IntervalKind(IntervalKind::Hour).toAvgSeconds();
-            else if (unit == "minute" || unit == "mi" || unit == "n")
-                UnitDivisor = IntervalKind(IntervalKind::Minute).toAvgSeconds();
-            else if (unit == "second" || unit == "ss" || unit == "s")
-                UnitDivisor = IntervalKind(IntervalKind::Second).toAvgSeconds();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Function {} does not support '{}' unit", getName(), unit);
-
+        if (unit == "year" || unit == "yy" || unit == "yyyy")
+            dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "quarter" || unit == "qq" || unit == "q")
+            dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "month" || unit == "mm" || unit == "m")
+            dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "week" || unit == "wk" || unit == "ww")
+            dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "day" || unit == "dd" || unit == "d")
+            dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "hour" || unit == "hh" || unit == "h")
+            dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "minute" || unit == "mi" || unit == "n")
+            dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "second" || unit == "ss" || unit == "s")
             dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} does not support '{}' unit", getName(), unit);
+
         return res;
     }
 
 private:
-    mutable Int32 UnitDivisor = 1;
-
     template <typename Transform>
     void dispatchForColumns(
         const IColumn & x, const IColumn & y,
@@ -290,12 +262,72 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
+
+
         if constexpr (is_date_diff)
             return static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
         else
-            return (static_cast<Int64>(transform_y.execute(y, timezone_y))
-                - static_cast<Int64>(transform_x.execute(x, timezone_x))) / UnitDivisor;
+        {
+            auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+            DateLUTImpl::DateTimeComponents x_comp = ToDateTimeComponentsImpl::execute(x, timezone_x);
+            DateLUTImpl::DateTimeComponents y_comp = ToDateTimeComponentsImpl::execute(y, timezone_y);
+            if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((x_comp.date.month > y_comp.date.month)
+                    || ((x_comp.date.month == y_comp.date.month) && ((x_comp.date.day > y_comp.date.day)
+                    || ((x_comp.date.day == y_comp.date.day) && ((x_comp.time.hour > y_comp.time.hour)
+                    || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))
+                    )))))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
+            {
+                if (((y_comp.date.month - x_comp.date.month) % 3 == 0) && ((x_comp.date.day > y_comp.date.day)
+                    || ((x_comp.date.day == y_comp.date.day) && ((x_comp.time.hour > y_comp.time.hour)
+                    || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))
+                    ))))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((x_comp.date.day > y_comp.date.day)
+                    || ((x_comp.date.day == y_comp.date.day) && ((x_comp.time.hour > y_comp.time.hour)
+                    || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))
+                    )))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((ToDayOfWeekImpl::execute(x, timezone_x) == ToDayOfWeekImpl::execute(y, timezone_y)) && ((x_comp.time.hour > y_comp.time.hour)
+                    || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((x_comp.time.hour > y_comp.time.hour)
+                    || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second)))))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeHourNumImpl<ResultPrecision::Extended>>>)
+            {
+                if ((x_comp.time.minute > y_comp.time.minute)
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second)))
+                    --res;
+            }
+            else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
+            {
+                if (x_comp.time.second > y_comp.time.minute)
+                    --res;
+            }
+            return res;
+        }
     }
 
     template <typename T>
