@@ -121,11 +121,7 @@ public:
     }
 
 
-    std::string displayText() const
-#if defined(POCO_CLICKHOUSE_PATCH)
-    override
-#endif
-    ;
+    std::string displayText() const override;
 
     ssize_t getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
