@@ -1,11 +1,11 @@
-(ns jepsen.clickhouse-keeper.unique
+(ns jepsen.clickhouse.keeper.unique
   (:require
    [clojure.tools.logging :refer :all]
    [jepsen
     [checker :as checker]
     [client :as client]
     [generator :as gen]]
-   [jepsen.clickhouse-keeper.utils :refer :all]
+   [jepsen.clickhouse.keeper.utils :refer :all]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
