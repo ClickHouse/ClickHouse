@@ -299,8 +299,14 @@ public:
         setConfigValue(*config, key, value);
     }
 
-    /// Get a string representation of the collection structure.
-    /// Used for debugging and tests.
+    std::map<Key, Value> dumpStructure()
+    {
+        std::map<Key, Value> result;
+        for (const auto & [key, _] : collection_info)
+            result.emplace(key, get(key));
+        return result;
+    }
+
     std::string toString() const
     {
         /// Convert a collection config like
@@ -516,6 +522,11 @@ NamedCollection::NamedCollection(
 NamedCollection::Value NamedCollection::get(const Key & key) const
 {
     return pimpl->get(key);
+}
+
+std::map<NamedCollection::Key, NamedCollection::Value> NamedCollection::dumpStructure() const
+{
+    return pimpl->dumpStructure();
 }
 
 std::string NamedCollection::toString() const

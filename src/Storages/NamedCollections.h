@@ -97,6 +97,10 @@ public:
 
     Value get(const Key & key) const;
 
+    std::map<Key, Value> dumpStructure() const;
+
+    /// Get a string representation of the collection structure.
+    /// Used for debugging and tests.
     std::string toString() const;
 };
 
