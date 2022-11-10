@@ -25,6 +25,12 @@ SELECT age('second', toDate('2017-12-31'), toDate('2016-01-01'), 'UTC');
 SELECT age('second', toDate('2017-12-31'), toDate('2017-01-01'), 'UTC');
 SELECT age('second', toDate('2017-12-31'), toDate('2018-01-01'), 'UTC');
 
+SELECT 'DateTime arguments';
+SELECT age('day', toDateTime('2016-01-01 00:00:01', 'UTC'), toDateTime('2016-01-02 00:00:00', 'UTC'), 'UTC');
+SELECT age('hour', toDateTime('2016-01-01 00:00:01', 'UTC'), toDateTime('2016-01-02 00:00:00', 'UTC'), 'UTC');
+SELECT age('minute', toDateTime('2016-01-01 00:00:01', 'UTC'), toDateTime('2016-01-02 00:00:00', 'UTC'), 'UTC');
+SELECT age('second', toDateTime('2016-01-01 00:00:01', 'UTC'), toDateTime('2016-01-02 00:00:00', 'UTC'), 'UTC');
+
 SELECT 'Date and DateTime arguments';
 
 SELECT age('second', toDate('2017-12-31'), toDateTime('2016-01-01 00:00:00', 'UTC'), 'UTC');

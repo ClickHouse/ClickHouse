@@ -641,6 +641,7 @@ Result:
 
 Returns the difference between two dates or dates with time values expressed as number of full units.
 E.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
+Calculation is done with 1 second precision. E.g. the difference between `2022-01-02 00:00:00` and `2022-01-01 00:00:01` is 0 days for `day` unit.
 
 **Syntax**
 
