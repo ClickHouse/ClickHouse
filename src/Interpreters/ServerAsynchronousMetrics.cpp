@@ -54,7 +54,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {}
 
-void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values)
+void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
@@ -268,6 +268,8 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+
+    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)

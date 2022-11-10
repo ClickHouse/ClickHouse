@@ -73,7 +73,7 @@ protected:
 
     Poco::Logger * log;
 private:
-    virtual void updateImpl(AsynchronousMetricValues & new_values) = 0;
+    virtual void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) = 0;
     virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
