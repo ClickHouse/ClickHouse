@@ -22,6 +22,7 @@
 #include <IO/S3Common.h>
 
 #include <Storages/StorageS3Settings.h>
+#include <Core/ServerUUID.h>
 
 
 namespace DB
@@ -31,79 +32,100 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-void checkWriteAccess(IDisk & disk)
+class CheckAccess
 {
-    auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    try
+public:
+    static void check(const String & disk_name, IDisk & disk)
     {
-        file->write("test", 4);
-    }
-    catch (...)
-    {
-        /// Log current exception, because finalize() can throw a different exception.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        file->finalize();
-        throw;
-    }
-}
+        /// NOTE: you don't need to pass prefix here since the writes is done
+        /// with IDisk interface that will do this automatically.
+        const String path = fmt::format("clickhouse_access_check_{}", getServerUUID());
 
-void checkReadAccess(const String & disk_name, IDisk & disk)
-{
-    auto file = disk.readFile("test_acl");
-    String buf(4, '0');
-    file->readStrict(buf.data(), 4);
-    if (buf != "test")
-        throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
-}
+        /// write
+        {
+            auto file = disk.writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+            try
+            {
+                file->write("test", 4);
+            }
+            catch (...)
+            {
+                /// Log current exception, because finalize() can throw a different exception.
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                file->finalize();
+                throw;
+            }
+        }
 
-void checkRemoveAccess(IDisk & disk)
-{
-    disk.removeFile("test_acl");
-}
+        /// read
+        auto file = disk.readFile(path);
+        String buf(4, '0');
+        file->readStrict(buf.data(), 4);
+        if (buf != "test")
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "No read access to S3 bucket in disk {}", disk_name);
 
-bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
-{
-    StoredObject object(key_with_trailing_slash + "_test_remove_objects_capability");
-    try
-    {
-        auto file = storage.writeObject(object, WriteMode::Rewrite);
-        file->write("test", 4);
-        file->finalize();
+        /// remove
+        disk.removeFile(path);
     }
-    catch (...)
+
+    static bool checkBatchRemove(S3ObjectStorage & storage, const String & key_with_trailing_slash)
     {
+        /// NOTE: key_with_trailing_slash is the disk prefix, it is required
+        /// because access is done via S3ObjectStorage not via IDisk interface
+        /// (since we don't have disk yet).
+        const String path = fmt::format("{}clickhouse_remove_objects_capability_{}", key_with_trailing_slash, getServerUUID());
+        StoredObject object(path);
         try
         {
-            storage.removeObject(object);
+            auto file = storage.writeObject(object, WriteMode::Rewrite);
+            file->write("test", 4);
+            file->finalize();
         }
         catch (...)
         {
+            try
+            {
+                storage.removeObject(object);
+            }
+            catch (...)
+            {
+            }
+            return true; /// We don't have write access, therefore no information about batch remove.
         }
-        return false; /// We don't have write access, therefore no information about batch remove.
-    }
-    try
-    {
-        /// Uses `DeleteObjects` request (batch delete).
-        storage.removeObjects({object});
-        return false;
-    }
-    catch (const Exception &)
-    {
         try
         {
-            storage.removeObject(object);
+            /// Uses `DeleteObjects` request (batch delete).
+            storage.removeObjects({object});
+            return true;
         }
-        catch (...)
+        catch (const Exception &)
         {
+            try
+            {
+                storage.removeObject(object);
+            }
+            catch (...)
+            {
+            }
+            return false;
         }
-        return true;
     }
-}
+
+private:
+    static String getServerUUID()
+    {
+        DB::UUID server_uuid = DB::ServerUUID::get();
+        if (server_uuid == DB::UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+        return DB::toString(server_uuid);
+    }
+};
 
 }
 
@@ -144,12 +166,12 @@ void registerDiskS3(DiskFactory & factory)
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 
+        CheckAccess access_checker;
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
-
         if (!skip_access_check)
         {
             /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-            if (s3_capabilities.support_batch_delete && checkBatchRemoveIsMissing(*s3_storage, uri.key))
+            if (s3_capabilities.support_batch_delete && !access_checker.checkBatchRemove(*s3_storage, uri.key))
             {
                 LOG_WARNING(
                     &Poco::Logger::get("registerDiskS3"),
@@ -177,9 +199,7 @@ void registerDiskS3(DiskFactory & factory)
         /// This code is used only to check access to the corresponding disk.
         if (!skip_access_check)
         {
-            checkWriteAccess(*s3disk);
-            checkReadAccess(name, *s3disk);
-            checkRemoveAccess(*s3disk);
+            access_checker.check(name, *s3disk);
         }
 
         s3disk->startup(context);
