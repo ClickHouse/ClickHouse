@@ -289,41 +289,4 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     return result;
 }
 
-QueryTreeNodePtr getColumnSourceForJoinNodeWithUsing(const QueryTreeNodePtr & join_node)
-{
-    QueryTreeNodePtr column_source_node = join_node;
-
-    while (true)
-    {
-        auto column_source_node_type = column_source_node->getNodeType();
-        if (column_source_node_type == QueryTreeNodeType::TABLE ||
-            column_source_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-            column_source_node_type == QueryTreeNodeType::QUERY ||
-            column_source_node_type == QueryTreeNodeType::UNION)
-        {
-            break;
-        }
-        else if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN)
-        {
-            auto & array_join_node = column_source_node->as<ArrayJoinNode &>();
-            column_source_node = array_join_node.getTableExpression();
-            continue;
-        }
-        else if (column_source_node_type == QueryTreeNodeType::JOIN)
-        {
-            auto & join_node_typed = column_source_node->as<JoinNode &>();
-            column_source_node = isRight(join_node_typed.getKind()) ? join_node_typed.getRightTableExpression() : join_node_typed.getLeftTableExpression();
-            continue;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                column_source_node->getNodeTypeName());
-        }
-    }
-
-    return column_source_node;
-}
-
 }
