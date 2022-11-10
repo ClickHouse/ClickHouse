@@ -30,7 +30,6 @@ if (GLIBC_COMPATIBILITY)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
-    target_link_libraries(glibc-compatibility global-group)
 
     target_no_warning(glibc-compatibility unused-command-line-argument)
     target_no_warning(glibc-compatibility unused-but-set-variable)
