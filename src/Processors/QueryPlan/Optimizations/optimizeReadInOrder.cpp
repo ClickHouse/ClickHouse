@@ -740,7 +740,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
         return nullptr;
 
     const auto & description = sorting.getSortDescription();
-    auto limit = sorting.getLimit();
+    size_t limit = sorting.getLimit();
 
     ActionsDAGPtr dag;
     FixedColumns fixed_columns;
