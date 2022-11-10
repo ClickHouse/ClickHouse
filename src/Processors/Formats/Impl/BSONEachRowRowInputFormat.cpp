@@ -58,11 +58,6 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
 {
 }
 
-const String & BSONEachRowRowInputFormat::columnName(size_t i) const
-{
-    return getPort().getHeader().getByPosition(i).name;
-}
-
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)

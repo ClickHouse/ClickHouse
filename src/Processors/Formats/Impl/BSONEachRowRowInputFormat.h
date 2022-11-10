@@ -60,7 +60,6 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    const String & columnName(size_t i) const;
     size_t columnIndex(const StringRef & name, size_t key_index);
 
     using ColumnReader = std::function<void(StringRef name, BSONType type)>;
