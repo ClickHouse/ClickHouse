@@ -21,11 +21,6 @@
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/Serializations/SerializationDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
