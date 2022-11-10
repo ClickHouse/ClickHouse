@@ -1,7 +1,7 @@
 ---
 slug: /en/getting-started/example-datasets/github
-sidebar_label: Github Repo Analysis
-description: Analyze the ClickHouse Github repo or any repository of your choosing
+sidebar_label: GitHub Repo Analysis
+description: Analyze the ClickHouse GitHub repo or any repository of your choosing
 ---
 
 # ClickHouse GitHub data
@@ -14,7 +14,7 @@ The generated data provides a `tsv` file for each of the following tables:
 - `file_changes` - files changed in every commit with the info about the change and statistics;
 - `line_changes` - every changed line in every changed file in every commit with full info about the line and the information about the previous change of this line.
 
-As of November 8th, 2022, each tsv is approximately the following size and number of rows:
+As of November 8th, 2022, each TSV is approximately the following size and number of rows:
 
 - `commits` - 7.8M - 266,051 rows
 - `file_changes` - 53M - 266,051 rows
@@ -47,7 +47,7 @@ As of November 8th, 2022, each tsv is approximately the following size and numbe
   - [List files that were rewritten most number of times?](#list-files-that-were-rewritten-most-number-of-times)
   - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
   - [Files sorted by average code age](#files-sorted-by-average-code-age)
-  - [Who tends to write more tests / cpp code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
+  - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
   - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
   - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
   - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
@@ -264,7 +264,7 @@ The tool suggests several queries via its help output. We have answered these in
   - [List files that were rewritten most number of times?](#list-files-that-were-rewritten-most-number-of-times)
   - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
   - [Files sorted by average code age](#files-sorted-by-average-code-age)
-  - [Who tends to write more tests / cpp code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
+  - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
   - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
   - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
   - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
@@ -390,7 +390,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.085 sec. Processed 532.10 thousand rows, 8.68 MB (6.30 million rows/s., 102.64 MB/s.)
 ```
 
-Note that this allows for files to be renamed and then re-renamed to their original values. First we aggregare `old_path` for a list of deleted files as a result of renaming. We union this with the last operation for every `path`. Finally, we filter this list to those where the final event is not a `Delete`.
+Note that this allows for files to be renamed and then re-renamed to their original values. First we aggregate `old_path` for a list of deleted files as a result of renaming. We union this with the last operation for every `path`. Finally, we filter this list to those where the final event is not a `Delete`.
 
 ```sql
 SELECT uniq(path)
@@ -1280,7 +1280,7 @@ LIMIT 1 BY day_of_week
 7 rows in set. Elapsed: 0.012 sec. Processed 62.78 thousand rows, 395.47 KB (5.44 million rows/s., 34.27 MB/s.)
 ```
 
-Ok, some possible advantages here to the longest contributor - our founder Alexey. Lets limit our analysis to the last year.
+OK, some possible advantages here to the longest contributor - our founder Alexey. Lets limit our analysis to the last year.
 
 
 ```sql
@@ -1311,7 +1311,7 @@ LIMIT 1 BY day_of_week
 7 rows in set. Elapsed: 0.004 sec. Processed 21.82 thousand rows, 140.02 KB (4.88 million rows/s., 31.29 MB/s.)
 ```
 
-This is still alittle simple and doesn't reflect people's work. 
+This is still a little simple and doesn't reflect people's work. 
 
 A better metric might be who is the top contributor each day as a fraction of the total work performed in the last year. Note that we treat the deletion and adding code equally.
 
@@ -1725,7 +1725,7 @@ LIMIT 10
 10 rows in set. Elapsed: 3.134 sec. Processed 16.13 million rows, 1.83 GB (5.15 million rows/s., 582.99 MB/s.)
 ```
 
-## Who tends to write more tests / cpp code / comments?
+## Who tends to write more tests / CPP code / comments?
 
 There are a few ways we can address this question. Focusing on the code to test ratio, this query is relatively simple - count the number of contributions to folders containing `tests` and compute the ratio to total contributions.
 
@@ -1840,7 +1840,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.136 sec. Processed 7.54 million rows, 31.57 MB (55.33 million rows/s., 231.83 MB/s.)
 ```
 
-Surprisingly high % for all our contributors and part of what makes our code soo readable.
+Surprisingly high % for all our contributors and part of what makes our code so readable.
 
 ## How does an authors commits change over time with respect to code/comments percentage?
 
@@ -1880,7 +1880,7 @@ LIMIT 10
 
 Ideally, however, we want to see how this changes in aggregate across all authors from the first day they start committing. Do they slowly reduce the number of comments they write?
 
-To compute this, we first work out each author's comments ratio over time - similar to [Who tends to write more tests / cpp code / comments?](#who-tends-to-write-more-tests--cpp-code--comments). This is joined against each author's start date, allowing us to calculate the comment ratio by week offset.
+To compute this, we first work out each author's comments ratio over time - similar to [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments). This is joined against each author's start date, allowing us to calculate the comment ratio by week offset.
 
 After calculating the average by-week offset across all authors, we sample these results by selecting every 10th week.
 
