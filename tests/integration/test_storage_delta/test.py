@@ -126,7 +126,7 @@ def test_select_query(started_cluster):
     run_query(instance, create_query)
 
     select_query = "SELECT {} FROM deltalake FORMAT TSV"
-    select_table_function_query = "SELECT {} FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"
+    select_table_function_query = "SELECT {col} FROM deltaLake('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV"
 
     for column_name in columns:
         result = run_query(instance, select_query.format(column_name)).splitlines()
@@ -134,6 +134,6 @@ def test_select_query(started_cluster):
 
     for column_name in columns:
         result = run_query(
-            instance, select_table_function_query.format(column_name)
+            instance, select_table_function_query.format(col=column_name, ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket)
         ).splitlines()
         assert len(result) > 0
