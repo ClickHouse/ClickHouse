@@ -44,24 +44,6 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i].getValue());
     }
-
-
-    void readAndMerge(DB::ReadBuffer & rb)
-    {
-        Cell::State::read(rb);
-
-        size_t new_size = 0;
-        DB::readVarUInt(new_size, rb);
-
-        this->resize(new_size);
-
-        for (size_t i = 0; i < new_size; ++i)
-        {
-            Cell x;
-            x.read(rb);
-            this->insert(x.getValue());
-        }
-    }
 };
 
 

@@ -141,9 +141,7 @@ public:
     }
 
     void write(DB::WriteBuffer & wb) const { zeroValue()->write(wb); }
-    void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
     void read(DB::ReadBuffer & rb) { zeroValue()->read(rb); }
-    void readText(DB::ReadBuffer & rb) { zeroValue()->readText(rb); }
     size_t size() const { return hasZero() ? 1 : 0; }
     bool empty() const { return !hasZero(); }
     size_t getBufferSizeInBytes() const { return sizeof(Cell); }
@@ -379,19 +377,6 @@ public:
         ms.write(wb);
     }
 
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        m0.writeText(wb);
-        DB::writeChar(',', wb);
-        m1.writeText(wb);
-        DB::writeChar(',', wb);
-        m2.writeText(wb);
-        DB::writeChar(',', wb);
-        m3.writeText(wb);
-        DB::writeChar(',', wb);
-        ms.writeText(wb);
-    }
-
     void read(DB::ReadBuffer & rb)
     {
         m0.read(rb);
@@ -399,19 +384,6 @@ public:
         m2.read(rb);
         m3.read(rb);
         ms.read(rb);
-    }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        m0.readText(rb);
-        DB::assertChar(',', rb);
-        m1.readText(rb);
-        DB::assertChar(',', rb);
-        m2.readText(rb);
-        DB::assertChar(',', rb);
-        m3.readText(rb);
-        DB::assertChar(',', rb);
-        ms.readText(rb);
     }
 
     size_t size() const { return m0.size() + m1.size() + m2.size() + m3.size() + ms.size(); }

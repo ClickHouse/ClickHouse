@@ -57,11 +57,9 @@ struct HashTableNoState
 {
     /// Serialization, in binary and text form.
     void write(DB::WriteBuffer &) const         {}
-    void writeText(DB::WriteBuffer &) const     {}
 
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer &)                 {}
-    void readText(DB::ReadBuffer &)             {}
 };
 
 
@@ -200,11 +198,9 @@ struct HashTableCell
 
     /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         { DB::writeBinary(key, wb); }
-    void writeText(DB::WriteBuffer & wb) const     { DB::writeDoubleQuoted(key, wb); }
 
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
-    void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 
     /// When cell pointer is moved during erase, reinsert or resize operations
 
@@ -1255,30 +1251,6 @@ public:
                 ptr->write(wb);
     }
 
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        Cell::State::writeText(wb);
-        DB::writeText(m_size, wb);
-
-        if (this->hasZero())
-        {
-            DB::writeChar(',', wb);
-            this->zeroValue()->writeText(wb);
-        }
-
-        if (!buf)
-            return;
-
-        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
-        {
-            if (!ptr->isZero(*this))
-            {
-                DB::writeChar(',', wb);
-                ptr->writeText(wb);
-            }
-        }
-    }
-
     void read(DB::ReadBuffer & rb)
     {
         Cell::State::read(rb);
@@ -1302,32 +1274,6 @@ public:
             insert(x.getValue());
         }
     }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        Cell::State::readText(rb);
-
-        destroyElements();
-        this->clearHasZero();
-        m_size = 0;
-
-        size_t new_size = 0;
-        DB::readText(new_size, rb);
-
-        free();
-        Grower new_grower = grower;
-        new_grower.set(new_size);
-        alloc(new_grower);
-
-        for (size_t i = 0; i < new_size; ++i)
-        {
-            Cell x;
-            DB::assertChar(',', rb);
-            x.readText(rb);
-            insert(x.getValue());
-        }
-    }
-
 
     size_t size() const
     {

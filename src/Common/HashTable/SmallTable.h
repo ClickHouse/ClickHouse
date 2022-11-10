@@ -259,18 +259,6 @@ public:
             buf[i].write(wb);
     }
 
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        Cell::State::writeText(wb);
-        DB::writeText(m_size, wb);
-
-        for (size_t i = 0; i < m_size; ++i)
-        {
-            DB::writeChar(',', wb);
-            buf[i].writeText(wb);
-        }
-    }
-
     void read(DB::ReadBuffer & rb)
     {
         Cell::State::read(rb);
@@ -288,28 +276,6 @@ public:
 
         m_size = new_size;
     }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        Cell::State::readText(rb);
-
-        m_size = 0;
-
-        size_t new_size = 0;
-        DB::readText(new_size, rb);
-
-        if (new_size > capacity)
-            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
-
-        for (size_t i = 0; i < new_size; ++i)
-        {
-            DB::assertChar(',', rb);
-            buf[i].readText(rb);
-        }
-
-        m_size = new_size;
-    }
-
 
     size_t size() const
     {

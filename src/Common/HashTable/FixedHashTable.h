@@ -395,26 +395,6 @@ public:
         }
     }
 
-    void writeText(DB::WriteBuffer & wb) const
-    {
-        Cell::State::writeText(wb);
-        DB::writeText(size(), wb);
-
-        if (!buf)
-            return;
-
-        for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
-        {
-            if (!ptr->isZero(*this))
-            {
-                DB::writeChar(',', wb);
-                DB::writeText(ptr - buf, wb);
-                DB::writeChar(',', wb);
-                ptr->writeText(wb);
-            }
-        }
-    }
-
     void read(DB::ReadBuffer & rb)
     {
         Cell::State::read(rb);
@@ -431,28 +411,6 @@ public:
             DB::readVarUInt(place_value, rb);
             Cell x;
             x.read(rb);
-            new (&buf[place_value]) Cell(x, *this);
-        }
-    }
-
-    void readText(DB::ReadBuffer & rb)
-    {
-        Cell::State::readText(rb);
-        destroyElements();
-        size_t m_size;
-        DB::readText(m_size, rb);
-        this->setSize(m_size);
-        free();
-        alloc();
-
-        for (size_t i = 0; i < m_size; ++i)
-        {
-            size_t place_value = 0;
-            DB::assertChar(',', rb);
-            DB::readText(place_value, rb);
-            Cell x;
-            DB::assertChar(',', rb);
-            x.readText(rb);
             new (&buf[place_value]) Cell(x, *this);
         }
     }

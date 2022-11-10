@@ -19,11 +19,9 @@ struct ClearableHashSetState
 
     /// Serialization, in binary and text form.
     void write(DB::WriteBuffer & wb) const         { DB::writeBinary(version, wb); }
-    void writeText(DB::WriteBuffer & wb) const     { DB::writeText(version, wb); }
 
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)                 { DB::readBinary(version, rb); }
-    void readText(DB::ReadBuffer & rb)             { DB::readText(version, rb); }
 };
 
 
