@@ -436,6 +436,7 @@ endif ()
 include(cmake/dbms_glob_sources.cmake)
 
 add_library(global-group INTERFACE)
+link_libraries(global-group)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
@@ -443,7 +444,6 @@ elseif (OS_DARWIN)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 endif ()
-link_libraries(global-group)
 
 if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
