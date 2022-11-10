@@ -19,6 +19,8 @@ enum class MergeType
     TTLDelete = 2,
     /// Merge with recompression
     TTLRecompress = 3,
+    /// Merge assigned to drop parts (with TTLMergeSelector)
+    TTLDrop = 4,
 };
 
 /// Check parsed merge_type from raw int and get enum value.

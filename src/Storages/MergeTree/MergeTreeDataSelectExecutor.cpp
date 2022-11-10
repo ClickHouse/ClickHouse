@@ -781,6 +781,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (settings.allow_experimental_analyzer)
+        return;
+
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
