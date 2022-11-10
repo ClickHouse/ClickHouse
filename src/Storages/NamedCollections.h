@@ -10,7 +10,7 @@ namespace DB
 class NamedCollection;
 using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
 struct NamedCollectionValueInfo;
-using NamedCollectionInfo = std::unordered_map<std::string, NamedCollectionValueInfo>;
+using NamedCollectionInfo = std::map<std::string, NamedCollectionValueInfo>;
 
 /**
  * A factory of immutable named collections.
@@ -28,6 +28,8 @@ using NamedCollectionInfo = std::unordered_map<std::string, NamedCollectionValue
 class NamedCollectionFactory : boost::noncopyable
 {
 public:
+    static NamedCollectionFactory & instance();
+
     void initialize(const Poco::Util::AbstractConfiguration & server_config);
 
     bool exists(const std::string & collection_name) const;
@@ -40,7 +42,14 @@ public:
         const std::string & collection_name,
         const NamedCollectionInfo & collection_info) const;
 
-    static NamedCollectionFactory & instance();
+    void add(
+        const std::string & collection_name,
+        NamedCollectionPtr collection);
+
+    void remove(const std::string & collection_name);
+
+    using NamedCollections = std::unordered_map<std::string, NamedCollectionPtr>;
+    NamedCollections getAll() const;
 
 private:
     NamedCollectionPtr getImpl(
@@ -48,10 +57,14 @@ private:
         const NamedCollectionInfo & collection_info,
         std::lock_guard<std::mutex> & lock) const;
 
-    using NamedCollections = std::unordered_map<std::string, NamedCollectionPtr>;
+    bool existsUnlocked(
+        const std::string & collection_name,
+        std::lock_guard<std::mutex> & lock) const;
+
     mutable NamedCollections named_collections;
 
 private:
+    /// FIXME: this will be invalid when config is reloaded
     const Poco::Util::AbstractConfiguration * config;
 
     void assertInitialized(std::lock_guard<std::mutex> & lock) const;
@@ -74,31 +87,17 @@ private:
 public:
     using Key = std::string;
     using Value = Field;
+    using ValueInfo = NamedCollectionValueInfo;
+    using CollectionInfo = NamedCollectionInfo;
+
+    NamedCollection(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_path,
+        const CollectionInfo & collection_info);
 
     Value get(const Key & key) const;
 
-    void replace(const Key & key, const Value & value);
-
-    /// Copy current named collection to allow modification as
-    /// NamedConnectionFactory returns immutable collections.
-    std::shared_ptr<NamedCollection> copy() const;
-
-    NamedCollection();
-    explicit NamedCollection(ImplPtr pimpl_);
-
-protected:
-    /// Initialize from config. `config` must be a view to the required collection,
-    /// e.g. the root of `config` is the root of collection.
-    void initialize(
-        const Poco::Util::AbstractConfiguration & config,
-        const NamedCollectionInfo & collection_info);
-
-    /// Validate named collection in config.
-    /// Throws exception if named collection keys in config are not the same as
-    /// expected (contains unknown keys or misses required keys)
-    void validate(
-        const Poco::Util::AbstractConfiguration & config,
-        const NamedCollectionInfo & collection_info) const;
+    std::string toString() const;
 };
 
 
@@ -109,7 +108,8 @@ protected:
 struct NamedCollectionValueInfo
 {
     /// Type of the value. One of: String, UInt64, Int64, Double.
-    Field::Types::Which type;
+    using Type = Field::Types::Which;
+    Type type = Type::String;
     /// Optional default value for the case if there is no such key in config.
     std::optional<NamedCollection::Value> default_value;
     /// Is this value required or optional? Throw exception if the value is
