@@ -1,12 +1,13 @@
-(ns jepsen.clickhouse-keeper.register
+(ns jepsen.clickhouse.keeper.register
   (:require   [jepsen
                [checker :as checker]
                [client :as client]
                [independent :as independent]
                [generator :as gen]]
               [jepsen.checker.timeline :as timeline]
+              [jepsen.clickhouse.utils :as chu]
               [knossos.model :as model]
-              [jepsen.clickhouse-keeper.utils :refer :all]
+              [jepsen.clickhouse.keeper.utils :refer :all]
               [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
@@ -20,14 +21,15 @@
     (assoc this :conn (zk-connect node 9181 30000)))
 
   (setup! [this test]
-    (zk-create-range conn 300)) ; 300 nodes to be sure
+    (chu/exec-with-retries 30 (fn []
+                        (zk-create-range conn 300))))
 
   (invoke! [_ test op]
     (let [[k v] (:value op)
           zk-k (zk-path k)]
       (case (:f op)
         :read (try
-                (assoc op :type :ok, :value (independent/tuple k (parse-long (:data (zk-get-str conn zk-k)))))
+                (assoc op :type :ok, :value (independent/tuple k (chu/parse-long (:data (zk-get-str conn zk-k)))))
                 (catch Exception _ (assoc op :type :fail, :error :connect-error)))
         :write (try
                  (do (zk-set conn zk-k v)
