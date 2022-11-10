@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 namespace DB
 {
@@ -74,13 +75,22 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const Field & /*left*/, const Field & /*right*/)
+    static IFunction::Monotonicity get(const Field & left, const Field & right)
     {
+        bool is_strict = false;
+        if (!left.isNull() && !right.isNull())
+        {
+            auto left_value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), left);
+            auto right_value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), left);
+            if (1 <= left_value && left_value <= right_value && right_value <= 20)
+                is_strict = true;
+        }
+
         return {
             .is_monotonic = true,
             .is_positive = true,
             .is_always_monotonic = true,
-            .is_strict = false,
+            .is_strict = is_strict,
         };
     }
 };
@@ -91,9 +101,9 @@ REGISTER_FUNCTION(Factorial)
     factory.registerFunction<FunctionFactorial>(
         {
             R"(
-Computes the factorial of an integer value. It works with any native integer type. The return type is Int64.
+Computes the factorial of an integer value. It works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is Int64.
 
-The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20; a value of 21 or greater overflows the range for Int64 and will causes an throw exception.
+The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater overflows the range for Int64 and will cause exception throw.
 )",
             Documentation::Examples{{"factorial", "SELECT factorial(10)"}},
             Documentation::Categories{"Mathematical"}},
