@@ -63,7 +63,6 @@ private:
     struct QuorumInfo
     {
         String status_path;
-        String is_active_node_value;
         int is_active_node_version = -1;
         int host_node_version = -1;
     };
@@ -85,7 +84,7 @@ private:
     /// Also checks that replica still alive.
     void waitForQuorum(
         zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
-        const std::string & quorum_path, const std::string & is_active_node_value, size_t replicas_num) const;
+        const std::string & quorum_path, int is_active_node_version, size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;

@@ -10,6 +10,12 @@
 
 #include "syscall.h"
 
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#include <sanitizer/msan_interface.h>
+#endif
+#endif
+
 #define ARRAY_SIZE(a) sizeof((a))/sizeof((a[0]))
 
 /// Suppress TSan since it is possible for this code to be called from multiple threads,
