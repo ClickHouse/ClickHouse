@@ -190,7 +190,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)
             if (res < 0)
-                res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                res += b >= 0 ? static_cast<OriginResultType>(b) : -static_cast<OriginResultType>(b);
         return static_cast<ResultType>(res);
     }
 };
