@@ -578,11 +578,11 @@ This data visualizes well. Below we use Superset.
 
 **For lines added and deleted:**
 
-<img width="100%" alt="image" src="./images/superset-github-lines-added-deleted.png">
+![](./images/superset-github-lines-added-deleted.png)
 
 **For commits and authors:**
 
-<img width="100%" alt="image" src="./images/superset-commits-authors.png">
+![](./images/superset-commits-authors.png)
 
 ## List files with maximum number of authors
 
