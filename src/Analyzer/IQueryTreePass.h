@@ -16,7 +16,7 @@ namespace DB
   * Dependencies between passes must be avoided.
   */
 class IQueryTreePass;
-using QueryTreePassPtr = std::shared_ptr<IQueryTreePass>;
+using QueryTreePassPtr = std::unique_ptr<IQueryTreePass>;
 using QueryTreePasses = std::vector<QueryTreePassPtr>;
 
 class IQueryTreePass
