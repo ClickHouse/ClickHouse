@@ -1,6 +1,6 @@
-(ns jepsen.clickhouse-keeper.zookeeperdb
+(ns jepsen.clickhouse.keeper.zookeeperdb
   (:require [clojure.tools.logging :refer :all]
-            [jepsen.clickhouse-keeper.utils :refer :all]
+            [jepsen.clickhouse.keeper.utils :refer :all]
             [clojure.java.io :as io]
             [jepsen
              [control :as c]

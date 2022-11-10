@@ -1,35 +1,15 @@
-(ns jepsen.clickhouse-keeper.utils
+(ns jepsen.clickhouse.keeper.utils
   (:require [clojure.string :as str]
             [zookeeper.data :as data]
             [zookeeper :as zk]
             [zookeeper.internal :as zi]
-            [jepsen.control.util :as cu]
-            [jepsen.clickhouse-keeper.constants :refer :all]
-            [jepsen.control :as c]
-            [clojure.tools.logging :refer :all]
-            [clojure.java.io :as io])
+            [jepsen.clickhouse.constants :refer :all]
+            [jepsen.clickhouse.utils :as chu]
+            [clojure.tools.logging :refer :all])
   (:import (org.apache.zookeeper.data Stat)
            (org.apache.zookeeper CreateMode
                                  ZooKeeper)
-           (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)
-           (java.security MessageDigest)))
-
-(defn exec-with-retries
-  [retries f & args]
-  (let [res (try {:value (apply f args)}
-                 (catch Exception e
-                   (if (zero? retries)
-                     (throw e)
-                     {:exception e})))]
-    (if (:exception res)
-      (do (Thread/sleep 1000) (recur (dec retries) f args))
-      (:value res))))
-
-(defn parse-long
-  "Parses a string to a Long. Passes through `nil` and empty strings."
-  [s]
-  (if (and s (> (count s) 0))
-    (Long/parseLong s)))
+           (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
 (defn parse-and-get-counter
   [path]
@@ -45,7 +25,7 @@
 
 (defn zk-connect
   [host port timeout]
-  (exec-with-retries 30 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
+  (zk/connect (str host ":" port) :timeout-msec timeout))
 
 (defn zk-create-range
   [conn n]
@@ -77,7 +57,7 @@
 (defn zk-cas
   [conn path old-value new-value]
   (let [current-value (zk-get-str conn path)]
-    (if (= (parse-long (:data current-value)) old-value)
+    (if (= (chu/parse-long (:data current-value)) old-value)
       (do (zk-set conn path new-value (:version (:stat current-value)))
           true))))
 
@@ -149,34 +129,18 @@
 
 (defn clickhouse-alive?
   [node test]
-  (info "Checking server alive on" node)
+  (info "Checking Keeper alive on" node)
   (try
     (zk-connect (name node) 9181 30000)
     (catch Exception _ false)))
 
-(defn wait-clickhouse-alive!
-  [node test & {:keys [maxtries] :or {maxtries 30}}]
-  (loop [i 0]
-    (cond (> i maxtries) false
-          (clickhouse-alive? node test) true
-          :else (do (Thread/sleep 1000) (recur (inc i))))))
-
-(defn kill-clickhouse!
-  [node test]
-  (info "Killing server on node" node)
-  (c/su
-   (cu/stop-daemon! binary-path pid-file-path)
-   (c/exec :rm :-fr (str data-dir "/status"))))
-
 (defn start-clickhouse!
   [node test]
   (info "Starting server on node" node)
-  (c/su
-   (cu/start-daemon!
-    {:pidfile pid-file-path
-     :logfile stderr-file
-     :chdir data-dir}
-    binary-path
+  (chu/start-clickhouse!
+    node
+    test
+    clickhouse-alive?
     :keeper
     :--config (str configs-dir "/keeper_config.xml")
     :--
@@ -184,27 +148,4 @@
     :--logger.errorlog (str logs-dir "/clickhouse-keeper.err.log")
     :--keeper_server.snapshot_storage_path coordination-snapshots-dir
     :--keeper_server.log_storage_path coordination-logs-dir
-    :--path coordination-data-dir)
-   (wait-clickhouse-alive! node test)))
-
-(defn md5 [^String s]
-  (let [algorithm (MessageDigest/getInstance "MD5")
-        raw (.digest algorithm (.getBytes s))]
-    (format "%032x" (BigInteger. 1 raw))))
-
-(defn non-precise-cached-wget!
-  [url]
-  (let [encoded-url (md5 url)
-        expected-file-name (.getName (io/file url))
-        dest-folder (str binaries-cache-dir "/" encoded-url)
-        dest-file (str dest-folder "/clickhouse")
-        dest-symlink (str common-prefix "/" expected-file-name)
-        wget-opts (concat cu/std-wget-opts [:-O dest-file])]
-    (when-not (cu/exists? dest-file)
-      (info "Downloading" url)
-      (do (c/exec :mkdir :-p dest-folder)
-          (c/cd dest-folder
-                (cu/wget-helper! wget-opts url))))
-    (c/exec :rm :-rf dest-symlink)
-    (c/exec :ln :-s dest-file dest-symlink)
-    dest-symlink))
+    :--path coordination-data-dir))
