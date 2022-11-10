@@ -37,7 +37,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
