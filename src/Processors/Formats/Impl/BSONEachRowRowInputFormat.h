@@ -68,7 +68,7 @@ private:
     void skipUnknownField(BSONType type, const String & key_name);
 
     void readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type);
-    void readArray(IColumn & column, const DataTypePtr & data_type,  BSONType bson_type);
+    void readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type);
     void readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type);
 
     const FormatSettings format_settings;

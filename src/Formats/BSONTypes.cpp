@@ -1,6 +1,7 @@
 #include <Formats/BSONTypes.h>
 #include <Common/Exception.h>
-#include <sstream>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <iomanip>
 
 namespace DB
@@ -13,9 +14,9 @@ namespace ErrorCodes
 
 static std::string byteToHexString(uint8_t byte)
 {
-    std::ostringstream os;
-    os << "0x" << std::setw(2) << std::setfill('0') << std::hex << int(byte);
-    return os.str();
+    WriteBufferFromOwnString buf;
+    buf << "0x" << std::setw(2) << std::setfill('0') << std::hex << int(byte);
+    return buf.str();
 }
 
 BSONType getBSONType(uint8_t value)

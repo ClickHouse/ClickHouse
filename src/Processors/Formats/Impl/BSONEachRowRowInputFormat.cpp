@@ -92,7 +92,7 @@ static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
     {
         char * next_pos = find_first_symbols<0>(in.position(), in.buffer().end());
 
-        if (next_pos != in.buffer().end() )
+        if (next_pos != in.buffer().end())
         {
             StringRef res(in.position(), next_pos - in.position());
             in.position() = next_pos + 1;
@@ -161,7 +161,7 @@ static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTyp
 }
 
 template <typename DecimalType, BSONType expected_bson_type>
-static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type,  BSONType bson_type)
+static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != expected_bson_type)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
@@ -182,7 +182,7 @@ static void readAndInsertDateTime64(ReadBuffer & in, IColumn & column, BSONType 
 }
 
 template <typename ColumnType>
-static void readAndInsertBigInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type,  BSONType bson_type)
+static void readAndInsertBigInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != BSONType::BINARY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
