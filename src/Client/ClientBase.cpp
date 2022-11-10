@@ -65,10 +65,12 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace fs = std::filesystem;
@@ -103,6 +105,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 }
@@ -115,6 +118,25 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+std::istream& operator>> (std::istream & in, ProgressOption & progress)
+{
+    std::string token;
+    in >> token;
+
+    boost::to_upper(token);
+
+    if (token == "OFF" || token == "FALSE" || token == "0" || token == "NO")
+        progress = ProgressOption::OFF;
+    else if (token == "TTY" || token == "ON" || token == "TRUE" || token == "1" || token == "YES")
+        progress = ProgressOption::TTY;
+    else if (token == "ERR")
+        progress = ProgressOption::ERR;
+    else
+        throw boost::program_options::validation_error(boost::program_options::validation_error::invalid_option_value);
+
+    return in;
+}
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
 {
@@ -413,8 +435,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
-        progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+        progress_indication.clearProgressOutput(*tty_buf);
 
     try
     {
@@ -431,11 +453,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     output_format->flush();
 
     /// Restore progress bar after data block.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
-        progress_indication.writeProgress();
+        progress_indication.writeProgress(*tty_buf);
     }
 }
 
@@ -443,7 +465,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
-    progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -636,6 +659,58 @@ void ClientBase::initLogsOutputStream()
         }
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
+    }
+}
+
+void ClientBase::initTtyBuffer(bool to_err)
+{
+    if (!tty_buf)
+    {
+        static constexpr auto tty_file_name = "/dev/tty";
+
+        /// Output all progress bar commands to terminal at once to avoid flicker.
+        /// This size is usually greater than the window size.
+        static constexpr size_t buf_size = 1024;
+
+        if (!to_err)
+        {
+            std::error_code ec;
+            std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+            if (!ec && exists(tty) && is_character_file(tty)
+                && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+            {
+                try
+                {
+                    tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+
+                    /// It is possible that the terminal file has writeable permissions
+                    /// but we cannot write anything there. Check it with invisible character.
+                    tty_buf->write('\0');
+                    tty_buf->next();
+
+                    return;
+                }
+                catch (const Exception & e)
+                {
+                    if (tty_buf)
+                        tty_buf.reset();
+
+                    if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                        throw;
+
+                    /// It is normal if file exists, indicated as writeable but still cannot be opened.
+                    /// Fallback to other options.
+                }
+            }
+        }
+
+        if (stderr_is_a_tty)
+        {
+            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        }
+        else
+            need_render_progress = false;
     }
 }
 
@@ -937,14 +1012,15 @@ void ClientBase::onProgress(const Progress & value)
     if (output_format)
         output_format->onProgress(value);
 
-    if (need_render_progress)
-        progress_indication.writeProgress();
+    if (need_render_progress && tty_buf)
+        progress_indication.writeProgress(*tty_buf);
 }
 
 
 void ClientBase::onEndOfStream()
 {
-    progress_indication.clearProgressOutput();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
         output_format->finalize();
@@ -952,10 +1028,7 @@ void ClientBase::onEndOfStream()
     resetOutput();
 
     if (is_interactive && !written_first_block)
-    {
-        progress_indication.clearProgressOutput();
         std::cout << "Ok." << std::endl;
-    }
 }
 
 
@@ -998,15 +1071,16 @@ void ClientBase::onProfileEvents(Block & block)
         }
         progress_indication.updateThreadEventData(thread_times);
 
-        if (need_render_progress)
-            progress_indication.writeProgress();
+        if (need_render_progress && tty_buf)
+            progress_indication.writeProgress(*tty_buf);
 
         if (profile_events.print)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 initLogsOutputStream();
-                progress_indication.clearProgressOutput();
+                if (need_render_progress && tty_buf)
+                    progress_indication.clearProgressOutput(*tty_buf);
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -1173,14 +1247,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
-    if (need_render_progress && have_data_in_stdin)
+    if (need_render_progress)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.getFileSize());
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
-        progress_indication.setFileProgressCallback(global_context, true);
+        if (tty_buf)
+            progress_indication.setFileProgressCallback(global_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1432,12 +1507,12 @@ bool ClientBase::receiveEndOfQuery()
 void ClientBase::cancelQuery()
 {
     connection->sendCancel();
+    if (need_render_progress && tty_buf)
+        progress_indication.clearProgressOutput(*tty_buf);
+
     if (is_interactive)
-    {
-        progress_indication.clearProgressOutput();
         std::cout << "Cancelling query." << std::endl;
 
-    }
     cancelled = true;
 }
 
@@ -1565,7 +1640,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (profile_events.last_block)
     {
         initLogsOutputStream();
-        progress_indication.clearProgressOutput();
+        if (need_render_progress && tty_buf)
+            progress_indication.clearProgressOutput(*tty_buf);
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
@@ -2256,7 +2332,7 @@ void ClientBase::init(int argc, char ** argv)
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
-        ("progress", "print progress of queries execution")
+        ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::TTY, "tty"), "Print progress of queries execution - to TTY (default): tty|on|1|true|yes; to STDERR: err; OFF: off|0|false|no")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -2311,6 +2387,11 @@ void ClientBase::init(int argc, char ** argv)
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
+    if (options["progress"].as<ProgressOption>() == ProgressOption::OFF)
+        need_render_progress = false;
+    else
+        initTtyBuffer(options["progress"].as<ProgressOption>() == ProgressOption::ERR);
+
     if (options.count("version") || options.count("V"))
     {
         showClientVersion();
@@ -2361,7 +2442,20 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("profile-events-delay-ms"))
         config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
-        config().setBool("progress", true);
+    {
+        switch (options["progress"].as<ProgressOption>())
+        {
+            case OFF:
+                config().setString("progress", "off");
+                break;
+            case TTY:
+                config().setString("progress", "tty");
+                break;
+            case ERR:
+                config().setString("progress", "err");
+                break;
+        }
+    }
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("disable_suggestion"))
