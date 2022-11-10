@@ -774,7 +774,6 @@ struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageReques
     Coordination::ZooKeeperResponsePtr
     process(KeeperStorage & /* storage */, int64_t /* zxid */) const override
     {
-        LOG_INFO(&Poco::Logger::get("LOGGER"), "Processing heartbeat");
         return zk_request->makeResponse();
     }
 };

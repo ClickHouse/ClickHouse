@@ -58,6 +58,14 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
+#ifdef KEEPER_STANDALONE_BUILD
+
+void collectCrashLog(
+    Int32, UInt64, const String &, const StackTrace &)
+{}
+
+#endif
+
 namespace DB
 {
 
