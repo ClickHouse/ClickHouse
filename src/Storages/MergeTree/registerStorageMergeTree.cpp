@@ -447,7 +447,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
         // if there is args and number of optional parameter is higher than 1
-        if (arg_cnt - arg_num > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        // is_deleted is not allowed with the 'allow_deprecated_syntax_for_merge_tree' settings
+        if (arg_cnt - arg_num > 1 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
                 throw Exception(
