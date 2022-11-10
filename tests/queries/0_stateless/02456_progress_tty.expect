@@ -34,6 +34,16 @@ expect "Progress: "
 expect "█"
 send "\3"
 
+# But we can set it to false
+send "\$CLICKHOUSE_LOCAL --progress false --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+expect -exact "0\tHello\r\n"
+send "\3"
+
+# As well as to 0 for the same effect
+send "\$CLICKHOUSE_LOCAL --progress 0 --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+expect -exact "0\tHello\r\n"
+send "\3"
+
 # If we set it to 1, the progress will be displayed as well
 send "\$CLICKHOUSE_LOCAL --progress 1 --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
 expect "Progress: "
