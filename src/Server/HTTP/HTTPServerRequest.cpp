@@ -1,6 +1,5 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 
-#include <Interpreters/Context.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/HTTPChunkedReadBuffer.h>
 #include <IO/LimitReadBuffer.h>

@@ -214,6 +214,7 @@ void KeeperDispatcher::snapshotThread()
 void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
+    LOG_INFO(&Poco::Logger::get("LOGGER"), "Sending {} for {}", session_id, response->getOpNum());
 
     /// Special new session response.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)

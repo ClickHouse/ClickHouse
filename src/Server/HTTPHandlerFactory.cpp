@@ -3,7 +3,6 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
 #include <Access/Credentials.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -32,35 +31,6 @@ static void addDefaultHandlersFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics);
-
-HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(&Poco::Logger::get(name_)), name(name_)
-{
-}
-
-std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequestHandler(const HTTPServerRequest & request)
-{
-    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
-        (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
-
-    for (auto & handler_factory : child_factories)
-    {
-        auto handler = handler_factory->createRequestHandler(request);
-        if (handler)
-            return handler;
-    }
-
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-    {
-        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler);
-    }
-
-    return nullptr;
-}
 
 static inline auto createHandlersFactoryFromConfig(
     IServer & server,

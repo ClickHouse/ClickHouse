@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Server/TCPServerConnectionFactory.h>

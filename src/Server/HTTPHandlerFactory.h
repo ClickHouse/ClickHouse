@@ -4,6 +4,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 
@@ -18,23 +19,6 @@ namespace ErrorCodes
 }
 
 class IServer;
-
-/// Handle request using child handlers
-class HTTPRequestHandlerFactoryMain : public HTTPRequestHandlerFactory
-{
-public:
-    explicit HTTPRequestHandlerFactoryMain(const std::string & name_);
-
-    void addHandler(HTTPRequestHandlerFactoryPtr child_factory) { child_factories.emplace_back(child_factory); }
-
-    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
-
-private:
-    Poco::Logger * log;
-    std::string name;
-
-    std::vector<HTTPRequestHandlerFactoryPtr> child_factories;
-};
 
 template <typename TEndpoint>
 class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
