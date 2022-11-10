@@ -37,6 +37,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Storages/NamedCollections.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -118,6 +119,8 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
+
+    NamedCollectionFactory::instance().initialize(config());
 }
 
 
