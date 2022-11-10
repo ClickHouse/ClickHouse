@@ -134,6 +134,12 @@ def test_select_query(started_cluster):
 
     for column_name in columns:
         result = run_query(
-            instance, select_table_function_query.format(col=column_name, ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket)
+            instance,
+            select_table_function_query.format(
+                col=column_name,
+                ip=started_cluster.minio_ip,
+                port=started_cluster.minio_port,
+                bucket=bucket,
+            ),
         ).splitlines()
         assert len(result) > 0

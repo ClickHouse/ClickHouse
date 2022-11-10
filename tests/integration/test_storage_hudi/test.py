@@ -141,7 +141,13 @@ def test_select_query(started_cluster):
 
     for column_name in columns:
         result = run_query(
-            instance, select_table_function_query.format(col=column_name, ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket)
+            instance,
+            select_table_function_query.format(
+                col=column_name,
+                ip=started_cluster.minio_ip,
+                port=started_cluster.minio_port,
+                bucket=bucket,
+            ),
         ).splitlines()
         assert len(result) > 0
 
@@ -153,7 +159,12 @@ def test_select_query(started_cluster):
     distinct_select_table_function_query = "SELECT DISTINCT partitionpath FROM hudi('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') ORDER BY partitionpath FORMAT TSV"
 
     result = run_query(instance, distinct_select_query)
-    result_table_function = run_query(instance, distinct_select_query.format(ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket))
+    result_table_function = run_query(
+        instance,
+        distinct_select_query.format(
+            ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket
+        ),
+    )
     expected = [
         "americas/brazil/sao_paulo",
         "americas/united_states/san_francisco",
