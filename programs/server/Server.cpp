@@ -341,19 +341,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
-    if (secure)
-        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
-        /// https://github.com/pocoproject/poco/pull/2257
-        socket.bind(address, /* reuseAddress = */ true);
-    else
-#endif
-#if POCO_VERSION < 0x01080000
-    socket.bind(address, /* reuseAddress = */ true);
-#else
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
-#endif
-
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
