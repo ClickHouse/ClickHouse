@@ -77,6 +77,9 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", getName());
+
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -142,6 +145,9 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", getName());
+
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -207,6 +213,9 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", getName());
+
         if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
