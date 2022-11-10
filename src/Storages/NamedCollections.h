@@ -9,21 +9,55 @@ namespace DB
 
 class NamedCollection;
 using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
-struct NamedCollectionValueInfo;
-using NamedCollectionInfo = std::map<std::string, NamedCollectionValueInfo>;
 
 /**
- * A factory of immutable named collections.
- * Named collections are defined in server config as arbitrary
- * structure configurations:
+ * Class to represent arbitrary-structured named collection object.
+ * It can be defined via config or via SQL command.
  * <named_collections>
  *     <collection1>
  *         ...
  *     </collection1>
  *     ...
  * </named_collections>
- * In order to get a named collection, you need to know it's name
- * and expected structure of the collection defined as NamedCollectionInfo.
+ */
+class NamedCollection
+{
+private:
+    struct Impl;
+    using ImplPtr = std::unique_ptr<Impl>;
+
+    ImplPtr pimpl;
+
+public:
+    using Key = std::string;
+    using Keys = std::set<Key>;
+
+    static NamedCollectionPtr create(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name);
+
+    NamedCollection(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_path,
+        const Keys & keys);
+
+    explicit NamedCollection(ImplPtr pimpl_);
+
+    template <typename T> T get(const Key & key) const;
+
+    template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
+
+    template <typename T> void set(const Key & key, const T & value);
+
+    NamedCollectionPtr duplicate() const;
+
+    Keys getKeys() const;
+
+    std::string dumpStructure() const;
+};
+
+/**
+ * A factory of immutable named collections.
  */
 class NamedCollectionFactory : boost::noncopyable
 {
@@ -34,13 +68,9 @@ public:
 
     bool exists(const std::string & collection_name) const;
 
-    NamedCollectionPtr get(
-        const std::string & collection_name,
-        const NamedCollectionInfo & collection_info) const;
+    NamedCollectionPtr get(const std::string & collection_name) const;
 
-    NamedCollectionPtr tryGet(
-        const std::string & collection_name,
-        const NamedCollectionInfo & collection_info) const;
+    NamedCollectionPtr tryGet(const std::string & collection_name) const;
 
     void add(
         const std::string & collection_name,
@@ -52,9 +82,10 @@ public:
     NamedCollections getAll() const;
 
 private:
+    void assertInitialized(std::lock_guard<std::mutex> & lock) const;
+
     NamedCollectionPtr getImpl(
         const std::string & collection_name,
-        const NamedCollectionInfo & collection_info,
         std::lock_guard<std::mutex> & lock) const;
 
     bool existsUnlocked(
@@ -63,62 +94,11 @@ private:
 
     mutable NamedCollections named_collections;
 
-private:
     /// FIXME: this will be invalid when config is reloaded
     const Poco::Util::AbstractConfiguration * config;
 
-    void assertInitialized(std::lock_guard<std::mutex> & lock) const;
-
     bool is_initialized = false;
     mutable std::mutex mutex;
-};
-
-
-class NamedCollection
-{
-friend class NamedCollectionFactory;
-
-private:
-    struct Impl;
-    using ImplPtr = std::unique_ptr<Impl>;
-
-    ImplPtr pimpl;
-
-public:
-    using Key = std::string;
-    using Value = Field;
-    using ValueInfo = NamedCollectionValueInfo;
-    using CollectionInfo = NamedCollectionInfo;
-
-    NamedCollection(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & collection_path,
-        const CollectionInfo & collection_info);
-
-    Value get(const Key & key) const;
-
-    std::map<Key, Value> dumpStructure() const;
-
-    /// Get a string representation of the collection structure.
-    /// Used for debugging and tests.
-    std::string toString() const;
-};
-
-
-/**
- * Named collection info which allows to parse config.
- * Contains a mapping key_path -> value_info.
- */
-struct NamedCollectionValueInfo
-{
-    /// Type of the value. One of: String, UInt64, Int64, Double.
-    using Type = Field::Types::Which;
-    Type type = Type::String;
-    /// Optional default value for the case if there is no such key in config.
-    std::optional<NamedCollection::Value> default_value;
-    /// Is this value required or optional? Throw exception if the value is
-    /// required, but is not specified in config.
-    bool is_required = true;
 };
 
 }

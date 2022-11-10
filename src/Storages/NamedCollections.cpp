@@ -128,9 +128,7 @@ bool NamedCollectionFactory::existsUnlocked(
         || config->has(getCollectionPrefix(collection_name));
 }
 
-NamedCollectionPtr NamedCollectionFactory::get(
-    const std::string & collection_name,
-    const NamedCollectionInfo & collection_info) const
+NamedCollectionPtr NamedCollectionFactory::get(const std::string & collection_name) const
 {
     std::lock_guard lock(mutex);
     assertInitialized(lock);
@@ -143,12 +141,10 @@ NamedCollectionPtr NamedCollectionFactory::get(
             collection_name);
     }
 
-    return getImpl(collection_name, collection_info, lock);
+    return getImpl(collection_name, lock);
 }
 
-NamedCollectionPtr NamedCollectionFactory::tryGet(
-    const std::string & collection_name,
-    const NamedCollectionInfo & collection_info) const
+NamedCollectionPtr NamedCollectionFactory::tryGet(const std::string & collection_name) const
 {
     std::lock_guard lock(mutex);
     assertInitialized(lock);
@@ -156,12 +152,11 @@ NamedCollectionPtr NamedCollectionFactory::tryGet(
     if (!existsUnlocked(collection_name, lock))
         return nullptr;
 
-    return getImpl(collection_name, collection_info, lock);
+    return getImpl(collection_name, lock);
 }
 
 NamedCollectionPtr NamedCollectionFactory::getImpl(
     const std::string & collection_name,
-    const NamedCollectionInfo & collection_info,
     std::lock_guard<std::mutex> & /* lock */) const
 {
     auto it = named_collections.find(collection_name);
@@ -169,8 +164,7 @@ NamedCollectionPtr NamedCollectionFactory::getImpl(
     {
         it = named_collections.emplace(
             collection_name,
-            std::make_unique<NamedCollection>(
-                *config, collection_name, collection_info)).first;
+            NamedCollection::create(*config, collection_name)).first;
     }
     return it->second;
 }
@@ -225,36 +219,12 @@ NamedCollectionFactory::NamedCollections NamedCollectionFactory::getAll() const
     Poco::Util::AbstractConfiguration::Keys config_collections_names;
     config->keys(NAMED_COLLECTIONS_CONFIG_PREFIX, config_collections_names);
 
-    for (const auto & name : config_collections_names)
+    for (const auto & collection_name : config_collections_names)
     {
-        if (result.contains(name))
+        if (result.contains(collection_name))
             continue;
 
-        const auto collection_prefix = getCollectionPrefix(name);
-        std::queue<std::string> enumerate_input;
-        std::set<std::string> enumerate_result;
-
-        enumerate_input.push(collection_prefix);
-        collectKeys(*config, enumerate_input, enumerate_result);
-
-        NamedCollectionInfo collection_info;
-
-        /// Collection does not have any keys.
-        /// (`enumerate_result` == <collection_path>).
-        const bool collection_is_empty = enumerate_result.size() == 1;
-        if (!collection_is_empty)
-        {
-            for (const auto & path : enumerate_result)
-            {
-                collection_info.emplace(
-                    /// Skip collection prefix and add +1 to avoid '.' in the beginning.
-                    path.substr(std::strlen(collection_prefix.data()) + 1),
-                    NamedCollectionValueInfo{});
-            }
-        }
-
-        result.emplace(
-            name, std::make_unique<NamedCollection>(*config, name, collection_info));
+        result.emplace(collection_name, NamedCollection::create(*config, collection_name));
     }
 
     return result;
@@ -271,43 +241,46 @@ private:
     ///      ...
     ///  </collection1>
     ConfigurationPtr config;
-    /// Information about the values of keys. Key is a path to the
-    /// value represented as a dot concatenated list of keys.
-    const CollectionInfo collection_info;
+    Keys keys;
 
 public:
     Impl(const Poco::Util::AbstractConfiguration & config_,
          const std::string & collection_name_,
-         const NamedCollectionInfo & collection_info_)
+         const Keys & keys_)
         : config(createEmptyConfiguration(collection_name_))
-        , collection_info(collection_info_)
+        , keys(keys_)
     {
         auto collection_path = getCollectionPrefix(collection_name_);
-        for (const auto & [key, value_info] : collection_info)
-            copyConfigValue(
-                config_, collection_path + '.' + key, *config, key, value_info.type);
+        for (const auto & key : keys)
+            copyConfigValue<String>(config_, collection_path + '.' + key, *config, key);
     }
 
-    Value get(const Key & key) const
+    ImplPtr copy() const
     {
-        auto value_info = collection_info.at(key);
-        return getConfigValue(*config, key, value_info.type, value_info.is_required);
+        return std::make_unique<Impl>(*this);
     }
 
-    void set(const Key & key, const Value & value)
+    template <typename T> T get(const Key & key) const
     {
-        setConfigValue(*config, key, value);
+        return getConfigValue<T>(*config, key);
     }
 
-    std::map<Key, Value> dumpStructure()
+    template <typename T> T getOrDefault(const Key & key, const T & default_value) const
     {
-        std::map<Key, Value> result;
-        for (const auto & [key, _] : collection_info)
-            result.emplace(key, get(key));
-        return result;
+        return getConfigValueOrDefault<T>(*config, key, default_value);
     }
 
-    std::string toString() const
+    template <typename T> void set(const Key & key, const T & value)
+    {
+        setConfigValue<T>(*config, key, value);
+    }
+
+    Keys getKeys() const
+    {
+        return keys;
+    }
+
+    std::string dumpStructure() const
     {
         /// Convert a collection config like
         /// <collection>
@@ -326,7 +299,7 @@ public:
         ///  	key3:
         ///  		key4: value3"
         WriteBufferFromOwnString wb;
-        for (const auto & [key, value_info] : collection_info)
+        for (const auto & key : keys)
         {
             Strings key_parts;
             splitInto<'.'>(key_parts, key);
@@ -338,69 +311,98 @@ public:
                     wb << '\n' << std::string(tab_cnt++, '\t');
                 wb << *it << ':';
             }
-            wb << '\t' << convertFieldToString(get(key)) << '\n';
+            wb << '\t' << get<String>(key) << '\n';
         }
         return wb.str();
     }
 
 private:
-    static void validate(
+    template <typename T> static T getConfigValue(
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & collection_path,
-        const NamedCollectionInfo & collection_info_)
+        const std::string & path)
     {
-        Poco::Util::AbstractConfiguration::Keys config_keys;
-        config.keys(collection_path, config_keys);
-        checkKeys(config_keys, collection_info_);
+        return getConfigValueOrDefault<T>(config, path);
     }
 
-    static void checkKeys(
-        const Poco::Util::AbstractConfiguration::Keys & config_keys,
-        const NamedCollectionInfo & collection_info)
-
+    template <typename T> static T getConfigValueOrDefault(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & path,
+        const std::optional<T> & default_value = std::nullopt)
     {
-        auto get_suggestion = [&](bool only_required_keys)
+        const bool has_value = config.has(path);
+        if (!has_value)
         {
-            std::string suggestion;
-            for (const auto & [key, info] : collection_info)
-            {
-                if (only_required_keys && info.is_required)
-                    continue;
-
-                if (!suggestion.empty())
-                    suggestion += ", ";
-
-                suggestion += key;
-            }
-            return suggestion;
-        };
-
-        std::set<NamedCollection::Key> required_keys;
-        for (const auto & [key, info] : collection_info)
-        {
-            if (info.is_required)
-                required_keys.insert(key);
+            if (!default_value)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}`", path);
+            return *default_value;
         }
 
-        for (const auto & key : config_keys)
-        {
-            if (!collection_info.contains(key))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Unknown key `{}`, expected one of: {}",
-                    key, get_suggestion(false));
-            }
-            required_keys.erase(key);
-        }
-
-        if (!required_keys.empty())
-        {
+        if constexpr (std::is_same_v<T, String>)
+            return config.getString(path);
+        else if constexpr (std::is_same_v<T, UInt64>)
+            return config.getUInt64(path);
+        else if constexpr (std::is_same_v<T, Int64>)
+            return config.getInt64(path);
+        else if constexpr (std::is_same_v<T, Float64>)
+            return config.getDouble(path);
+        else
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Keys `{}` are required, but was not found in config. List of required keys: {}",
-                fmt::join(required_keys, ", "), get_suggestion(true));
-        }
+                "Unsupported type in getConfigValueOrDefault(). "
+                "Supported types are String, UInt64, Int64, Float64");
+    }
+
+    template<typename T> static void setConfigValue(
+        Poco::Util::AbstractConfiguration & config,
+        const std::string & path,
+        const T & value)
+    {
+        const bool has_value = config.has(path);
+        if (has_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Key `{}` already exists", path);
+
+        if constexpr (std::is_same_v<T, String>)
+            config.setString(path, value);
+        else if constexpr (std::is_same_v<T, UInt64>)
+            config.setUInt64(path, value);
+        else if constexpr (std::is_same_v<T, Int64>)
+            config.setInt64(path, value);
+        else if constexpr (std::is_same_v<T, Float64>)
+            config.setDouble(path, value);
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported type in setConfigValue(). "
+                "Supported types are String, UInt64, Int64, Float64");
+    }
+
+    template <typename T> static void copyConfigValue(
+        const Poco::Util::AbstractConfiguration & from_config,
+        const std::string & from_path,
+        Poco::Util::AbstractConfiguration & to_config,
+        const std::string & to_path)
+    {
+        if (!from_config.has(from_path))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}`", from_path);
+
+        if (to_config.has(to_path))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Key `{}` already exists", to_path);
+
+        if constexpr (std::is_same_v<T, String>)
+            to_config.setString(to_path, from_config.getString(from_path));
+        else if constexpr (std::is_same_v<T, std::string>)
+            to_config.setString(to_path, from_config.getString(from_path));
+        else if constexpr (std::is_same_v<T, UInt64>)
+            to_config.setUInt64(to_path, from_config.getUInt64(from_path));
+        else if constexpr (std::is_same_v<T, Int64>)
+            to_config.setInt64(to_path, from_config.getInt64(from_path));
+        else if constexpr (std::is_same_v<T, Float64>)
+            to_config.setDouble(to_path, from_config.getDouble(from_path));
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported type in copyConfigValue(). "
+                "Supported types are String, UInt64, Int64, Float64");
     }
 
     static ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
@@ -411,127 +413,88 @@ private:
         ConfigurationPtr config(new Poco::Util::XMLConfiguration(xml_document));
         return config;
     }
-
-    using ConfigValueType = Field::Types::Which;
-    static void copyConfigValue(
-        const Poco::Util::AbstractConfiguration & from_config,
-        const std::string & from_path,
-        Poco::Util::AbstractConfiguration & to_config,
-        const std::string & to_path,
-        ConfigValueType type)
-    {
-        using Type = Field::Types::Which;
-        switch (type)
-        {
-            case Type::String:
-                to_config.setString(to_path, from_config.getString(from_path));
-                break;
-            case Type::UInt64:
-                to_config.setUInt64(to_path, from_config.getUInt64(from_path));
-                break;
-            case Type::Int64:
-                to_config.setInt64(to_path, from_config.getInt64(from_path));
-                break;
-            case Type::Float64:
-                to_config.setDouble(to_path, from_config.getDouble(from_path));
-                break;
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type");
-        }
-    }
-
-    static void setConfigValue(
-        Poco::Util::AbstractConfiguration & config,
-        const std::string & path,
-        const Field & value)
-    {
-        using Type = Field::Types::Which;
-        switch (value.getType())
-        {
-            case Type::String:
-                config.setString(path, value.safeGet<String>());
-                break;
-            case Type::UInt64:
-                config.setUInt64(path, value.safeGet<UInt64>());
-                break;
-            case Type::Int64:
-                config.setInt64(path, value.safeGet<Int64>());
-                break;
-            case Type::Float64:
-                config.setDouble(path, value.safeGet<Float64>());
-                break;
-            default:
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Unsupported type");
-        }
-    }
-
-    static Field getConfigValue(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & path,
-        ConfigValueType type,
-        bool throw_not_found,
-        std::optional<Field> default_value = std::nullopt)
-    {
-        const bool has_value = config.has(path);
-        if (!has_value)
-        {
-            if (throw_not_found)
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Failed to find key `{}` in config, but this key is required",
-                    path);
-            }
-            else if (!default_value)
-                return Null{};
-        }
-
-        Field value;
-
-        using Type = Field::Types::Which;
-        switch (type)
-        {
-            case Type::String:
-                value = has_value ? config.getString(path) : default_value->get<String>();
-                break;
-            case Type::UInt64:
-                value = has_value ? config.getUInt64(path) : default_value->get<UInt64>();
-                break;
-            case Type::Int64:
-                value = has_value ? config.getInt64(path) : default_value->get<Int64>();
-                break;
-            case Type::Float64:
-                value = has_value ? config.getDouble(path) : default_value->get<Float64>();
-                break;
-            default:
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type");
-        }
-        return value;
-    }
 };
 
 NamedCollection::NamedCollection(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & collection_path,
-    const CollectionInfo & collection_info)
-    : pimpl(std::make_unique<Impl>(config, collection_path, collection_info))
+    const Keys & keys)
+    : pimpl(std::make_unique<Impl>(config, collection_path, keys))
 {
 }
 
-NamedCollection::Value NamedCollection::get(const Key & key) const
+NamedCollection::NamedCollection(ImplPtr pimpl_)
+    : pimpl(std::move(pimpl_))
 {
-    return pimpl->get(key);
 }
 
-std::map<NamedCollection::Key, NamedCollection::Value> NamedCollection::dumpStructure() const
+NamedCollectionPtr NamedCollection::create(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & collection_name)
+{
+    const auto collection_prefix = getCollectionPrefix(collection_name);
+    std::queue<std::string> enumerate_input;
+    std::set<std::string> enumerate_result;
+
+    enumerate_input.push(collection_prefix);
+    collectKeys(config, enumerate_input, enumerate_result);
+
+    /// Collection does not have any keys.
+    /// (`enumerate_result` == <collection_path>).
+    const bool collection_is_empty = enumerate_result.size() == 1;
+    std::set<std::string> keys;
+    if (!collection_is_empty)
+    {
+        /// Skip collection prefix and add +1 to avoid '.' in the beginning.
+        for (const auto & path : enumerate_result)
+            keys.emplace(path.substr(std::strlen(collection_prefix.data()) + 1));
+    }
+    return std::make_unique<NamedCollection>(config, collection_name, keys);
+}
+
+template <typename T> T NamedCollection::get(const Key & key) const
+{
+    return pimpl->get<T>(key);
+}
+
+template <typename T> T NamedCollection::getOrDefault(const Key & key, const T & default_value) const
+{
+    return pimpl->getOrDefault<T>(key, default_value);
+}
+
+template <typename T> void NamedCollection::set(const Key & key, const T & value)
+{
+    pimpl->set<T>(key, value);
+}
+
+NamedCollectionPtr NamedCollection::duplicate() const
+{
+    return std::make_shared<NamedCollection>(pimpl->copy());
+}
+
+NamedCollection::Keys NamedCollection::getKeys() const
+{
+    return pimpl->getKeys();
+}
+
+std::string NamedCollection::dumpStructure() const
 {
     return pimpl->dumpStructure();
 }
 
-std::string NamedCollection::toString() const
-{
-    return pimpl->toString();
-}
+template String NamedCollection::get<String>(const NamedCollection::Key & key) const;
+template UInt64 NamedCollection::get<UInt64>(const NamedCollection::Key & key) const;
+template Int64 NamedCollection::get<Int64>(const NamedCollection::Key & key) const;
+template Float64 NamedCollection::get<Float64>(const NamedCollection::Key & key) const;
+
+template String NamedCollection::getOrDefault<String>(const NamedCollection::Key & key, const String & default_value) const;
+template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key & key, const UInt64 & default_value) const;
+template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
+template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;
+
+template void NamedCollection::set<String>(const NamedCollection::Key & key, const String & value);
+template void NamedCollection::set<UInt64>(const NamedCollection::Key & key, const UInt64 & value);
+template void NamedCollection::set<Int64>(const NamedCollection::Key & key, const Int64 & value);
+template void NamedCollection::set<Float64>(const NamedCollection::Key & key, const Float64 & value);
 
 }
