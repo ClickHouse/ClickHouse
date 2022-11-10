@@ -262,8 +262,6 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-
-
         if constexpr (is_date_diff)
             return static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
@@ -285,11 +283,14 @@ private:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>>)
             {
-                if (((y_comp.date.month - x_comp.date.month) % 3 == 0) && ((x_comp.date.day > y_comp.date.day)
+                auto x_month_in_quarter = (x_comp.date.month - 1) % 3;
+                auto y_month_in_quarter = (y_comp.date.month - 1) % 3;
+                if ((x_month_in_quarter > y_month_in_quarter)
+                    || ((x_month_in_quarter == y_month_in_quarter) && ((x_comp.date.day > y_comp.date.day)
                     || ((x_comp.date.day == y_comp.date.day) && ((x_comp.time.hour > y_comp.time.hour)
                     || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
                     || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))
-                    ))))
+                    )))))
                     --res;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMonthNumImpl<ResultPrecision::Extended>>>)
