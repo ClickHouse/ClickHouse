@@ -82,6 +82,15 @@ void WebObjectStorage::initialize(const String & uri_path) const
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
     }
+    catch (HTTPException & e)
+    {
+        /// 404 - no files
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            return;
+
+        e.addMessage("while loading disk metadata");
+        throw;
+    }
     catch (Exception & e)
     {
         e.addMessage("while loading disk metadata");
