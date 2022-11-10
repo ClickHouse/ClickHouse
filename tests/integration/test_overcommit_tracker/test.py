@@ -8,6 +8,7 @@ node = cluster.add_instance(
     "node", main_configs=["configs/global_overcommit_tracker.xml"]
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
