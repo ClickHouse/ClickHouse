@@ -929,7 +929,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     if (isTTLMergeType(future_part->merge_type))
         getContext()->getMergeList().bookMergeWithTTL();
 
-    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts), *this, metadata_snapshot, false);
+    /// If merge_type is TTLDrop, no need to reserve disk space
+    size_t need_total_size = 0;
+    if (future_part->merge_type != MergeType::TTLDrop)
+        need_total_size = MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts);
+
+    merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, need_total_size, *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), std::make_shared<MutationCommands>());
 }
 

@@ -31,9 +31,4 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
   */
 QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
-/** Get column source for JOIN node with USING.
-  * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
-  */
-QueryTreeNodePtr getColumnSourceForJoinNodeWithUsing(const QueryTreeNodePtr & join_node);
-
 }

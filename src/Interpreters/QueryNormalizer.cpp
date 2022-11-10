@@ -113,12 +113,20 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             if (!is_cycle)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                /// Check size of the alias before cloning too large alias AST
+                alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
             }
         }
         else
-            ast = alias_node;
+        {
+            /// Check size of the alias before cloning too large alias AST
+            alias_node->checkSize(data.settings.max_expanded_ast_elements);
+            auto alias_name = ast->getAliasOrColumnName();
+            ast = alias_node->clone();
+            ast->setAlias(alias_name);
+        }
     }
 }
 
