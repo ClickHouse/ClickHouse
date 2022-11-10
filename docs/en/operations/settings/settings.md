@@ -4773,7 +4773,7 @@ Possible values:
 
 Default value: 1.
 
-## SQLInsert format settings {$sqlinsert-format-settings}
+## SQLInsert format settings {#sqlinsert-format-settings}
 
 ### output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
@@ -4804,3 +4804,17 @@ Default value: `false`.
 Quote column names with "`" characters
 
 Default value: `true`.
+
+## BSONEachRow format settings {#bson-each-row-format-settings}
+
+### output_format_bson_string_as_string {#output_format_bson_string_as_string}
+
+Use BSON String type instead of Binary for String columns.
+
+Disabled by default.
+
+### input_format_bson_skip_fields_with_unsupported_types_in_schema_inference {#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference}
+
+Allow skipping columns with unsupported types while schema inference for format BSONEachRow.
+
+Disabled by default.

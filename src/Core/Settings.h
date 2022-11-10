@@ -841,6 +841,9 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, output_format_sql_insert_include_column_names, true, "Include column names in INSERT query", 0) \
     M(Bool, output_format_sql_insert_use_replace, false, "Use REPLACE statement instead of INSERT", 0) \
     M(Bool, output_format_sql_insert_quote_names, true, "Quote column names with '`' characters", 0) \
+    \
+    M(Bool, output_format_bson_string_as_string, false, "Use BSON String type instead of Binary for String columns.", 0) \
+    M(Bool, input_format_bson_skip_fields_with_unsupported_types_in_schema_inference, false, "Skip fields with unsupported types while schema inference for format BSON.", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
