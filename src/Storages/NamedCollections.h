@@ -23,7 +23,7 @@ using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
 class NamedCollection
 {
 private:
-    struct Impl;
+    class Impl;
     using ImplPtr = std::unique_ptr<Impl>;
 
     ImplPtr pimpl;
@@ -47,9 +47,11 @@ public:
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
-    template <typename T> void set(const Key & key, const T & value);
+    template <typename T> void set(const Key & key, const T & value, bool update_if_exists = false);
 
-    NamedCollectionPtr duplicate() const;
+    void remove(const Key & key);
+
+    std::shared_ptr<NamedCollection> duplicate() const;
 
     Keys getKeys() const;
 
@@ -64,7 +66,9 @@ class NamedCollectionFactory : boost::noncopyable
 public:
     static NamedCollectionFactory & instance();
 
-    void initialize(const Poco::Util::AbstractConfiguration & server_config);
+    void initialize(const Poco::Util::AbstractConfiguration & config_);
+
+    void reload(const Poco::Util::AbstractConfiguration & config_);
 
     bool exists(const std::string & collection_name) const;
 
@@ -92,9 +96,8 @@ private:
         const std::string & collection_name,
         std::lock_guard<std::mutex> & lock) const;
 
-    mutable NamedCollections named_collections;
+    mutable NamedCollections loaded_named_collections;
 
-    /// FIXME: this will be invalid when config is reloaded
     const Poco::Util::AbstractConfiguration * config;
 
     bool is_initialized = false;
