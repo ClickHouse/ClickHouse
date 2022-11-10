@@ -32,7 +32,6 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
     context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS);
 
     auto collections = NamedCollectionFactory::instance().getAll();
-
     for (const auto & [name, collection] : collections)
     {
         res_columns[0]->insert(name);

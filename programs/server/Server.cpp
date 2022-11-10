@@ -1282,6 +1282,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
+            NamedCollectionFactory::instance().reload(*config);
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
