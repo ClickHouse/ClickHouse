@@ -19,6 +19,7 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
+void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -138,7 +139,7 @@ void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
-
+void registerBSONEachRowSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -157,6 +158,7 @@ void registerFormats()
     registerFileSegmentationEngineHiveText(factory);
 #endif
     registerFileSegmentationEngineLineAsString(factory);
+    registerFileSegmentationEngineBSONEachRow(factory);
 
 
     registerInputFormatNative(factory);
@@ -271,6 +273,7 @@ void registerFormats()
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
     registerMySQLSchemaReader(factory);
+    registerBSONEachRowSchemaReader(factory);
 }
 
 }
