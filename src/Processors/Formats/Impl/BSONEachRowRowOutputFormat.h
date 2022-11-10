@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/BSONTypes.h>
 

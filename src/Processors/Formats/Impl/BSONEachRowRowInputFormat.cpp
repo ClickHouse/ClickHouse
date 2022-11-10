@@ -86,7 +86,7 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
 /// Read the field name. Resulting StringRef is valid only before next read from buf.
 static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
 {
-    // This is just an optimization: try to avoid copying the name into current_column_name
+    // This is just an optimization: try to avoid copying the name into key_holder
 
     if (!in.eof())
     {
