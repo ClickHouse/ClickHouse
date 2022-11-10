@@ -146,7 +146,7 @@ class PRInfo:
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
-            }
+            }  # type: Set[str]
 
             self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
@@ -178,7 +178,7 @@ class PRInfo:
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
-                self.labels = {}
+                self.labels = set()
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
                 self.base_name = self.repo_full_name
@@ -228,7 +228,7 @@ class PRInfo:
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
-            self.labels = {}
+            self.labels = set()
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
             self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
