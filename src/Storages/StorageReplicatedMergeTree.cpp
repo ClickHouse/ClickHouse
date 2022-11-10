@@ -623,6 +623,16 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     /// For ALTER PARTITION with multi-leaders
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
 
+    /// As for now, "/temp" node must exist, but we want to be able to remove it in future
+    if (zookeeper->exists(zookeeper_path + "/temp"))
+    {
+        /// For block numbers allocation (since 22.11)
+        futures.push_back(zookeeper->asyncTryCreateNoThrow(
+            zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT, String(), zkutil::CreateMode::Persistent));
+        futures.push_back(zookeeper->asyncTryCreateNoThrow(
+            zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, String(), zkutil::CreateMode::Persistent));
+    }
+
     for (auto & future : futures)
     {
         auto res = future.get();
@@ -700,6 +710,13 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp", "",
             zkutil::CreateMode::Persistent));
+
+        /// The following 2 nodes were added in 22.11
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT, "",
+                                                   zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER, "",
+                                                   zkutil::CreateMode::Persistent));
+
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name,
             zkutil::CreateMode::Persistent));
 
@@ -5306,6 +5323,8 @@ StorageReplicatedMergeTree::allocateBlockNumber(
     if (!existsNodeCached(partition_path))
     {
         Coordination::Requests ops;
+        /// Check that table is not being dropped ("host" is the first node that is removed on replica drop)
+        ops.push_back(zkutil::makeCheckRequest(fs::path(replica_path) / "host", -1));
         ops.push_back(zkutil::makeCreateRequest(partition_path, "", zkutil::CreateMode::Persistent));
         /// We increment data version of the block_numbers node so that it becomes possible
         /// to check in a ZK transaction that the set of partitions didn't change
@@ -6389,6 +6408,76 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
     }
 }
 
+void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
+    zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
+{
+    /// Imagine that some INSERT query has allocated block number 42, but it's still in progress.
+    /// Some DROP PARTITION query gets block number 43 and commits DROP_RANGE all_0_42_999_999.
+    /// And after that INSERT commits GET_PART all_42_42_0. Oops, intersecting parts.
+    /// So we have to either wait for unfinished INSERTs or cancel them.
+    /// It's totally fine to cancel since we are going to remove data anyway.
+    /// We can safely cancel INSERT query by removing its ephemeral block number.
+    /// Usually it's bad idea to remove ephemeral nodes owned by someone else,
+    /// but INSERTs remove such nodes atomically with part commit, so INSERT will fail if node does not exist.
+
+    fs::path partition_path = fs::path(zookeeper_path) / "block_numbers" / partition_id;
+    Strings queries_in_progress = zookeeper.getChildren(partition_path);
+    if (queries_in_progress.empty())
+        return;
+
+    Strings paths_to_get;
+    for (const auto & block : queries_in_progress)
+    {
+        if (!startsWith(block, "block-"))
+            continue;
+        Int64 block_number = parse<Int64>(block.substr(strlen("block-")));
+        if (min_block_num <= block_number && block_number <= max_block_num)
+            paths_to_get.push_back(partition_path / block);
+    }
+
+    auto results = zookeeper.tryGet(paths_to_get);
+    for (size_t i = 0; i < paths_to_get.size(); ++i)
+    {
+        auto & result = results[i];
+
+        /// The query already finished
+        if (result.error == Coordination::Error::ZNONODE)
+            continue;
+
+        /// The query is not an insert (it does not have block_id)
+        if (result.data.ends_with(EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER))
+            continue;
+
+        if (result.data.ends_with(EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT))
+        {
+            /// Remove block number, so insert will fail to commit (it will try to remove this node too)
+            LOG_WARNING(log, "Some query is trying to concurrently insert block {}, will cancel it", paths_to_get[i]);
+            zookeeper.tryRemove(paths_to_get[i]);
+        }
+        else
+        {
+            constexpr const char * old_version_warning = "Ephemeral lock {} (referencing {}) is created by a replica "
+                "that running old version of ClickHouse (< 22.11). Cannot remove it, will wait for this lock to disappear. "
+                "Upgrade remaining hosts in the cluster to address this warning.";
+            constexpr const char * new_version_warning = "Ephemeral lock {} has unexpected content ({}), "
+                "probably it is created by a replica that running newer version of ClickHouse. "
+                "Cannot remove it, will wait for this lock to disappear. Upgrade remaining hosts in the cluster to address this warning.";
+
+            if (result.data.starts_with(zookeeper_path + EphemeralLockInZooKeeper::LEGACY_LOCK_PREFIX))
+                LOG_WARNING(log, old_version_warning, paths_to_get[i], result.data);
+            else
+                LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
+
+            Stopwatch time_waiting;
+            const auto & stop_waiting = [this, &time_waiting]()
+            {
+                auto timeout = getContext()->getSettingsRef().lock_acquire_timeout.value.seconds();
+                return partial_shutdown_called || (timeout < time_waiting.elapsedSeconds());
+            };
+            zookeeper.waitForDisappear(paths_to_get[i], stop_waiting);
+        }
+    }
+}
 
 void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
     Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
@@ -6398,21 +6487,18 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
         throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
-    zkutil::AsyncResponses<Coordination::GetResponse> get_futures;
+    Strings paths_to_get;
 
     for (const String & block_id : blocks)
-    {
         if (startsWith(block_id, partition_prefix))
-        {
-            String path = fs::path(zookeeper_path) / "blocks" / block_id;
-            get_futures.emplace_back(path, zookeeper.asyncTryGet(path));
-        }
-    }
+            paths_to_get.push_back(fs::path(zookeeper_path) / "blocks" / block_id);
 
-    for (auto & pair : get_futures)
+    auto results = zookeeper.tryGet(paths_to_get);
+
+    for (size_t i = 0; i < paths_to_get.size(); ++i)
     {
-        const String & path = pair.first;
-        auto result = pair.second.get();
+        const String & path = paths_to_get[i];
+        auto & result = results[i];
 
         if (result.error == Coordination::Error::ZNONODE)
             continue;
@@ -6569,9 +6655,13 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             entry_replace.columns_version = -1;
         }
 
-        /// Remove deduplication block_ids of replacing parts
         if (replace)
+        {
+            /// Cancel concurrent inserts in range
+            clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+            /// Remove deduplication block_ids of replacing parts
             clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+        }
 
         PartsToRemoveFromZooKeeper parts_to_remove;
         Coordination::Responses op_results;
@@ -6582,13 +6672,13 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             for (size_t i = 0; i < dst_parts.size(); ++i)
             {
                 getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOps(ops);
+                ephemeral_locks[i].getUnlockOp(ops);
             }
 
             if (auto txn = query_context->getZooKeeperMetadataTransaction())
                 txn->moveOpsTo(ops);
 
-            delimiting_block_lock->getUnlockOps(ops);
+            delimiting_block_lock->getUnlockOp(ops);
             /// Check and update version to avoid race with DROP_RANGE
             ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
             /// Just update version, because merges assignment relies on it
@@ -6807,6 +6897,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             entry_replace.columns_version = -1;
         }
 
+        /// Cancel concurrent inserts in range
+        clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
         clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
 
         PartsToRemoveFromZooKeeper parts_to_remove;
@@ -6818,7 +6911,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             for (size_t i = 0; i < dst_parts.size(); ++i)
             {
                 dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOps(ops);
+                ephemeral_locks[i].getUnlockOp(ops);
             }
 
             /// Check and update version to avoid race with DROP_RANGE
@@ -6882,7 +6975,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             fs::path(zookeeper_path) / "log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
         /// Just update version, because merges assignment relies on it
         ops_src.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
-        delimiting_block_lock->getUnlockOps(ops_src);
+        delimiting_block_lock->getUnlockOp(ops_src);
 
         op_results = zookeeper->multi(ops_src);
 
@@ -7184,6 +7277,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         }
 
         Coordination::Requests ops;
+        /// NOTE Don't need to remove block numbers too, because no in-progress inserts in the range are possible
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
         size_t clear_block_ops_size = ops.size();
 
@@ -7244,6 +7338,9 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
         return false;
     }
 
+    /// Cancel concurrent inserts in range
+    clearLockedBlockNumbersInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
+
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
@@ -7261,7 +7358,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     log_entry_ops_idx.push_back(ops.size());
     ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry->toString(),
                                                zkutil::CreateMode::PersistentSequential));
-    delimiting_block_lock->getUnlockOps(ops);
+    delimiting_block_lock->getUnlockOp(ops);
     delimiting_block_locks.push_back(std::move(*delimiting_block_lock));
     entries.push_back(std::move(entry));
     return true;
