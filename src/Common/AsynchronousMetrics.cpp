@@ -1265,7 +1265,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     /// Add more metrics as you wish.
 
-    updateImpl(new_values);
+    updateImpl(new_values, update_time, current_time);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = watch.elapsedSeconds();
 

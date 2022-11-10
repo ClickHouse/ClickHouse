@@ -18,7 +18,7 @@ public:
 private:
     const TinyContext & tiny_context;
 
-    void updateImpl(AsynchronousMetricValues & new_values) override;
+    void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
 };
 
 

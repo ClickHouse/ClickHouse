@@ -113,7 +113,7 @@ KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
 {
 }
 
-void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values)
+void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint /*update_time*/, TimePoint /*current_time*/)
 {
 #if USE_NURAFT
     {

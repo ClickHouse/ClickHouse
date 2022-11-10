@@ -16,7 +16,7 @@ public:
         int heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 private:
-    void updateImpl(AsynchronousMetricValues & new_values) override;
+    void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
     void logImpl(AsynchronousMetricValues & new_values) override;
 
     const Duration heavy_metric_update_period;
