@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Tags: no-parallel
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -12,6 +14,7 @@ $CLICKHOUSE_CLIENT -q "SELECT plu(1, 1) SETTINGS allow_experimental_analyzer = 1
 $CLICKHOUSE_CLIENT -q "SELECT uniqExac(1, 1) SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['uniqExact'\]" &>/dev/null;
 
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS test_user_defined_function;"
 $CLICKHOUSE_CLIENT -q "CREATE FUNCTION test_user_defined_function AS x -> x + 1;"
 $CLICKHOUSE_CLIENT -q "SELECT test_user_defined_functio(1) SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['test_user_defined_function'\]" &>/dev/null;
