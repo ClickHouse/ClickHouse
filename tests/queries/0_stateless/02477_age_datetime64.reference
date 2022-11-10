@@ -20,7 +20,7 @@ SELECT age('day', toDateTime64('1927-01-01 00:00:00', 0, 'UTC'), toDateTime64('1
 SELECT age('month', toDateTime64('1927-01-01 00:00:00', 0, 'UTC'), toDateTime64('1927-02-01 00:00:00', 0, 'UTC'));
 1
 SELECT age('year', toDateTime64('1927-01-01 00:00:00', 0, 'UTC'), toDateTime64('1928-01-01 00:00:00', 0, 'UTC'));
-0
+1
 -- DateTime64 vs DateTime64 different scale
 SELECT age('second', toDateTime64('1927-01-01 00:00:00', 6, 'UTC'), toDateTime64('1927-01-01 00:00:10', 3, 'UTC'));
 10
@@ -41,7 +41,7 @@ SELECT age('day', toDateTime64('1927-01-01 00:00:00', 6, 'UTC'), toDateTime64('1
 SELECT age('month', toDateTime64('1927-01-01 00:00:00', 6, 'UTC'), toDateTime64('1927-02-01 00:00:00', 3, 'UTC'));
 1
 SELECT age('year', toDateTime64('1927-01-01 00:00:00', 6, 'UTC'), toDateTime64('1928-01-01 00:00:00', 3, 'UTC'));
-0
+1
 -- With DateTime
 -- DateTime64 vs DateTime
 SELECT age('second', toDateTime64('2015-08-18 00:00:00', 0, 'UTC'), toDateTime('2015-08-18 00:00:00', 'UTC'));
