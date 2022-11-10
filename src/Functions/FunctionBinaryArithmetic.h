@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -642,7 +643,8 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
             DataTypeDate, DataTypeDateTime,
-            DataTypeFixedString, DataTypeString>;
+            DataTypeFixedString, DataTypeString,
+            DataTypeInterval>;
 
         using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
 
@@ -712,6 +714,82 @@ class FunctionBinaryArithmetic : public IFunction
                 function_name = is_plus ? "addDays" : "subtractDays";
             else
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        bool first_is_date_or_datetime = isDateOrDate32(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDateOrDate32(type1) || isDateTime(type1) || isDateTime64(type1);
+
+        /// Exactly one argument must be Date or DateTime
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
+            return {};
+
+        if (!isTuple(type0) && !isTuple(type1))
+            return {};
+
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        /// We construct another function and call it.
+        if constexpr (!is_plus && !is_minus)
+            return {};
+
+        if (isTuple(type0) && second_is_date_or_datetime && is_minus)
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of Tuple type cannot be first",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        std::string function_name;
+        if (is_plus)
+        {
+            function_name = "addTupleOfIntervals";
+        }
+        else
+        {
+            function_name = "subtractTupleOfIntervals";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        /// Special case when the function is plus or minus, first argument is Interval or Tuple of Intervals
+        ///  and the second argument is the Interval of a different kind.
+        /// We construct another function (example: addIntervals) and call it
+
+        if constexpr (!is_plus && !is_minus)
+            return {};
+
+        const auto * tuple_data_type_0 = checkAndGetDataType<DataTypeTuple>(type0.get());
+        const auto * interval_data_type_0 = checkAndGetDataType<DataTypeInterval>(type0.get());
+        const auto * interval_data_type_1 = checkAndGetDataType<DataTypeInterval>(type1.get());
+
+        if ((!tuple_data_type_0 && !interval_data_type_0) || !interval_data_type_1)
+            return {};
+
+        if (interval_data_type_0 && interval_data_type_0->equals(*interval_data_type_1))
+            return {};
+
+        if (tuple_data_type_0)
+        {
+            auto & tuple_types = tuple_data_type_0->getElements();
+            for (auto & type : tuple_types)
+                if (!isInterval(type))
+                    return {};
+        }
+
+        std::string function_name;
+        if (is_plus)
+        {
+            function_name = "addInterval";
+        }
+        else
+        {
+            function_name = "subtractInterval";
         }
 
         return FunctionFactory::instance().get(function_name, context);
@@ -912,6 +990,30 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
+        return function->execute(new_arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    {
+        ColumnsWithTypeAndName new_arguments = arguments;
+
+       /// Tuple argument must be second.
+        if (isTuple(arguments[0].type))
+            std::swap(new_arguments[0], new_arguments[1]);
+
+        auto function = function_builder->build(new_arguments);
+
+        return function->execute(new_arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    {
+        ColumnsWithTypeAndName new_arguments = arguments;
+
+        auto function = function_builder->build(new_arguments);
+
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
@@ -1134,6 +1236,34 @@ public:
             return function->getResultType();
         }
 
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Tuple argument must be second.
+            if (isTuple(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
         if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
         {
@@ -1184,6 +1314,21 @@ public:
                 else
                     type_res = std::make_shared<DataTypeString>();
                 return true;
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeInterval> || std::is_same_v<RightDataType, DataTypeInterval>)
+            {
+                if constexpr (std::is_same_v<LeftDataType, DataTypeInterval> &&
+                              std::is_same_v<RightDataType, DataTypeInterval>)
+                {
+                    if constexpr (is_plus || is_minus)
+                    {
+                        if (left.getKind() == right.getKind())
+                        {
+                            type_res = std::make_shared<LeftDataType>(left.getKind());
+                            return true;
+                        }
+                    }
+                }
             }
             else
             {
@@ -1564,6 +1709,18 @@ public:
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return executeDateTimeTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, function_builder);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
