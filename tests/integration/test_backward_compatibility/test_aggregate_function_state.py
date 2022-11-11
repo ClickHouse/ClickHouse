@@ -38,7 +38,7 @@ def start_cluster():
 # NOTE This test is too ad-hoc.
 
 
-def test_backward_compatability(start_cluster):
+def test_backward_compatability_for_avg(start_cluster):
     node1.query("create table tab (x UInt64) engine = Memory")
     node2.query("create table tab (x UInt64) engine = Memory")
     node3.query("create table tab (x UInt64) engine = Memory")
@@ -84,11 +84,36 @@ def test_backward_compatability(start_cluster):
 
 @pytest.mark.parametrize("uniq_keys", [1000, 1000000])
 def test_backward_compatability_for_uniq(start_cluster, uniq_keys):
+    node1.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
+    node2.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
+    node3.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
+    node4.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
+
+    node1.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(0, {uniq_keys})")
+    node2.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(1, {uniq_keys})")
+    node3.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(2, {uniq_keys})")
+    node4.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(3, {uniq_keys})")
+
+    assert (
+        node1.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node2.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node3.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node4.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+    )
+
+    # Also check with persisted aggregate function state
+
     node1.query(
         f"CREATE TABLE state_{uniq_keys} (x AggregateFunction(uniqExact, UInt64)) Engine = Log"
     )
     node1.query(
-        f"INSERT INTO state_{uniq_keys} SELECT uniqExactState(number) FROM numbers({uniq_keys})"
+        f"INSERT INTO state_{uniq_keys} SELECT uniqExactState(number) FROM numbers_mt({uniq_keys})"
     )
 
     assert (
