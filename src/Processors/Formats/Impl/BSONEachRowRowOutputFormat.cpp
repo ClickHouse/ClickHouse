@@ -123,9 +123,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::UInt16: [[fallthrough]];
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::Decimal32: [[fallthrough]];
-        case TypeIndex::UInt32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             return size + sizeof(Int32);
@@ -139,8 +137,10 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         }
         case TypeIndex::Float32: [[fallthrough]];
         case TypeIndex::Float64: [[fallthrough]];
+        case TypeIndex::UInt32: [[fallthrough]];
         case TypeIndex::Int64: [[fallthrough]];
         case TypeIndex::UInt64: [[fallthrough]];
+        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::Decimal64: [[fallthrough]];
         case TypeIndex::DateTime64:
         {
@@ -301,7 +301,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
-            writeBSONNumber<ColumnUInt32, UInt32>(BSONType::INT32, column, row_num, name, out);
+            writeBSONNumber<ColumnUInt32, Int64>(BSONType::INT64, column, row_num, name, out);
             break;
         }
         case TypeIndex::Int64:
@@ -311,7 +311,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         }
         case TypeIndex::UInt64:
         {
-            writeBSONNumber<ColumnUInt64, UInt64>(BSONType::UINT64, column, row_num, name, out);
+            writeBSONNumber<ColumnUInt64, UInt64>(BSONType::INT64, column, row_num, name, out);
             break;
         }
         case TypeIndex::Int128:

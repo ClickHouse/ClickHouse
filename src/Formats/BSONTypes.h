@@ -28,7 +28,7 @@ enum class BSONType
     SYMBOL = 0x0E,
     JAVA_SCRIPT_CODE_W_SCOPE = 0x0F,
     INT32 = 0x10,
-    UINT64 = 0x11,
+    TIMESTAMP = 0x11,
     INT64 = 0x12,
     DECIMAL128 = 0x13,
     MIN_KEY = 0xFF,

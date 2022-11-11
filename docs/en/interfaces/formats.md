@@ -1223,12 +1223,12 @@ For output it uses the following correspondence between ClickHouse types and BSO
 | [Bool](../sql-reference/data-types/boolean.md)                                                            | `\x08` boolean                                                                                            |
 | [Int8/UInt8](../sql-reference/data-types/int-uint.md)                                                     | `\x10` int32                                                                                              |
 | [Int16UInt16](../sql-reference/data-types/int-uint.md)                                                    | `\x10` int32                                                                                              |
-| [Int32/UInt32](../sql-reference/data-types/int-uint.md)                                                   | `\x10` int32                                                                                              |
-| [Int64](../sql-reference/data-types/int-uint.md)                                                          | `\x12` int64                                                                                              |
-| [UInt64](../sql-reference/data-types/int-uint.md)                                                         | `\x11` uint64                                                                                             |
+| [Int32](../sql-reference/data-types/int-uint.md)                                                          | `\x10` int32                                                                                              |
+| [UInt32](../sql-reference/data-types/int-uint.md)                                                         | `\x12` int64                                                                                              |
+| [Int64/UInt64](../sql-reference/data-types/int-uint.md)                                                   | `\x12` int64                                                                                              |
 | [Float32/Float64](../sql-reference/data-types/float.md)                                                   | `\x01` double                                                                                             |
 | [Date](../sql-reference/data-types/date.md)/[Date32](../sql-reference/data-types/date32.md)               | `\x10` int32                                                                                              |
-| [DateTime](../sql-reference/data-types/datetime.md)                                                       | `\x12` int32                                                                                                |
+| [DateTime](../sql-reference/data-types/datetime.md)                                                       | `\x12` int64                                                                                                |
 | [DateTime64](../sql-reference/data-types/datetime64.md)                                                   | `\x09` datetime                                                                                             |
 | [Decimal32](../sql-reference/data-types/decimal.md)                                                       | `\x10` int32                                                                                                |
 | [Decimal64](../sql-reference/data-types/decimal.md)                                                       | `\x12` int64                                                                                                |
@@ -1259,9 +1259,8 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x09` datetime                          | [DateTime64](../sql-reference/data-types/datetime64.md)                                                                                                      |
 | `\x0A` null value                        | [NULL](../sql-reference/data-types/nullable.md)                                                                                                              |
 | `\x0E` symbol                            | [String](../sql-reference/data-types/string.md)/[FixedString](../sql-reference/data-types/fixedstring.md)                                                    |
-| `\x10` int32                             | [Int32](../sql-reference/data-types/int-uint.md)/[Decimal32](../sql-reference/data-types/decimal.md)                                                         |
-| `\x12` int64                             | [Int64](../sql-reference/data-types/int-uint.md)/[Decimal64](../sql-reference/data-types/decimal.md)/[DateTime64](../sql-reference/data-types/datetime64.md) |
-| `\x11` uint64                            | [UInt64](../sql-reference/data-types/int-uint.md)                                                                                                            |
+| `\x10` int32                             | [Int32/UInt32](../sql-reference/data-types/int-uint.md)/[Decimal32](../sql-reference/data-types/decimal.md)                                                         |
+| `\x12` int64                             | [Int64/UInt64](../sql-reference/data-types/int-uint.md)/[Decimal64](../sql-reference/data-types/decimal.md)/[DateTime64](../sql-reference/data-types/datetime64.md) |
 
 Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8). 
 Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
