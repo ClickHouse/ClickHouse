@@ -1,5 +1,7 @@
 -- Tags: long
 
+SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
+
 drop table if exists rmt1;
 drop table if exists rmt2;
 create table rmt1 (n int) engine=ReplicatedMergeTree('/test/02448/{database}/rmt', '1') order by tuple()
