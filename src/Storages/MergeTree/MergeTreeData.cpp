@@ -5208,6 +5208,7 @@ static void selectBestProjection(
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
+        candidate.prewhere_info,
         candidate.required_columns,
         storage_snapshot->metadata,
         candidate.desc->metadata,
@@ -5231,6 +5232,7 @@ static void selectBestProjection(
     {
         auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
+            query_info.prewhere_info,
             required_columns,
             storage_snapshot->metadata,
             storage_snapshot->metadata,
@@ -5556,7 +5558,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     const auto & analysis_result = select.getAnalysisResult();
 
     query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
-    query_info.prewhere_info = analysis_result.prewhere_info;
 
     const auto & before_where = analysis_result.before_where;
     const auto & where_column_name = analysis_result.where_column_name;
@@ -5833,6 +5834,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         {
             auto normal_result_ptr = reader.estimateNumMarksToRead(
                 normal_parts,
+                query_info.prewhere_info,
                 analysis_result.required_columns,
                 metadata_snapshot,
                 metadata_snapshot,
@@ -5865,6 +5867,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     {
         query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
             parts,
+            query_info.prewhere_info,
             analysis_result.required_columns,
             metadata_snapshot,
             metadata_snapshot,
@@ -5946,8 +5949,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
     }
 
-    /// Just in case, reset prewhere info calculated from projection.
-    query_info.prewhere_info.reset();
     return *selected_candidate;
 }
 
