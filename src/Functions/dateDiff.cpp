@@ -269,8 +269,8 @@ private:
         {
             auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
-            DateLUTImpl::DateTimeComponents x_comp = ToDateTimeComponentsImpl::execute(x, timezone_x);
-            DateLUTImpl::DateTimeComponents y_comp = ToDateTimeComponentsImpl::execute(y, timezone_y);
+            DateLUTImpl::DateTimeComponents x_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+            DateLUTImpl::DateTimeComponents y_comp = TransformDateTime64<ToDateTimeComponentsImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
             if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeYearNumImpl<ResultPrecision::Extended>>>)
             {
                 if ((x_comp.date.month > y_comp.date.month)
