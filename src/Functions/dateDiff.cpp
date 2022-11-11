@@ -360,7 +360,8 @@ REGISTER_FUNCTION(DateDiff)
 
 REGISTER_FUNCTION(Age)
 {
-    factory.registerFunction<FunctionDateDiff<false>>({
+    factory.registerFunction<FunctionDateDiff<false>>(
+    {
     R"(
 Returns the difference between two dates or dates with time values expressed as number of full units.
 E.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
