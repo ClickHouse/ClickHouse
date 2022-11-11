@@ -257,7 +257,10 @@ Chain buildPushingToViewsChain(
     {
         auto dependent_table = DatabaseCatalog::instance().tryGetTable(database_table, context);
         if (dependent_table == nullptr)
+        {
+            LOG_WARNING(&Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", database_table.getFullTableName());
             continue;
+        }
 
         auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
@@ -307,7 +310,10 @@ Chain buildPushingToViewsChain(
             auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
 
             if (lock == nullptr)
+            {
+                LOG_WARNING(&Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", database_table.getFullTableName());
                 continue;
+            }
 
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
@@ -381,7 +387,7 @@ Chain buildPushingToViewsChain(
         }
     }
 
-    if (views_data)
+    if (views_data && !views_data->views.empty())
     {
         size_t num_views = views_data->views.size();
         const Settings & settings = context->getSettingsRef();
