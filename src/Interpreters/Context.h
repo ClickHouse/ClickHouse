@@ -47,6 +47,8 @@ struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct EnabledRolesInfo;
 class EnabledRowPolicies;
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
 struct QuotaUsage;
 class AccessFlags;
@@ -518,7 +520,7 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
     /// if the initial user exists.
