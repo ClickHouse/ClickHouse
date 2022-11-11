@@ -126,7 +126,12 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     query.settings = query_settings;
 
-    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    if (base_backup_name)
+        query.setOrReplace(query.base_backup_name, std::move(base_backup_name));
+    else
+        query.reset(query.base_backup_name);
+
     query.cluster_host_ids = !cluster_host_ids.empty() ? Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 

@@ -29,6 +29,8 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    
+    bool hasSecretParts() const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
