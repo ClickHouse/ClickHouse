@@ -893,9 +893,17 @@ struct JSONExtractTree
             // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
             // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
             // the data is padded here and written directly to the Low Cardinality Column
-            auto padded_str = str.data() + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
+            if (str.size() == fixed_length)
+            {
+                assert_cast<ColumnLowCardinality &>(dest).insertData(str.data(), str.size());
+            }
+            else
+            {
+                String padded_str(str);
+                padded_str.resize(fixed_length, '\0');
 
-            assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+                assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+            }
             return true;
         }
 
@@ -1230,8 +1238,7 @@ struct JSONExtractTree
                     auto fixed_length = typeid_cast<const DataTypeFixedString *>(dictionary_type.get())->getN();
                     return std::make_unique<LowCardinalityFixedStringNode>(fixed_length);
                 }
-                auto impl = build(function_name, dictionary_type);
-                return impl;
+                return build(function_name, dictionary_type);
             }
             case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
             case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
@@ -1387,12 +1394,9 @@ public:
         {
             ColumnString::Chars chars;
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            chars.push_back(0);
             traverse(element, buf);
             buf.finalize();
-            std::string str = reinterpret_cast<const char *>(chars.data());
-            chars.push_back(0);
-            assert_cast<ColumnLowCardinality &>(dest).insertData(str.data(), str.size());
+            assert_cast<ColumnLowCardinality &>(dest).insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
         }
         else
         {
@@ -1423,7 +1427,6 @@ public:
         chars.push_back(0);
         std::string str = reinterpret_cast<const char *>(chars.data());
 
-        auto padded_str = str + std::string(col_str.getN() - std::min(col_str.getN(), str.length()), '\0');
         col_str.insertData(str.data(), str.size());
 
 
@@ -1441,10 +1444,11 @@ public:
         traverse(element, buf);
         buf.finalize();
         chars.push_back(0);
-        std::string str = reinterpret_cast<const char *>(chars.data());
 
-        auto padded_str = str + std::string(fixed_length - std::min(fixed_length, str.length()), '\0');
-        assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+        for (unsigned long i = 0; i < fixed_length - chars.size(); ++i)
+            chars.push_back(0);
+
+        assert_cast<ColumnLowCardinality &>(dest).insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
 
         return true;
     }
