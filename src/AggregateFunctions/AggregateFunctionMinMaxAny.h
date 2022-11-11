@@ -471,10 +471,7 @@ public:
     static constexpr bool is_nullable = false;
     static constexpr bool is_any = false;
 
-    bool has() const
-    {
-        return size >= 0;
-    }
+    bool has() const { return size >= 1; }
 
     const char * getData() const
     {
@@ -489,16 +486,40 @@ public:
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            assert_cast<ColumnString &>(to).insertData(getData(), size);
-        else
-            assert_cast<ColumnString &>(to).insertDefault();
+        {
+            const char * data = getData();
+            size_t final_size = data[size - 1] != '\0' ? size : size - 1;
+            if (final_size)
+            {
+                assert_cast<ColumnString &>(to).insertData(data, final_size);
+                return;
+            }
+        }
+
+        assert_cast<ColumnString &>(to).insertDefault();
     }
 
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
-        writeBinary(size, buf);
-        if (has())
-            buf.write(getData(), size);
+        if (!has())
+        {
+            writeBinary(Int32{1}, buf);
+            buf.write('\0');
+            return;
+        }
+
+        const char * data = getData();
+        if (data[size - 1] != '\0')
+        {
+            writeBinary(size + 1, buf);
+            buf.write(data, size);
+            buf.write('\0');
+        }
+        else
+        {
+            writeBinary(size, buf);
+            buf.write(data, size);
+        }
     }
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
