@@ -1192,54 +1192,6 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-
-bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword columns("COLUMNS");
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserStringLiteral regex;
-
-    if (!columns.ignore(pos, expected))
-        return false;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
-
-    ASTPtr column_list;
-    ASTPtr regex_node;
-    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    ASTPtr res;
-    if (column_list)
-    {
-        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        list_matcher->column_list = column_list;
-        res = list_matcher;
-    }
-    else
-    {
-        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res = regexp_matcher;
-    }
-
-    ParserColumnsTransformers transformers_p(allowed_transformers);
-    ASTPtr transformer;
-    while (transformers_p.parse(pos, transformer, expected))
-    {
-        res->children.push_back(transformer);
-    }
-    node = std::move(res);
-    return true;
-}
-
-
 bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword apply("APPLY");
@@ -1488,6 +1440,122 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
+/// Parse (columns_list) or ('REGEXP').
+static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected & expected, ParserColumnsTransformers::ColumnTransformers allowed_transformers)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserStringLiteral regex;
+
+    ASTPtr column_list;
+    ASTPtr regex_node;
+    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    ASTPtr res;
+    if (column_list)
+    {
+        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
+        list_matcher->column_list = column_list;
+        res = list_matcher;
+    }
+    else
+    {
+        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        res = regexp_matcher;
+    }
+
+    ParserColumnsTransformers transformers_p(allowed_transformers);
+    ASTPtr transformer;
+    while (transformers_p.parse(pos, transformer, expected))
+    {
+        res->children.push_back(transformer);
+    }
+
+    node = std::move(res);
+    return true;
+}
+
+bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword columns("COLUMNS");
+
+    if (!columns.ignore(pos, expected))
+        return false;
+
+    return parseColumnsMatcherBody(pos, node, expected, allowed_transformers);
+}
+
+bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
+        return false;
+
+    auto identifier_node = node;
+    const auto & identifier_node_typed = identifier_node->as<ASTTableIdentifier &>();
+
+    /// ParserCompoundIdentifier parse identifier.COLUMNS
+    if (identifier_node_typed.name_parts.size() == 1 || identifier_node_typed.name_parts.back() != "COLUMNS")
+        return false;
+
+    /// TODO: ASTTableIdentifier can contain only 2 parts
+
+    if (identifier_node_typed.name_parts.size() == 2)
+    {
+        auto table_name = identifier_node_typed.name_parts[0];
+        identifier_node = std::make_shared<ASTTableIdentifier>(table_name);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected identifier to contain no more than 2 parts. Actual {}",
+            identifier_node_typed.full_name);
+    }
+
+    if (!parseColumnsMatcherBody(pos, node, expected, allowed_transformers))
+        return false;
+
+    if (auto * columns_list_matcher = node->as<ASTColumnsListMatcher>())
+    {
+        auto result = std::make_shared<ASTQualifiedColumnsListMatcher>();
+        result->column_list = std::move(columns_list_matcher->column_list);
+
+        result->children.reserve(columns_list_matcher->children.size() + 1);
+        result->children.push_back(std::move(identifier_node));
+
+        for (auto && child : columns_list_matcher->children)
+            result->children.push_back(std::move(child));
+
+        node = result;
+    }
+    else if (auto * column_regexp_matcher = node->as<ASTColumnsRegexpMatcher>())
+    {
+        auto result = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
+        result->setMatcher(column_regexp_matcher->getMatcher());
+
+        result->children.reserve(column_regexp_matcher->children.size() + 1);
+        result->children.push_back(std::move(identifier_node));
+
+        for (auto && child : column_regexp_matcher->children)
+            result->children.push_back(std::move(child));
+
+        node = result;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher expected to be list or regexp");
+    }
+
+    return true;
+}
 
 bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

@@ -1108,15 +1108,21 @@ void Client::processConfig()
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 
-    format_max_block_size = config().getInt("format_max_block_size", global_context->getSettingsRef().max_block_size);
+    format_max_block_size = config().getUInt64("format_max_block_size",
+        global_context->getSettingsRef().max_block_size);
 
     insert_format = "Values";
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
