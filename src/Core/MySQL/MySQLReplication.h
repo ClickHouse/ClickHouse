@@ -369,7 +369,7 @@ namespace MySQLReplication
         QUERY_EVENT_DDL = 0,
         QUERY_EVENT_MULTI_TXN_FLAG = 1,
         QUERY_EVENT_XA = 2,
-        QUERY_EVENT_OTHER = 3
+        QUERY_SAVEPOINT = 3
     };
 
     class QueryEvent : public EventBase
