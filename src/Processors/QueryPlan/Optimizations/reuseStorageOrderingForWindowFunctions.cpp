@@ -62,13 +62,17 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    if (!context->getSettings().optimize_read_in_window_order)
+    if (!context->getSettings().optimize_read_in_window_order || context->getSettingsRef().allow_experimental_analyzer)
     {
         return 0;
     }
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return 0;
 
     ManyExpressionActions order_by_elements_actions;
     const auto & window_desc = window->getWindowDescription();

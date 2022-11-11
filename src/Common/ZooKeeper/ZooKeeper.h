@@ -45,7 +45,7 @@ struct ShuffleHost
 {
     String host;
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {
@@ -393,9 +393,11 @@ public:
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
-    /// Wait for the ephemeral node created in previous session to disappear.
-    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
-    void waitForEphemeralToDisappearIfAny(const std::string & path);
+    /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
+    /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
+    /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
+    /// disappear automatically after 3x session_timeout.
+    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -609,7 +611,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path);
         }
     }
 

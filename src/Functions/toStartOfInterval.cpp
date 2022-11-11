@@ -1,5 +1,6 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -133,17 +134,17 @@ namespace
     {
         static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
         }
 
         static UInt32 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
         }
 
         static UInt32 execute(UInt32 t, Int64 days, const DateLUTImpl & time_zone, Int64)
         {
-            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
+            return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
         }
 
         static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
@@ -437,7 +438,7 @@ private:
 
         if (which_type.isDateTime64())
         {
-            const auto * time_column_vec = checkAndGetColumn<DataTypeDateTime64::ColumnType>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column.column.get());
             auto scale = assert_cast<const DataTypeDateTime64 &>(from_datatype).getScale();
 
             if (time_column_vec)
@@ -445,19 +446,19 @@ private:
         }
         if (which_type.isDateTime())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnUInt16>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
         if (which_type.isDate32())
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnInt32>(time_column.column.get());
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(time_column.column.get());
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
@@ -517,6 +518,7 @@ private:
     ColumnPtr execute(const FromDataType &, const ColumnType & time_column_type, Int64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
     {
         using ToColumnType = typename ToDataType::ColumnType;
+        using ToFieldType = typename ToDataType::FieldType;
 
         const auto & time_data = time_column_type.getData();
         size_t size = time_data.size();
@@ -529,7 +531,8 @@ private:
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
         for (size_t i = 0; i != size; ++i)
-            result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier);
+            result_data[i] = static_cast<ToFieldType>(
+                Transform<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
 
         return result_col;
     }
