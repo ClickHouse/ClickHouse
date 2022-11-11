@@ -5,7 +5,7 @@ select number, concat('name_', toString(number)) as name from numbers(3) format 
 select number, concat('name_', toString(number)) as name, number + 1 as x from numbers(3) format JSONObjectEachRow;
 select concat('name_', toString(number)) as name, number from numbers(3) format JSONObjectEachRow;
 
-insert into function file(02454_data.jsonobjecteachrow) select number, concat('name_', toString(number)) as name from numbers(3) settings engine_file_truncate_on_insert=1;
-desc file(02454_data.jsonobjecteachrow);
-select * from file(02454_data.jsonobjecteachrow);
+insert into function file(data_02454.jsonobjecteachrow) select number, concat('name_', toString(number)) as name from numbers(3) settings engine_file_truncate_on_insert=1;
+desc file(data_02454.jsonobjecteachrow);
+select * from file(data_02454.jsonobjecteachrow);
 
