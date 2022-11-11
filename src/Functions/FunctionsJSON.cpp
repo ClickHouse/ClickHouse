@@ -1424,7 +1424,6 @@ public:
         if (chars.size() > col_str.getN())
             return false;
 
-        chars.push_back(0);
         std::string str = reinterpret_cast<const char *>(chars.data());
 
         col_str.insertData(str.data(), str.size());
@@ -1443,7 +1442,6 @@ public:
         WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
-        chars.push_back(0);
 
         for (unsigned long i = 0; i < fixed_length - chars.size(); ++i)
             chars.push_back(0);
