@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT -q """
 """
 
 echo """
-    SELECT dictGet('test_dictionary_02154', 'value', toUInt64(0)), dictGet('test_dictionary_02154', 'value', toUInt64(1))
+    SELECT dictGet(test_dictionary_02154, 'value', toUInt64(0)), dictGet(test_dictionary_02154, 'value', toUInt64(1))
     FORMAT JSON
 """ | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&wait_end_of_query=1&output_format_write_statistics=0" -d @-
 
