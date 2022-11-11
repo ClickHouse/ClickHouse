@@ -360,7 +360,20 @@ REGISTER_FUNCTION(DateDiff)
 
 REGISTER_FUNCTION(Age)
 {
-    factory.registerFunction<FunctionDateDiff<false>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateDiff<false>>({
+    R"(
+Returns the difference between two dates or dates with time values expressed as number of full units.
+E.g. the difference between `2022-01-01` and `2021-12-29` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
+Calculation is done with 1 second precision. E.g. the difference between `2022-01-02 00:00:00` and `2022-01-01 00:00:01` is 0 days for `day` unit.
+
+Example:
+[example:typical]
+Result: `24`
+)",
+    Documentation::Examples{
+        {"typical", "SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'));"}},
+    Documentation::Categories{"Date", "Time"}
+    }, FunctionFactory::CaseInsensitive);
 }
 
 }
