@@ -79,7 +79,7 @@ struct DecimalOpHerpers
         std::vector<UInt8> result;
 
         UInt8 idx = 0;
-        UInt256 temp = number[idx];
+        Int256 temp = number[idx];
         while (temp < divisor)
             temp = temp * 10 + (number[++idx]);
 
@@ -88,9 +88,6 @@ struct DecimalOpHerpers
             result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[++idx];
         }
-
-        if (result.empty())
-            return {0};
 
         return result;
     }
