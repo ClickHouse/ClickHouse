@@ -43,8 +43,8 @@ std::string getBSONTypeName(BSONType type)
             return "Array";
         case BSONType::DOCUMENT:
             return "Document";
-        case BSONType::UINT64:
-            return "UInt64";
+        case BSONType::TIMESTAMP:
+            return "Timestamp";
         case BSONType::INT64:
             return "Int64";
         case BSONType::INT32:

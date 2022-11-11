@@ -127,11 +127,11 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
 
     if (bson_type == BSONType::INT32)
     {
-        Int32 value;
+        UInt32 value;
         readBinary(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
-    else if (bson_type == BSONType::INT64 || bson_type == BSONType::UINT64)
+    else if (bson_type == BSONType::INT64)
     {
         UInt64 value;
         readBinary(value, in);
@@ -617,7 +617,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::INT64: [[fallthrough]];
         case BSONType::DATETIME: [[fallthrough]];
-        case BSONType::UINT64:
+        case BSONType::TIMESTAMP:
         {
             in.ignore(sizeof(UInt64));
             break;
@@ -784,11 +784,6 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         {
             in.ignore(sizeof(Int64));
             return makeNullable(std::make_shared<DataTypeDateTime64>(6, "UTC"));
-        }
-        case BSONType::UINT64:
-        {
-            in.ignore(sizeof(UInt64));
-            return makeNullable(std::make_shared<DataTypeUInt64>());
         }
         case BSONType::INT32:
         {
