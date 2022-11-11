@@ -45,6 +45,8 @@ elseif (ARCH_AARCH64)
         # dotprod: Scalar vector product (SDOT and UDOT instructions). Probably the most obscure extra flag with doubtful performance benefits
         #          but it has been activated since always, so why not enable it. It's not 100% clear in which revision this flag was
         #          introduced as optional, either in v8.2 [7] or in v8.4 [8].
+        # ldapr:   Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
+        #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton 2+, Azure and GCP instances. Generated from clang 15.
         #
         # [1] https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
         # [2] https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
@@ -54,12 +56,19 @@ elseif (ARCH_AARCH64)
         # [6] https://developer.arm.com/documentation/100067/0612/armclang-Command-line-Options/-mcpu?lang=en
         # [7] https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
         # [8] https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs")
+        # [9] https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
     endif ()
 
 elseif (ARCH_PPC64LE)
+    # By Default, build for power8 and up, allow building for power9 and up
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    option (POWER9 "Build for Power 9 CPU and above" 0)
+    if(POWER9)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power9 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    else ()
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+    endif ()
 
 elseif (ARCH_AMD64)
     option (ENABLE_SSSE3 "Use SSSE3 instructions on x86_64" 1)
@@ -72,6 +81,7 @@ elseif (ARCH_AMD64)
     option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
     option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
     option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
+    option (ENABLE_BMI2 "Use BMI2 instructions on x86_64 (depends on ENABLE_AVX2)" 0)
     option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
     option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
 
@@ -87,6 +97,7 @@ elseif (ARCH_AMD64)
         SET(ENABLE_AVX512 0)
         SET(ENABLE_AVX512_VBMI 0)
         SET(ENABLE_BMI 0)
+        SET(ENABLE_BMI2 0)
         SET(ENABLE_AVX2_FOR_SPEC_OP 0)
         SET(ENABLE_AVX512_FOR_SPEC_OP 0)
     endif()
@@ -231,6 +242,20 @@ elseif (ARCH_AMD64)
         }
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
+    set (TEST_FLAG "-mbmi2")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto a = _pdep_u64(0, 0);
+            (void)a;
+            return 0;
+        }
+    " HAVE_BMI2)
+    if (HAVE_BMI2 AND HAVE_AVX2 AND ENABLE_AVX2 AND ENABLE_BMI2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 

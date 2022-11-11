@@ -148,9 +148,9 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & relative_path_prefix) const
+    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
     {
-        if (data_part_storage->exists(relative_path_prefix + ".idx"))
+        if (data_part_storage.exists(relative_path_prefix + ".idx"))
             return {1, ".idx"};
         return {0 /*unknown*/, ""};
     }

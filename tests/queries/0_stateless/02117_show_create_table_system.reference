@@ -12,7 +12,6 @@ CREATE TABLE system.asynchronous_inserts
     `table` String,
     `format` String,
     `first_update` DateTime64(6),
-    `last_update` DateTime64(6),
     `total_bytes` UInt64,
     `entries.query_id` Array(String),
     `entries.bytes` Array(UInt64),
@@ -140,7 +139,9 @@ CREATE TABLE system.detached_parts
     `table` String,
     `partition_id` Nullable(String),
     `name` String,
+    `bytes_on_disk` UInt64,
     `disk` String,
+    `path` String,
     `reason` Nullable(String),
     `min_block_number` Nullable(Int64),
     `max_block_number` Nullable(Int64),
@@ -184,6 +185,7 @@ CREATE TABLE system.disks
     `path` String,
     `free_space` UInt64,
     `total_space` UInt64,
+    `unreserved_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
     `is_encrypted` UInt8,
@@ -1013,7 +1015,8 @@ COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.table_functions
 (
     `name` String,
-    `description` String
+    `description` String,
+    `allow_readonly` UInt8
 )
 ENGINE = SystemTableFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'

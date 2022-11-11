@@ -640,9 +640,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
-    if (as_table_function)
-        query->as_table_function = as_table_function;
-
     query->attach = attach;
     query->replace_table = replace;
     query->create_or_replace = or_replace;
@@ -661,6 +658,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->set(query->as_table_function, as_table_function);
 
     if (comment)
         query->set(query->comment, comment);
@@ -708,7 +706,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
-    ASTPtr live_view_timeout;
     ASTPtr live_view_periodic_refresh;
 
     String cluster_str;
@@ -740,20 +737,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (ParserKeyword{"WITH"}.ignore(pos, expected))
     {
-        if (ParserKeyword{"TIMEOUT"}.ignore(pos, expected))
-        {
-            if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
-            {
-                live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
-            }
-
-            /// Optional - AND
-            if (ParserKeyword{"AND"}.ignore(pos, expected))
-                with_and = true;
-
-            with_timeout = true;
-        }
-
         if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
         {
             if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
@@ -827,9 +810,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
-
-    if (live_view_timeout)
-        query->live_view_timeout.emplace(live_view_timeout->as<ASTLiteral &>().value.safeGet<UInt64>());
 
     if (live_view_periodic_refresh)
         query->live_view_periodic_refresh.emplace(live_view_periodic_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
