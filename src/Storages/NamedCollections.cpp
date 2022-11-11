@@ -18,18 +18,19 @@
 namespace DB
 {
 
-static constexpr auto NAMED_COLLECTIONS_CONFIG_PREFIX = "named_collections";
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_NAMED_COLLECTION;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+    constexpr auto NAMED_COLLECTIONS_CONFIG_PREFIX = "named_collections";
+
     std::string getCollectionPrefix(const std::string & collection_name)
     {
         return fmt::format("{}.{}", NAMED_COLLECTIONS_CONFIG_PREFIX, collection_name);
@@ -49,7 +50,7 @@ namespace
     /// the `result` will contain two strings: "root.key1.key2" and "root.key1.key3.key4"
     void collectKeys(
         const Poco::Util::AbstractConfiguration & config,
-        std::queue<std::string> & enumerate_paths,
+        std::queue<std::string> enumerate_paths,
         std::set<std::string> & result)
     {
         if (enumerate_paths.empty())
@@ -241,8 +242,7 @@ NamedCollectionFactory::NamedCollections NamedCollectionFactory::getAll() const
 class NamedCollection::Impl
 {
 private:
-    using IConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-    using ConfigurationPtr = Poco::AutoPtr<Poco::Util::XMLConfiguration>;
+    using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     ///  Named collection configuration
     ///  <collection1>
@@ -270,7 +270,7 @@ public:
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const
     {
-        return getConfigValueOrDefault<T>(*config, key, default_value);
+        return getConfigValueOrDefault<T>(*config, key, &default_value);
     }
 
     template <typename T> void set(const Key & key, const T & value, bool update_if_exists)
@@ -312,9 +312,9 @@ public:
         /// to a string:
         /// "key0: value0
         ///  key1:
-        ///  	key2: value2
-        ///  	key3:
-        ///  		key4: value3"
+        ///     key2: value2
+        ///     key3:
+        ///        key4: value3"
         WriteBufferFromOwnString wb;
         Strings prev_key_parts;
         for (const auto & key : keys)
@@ -359,7 +359,7 @@ private:
     template <typename T> static T getConfigValueOrDefault(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & path,
-        const std::optional<T> & default_value = std::nullopt)
+        const T * default_value = nullptr)
     {
         if (!config.has(path))
         {
@@ -477,7 +477,7 @@ NamedCollectionPtr NamedCollection::create(
     std::set<std::string> enumerate_result;
 
     enumerate_input.push(collection_prefix);
-    collectKeys(config, enumerate_input, enumerate_result);
+    collectKeys(config, std::move(enumerate_input), enumerate_result);
 
     /// Collection does not have any keys.
     /// (`enumerate_result` == <collection_path>).
@@ -487,7 +487,7 @@ NamedCollectionPtr NamedCollection::create(
     {
         /// Skip collection prefix and add +1 to avoid '.' in the beginning.
         for (const auto & path : enumerate_result)
-            keys.emplace(path.substr(std::strlen(collection_prefix.data()) + 1));
+            keys.emplace(path.substr(collection_prefix.size() + 1));
     }
     return std::make_unique<NamedCollection>(config, collection_name, keys);
 }
