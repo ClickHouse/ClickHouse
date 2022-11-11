@@ -781,6 +781,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (settings.allow_experimental_analyzer)
+        return;
+
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
@@ -1461,6 +1466,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
 
     std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     /// If there are no monotonic functions, there is no need to save block reference.
@@ -1573,7 +1579,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
-        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part->name, steps);
+        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part_name, steps);
     }
     else
     {
@@ -1581,7 +1587,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
         /// The returned value is the minimum range of marks, containing all keys for which KeyCondition holds
 
-        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part->name, marks_count);
+        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
 

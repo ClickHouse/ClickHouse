@@ -118,6 +118,8 @@ class Release:
             except subprocess.CalledProcessError:
                 logging.fatal("Repo contains uncommitted changes")
                 raise
+            if self._git.branch != "master":
+                raise Exception("the script must be launched only from master")
 
         self.set_release_branch()
 
