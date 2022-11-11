@@ -14,6 +14,7 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/DuplicateOrderByPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -193,6 +194,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_syntax_fuse_functions)
         manager.addPass(std::make_unique<FuseFunctionsPass>());
+
+    if (settings.optimize_duplicate_order_by_and_distinct)
+        manager.addPass(std::make_unique<DuplicateOrderByPass>());
 }
 
 }
