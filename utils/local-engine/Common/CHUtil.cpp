@@ -67,7 +67,12 @@ DB::Block BlockUtil::buildHeader(const DB::NamesAndTypesList & names_types_list)
 std::string PlanUtil::explainPlan(DB::QueryPlan & plan)
 {
     std::string plan_str;
-    DB::QueryPlan::ExplainPlanOptions buf_opt;
+    DB::QueryPlan::ExplainPlanOptions buf_opt
+    {
+        .header = true,
+        .actions = true,
+        .indexes = true,
+    };
     DB::WriteBufferFromOwnString buf;
     plan.explainPlan(buf, buf_opt);
     plan_str = buf.str();
