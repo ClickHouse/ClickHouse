@@ -9,6 +9,7 @@ namespace DB
 
 class NamedCollection;
 using NamedCollectionPtr = std::shared_ptr<const NamedCollection>;
+using MutableNamedCollectionPtr = std::shared_ptr<NamedCollection>;
 
 /**
  * Class to represent arbitrary-structured named collection object.
@@ -27,12 +28,13 @@ private:
     using ImplPtr = std::unique_ptr<Impl>;
 
     ImplPtr pimpl;
+    mutable std::mutex mutex;
 
 public:
     using Key = std::string;
     using Keys = std::set<Key>;
 
-    static NamedCollectionPtr create(
+    static MutableNamedCollectionPtr create(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & collection_name);
 
@@ -47,15 +49,21 @@ public:
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
-    template <typename T> void set(const Key & key, const T & value, bool update_if_exists = false);
+    template <typename T> void set(const Key & key, const T & value);
+
+    template <typename T> void setOrUpdate(const Key & key, const T & value);
 
     void remove(const Key & key);
 
-    std::shared_ptr<NamedCollection> duplicate() const;
+    bool isMutable() const;
+
+    MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys() const;
 
     std::string dumpStructure() const;
+
+    std::unique_lock<std::mutex> lock();
 };
 
 /**
@@ -76,19 +84,23 @@ public:
 
     NamedCollectionPtr tryGet(const std::string & collection_name) const;
 
+    MutableNamedCollectionPtr getMutable(const std::string & collection_name) const;
+
     void add(
         const std::string & collection_name,
-        NamedCollectionPtr collection);
+        MutableNamedCollectionPtr collection);
 
     void remove(const std::string & collection_name);
 
-    using NamedCollections = std::unordered_map<std::string, NamedCollectionPtr>;
+    void removeIfExists(const std::string & collection_name);
+
+    using NamedCollections = std::unordered_map<std::string, MutableNamedCollectionPtr>;
     NamedCollections getAll() const;
 
 private:
     void assertInitialized(std::lock_guard<std::mutex> & lock) const;
 
-    NamedCollectionPtr getImpl(
+    MutableNamedCollectionPtr getImpl(
         const std::string & collection_name,
         std::lock_guard<std::mutex> & lock) const;
 
