@@ -189,8 +189,19 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)
-            if (res < 0)
-                res += b >= 0 ? static_cast<OriginResultType>(b) : -static_cast<OriginResultType>(b);
+        {
+            if (a < 0)
+            {
+                if constexpr (is_unsigned_v<B>)
+                    res += static_cast<OriginResultType>(b);
+                else
+                {
+                    if (b == std::numeric_limits<B>::lowest())
+                        throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                }
+            }
+        }
         return static_cast<ResultType>(res);
     }
 };
