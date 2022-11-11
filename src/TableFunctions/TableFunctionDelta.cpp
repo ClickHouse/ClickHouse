@@ -158,7 +158,7 @@ StoragePtr TableFunctionDelta::executeImpl(
 
 void registerTableFunctionDelta(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDelta>();
+    factory.registerFunction<TableFunctionDelta>({.documentation = {}, .allow_readonly = true});
 }
 
 }
