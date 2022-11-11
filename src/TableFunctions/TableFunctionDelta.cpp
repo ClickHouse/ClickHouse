@@ -158,7 +158,12 @@ StoragePtr TableFunctionDelta::executeImpl(
 
 void registerTableFunctionDelta(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDelta>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionDelta>(
+        {.documentation
+         = {R"(The table function can be used to read the DeltaLake table stored on object store.)",
+            Documentation::Examples{{"hudi", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = true});
 }
 
 }

@@ -158,9 +158,13 @@ StoragePtr TableFunctionHudi::executeImpl(
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionHudi>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionHudi>(
+        {.documentation
+         = {R"(The table function can be used to read the Hudi table stored on object store.)",
+            Documentation::Examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = true});
 }
-
 }
 
 #endif
