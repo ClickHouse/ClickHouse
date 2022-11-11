@@ -118,7 +118,7 @@ namespace MySQLReplication
         }
         else if (query.starts_with("SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            typ = QUERY_SAVEPOINT;
         }
     }
 
@@ -941,6 +941,7 @@ namespace MySQLReplication
                 {
                     case QUERY_EVENT_MULTI_TXN_FLAG:
                     case QUERY_EVENT_XA:
+                    case QUERY_SAVEPOINT:
                     {
                         event = std::make_shared<DryRunEvent>(std::move(query->header));
                         break;
