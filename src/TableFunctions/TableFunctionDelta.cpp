@@ -81,6 +81,8 @@ void TableFunctionDelta::parseArgumentsImpl(
 
     if (args_to_idx.contains("format"))
         base_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+    else
+        base_configuration.format = "Parquet";
 
     if (args_to_idx.contains("structure"))
         base_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
@@ -96,9 +98,6 @@ void TableFunctionDelta::parseArgumentsImpl(
     if (args_to_idx.contains("secret_access_key"))
         base_configuration.auth_settings.secret_access_key
             = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
-
-    if (base_configuration.format == "auto")
-        base_configuration.format = FormatFactory::instance().getFormatFromFileName(base_configuration.url, true);
 }
 
 void TableFunctionDelta::parseArguments(const ASTPtr & ast_function, ContextPtr context)
