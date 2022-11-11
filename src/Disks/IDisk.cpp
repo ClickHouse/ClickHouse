@@ -29,7 +29,7 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
-    auto inA = readFile(from_file_path);
+    auto in = readFile(from_file_path);
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     WriteBufferFinalizer out_finalizer(out.get());
     copyData(*in, *out);
