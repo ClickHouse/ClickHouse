@@ -38,18 +38,18 @@ struct DecimalOpHerpers
             return {0};
 
         std::vector<UInt8> result(76, 0);
-        int i_n1 = 0;
-        int i_n2;
+        UInt16 i_n1 = 0;
+        UInt16 i_n2;
 
-        for (auto i = len1 - 1; i >= 0; --i)
+        for (Int32 i = len1 - 1; i >= 0; --i)
         {
             UInt16 carry = 0;
             i_n2 = 0;
-            for (auto j = len2 - 1; j >= 0; --j)
+            for (Int32 j = len2 - 1; j >= 0; --j)
             {
                 if (unlikely(i_n1 + i_n2 >= 76))
                     throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-                UInt16 const sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
+                UInt16 sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
                 result[i_n1 + i_n2] = sum % 10;
                 ++i_n2;
