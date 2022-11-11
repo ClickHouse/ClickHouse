@@ -1,7 +1,6 @@
 #include <Formats/BSONTypes.h>
 #include <Common/Exception.h>
-#include <sstream>
-#include <iomanip>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -13,9 +12,7 @@ namespace ErrorCodes
 
 static std::string byteToHexString(uint8_t byte)
 {
-    std::ostringstream os; // NOLINT
-    os << "0x" << std::setw(2) << std::setfill('0') << std::hex << int(byte);
-    return os.str();
+    return "0x" + getHexUIntUppercase(byte);
 }
 
 BSONType getBSONType(uint8_t value)
