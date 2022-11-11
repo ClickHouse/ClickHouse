@@ -33,7 +33,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client1.send(
 +       "DROP TABLE IF EXISTS `01069_window_view_proc_tumble_watch`.wv NO DELAY"
-+    )
+    )
     client1.expect(prompt)
 
     client1.send(

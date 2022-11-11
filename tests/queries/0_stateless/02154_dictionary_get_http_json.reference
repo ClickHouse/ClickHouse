@@ -3,11 +3,11 @@
 	"meta":
 	[
 		{
-			"name": "dictGet(test_source_table_02154, 'value', toUInt64(0))",
+			"name": "dictGet(test_dictionary_02154, 'value', toUInt64(0))",
 			"type": "String"
 		},
 		{
-			"name": "dictGet(test_source_table_02154, 'value', toUInt64(1))",
+			"name": "dictGet(test_dictionary_02154, 'value', toUInt64(1))",
 			"type": "String"
 		}
 	],
@@ -15,8 +15,8 @@
 	"data":
 	[
 		{
-			"dictGet(test_source_table_02154, 'value', toUInt64(0))": "Value",
-			"dictGet(test_source_table_02154, 'value', toUInt64(1))": ""
+			"dictGet(test_dictionary_02154, 'value', toUInt64(0))": "Value",
+			"dictGet(test_dictionary_02154, 'value', toUInt64(1))": ""
 		}
 	],
 
