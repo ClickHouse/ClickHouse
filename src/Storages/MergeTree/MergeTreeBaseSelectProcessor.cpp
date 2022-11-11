@@ -607,7 +607,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
                 throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
             }
 
             block.erase(prewhere_info->row_level_column_name);
@@ -620,7 +620,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         if (!prewhere_column.type->canBeUsedInBooleanContext())
         {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
 
         if (prewhere_info->remove_prewhere_column)
@@ -628,13 +628,13 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         else
         {
             WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-            if (which.isInt() || which.isUInt())
+            if (which.isNativeInt() || which.isNativeUInt())
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
             else if (which.isFloat())
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
             else
-                throw Exception("Illegal type " + prewhere_column.type->getName() + " of column for filter.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
         }
     }
 

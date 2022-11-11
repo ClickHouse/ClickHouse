@@ -107,7 +107,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = getThreadPoolReader();
+        auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
     }
     else
@@ -141,7 +141,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
 {
     auto client_ptr = client.get();
 

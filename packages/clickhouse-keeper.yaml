@@ -22,11 +22,14 @@ description: |
   Static clickhouse-keeper binary
     A stand-alone clickhouse-keeper package
 
+deb:
+  fields:
+    Source: clickhouse
 
 contents:
-- src: root/etc/clickhouse-keeper
-  dst: /etc/clickhouse-keeper
-  type: config
+- src: root/etc/clickhouse-keeper/keeper_config.xml
+  dst: /etc/clickhouse-keeper/keeper_config.xml
+  type: config|noreplace
 - src: root/usr/bin/clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper
 # docs

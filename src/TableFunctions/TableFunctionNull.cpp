@@ -52,6 +52,6 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>();
+    factory.registerFunction<TableFunctionNull>({.documentation = {}, .allow_readonly = true});
 }
 }

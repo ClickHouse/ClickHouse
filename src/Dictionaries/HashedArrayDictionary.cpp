@@ -513,7 +513,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };

@@ -61,7 +61,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -144,6 +144,10 @@ public:
         added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
     }
 
+    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
+
+    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
+
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
@@ -164,6 +168,8 @@ private:
     ActionDAGNodes added_filter_nodes;
 
     std::string added_filter_column_name;
+
+    InputOrderInfoPtr order_info;
 
     struct AliasData
     {

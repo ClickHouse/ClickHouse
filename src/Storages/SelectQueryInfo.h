@@ -7,6 +7,9 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
+#include <Planner/PlannerContext.h>
 
 #include <memory>
 
@@ -117,10 +120,10 @@ struct InputOrderInfo
      * sort_description_for_merging will be equal to (c, d) and
      * used_prefix_of_sorting_key_size will be equal to 4.
      */
-    size_t used_prefix_of_sorting_key_size;
+    const size_t used_prefix_of_sorting_key_size;
 
-    int direction;
-    UInt64 limit;
+    const int direction;
+    const UInt64 limit;
 
     InputOrderInfo(
         const SortDescription & sort_description_for_merging_,
@@ -177,6 +180,15 @@ struct SelectQueryInfo
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
+    /// Planner context
+    PlannerContextPtr planner_context;
+
+    /// Storage table expression
+    QueryTreeNodePtr table_expression;
+
+    /// Table expression modifiers for storage
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
     /// Cluster for the query.
@@ -219,6 +231,9 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+
+    // If limit is not 0, that means it's a trivial limit query.
+    UInt64 limit = 0;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {
