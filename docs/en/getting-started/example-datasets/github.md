@@ -10,8 +10,8 @@ This dataset contains all of the commits and changes for the ClickHouse reposito
 
 The generated data provides a `tsv` file for each of the following tables:
 
-- `commits` - commits with statistics;
-- `file_changes` - files changed in every commit with the info about the change and statistics;
+- `commits` - commits with statistics.
+- `file_changes` - files changed in every commit with the info about the change and statistics.
 - `line_changes` - every changed line in every changed file in every commit with full info about the line and the information about the previous change of this line.
 
 As of November 8th, 2022, each TSV is approximately the following size and number of rows:
@@ -48,7 +48,6 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
   - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
   - [Files sorted by average code age](#files-sorted-by-average-code-age)
   - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
-  - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
   - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
   - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
   - [Which authors code is the most sticky?](#which-authors-code-is-the-most-sticky)
@@ -65,7 +64,7 @@ cd ClickHouse
 clickhouse git-import --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '
 ```
 
-This will take around 3 minutes (as of November 8th 2022) to complete for the ClickHouse repository.
+This will take around 3 minutes (as of November 8th 2022 on a MacBook Pro 2021) to complete for the ClickHouse repository.
 
 A full list of available options can be obtained from the tools native help.
 
@@ -103,13 +102,13 @@ CREATE TABLE git.commits
 Generated files for the following repositories can be found below:
 
 - ClickHouse (Nov 8th 2022)
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz - 2.5 MB
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz - 4.5MB
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz - 127.4 MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz - 2.5 MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz - 4.5MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz - 127.4 MB
 - Linux (Nov 8th 2022)
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/linux/commits.tsv.xz - 2.5 MB
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/linux/file_changes.tsv.xz - 4.5MB
-    - https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/linux/line_changes.tsv.xz - 127.4 MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/linux/commits.tsv.xz - 44 MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/linux/file_changes.tsv.xz - 467MB
+    - https://datasets-documentation.s3.amazonaws.com/github/commits/linux/line_changes.tsv.xz - 1.1G
 
 To insert this data, prepare the database by executing the following queries:
 
@@ -212,7 +211,7 @@ Insert the data using `INSERT INTO SELECT` and the [s3 function](https://clickho
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 
 0 rows in set. Elapsed: 1.826 sec. Processed 62.78 thousand rows, 8.50 MB (34.39 thousand rows/s., 4.66 MB/s.)
 ```
@@ -221,7 +220,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commit
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 
 0 rows in set. Elapsed: 2.688 sec. Processed 266.05 thousand rows, 48.30 MB (98.97 thousand rows/s., 17.97 MB/s.)
 ```
@@ -230,51 +229,14 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commit
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
 # Queries
 
-The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest:
-
-- [ClickHouse GitHub data](#clickhouse-github-data)
-- [Table of Contents](#table-of-contents)
-- [Generating the data](#generating-the-data)
-- [Downloading and inserting the data](#downloading-and-inserting-the-data)
-- [Queries](#queries)
-  - [History of a single file](#history-of-a-single-file)
-  - [Find the current active files](#find-the-current-active-files)
-  - [List files with most modifications](#list-files-with-most-modifications)
-  - [What day of the week do commits usually occur?](#what-day-of-the-week-do-commits-usually-occur)
-  - [History of subdirectory/file - number of lines, commits and contributors over time](#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time)
-  - [List files with maximum number of authors](#list-files-with-maximum-number-of-authors)
-  - [Oldest lines of code in the repository](#oldest-lines-of-code-in-the-repository)
-  - [Files with longest history](#files-with-longest-history)
-  - [Distribution of contributors with respect to docs and code over the month](#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month)
-  - [Authors with the most diverse impact](#authors-with-the-most-diverse-impact)
-  - [Favorite files for an author](#favorite-files-for-an-author)
-  - [Largest files with lowest number of authors](#largest-files-with-lowest-number-of-authors)
-  - [Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories](#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories)
-  - [Matrix of authors that shows what authors tends to rewrite another authors code](#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code)
-  - [Who is the highest percentage contributor per day of week?](#who-is-the-highest-percentage-contributor-per-day-of-week)
-  - [Distribution of code age across repository](#distribution-of-code-age-across-repository)
-  - [What percentage of code for an author has been removed by other authors?](#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors)
-  - [List files that were rewritten most number of times?](#list-files-that-were-rewritten-most-number-of-times)
-  - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
-  - [Files sorted by average code age](#files-sorted-by-average-code-age)
-  - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
-  - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
-  - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
-  - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
-  - [Which authors code is the most sticky?](#which-authors-code-is-the-most-sticky)
-  - [Most consecutive days of commits by an author](#most-consecutive-days-of-commits-by-an-author)
-  - [Line by line commit history of a file](#line-by-line-commit-history-of-a-file)
-- [Unsolved Questions](#unsolved-questions)
-  - [Git blame](#git-blame)
-
-These queries are of approximately increasing complexity vs. the tool's arbitrary order.
+The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
 ## History of a single file
 
@@ -761,7 +723,7 @@ FROM
 (
     SELECT
         day,
-        countIf(file_extension IN ('h', 'cpp', 'sql', 'md')) AS code,
+        countIf(file_extension IN ('h', 'cpp', 'sql')) AS code,
         countIf(file_extension = 'md') AS docs,
         docs / (code + docs) AS docs_ratio
     FROM git.line_changes
@@ -769,41 +731,41 @@ FROM
     GROUP BY dayOfMonth(time) AS day
 )
 
-┌─day─┬─bar──────────────────────────────────────────────────────────┐
-│   1 │ ██████████████████████████████████▎                          │
-│   2 │ ███████████████████████▏                                     │
-│   3 │ ███████████████████████████████▋                             │
-│   4 │ ████████████▊                                                │
-│   5 │ ████████████████████▊                                        │
-│   6 │ ███████▊                                                     │
-│   7 │ ███▋                                                         │
-│   8 │ ████████▍                                                    │
-│   9 │ ██████████████                                               │
-│  10 │ ████████████████▋                                            │
-│  11 │ █████████████▏                                               │
-│  12 │ ██████████████████████████████████▌                          │
-│  13 │ ████████████████████████████▌                                │
-│  14 │ ██████▋                                                      │
-│  15 │ ████████████████████████████████████████▎                    │
-│  16 │ ██████████▏                                                  │
-│  17 │ █████████████████████████████████████▏                       │
-│  18 │ ████████████████████████████████▍                            │
-│  19 │ ██████████▊                                                  │
-│  20 │ ████████████████████████████████▋                            │
-│  21 │ █████                                                        │
-│  22 │ ███████████████████████▏                                     │
-│  23 │ ██████████████████████████▋                                  │
-│  24 │ ███████▌                                                     │
-│  25 │ █████████████████████████████████▏                           │
-│  26 │ ███████████                                                  │
-│  27 │ ███████████████████████████████████████████████████████████▎ │
-│  28 │ █████████████████████████████████████████████████▌           │
-│  29 │ ███▌                                                         │
-│  30 │ ██████████████████████████████████████▋                      │
-│  31 │ ████████████████████████████████▏                            │
-└─────┴──────────────────────────────────────────────────────────────┘
+┌─day─┬─bar─────────────────────────────────────────────────────────────┐
+│   1 │ ███████████████████████████████████▍                            │
+│   2 │ ███████████████████████▋                                        │
+│   3 │ ████████████████████████████████▋                               │
+│   4 │ █████████████                                                   │
+│   5 │ █████████████████████▎                                          │
+│   6 │ ████████                                                        │
+│   7 │ ███▋                                                            │
+│   8 │ ████████▌                                                       │
+│   9 │ ██████████████▎                                                 │
+│  10 │ █████████████████▏                                              │
+│  11 │ █████████████▎                                                  │
+│  12 │ ███████████████████████████████████▋                            │
+│  13 │ █████████████████████████████▎                                  │
+│  14 │ ██████▋                                                         │
+│  15 │ █████████████████████████████████████████▊                      │
+│  16 │ ██████████▎                                                     │
+│  17 │ ██████████████████████████████████████▋                         │
+│  18 │ █████████████████████████████████▌                              │
+│  19 │ ███████████                                                     │
+│  20 │ █████████████████████████████████▊                              │
+│  21 │ █████                                                           │
+│  22 │ ███████████████████████▋                                        │
+│  23 │ ███████████████████████████▌                                    │
+│  24 │ ███████▌                                                        │
+│  25 │ ██████████████████████████████████▎                             │
+│  26 │ ███████████▏                                                    │
+│  27 │ ███████████████████████████████████████████████████████████████ │
+│  28 │ ████████████████████████████████████████████████████▏           │
+│  29 │ ███▌                                                            │
+│  30 │ ████████████████████████████████████████▎                       │
+│  31 │ █████████████████████████████████▏                              │
+└─────┴─────────────────────────────────────────────────────────────────┘
 
-31 rows in set. Elapsed: 0.043 sec. Processed 7.54 million rows, 40.53 MB (176.56 million rows/s., 949.58 MB/s.)
+31 rows in set. Elapsed: 0.043 sec. Processed 7.54 million rows, 40.53 MB (176.71 million rows/s., 950.40 MB/s.)
 ```
 
 Maybe a little more near the end of the month, but overall we keep a good even distribution.
@@ -838,6 +800,49 @@ LIMIT 10
 10 rows in set. Elapsed: 0.041 sec. Processed 266.05 thousand rows, 4.92 MB (6.56 million rows/s., 121.21 MB/s.)
 ```
 
+Let's see who has the most diverse commits in their recent work. Rather than limit by date, we'll restrict to an author's last N commits (in this case, we've used 3 but feel free to modify):
+
+```sql
+SELECT
+    author,
+    sum(num_files_commit) AS num_files
+FROM
+(
+    SELECT
+        author,
+        commit_hash,
+        uniq(path) AS num_files_commit,
+        max(time) AS commit_time
+    FROM git.file_changes
+    WHERE (change_type IN ('Add', 'Modify')) AND (file_extension IN ('h', 'cpp', 'sql'))
+    GROUP BY
+        author,
+        commit_hash
+    ORDER BY
+        author ASC,
+        commit_time DESC
+    LIMIT 3 BY author
+)
+GROUP BY author
+ORDER BY num_files DESC
+LIMIT 10
+
+┌─author───────────────┬─num_files─┐
+│ Mikhail              │       782 │
+│ Li Yin               │       553 │
+│ Roman Peshkurov      │       119 │
+│ Vladimir Smirnov     │        88 │
+│ f1yegor              │        65 │
+│ maiha                │        54 │
+│ Vitaliy Lyudvichenko │        53 │
+│ Pradeep Chhetri      │        40 │
+│ Orivej Desh          │        38 │
+│ liyang               │        36 │
+└──────────────────────┴───────────┘
+
+10 rows in set. Elapsed: 0.106 sec. Processed 266.05 thousand rows, 21.04 MB (2.52 million rows/s., 198.93 MB/s.)
+```
+
 ## Favorite files for an author
 
 Here we select our founder [Alexey Milovidov](https://github.com/alexey-milovidov) and limit our analysis to current files.
@@ -870,23 +875,23 @@ SELECT
     path,
     count() AS c
 FROM git.file_changes
-WHERE (author = 'alexey-milovidov') AND (path IN (current_files))
+WHERE (author = 'Alexey Milovidov') AND (path IN (current_files))
 GROUP BY path
 ORDER BY c DESC
 LIMIT 10
 
-┌─path────────────────────────────────────────────┬───c─┐
-│ CHANGELOG.md                                    │ 174 │
-│ CMakeLists.txt                                  │  22 │
-│ src/Common/HashTable/HashTable.h                │   8 │
-│ .github/PULL_REQUEST_TEMPLATE.md                │   8 │
-│ src/Core/Settings.h                             │   8 │
-│ src/Storages/StorageReplicatedMergeTree.cpp     │   7 │
-│ README.md                                       │   7 │
-│ docker/test/fuzzer/run-fuzzer.sh                │   7 │
-│ programs/install/Install.cpp                    │   7 │
-│ src/Dictionaries/ExecutableDictionarySource.cpp │   6 │
-└─────────────────────────────────────────────────┴─────┘
+┌─path────────────────────────────────────────┬───c─┐
+│ CMakeLists.txt                              │ 165 │
+│ CHANGELOG.md                                │ 126 │
+│ programs/server/Server.cpp                  │  73 │
+│ src/Storages/MergeTree/MergeTreeData.cpp    │  71 │
+│ src/Storages/StorageReplicatedMergeTree.cpp │  68 │
+│ src/Core/Settings.h                         │  65 │
+│ programs/client/Client.cpp                  │  57 │
+│ programs/server/play.html                   │  48 │
+│ .gitmodules                                 │  47 │
+│ programs/install/Install.cpp                │  37 │
+└─────────────────────────────────────────────┴─────┘
 
 10 rows in set. Elapsed: 0.106 sec. Processed 798.15 thousand rows, 13.97 MB (7.51 million rows/s., 131.41 MB/s.)
 ```
@@ -899,23 +904,23 @@ SELECT
     base,
     count() AS c
 FROM git.file_changes
-WHERE (author = 'alexey-milovidov') AND (file_extension IN ('h', 'cpp', 'sql'))
+WHERE (author = 'Alexey Milovidov') AND (file_extension IN ('h', 'cpp', 'sql'))
 GROUP BY basename(path) AS base
 ORDER BY c DESC
 LIMIT 10
 
-┌─base───────────────────────────┬──c─┐
-│ StorageReplicatedMergeTree.cpp │ 22 │
-│ Settings.h                     │ 22 │
-│ InterpreterSelectQuery.cpp     │ 19 │
-│ MergeTreeData.cpp              │ 18 │
-│ Client.cpp                     │ 17 │
-│ Context.cpp                    │ 17 │
-│ Server.cpp                     │ 12 │
-│ ExecutableDictionarySource.cpp │ 12 │
-│ ExpressionAnalyzer.cpp         │ 12 │
-│ PODArray.h                     │ 12 │
-└────────────────────────────────┴────┘
+┌─base───────────────────────────┬───c─┐
+│ StorageReplicatedMergeTree.cpp │ 393 │
+│ InterpreterSelectQuery.cpp     │ 299 │
+│ Aggregator.cpp                 │ 297 │
+│ Client.cpp                     │ 280 │
+│ MergeTreeData.cpp              │ 274 │
+│ Server.cpp                     │ 264 │
+│ ExpressionAnalyzer.cpp         │ 259 │
+│ StorageMergeTree.cpp           │ 239 │
+│ Settings.h                     │ 225 │
+│ TCPHandler.cpp                 │ 205 │
+└────────────────────────────────┴─────┘
 10 rows in set. Elapsed: 0.032 sec. Processed 266.05 thousand rows, 5.68 MB (8.22 million rows/s., 175.50 MB/s.)
 ```
 
@@ -1210,8 +1215,8 @@ The `sign = -1` indicates a code deletion. We exclude punctuation and the insert
 
 ```sql
 SELECT
-    prev_author,
-    author,
+    prev_author || '(a)' as add_author,
+    author  || '(d)' as delete_author,
     count() AS c
 FROM git.line_changes
 WHERE (sign = -1) AND (file_extension IN ('h', 'cpp')) AND (line_type NOT IN ('Punct', 'Empty')) AND (author != prev_author) AND (prev_author != '')
@@ -1220,7 +1225,7 @@ GROUP BY
     author
 ORDER BY c DESC
 LIMIT 1 BY prev_author
-LIMIT 20
+LIMIT 100
 
 ┌─prev_author──────────┬─author───────────┬─────c─┐
 │ Ivan                 │ Alexey Milovidov │ 18554 │
@@ -1247,6 +1252,16 @@ LIMIT 20
 
 20 rows in set. Elapsed: 0.098 sec. Processed 7.54 million rows, 42.16 MB (76.67 million rows/s., 428.99 MB/s.)
 ```
+
+A Sankey chart (SuperSet) allows this to be visualized nicely. Note we increase our `LIMIT BY` to 3, to get the top 3 code removers for each author, to improve the variety in the visual.
+
+
+![](./images/superset-authors-matrix.png)
+
+
+Alexey clearly likes removing other peoples code. Lets exclude him for a more balanced view of code removal.
+
+![](./images/superset-authors-matrix_v3.png)
 
 ## Who is the highest percentage contributor per day of week?
 
@@ -1519,7 +1534,7 @@ WITH
         HAVING (argMax(change_type, last_time) != 2) AND (NOT match(path, '(^dbms/)|(^libs/)|(^tests/testflows/)|(^programs/server/store/)'))
         ORDER BY path ASC
     ),
-    file_changes AS
+    changes AS
     (
         SELECT
             path,
@@ -1549,7 +1564,7 @@ WITH
             sum(num_added - num_deleted) OVER (PARTITION BY path ORDER BY max_time ASC) AS current_size,
             if(current_size > 0, num_added / current_size, 0) AS percent_add,
             if(current_size > 0, num_deleted / current_size, 0) AS percent_delete
-        FROM file_changes
+        FROM changes
     )
 SELECT
     path,
@@ -1733,7 +1748,7 @@ Note we limit to users with more than 20 changes to focus on regular committers 
 ```sql
 SELECT
     author,
-    countIf((file_extension NOT IN ('h', 'cpp')) AND (path LIKE '%tests%')) AS test,
+    countIf((file_extension NOT IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
 FROM git.file_changes
@@ -1743,26 +1758,26 @@ ORDER BY code DESC
 LIMIT 20
 
 ┌─author───────────────┬─test─┬──code─┬─────────ratio_code─┐
-│ Alexey Milovidov     │ 9016 │ 41799 │ 0.8225720751746531 │
-│ Nikolai Kochetov     │ 1376 │ 13361 │ 0.9066295718260161 │
-│ alesapin             │ 3704 │  8796 │            0.70368 │
-│ kssenii              │ 1257 │  6769 │  0.843384001993521 │
-│ Maksim Kita          │ 1352 │  5862 │ 0.8125866370945384 │
-│ Alexander Tokmakov   │ 2011 │  5727 │  0.740113724476609 │
-│ Vitaly Baranov       │ 2245 │  5521 │ 0.7109193922225083 │
-│ Ivan Lezhankin       │  803 │  4698 │ 0.8540265406289765 │
-│ Anton Popov          │ 1056 │  4346 │ 0.8045168456127361 │
-│ Ivan                 │ 4937 │  4269 │ 0.4637193134912014 │
-│ Azat Khuzhin         │ 2651 │  3697 │ 0.5823881537492124 │
-│ Amos Bird            │  702 │  2901 │ 0.8051623646960866 │
-│ proller              │ 1662 │  2377 │ 0.5885120079227532 │
-│ chertus              │  706 │  2359 │ 0.7696574225122349 │
-│ alexey-milovidov     │  330 │  2321 │ 0.8755186721991701 │
+│ Alexey Milovidov     │ 7346 │ 41799 │ 0.8505239597110591 │
+│ Nikolai Kochetov     │ 1106 │ 13361 │ 0.9235501486140872 │
+│ alesapin             │ 1981 │  8796 │ 0.8161826111162661 │
+│ kssenii              │  660 │  6769 │ 0.9111589715977925 │
+│ Maksim Kita          │ 1148 │  5862 │ 0.8362339514978602 │
+│ Alexander Tokmakov   │ 1135 │  5727 │ 0.8345963276012824 │
+│ Vitaly Baranov       │ 1283 │  5521 │ 0.8114344503233392 │
+│ Ivan Lezhankin       │  726 │  4698 │ 0.8661504424778761 │
+│ Anton Popov          │  831 │  4346 │ 0.8394823256712381 │
+│ Ivan                 │ 4257 │  4269 │ 0.5007037297677692 │
+│ Azat Khuzhin         │ 1756 │  3697 │ 0.6779754263708051 │
+│ Amos Bird            │  624 │  2901 │ 0.8229787234042554 │
+│ proller              │ 1226 │  2377 │ 0.6597280044407439 │
+│ chertus              │  696 │  2359 │  0.772176759410802 │
+│ alexey-milovidov     │  254 │  2321 │ 0.9013592233009708 │
 │ Alexey Arno          │  207 │  2310 │ 0.9177592371871275 │
-│ Vitaliy Lyudvichenko │  479 │  2283 │ 0.8265749456915279 │
-│ Robert Schulze       │  328 │  2196 │ 0.8700475435816165 │
-│ CurtizJ              │  812 │  2158 │ 0.7265993265993266 │
-│ Alexander Kuzmenkov  │ 1198 │  2092 │ 0.6358662613981763 │
+│ Vitaliy Lyudvichenko │  294 │  2283 │ 0.8859138533178114 │
+│ Robert Schulze       │  251 │  2196 │ 0.8974254188802615 │
+│ CurtizJ              │  705 │  2158 │ 0.7537548026545582 │
+│ Alexander Kuzmenkov  │ 1094 │  2092 │ 0.6566227244193346 │
 └──────────────────────┴──────┴───────┴────────────────────┘
 
 20 rows in set. Elapsed: 0.034 sec. Processed 266.05 thousand rows, 4.65 MB (7.93 million rows/s., 138.76 MB/s.)
@@ -1813,7 +1828,7 @@ What about who adds the most comments when contributing code?
 ```sql
 SELECT
     author,
-    countIf((line_type = 'Comment') OR (line_type = 'Punct')) AS comments,
+    countIf(line_type = 'Comment') AS comments,
     countIf(line_type = 'Code') AS code,
     comments / (comments + code) AS ratio_comments
 FROM git.line_changes
@@ -1823,23 +1838,33 @@ HAVING code > 20
 ORDER BY code DESC
 LIMIT 10
 
-┌─author─────────────┬─comments─┬───code─┬──────ratio_comments─┐
-│ Alexey Milovidov   │   100869 │ 356978 │ 0.22031158880586746 │
-│ Nikolai Kochetov   │    34057 │ 113261 │  0.2311801680717903 │
-│ Vitaly Baranov     │    24994 │  84504 │ 0.22825987689272864 │
-│ Maksim Kita        │    23338 │  78778 │ 0.22854400877433506 │
-│ alesapin           │    21976 │  72279 │ 0.23315473980160203 │
-│ kssenii            │    19465 │  61852 │ 0.23937184106644366 │
-│ Alexey Arno        │    16469 │  61674 │ 0.21075464213045314 │
-│ Alexander Tokmakov │    10760 │  41964 │ 0.20408163265306123 │
-│ Anton Popov        │     9158 │  38448 │  0.1923707095744234 │
-│ Ivan               │     6480 │  33711 │   0.161230126147645 │
-└────────────────────┴──────────┴────────┴─────────────────────┘
+┌─author─────────────┬─comments─┬───code─┬───────ratio_comments─┐
+│ Alexey Milovidov   │    30867 │ 356978 │  0.07958591705449342 │
+│ Nikolai Kochetov   │    11128 │ 113261 │  0.08946128676973045 │
+│ Vitaly Baranov     │     5120 │  84504 │  0.05712755511916451 │
+│ Maksim Kita        │     6184 │  78778 │  0.07278548056778325 │
+│ alesapin           │     7456 │  72279 │  0.09350975105035429 │
+│ kssenii            │     5804 │  61852 │  0.08578692207638643 │
+│ Alexey Arno        │     4430 │  61674 │   0.0670156117632821 │
+│ Alexander Tokmakov │     4022 │  41964 │  0.08746140129604663 │
+│ Anton Popov        │     2067 │  38448 │ 0.051018141429100335 │
+│ Ivan               │      947 │  33711 │  0.02732413872698944 │
+└────────────────────┴──────────┴────────┴──────────────────────┘
 
-10 rows in set. Elapsed: 0.136 sec. Processed 7.54 million rows, 31.57 MB (55.33 million rows/s., 231.83 MB/s.)
+10 rows in set. Elapsed: 0.047 sec. Processed 7.54 million rows, 31.57 MB (161.75 million rows/s., 677.77 MB/s.)
 ```
 
 Surprisingly high % for all our contributors and part of what makes our code so readable.
+
+
+``sql
+
+SELECT author, avg(ratio_comments) as avg_ratio_comments, sum(code) as code FROM (
+SELECT author, commit_hash, countIf(line_type = 'Comment') AS comments, countIf(line_type = 'Code') AS code,  if(comments > 0, comments / (comments + code), 0) AS ratio_comments FROM git.line_changes GROUP BY author, commit_hash
+) GROUP BY author ORDER BY code DESC LIMIT 10
+```
+
+
 
 ## How does an authors commits change over time with respect to code/comments percentage?
 
