@@ -36,6 +36,16 @@ SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFF
                                 'AggregateFunction(sequenceNextNode(''forward'', ''head''), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
     SETTINGS allow_experimental_funnel_functions=1; -- { serverError 33 }
 
+-- Fuzzer (ALL)
+SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
+                                'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
+    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError 128 }
+
+-- Fuzzer 2 (UBSAN)
+SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
+                                'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
+    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError 33 }
+
 -- uniqUpTo
 SELECT finalizeAggregation(CAST(unhex('04128345AA2BC97190'),
                                 'AggregateFunction(uniqUpTo(10), String)')); -- { serverError 33 }

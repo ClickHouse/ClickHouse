@@ -29,6 +29,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 enum class SequenceDirection
 {
     Forward,
@@ -42,6 +47,9 @@ enum SequenceBase
     FirstMatch,
     LastMatch,
 };
+
+/// This is for security
+static const UInt64 max_node_size_deserialize = 0xFFFFFF;
 
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node, size_t MaxEventsSize>
@@ -78,6 +86,8 @@ struct NodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
+        if unlikely (size > max_node_size_deserialize)
+            throw Exception("Too large node state size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
