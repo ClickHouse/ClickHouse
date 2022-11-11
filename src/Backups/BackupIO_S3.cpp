@@ -89,6 +89,7 @@ BackupReaderS3::BackupReaderS3(
     , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
 {
+    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
 DataSourceDescription BackupReaderS3::getDataSourceDescription() const
@@ -128,6 +129,7 @@ BackupWriterS3::BackupWriterS3(
     , log(&Poco::Logger::get("BackupWriterS3"))
 {
     request_settings.updateFromSettingsIfEmpty(context_->getSettingsRef());
+    request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
 DataSourceDescription BackupWriterS3::getDataSourceDescription() const
