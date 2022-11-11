@@ -29,7 +29,6 @@ namespace ErrorCodes
 
 struct DecimalOpHerpers
 {
-//    constexpr const static UInt256 MAX_INT256 = UInt256(-1) >> 1;
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
         UInt16 const len1 = num1.size();
@@ -81,7 +80,7 @@ struct DecimalOpHerpers
 
         UInt16 idx = 0;
         Int256 temp = number[idx];
-        while (temp < divisor && max_index >= idx)
+        while (temp < divisor && max_index > idx)
         {
             temp = temp * 10 + number[++idx];
         }
@@ -89,10 +88,12 @@ struct DecimalOpHerpers
         if (unlikely(temp == 0))
             return {0};
 
-        while (max_index >= idx)
+        result.push_back(temp / divisor);
+
+        while (max_index > idx)
         {
-            result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[++idx];
+            result.push_back(temp / divisor);
         }
 
         return result;
