@@ -799,7 +799,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             }
             catch (const Exception & e)
             {
-                if (split_batch_on_failure && isSplittableErrorCode(e.code(), e.isRemoteException()))
+                if (split_batch_on_failure && file_indices.size() > 1 && isSplittableErrorCode(e.code(), e.isRemoteException()))
                 {
                     tryLogCurrentException(parent.log, "Trying to split batch due to");
                     sendSeparateFiles(*connection, timeouts);
