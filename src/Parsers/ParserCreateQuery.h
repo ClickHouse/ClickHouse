@@ -511,6 +511,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserCreateNamedCollectionQuery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CREATE NAMED COLLECTION"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** Query like this:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name

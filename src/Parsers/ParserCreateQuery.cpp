@@ -9,6 +9,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -1367,6 +1368,50 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 }
 
+bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_named_collection("NAMED COLLECTION");
+    ParserKeyword s_as("AS");
+
+    ParserIdentifier name_p;
+    ParserSetQuery set_p;
+
+    ASTPtr collection_name;
+    ASTPtr collection_def;
+    String cluster_str;
+
+    if (!s_create.ignore(pos, expected))
+        return false;
+
+    if (!s_named_collection.ignore(pos, expected))
+        return false;
+
+    if (!name_p.parse(pos, collection_name, expected))
+        return false;
+
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
+
+    if (!s_as.ignore(pos, expected))
+        return false;
+
+    if (!set_p.parse(pos, collection_def, expected))
+        return false;
+
+    auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
+
+    tryGetIdentifierNameInto(collection_name, query->collection_name);
+    query->collection_def = collection_def;
+
+    node = query;
+    return true;
+}
+
 bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
@@ -1478,13 +1523,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateDictionaryQuery dictionary_p;
     ParserCreateLiveViewQuery live_view_p;
     ParserCreateWindowViewQuery window_view_p;
+    ParserCreateNamedCollectionQuery named_collection_p;
 
     return table_p.parse(pos, node, expected)
         || database_p.parse(pos, node, expected)
         || view_p.parse(pos, node, expected)
         || dictionary_p.parse(pos, node, expected)
         || live_view_p.parse(pos, node, expected)
-        || window_view_p.parse(pos, node, expected);
+        || window_view_p.parse(pos, node, expected)
+        || named_collection_p.parse(pos, node, expected);
 }
 
 }
