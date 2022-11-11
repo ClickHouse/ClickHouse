@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
