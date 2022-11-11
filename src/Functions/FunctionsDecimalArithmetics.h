@@ -77,13 +77,19 @@ struct DecimalOpHerpers
     static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
     {
         std::vector<UInt8> result;
+        const auto max_index = number.size() - 1;
 
-        UInt8 idx = 0;
+        UInt16 idx = 0;
         Int256 temp = number[idx];
-        while (temp < divisor)
-            temp = temp * 10 + (number[++idx]);
+        while (temp < divisor && max_index >= idx)
+        {
+            temp = temp * 10 + number[++idx];
+        }
 
-        while (number.size() > idx)
+        if (unlikely(temp == 0))
+            return {0};
+
+        while (max_index >= idx)
         {
             result.push_back(temp / divisor);
             temp = (temp % divisor) * 10 + number[++idx];
@@ -142,7 +148,7 @@ struct DivideDecimalsImpl
 
         std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value * sign_b);
 
-        while (scale_a > + scale_b + result_scale)
+        while (scale_a > scale_b + result_scale)
         {
             --scale_a;
             divided.pop_back();
