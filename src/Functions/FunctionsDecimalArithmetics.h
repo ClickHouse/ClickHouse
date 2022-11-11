@@ -323,7 +323,7 @@ public:
             throw Exception("Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() +
                                     ". Should be constant Integer from range[0, 76]", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        UInt16 scale = arguments.size() == 3 ? checkAndGetColumnConst<ColumnUInt16>(arguments[2].column.get())->getValue<UInt16>() :
+        UInt16 scale = arguments.size() == 3 ? checkAndGetColumnConst<ColumnConst>(arguments[2].column.get())->getValue<UInt16>() :
                                              std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
 
         /**
@@ -332,11 +332,11 @@ public:
         As in simple division/multiplication for decimals, we scale the result up, but is is explicit here and no downscale is performed.
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
-        if (scale <= DecimalUtils::max_precision<Decimal256>)
-            return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
+        if (scale > DecimalUtils::max_precision<Decimal256>)
+            throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        throw Exception("Illegal value of third argument of function " + this->getName() + ": must be integer in range [0, 76]",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
