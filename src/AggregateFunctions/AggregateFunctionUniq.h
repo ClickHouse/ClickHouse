@@ -25,10 +25,10 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
-#include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
+#include <AggregateFunctions/UniquesHashSet.h>
 
 
 namespace DB
@@ -261,6 +261,17 @@ struct AggregateFunctionUniqThetaData
 namespace detail
 {
 
+template <typename T>
+struct IsUniqExactData : std::false_type
+{
+};
+
+template <typename T>
+struct IsUniqExactData<AggregateFunctionUniqExactData<T>> : std::true_type
+{
+};
+
+
 /** Hash function for uniq.
   */
 template <typename T> struct AggregateFunctionUniqTraits
@@ -284,15 +295,25 @@ template <typename T> struct AggregateFunctionUniqTraits
 /** The structure for the delegation work to add elements to the `uniq` aggregate functions.
   * Used for partial specialization to add strings.
   */
-template <typename T, typename Data>
+template <typename T, typename Data, bool is_variadic = false, bool is_exact = false, bool argument_is_tuple = false>
 struct Adder
 {
     template <HTKind ht_kind = HTKind::Unknown>
-    static void ALWAYS_INLINE add(Data & data, const IColumn & column, size_t row_num)
+    static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
+        if constexpr (is_variadic)
+        {
+            if constexpr (IsUniqExactData<Data>::value)
+                data.set.template insert<T, ht_kind>(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
+            else
+                data.set.insert(T{UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)});
+            return;
+        }
+
         if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>
             || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T>>)
         {
+            const auto & column = *columns[0];
             if constexpr (!std::is_same_v<T, String>)
             {
                 using ValueType = typename decltype(data.set)::value_type;
@@ -307,6 +328,7 @@ struct Adder
         }
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
         {
+            const auto & column = *columns[0];
             if constexpr (!std::is_same_v<T, String>)
             {
                 using Type = decltype(std::declval<const ColumnVector<T> &>().getData()[row_num]);
@@ -327,25 +349,26 @@ struct Adder
 #if USE_DATASKETCHES
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
         {
+            const auto & column = *columns[0];
             data.set.insertOriginal(column.getDataAt(row_num));
         }
 #endif
     }
 
-    static void add(Data & data, const IColumn & column, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    static void add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         HTKind ht_kind = HTKind::Unknown;
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
+        if constexpr (IsUniqExactData<Data>::value)
             ht_kind = data.set.isSingleLevel() ? HTKind::SingleLevel : HTKind::TwoLevel;
 
         if (ht_kind == HTKind::Unknown)
-            add<HTKind::Unknown>(data, column, row_begin, row_end, flags, null_map);
+            add<HTKind::Unknown>(data, columns, num_args, row_begin, row_end, flags, null_map);
         else if (ht_kind == HTKind::SingleLevel)
-            add<HTKind::SingleLevel>(data, column, row_begin, row_end, flags, null_map);
+            add<HTKind::SingleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
         else
-            add<HTKind::TwoLevel>(data, column, row_begin, row_end, flags, null_map);
+            add<HTKind::TwoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
 
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
+        if constexpr (IsUniqExactData<Data>::value)
         {
             if (data.set.isSingleLevel() && data.set.size() > 100'000)
                 data.set.convertToTwoLevel();
@@ -354,20 +377,20 @@ struct Adder
 
 private:
     template <HTKind ht_kind>
-    static void add(Data & data, const IColumn & column, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    static void add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         if (!flags)
         {
             if (!null_map)
             {
                 for (size_t row = row_begin; row < row_end; ++row)
-                    add<ht_kind>(data, column, row);
+                    add<ht_kind>(data, columns, num_args, row);
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row])
-                        add<ht_kind>(data, column, row);
+                        add<ht_kind>(data, columns, num_args, row);
             }
         }
         else
@@ -376,13 +399,13 @@ private:
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (flags[row])
-                        add<ht_kind>(data, column, row);
+                        add<ht_kind>(data, columns, num_args, row);
             }
             else
             {
                 for (size_t row = row_begin; row < row_end; ++row)
                     if (!null_map[row] && flags[row])
-                        add<ht_kind>(data, column, row);
+                        add<ht_kind>(data, columns, num_args, row);
             }
         }
     }
@@ -395,6 +418,9 @@ private:
 template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
+private:
+    static constexpr size_t num_args = 1;
+
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {})
@@ -413,7 +439,7 @@ public:
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        detail::Adder<T, Data>::add(this->data(place), *columns[0], row_num);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
     void addBatchSinglePlace(
@@ -424,7 +450,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data>::add(this->data(place), *columns[0], row_begin, row_end, flags, nullptr /* null_map */);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
     }
 
     void addManyDefaults(
@@ -433,7 +459,7 @@ public:
         size_t /*length*/,
         Arena * /*arena*/) const override
     {
-        detail::Adder<T, Data>::add(this->data(place), *columns[0], 0);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, 0);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -449,7 +475,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data>::add(this->data(place), *columns[0], row_begin, row_end, flags, null_map);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -459,7 +485,6 @@ public:
 
     bool isAbleToParallelizeMerge() const override
     {
-        /// Implemented only for uniqExact().
         return std::is_same_v<Data, AggregateFunctionUniqExactData<T>>;
     }
 
@@ -496,6 +521,9 @@ template <typename Data, bool is_exact, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>
 {
 private:
+    using T = typename Data::Set::value_type;
+
+    static constexpr size_t is_variadic = true;
     size_t num_args = 0;
 
 public:
@@ -519,13 +547,54 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(typename Data::Set::value_type(
-            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
+        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(this->data(place), columns, num_args, row_num);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
+        const override
+    {
+        const char8_t * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
+            this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        const char8_t * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
+            this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    bool isAbleToParallelizeMerge() const override
+    {
+        return detail::IsUniqExactData<Data>::value;
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
+    {
+        if constexpr (detail::IsUniqExactData<Data>::value)
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

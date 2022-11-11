@@ -25,7 +25,9 @@
 
     <query>SELECT uniqExact(number) from numbers_mt(1e7)</query>
     <query>SELECT uniqExact(number) from numbers_mt(5e7)</query>
-    <query>SELECT uniqExact(number) from numbers_mt(1e8)</query>
+
+    <query>SELECT uniqExact(number, number) from numbers_mt(5e6)</query>
+    <query>SELECT uniqExact(number, number) from numbers_mt(1e7)</query>
 
     <drop_query>drop table t_{uniq_keys}</drop_query>
 </test>

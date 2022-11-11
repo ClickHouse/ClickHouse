@@ -82,29 +82,49 @@ def test_backward_compatability_for_avg(start_cluster):
     node4.query("drop table tab")
 
 
-@pytest.mark.parametrize("uniq_keys", [1000, 1000000])
-def test_backward_compatability_for_uniq(start_cluster, uniq_keys):
+@pytest.mark.parametrize("uniq_keys", [1000, 500000])
+def test_backward_compatability_for_uniq_exact(start_cluster, uniq_keys):
     node1.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
     node2.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
     node3.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
     node4.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64) Engine = Memory")
 
-    node1.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(0, {uniq_keys})")
-    node2.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(1, {uniq_keys})")
-    node3.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(2, {uniq_keys})")
-    node4.query(f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(3, {uniq_keys})")
+    node1.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(0, {uniq_keys})"
+    )
+    node2.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(1, {uniq_keys})"
+    )
+    node3.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(2, {uniq_keys})"
+    )
+    node4.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number FROM numbers_mt(3, {uniq_keys})"
+    )
 
     assert (
-        node1.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+        node1.query(
+            f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
     )
     assert (
-        node2.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+        node2.query(
+            f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
     )
     assert (
-        node3.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+        node3.query(
+            f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
     )
     assert (
-        node4.query(f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})") == f"{uniq_keys + 3}\n"
+        node4.query(
+            f"SELECT uniqExact(x) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
     )
 
     # Also check with persisted aggregate function state
@@ -121,7 +141,7 @@ def test_backward_compatability_for_uniq(start_cluster, uniq_keys):
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version(fix_metadata=False)
+    node1.restart_with_latest_version()
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
@@ -129,3 +149,80 @@ def test_backward_compatability_for_uniq(start_cluster, uniq_keys):
     )
 
     node1.query(f"DROP TABLE state_{uniq_keys}")
+    node1.query(f"DROP TABLE tab_{uniq_keys}")
+    node2.query(f"DROP TABLE tab_{uniq_keys}")
+    node3.query(f"DROP TABLE tab_{uniq_keys}")
+    node4.query(f"DROP TABLE tab_{uniq_keys}")
+
+
+@pytest.mark.parametrize("uniq_keys", [1000, 500000])
+def test_backward_compatability_for_uniq_exact_variadic(start_cluster, uniq_keys):
+    node1.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64, y UInt64) Engine = Memory")
+    node2.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64, y UInt64) Engine = Memory")
+    node3.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64, y UInt64) Engine = Memory")
+    node4.query(f"CREATE TABLE tab_{uniq_keys} (x UInt64, y UInt64) Engine = Memory")
+
+    node1.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number, number/2 FROM numbers_mt(0, {uniq_keys})"
+    )
+    node2.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number, number/2 FROM numbers_mt(1, {uniq_keys})"
+    )
+    node3.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number, number/2 FROM numbers_mt(2, {uniq_keys})"
+    )
+    node4.query(
+        f"INSERT INTO tab_{uniq_keys} SELECT number, number/2 FROM numbers_mt(3, {uniq_keys})"
+    )
+
+    assert (
+        node1.query(
+            f"SELECT uniqExact(x, y) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node2.query(
+            f"SELECT uniqExact(x, y) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node3.query(
+            f"SELECT uniqExact(x, y) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
+    )
+    assert (
+        node4.query(
+            f"SELECT uniqExact(x, y) FROM remote('node{{1..4}}', default, tab_{uniq_keys})"
+        )
+        == f"{uniq_keys + 3}\n"
+    )
+
+    # Also check with persisted aggregate function state
+
+    node1.query(
+        f"CREATE TABLE state_{uniq_keys} (x AggregateFunction(uniqExact, UInt64, UInt64)) Engine = Log"
+    )
+    node1.query(
+        f"INSERT INTO state_{uniq_keys} SELECT uniqExactState(number, intDiv(number,2)) FROM numbers_mt({uniq_keys})"
+    )
+
+    assert (
+        node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
+        == f"{uniq_keys}\n"
+    )
+
+    node1.restart_with_latest_version()
+
+    assert (
+        node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
+        == f"{uniq_keys}\n"
+    )
+
+    node1.query(f"DROP TABLE state_{uniq_keys}")
+    node1.query(f"DROP TABLE tab_{uniq_keys}")
+    node2.query(f"DROP TABLE tab_{uniq_keys}")
+    node3.query(f"DROP TABLE tab_{uniq_keys}")
+    node4.query(f"DROP TABLE tab_{uniq_keys}")
