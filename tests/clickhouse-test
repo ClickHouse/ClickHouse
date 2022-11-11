@@ -456,6 +456,8 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
+        "insert_keeper_max_retries": lambda: random.randint(20, 20),
+        "insert_keeper_fault_injection_probability": lambda: random.uniform(0, 0.01),
     }
 
     @staticmethod
