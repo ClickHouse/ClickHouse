@@ -46,7 +46,10 @@ void WebObjectStorage::initialize(const String & uri_path) const
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(getContext()),
-            credentials);
+            credentials,
+            /* max_redirects= */ 0,
+            /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
+            getContext()->getReadSettings());
 
         String file_name;
         FileData file_data{};
