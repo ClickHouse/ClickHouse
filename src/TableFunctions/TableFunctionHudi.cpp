@@ -158,7 +158,7 @@ StoragePtr TableFunctionHudi::executeImpl(
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionHudi>();
+    factory.registerFunction<TableFunctionHudi>({.documentation = {}, .allow_readonly = true});
 }
 
 }
