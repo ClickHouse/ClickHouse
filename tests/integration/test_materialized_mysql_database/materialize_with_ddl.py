@@ -876,13 +876,13 @@ def alter_rename_table_with_materialized_mysql_database(
     )
 
     mysql_node.query(
-+       "ALTER TABLE test_database_rename_table.test_table_4 RENAME test_database_rename_table.test_table_5"
+        "ALTER TABLE test_database_rename_table.test_table_4 RENAME test_database_rename_table.test_table_5"
     )
     mysql_node.query(
-+       "ALTER TABLE test_database_rename_table.test_table_5 RENAME TO test_database_rename_table.test_table_6"
+        "ALTER TABLE test_database_rename_table.test_table_5 RENAME TO test_database_rename_table.test_table_6"
     )
     mysql_node.query(
-+       "ALTER TABLE test_database_rename_table.test_table_6 RENAME AS test_database_rename_table.test_table_7"
+        "ALTER TABLE test_database_rename_table.test_table_6 RENAME AS test_database_rename_table.test_table_7"
     )
 
     check_query(
