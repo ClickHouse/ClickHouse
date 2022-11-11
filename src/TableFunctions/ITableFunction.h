@@ -4,6 +4,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
+#include <Common/Documentation.h>
 
 #include <memory>
 #include <string>
@@ -78,6 +79,14 @@ private:
 
     virtual const char * getStorageTypeName() const = 0;
 };
+
+/// Properties of table function that are independent of argument types and parameters.
+struct TableFunctionProperties
+{
+    Documentation documentation;
+    bool allow_readonly = false;
+};
+
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 

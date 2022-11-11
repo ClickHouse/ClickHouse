@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/bit_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>

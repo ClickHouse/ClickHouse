@@ -224,11 +224,17 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
+    LOG_DEBUG(log, "HashJoin. Datatype: {}, kind: {}, strictness: {}", data->type, kind, strictness);
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
     if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
+        sample_block_with_columns_to_add = right_sample_block;
+    }
+    else if (table_join->getClauses().empty())
+    {
+        data->type = Type::EMPTY;
         sample_block_with_columns_to_add = right_sample_block;
     }
     else if (table_join->oneDisjunct())
@@ -303,8 +309,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     for (auto & maps : data->maps)
         dataMapInit(maps);
-
-    LOG_DEBUG(log, "Join type: {}, kind: {}, strictness: {}", data->type, kind, strictness);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -625,7 +629,7 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 
@@ -654,7 +658,9 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     /// Save non key columns
     for (auto & column : sample_block_with_columns_to_add)
     {
-        if (!saved_block_sample.findByName(column.name))
+        if (auto * col = saved_block_sample.findByName(column.name))
+            *col = column;
+        else
             saved_block_sample.insert(column);
     }
 }
@@ -1853,7 +1859,7 @@ private:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type)   ;
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <JoinStrictness STRICTNESS, typename Map>

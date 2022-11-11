@@ -49,7 +49,7 @@ struct ArrayCountImpl
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
                 {
-                    out_counts[i] = offsets[i] - pos;
+                    out_counts[i] = static_cast<UInt32>(offsets[i] - pos);
                     pos = offsets[i];
                 }
 
@@ -73,7 +73,7 @@ struct ArrayCountImpl
                 if (filter[pos])
                     ++count;
             }
-            out_counts[i] = count;
+            out_counts[i] = static_cast<UInt32>(count);
         }
 
         return out_column;

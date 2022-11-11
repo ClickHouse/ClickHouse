@@ -19,9 +19,9 @@ namespace ErrorCodes
 }
 
 /// A class that is used for locking a block number in a partition.
-/// It creates a secondary ephemeral node in `temp_path` and a main ephemeral node with `path_prefix`
-/// that references the secondary node. The reasons for this two-level scheme are historical (of course
-/// it would be simpler to allocate block numbers for all partitions in one ZK directory).
+/// Before 22.11 it used to create a secondary ephemeral node in `temp_path` with "abandonable_lock-" prefix
+/// and a main ephemeral node with `path_prefix` that references the secondary node. The reasons for this two-level scheme are historical.
+/// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
@@ -29,9 +29,14 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
 
 protected:
     EphemeralLockInZooKeeper() = delete;
-    EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_);
+    EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & path_);
 
 public:
+    /// Fake "secondary node" names for blocks with and without "deduplication_path"
+    static constexpr const char * LEGACY_LOCK_INSERT = "abandonable_lock-insert";
+    static constexpr const char * LEGACY_LOCK_OTHER = "abandonable_lock-other";
+    static constexpr const char * LEGACY_LOCK_PREFIX = "/temp/abandonable_lock-";
+
     EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {
         *this = std::move(rhs);
@@ -43,13 +48,12 @@ public:
         rhs.zookeeper = nullptr;
         path_prefix = std::move(rhs.path_prefix);
         path = std::move(rhs.path);
-        holder_path = std::move(rhs.holder_path);
         return *this;
     }
 
-    bool isCreated() const
+    bool isLocked() const
     {
-        return zookeeper && !holder_path.empty() && !path.empty();
+        return zookeeper;
     }
 
     String getPath() const
@@ -68,18 +72,19 @@ public:
     void unlock();
 
     /// Adds actions equivalent to `unlock()` to the list.
-    void getUnlockOps(Coordination::Requests & ops);
+    /// Returns index of the action that removes
+    void getUnlockOp(Coordination::Requests & ops);
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
     ///  because the nodes will be already deleted.
     void assumeUnlocked()
     {
-        holder_path.clear();
+        zookeeper = nullptr;
     }
 
     void checkCreated() const
     {
-        if (!isCreated())
+        if (!isLocked())
             throw Exception("EphemeralLock is not created", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -89,7 +94,6 @@ private:
     zkutil::ZooKeeper * zookeeper = nullptr;
     String path_prefix;
     String path;
-    String holder_path;
 };
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
@@ -124,7 +128,6 @@ public:
     struct LockInfo
     {
         String path;
-        String holder_path;
 
         String partition_id;
         UInt64 number = 0;
