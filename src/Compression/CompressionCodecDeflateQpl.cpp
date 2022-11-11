@@ -393,7 +393,7 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             return;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void CompressionCodecDeflateQpl::flushAsynchronousDecompressRequests()

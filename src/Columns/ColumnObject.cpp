@@ -671,6 +671,18 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
             callback(part);
 }
 
+void ColumnObject::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & entry : subcolumns)
+    {
+        for (auto & part : entry->data.data)
+        {
+            callback(part);
+            part->forEachSubcolumnRecursively(callback);
+        }
+    }
+}
+
 void ColumnObject::insert(const Field & field)
 {
     const auto & object = field.get<const Object &>();
@@ -720,8 +732,8 @@ void ColumnObject::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-
     auto & object = res.get<Object &>();
+
     for (const auto & entry : subcolumns)
     {
         auto it = object.try_emplace(entry->path.getPath()).first;
@@ -732,7 +744,6 @@ void ColumnObject::get(size_t n, Field & res) const
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
-    finalize();
 }
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -780,9 +791,8 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
 {
     if (!isFinalized())
     {
-        auto finalized = IColumn::mutate(getPtr());
+        auto finalized = cloneFinalized();
         auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
-        finalized_object.finalize();
         return finalized_object.applyForSubcolumns(std::forward<Func>(func));
     }
 

@@ -501,6 +501,15 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
         callback(column);
 }
 
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
+{
+    for (auto & column : columns)
+    {
+        callback(column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+}
+
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
@@ -559,6 +568,17 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
+}
+
+void ColumnTuple::finalize()
+{
+    for (auto & column : columns)
+        column->finalize();
+}
+
+bool ColumnTuple::isFinalized() const
+{
+    return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
 }

@@ -128,6 +128,7 @@ def parse_env_variables(
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
+    ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
     AMD64_SSE2_SUFFIX = "-amd64sse2"
@@ -140,6 +141,7 @@ def parse_env_variables(
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
@@ -178,6 +180,13 @@ def parse_env_variables(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
         )
         result.append("DEB_ARCH=arm64")
+    elif is_cross_arm_v80compat:
+        cc = compiler[: -len(ARM_V80COMPAT_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake"
+        )
+        cmake_flags.append("-DNO_ARMV81_OR_HIGHER=1")
+        result.append("DEB_ARCH=arm64")
     elif is_cross_freebsd:
         cc = compiler[: -len(FREEBSD_SUFFIX)]
         cmake_flags.append(
@@ -199,6 +208,7 @@ def parse_env_variables(
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if package_type == "deb":
+        # NOTE: This are the env for packages/build script
         result.append("MAKE_DEB=true")
         cmake_flags.append("-DENABLE_TESTS=0")
         cmake_flags.append("-DENABLE_UTILS=0")
@@ -248,6 +258,10 @@ def parse_env_variables(
         if clang_tidy:
             # 15G is not enough for tidy build
             cache_maxsize = "25G"
+
+            # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
+            # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
+            result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
         result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
 
     if distcc_hosts:
@@ -259,6 +273,7 @@ def parse_env_variables(
         result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if additional_pkgs:
+        # NOTE: This are the env for packages/build script
         result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
@@ -271,9 +286,7 @@ def parse_env_variables(
         cmake_flags.append("-DENABLE_TESTS=1")
 
     if shared_libraries:
-        cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
-        )
+        cmake_flags.append("-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1")
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The shared library
         # build is probably the least heavy disk-wise.
@@ -339,17 +352,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-15",  # For TSAN builds, see #39450
-            "clang-14",
-            "clang-14-darwin",
-            "clang-14-darwin-aarch64",
-            "clang-14-aarch64",
-            "clang-14-ppc64le",
-            "clang-14-amd64sse2",
-            "clang-14-freebsd",
+            "clang-15",
+            "clang-15-darwin",
+            "clang-15-darwin-aarch64",
+            "clang-15-aarch64",
+            "clang-15-aarch64-v80compat",
+            "clang-15-ppc64le",
+            "clang-15-amd64sse2",
+            "clang-15-freebsd",
             "gcc-11",
         ),
-        default="clang-14",
+        default="clang-15",
         help="a compiler to use",
     )
     parser.add_argument(

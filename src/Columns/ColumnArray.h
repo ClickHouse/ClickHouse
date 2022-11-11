@@ -157,6 +157,14 @@ public:
         callback(data);
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(offsets);
+        offsets->forEachSubcolumnRecursively(callback);
+        callback(data);
+        data->forEachSubcolumnRecursively(callback);
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
@@ -167,6 +175,9 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override;
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
+
+    void finalize() override { data->finalize(); }
+    bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
