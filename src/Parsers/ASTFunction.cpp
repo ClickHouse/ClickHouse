@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/findFunctionSecretArguments.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -629,6 +630,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
                 || name == "replaceRegexpAll");
 
+        auto secret_arguments = std::make_pair(static_cast<size_t>(-1), static_cast<size_t>(-1));
+        if (!settings.show_secrets)
+            secret_arguments = findFunctionSecretArguments(*this);
+
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
@@ -636,12 +641,21 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (arguments->children[i]->as<ASTSetQuery>())
                 settings.ostr << "SETTINGS ";
 
-            bool special_hilite = false;
-            if (i == 1 && special_hilite_regexp)
-                special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
+            if ((i == 1) && special_hilite_regexp
+                && highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-"))
+            {
+                continue;
+            }
 
-            if (!special_hilite)
-                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            if (!settings.show_secrets && (secret_arguments.first <= i) && (i < secret_arguments.second))
+            {
+                settings.ostr << "'[HIDDEN]'";
+                if (size - 1 < secret_arguments.second)
+                    break; /// All other arguments should also be hidden.
+                continue;
+            }
+
+            arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
         }
     }
 
@@ -651,6 +665,18 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     settings.ostr << (settings.hilite ? hilite_none : "");
 
     return finishFormatWithWindow(settings, state, frame);
+}
+
+bool ASTFunction::hasSecretParts() const
+{
+    if (arguments)
+    {
+        size_t num_arguments = arguments->children.size();
+        auto secret_arguments = findFunctionSecretArguments(*this);
+        if ((secret_arguments.first < num_arguments) && (secret_arguments.first < secret_arguments.second))
+            return true;
+    }
+    return childrenHaveSecretParts();
 }
 
 String getFunctionName(const IAST * ast)

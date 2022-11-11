@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
