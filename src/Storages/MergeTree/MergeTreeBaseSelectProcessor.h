@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/EventFD.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -57,6 +58,8 @@ public:
         const MergeTreeReadTaskColumns & task_columns,
         const Block & sample_block);
 
+    Status prepare() override;
+
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
     struct BlockAndRowCount
@@ -65,7 +68,8 @@ protected:
         size_t row_count = 0;
     };
 
-    Chunk generate() final;
+    std::optional<Chunk> tryGenerate() final;
+    std::optional<Chunk> read();
 
     /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
@@ -155,6 +159,17 @@ protected:
 
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
+
+    struct AsyncReadingState
+    {
+        std::optional<Chunk> chunk;
+        std::exception_ptr exception;
+        EventFD event;
+        std::atomic_bool is_done = false;
+    };
+
+    std::shared_ptr<AsyncReadingState> async_reading_state;
+    bool is_async_reading_state = false;
 
     enum class Status
     {

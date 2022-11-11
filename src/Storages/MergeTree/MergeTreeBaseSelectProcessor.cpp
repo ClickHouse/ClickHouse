@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <IO/IOThreadPool.h>
 
 
 #include <city.h>
@@ -197,7 +198,63 @@ bool MergeTreeBaseSelectProcessor::getDelayedTasks()
 }
 
 
-Chunk MergeTreeBaseSelectProcessor::generate()
+ISource::Status MergeTreeBaseSelectProcessor::prepare()
+{
+    if (!reader_settings.use_asynchronous_read_from_pool)
+        return ISource::prepare();
+
+
+    /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
+    if (isCancelled())
+    {
+        getPort().finish();
+        return ISource::Status::Finished;
+    }
+
+    if (async_reading_state && !async_reading_state->is_done)
+        return ISource::Status::Async;
+
+    return ISource::prepare();
+}
+
+
+std::optional<Chunk> MergeTreeBaseSelectProcessor::tryGenerate()
+{
+    if (!reader_settings.use_asynchronous_read_from_pool)
+        return read();
+
+    if (async_reading_state && async_reading_state->is_done)
+    {
+        async_reading_state->event.read();
+        async_reading_state->is_done = false;
+        return std::move(async_reading_state->chunk);
+    }
+
+    if (!async_reading_state)
+        async_reading_state = std::make_shared<AsyncReadingState>();
+
+    auto job = [this]()
+    {
+        try
+        {
+            async_reading_state->chunk = read();
+        }
+        catch (...)
+        {
+            async_reading_state->exception = std::current_exception();
+        }
+
+        async_reading_state->is_done = true;
+        async_reading_state->event.write();
+    };
+
+    IOThreadPool::get().scheduleOrThrowOnError(std::move(job));
+
+    return Chunk();
+}
+
+
+std::optional<Chunk> MergeTreeBaseSelectProcessor::read()
 {
     while (!isCancelled())
     {
