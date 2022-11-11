@@ -481,6 +481,7 @@ else
                -e "The set of parts restored in place of" \
                -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
                -e "Code: 269. DB::Exception: Destination table is myself" \
+               -e "Coordination::Exception: Connection loss" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
