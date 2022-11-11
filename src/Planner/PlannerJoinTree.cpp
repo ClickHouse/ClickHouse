@@ -185,17 +185,18 @@ QueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     }
 
     auto rename_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
 
     for (auto & output_node : rename_actions_dag->getOutputs())
     {
         const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
-
         if (!column_identifier)
             continue;
 
-        const auto * node_to_rename = output_node;
-        output_node = &rename_actions_dag->addAlias(*node_to_rename, *column_identifier);
+        updated_actions_dag_outputs.push_back(&rename_actions_dag->addAlias(*output_node, *column_identifier));
     }
+
+    rename_actions_dag->getOutputs() = std::move(updated_actions_dag_outputs);
 
     auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), rename_actions_dag);
     rename_step->setStepDescription("Change column names to column identifiers");
@@ -528,17 +529,13 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             for (const auto & key_name : key_names)
                 sort_description.emplace_back(key_name);
 
+            SortingStep::Settings sort_settings(*query_context);
+
             auto sorting_step = std::make_unique<SortingStep>(
                 plan.getCurrentDataStream(),
                 std::move(sort_description),
-                settings.max_block_size,
                 0 /*limit*/,
-                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                settings.max_bytes_before_remerge_sort,
-                settings.remerge_sort_lowered_memory_bytes_ratio,
-                settings.max_bytes_before_external_sort,
-                query_context->getTempDataOnDisk(),
-                settings.min_free_disk_space_for_temporary_data,
+                sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
@@ -639,17 +636,17 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(plan_output_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
 
-    NameSet array_join_columns;
+    NameSet array_join_column_names;
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
-        auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
-        const auto & array_join_column_name = array_join_expression_column.getColumnName();
-        array_join_columns.insert(array_join_column_name);
+        const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
+        array_join_column_names.insert(array_join_column_identifier);
 
+        auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
         auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
-            const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_name);
+            const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_identifier);
             array_join_action_dag->getOutputs().push_back(array_join_column_node);
         }
     }
@@ -659,7 +656,7 @@ QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     plan.addStep(std::move(array_join_actions));
 
-    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_columns, array_join_node.isLeft(), planner_context->getQueryContext());
+    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
     auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));

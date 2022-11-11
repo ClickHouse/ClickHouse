@@ -1019,12 +1019,13 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (!part_opt)
             return;
 
-        LOG_TRACE(log, "Loading part {} from disk {}", part_name, part_disk_ptr->getName());
         const auto & part_info = *part_opt;
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
         auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, part_name);
         auto part = createPart(part_name, part_info, data_part_storage);
         bool broken = false;
+
+        LOG_TRACE(log, "Loading part {} ({}) from disk {}", part_name, part->getType().toString(), part_disk_ptr->getName());
 
         String part_path = fs::path(relative_data_path) / part_name;
         String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -1130,8 +1131,11 @@ void MergeTreeData::loadDataPartsFromDisk(
     {
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            pool.scheduleOrThrowOnError([&, thread]
+            pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+
                 while (true)
                 {
                     std::pair<String, DiskPtr> thread_part;
@@ -2199,6 +2203,7 @@ void MergeTreeData::dropAllData()
 
         LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
         data_parts_indexes.clear();
+        all_data_dropped = true;
     }
     catch (...)
     {
@@ -3142,7 +3147,7 @@ void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn,
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     DataPartsVector parts_to_remove;
@@ -3220,15 +3225,20 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSetAn
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
+    /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
+    PartsToRemoveFromZooKeeper parts_to_remove_from_zookeeper;
+    for (auto & part : parts_to_remove)
+        parts_to_remove_from_zookeeper.emplace_back(std::move(part));
+
     for (auto & part : inactive_parts_to_remove_immediately)
     {
         if (!drop_range.contains(part->info))
             continue;
         part->remove_time.store(0, std::memory_order_relaxed);
-        parts_to_remove.push_back(std::move(part));
+        parts_to_remove_from_zookeeper.emplace_back(std::move(part), /* was_active */ false);
     }
 
-    return parts_to_remove;
+    return parts_to_remove_from_zookeeper;
 }
 
 void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock)
@@ -5176,9 +5186,27 @@ void MergeTreeData::Transaction::rollback()
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
-        data.removePartsFromWorkingSet(txn,
-            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
-            /* clear_without_timeout = */ true);
+        auto lock = data.lockParts();
+
+        if (data.data_parts_indexes.empty())
+        {
+            /// Table was dropped concurrently and all parts (including PreActive parts) were cleared, so there's nothing to rollback
+            if (!data.all_data_dropped)
+            {
+                Strings part_names;
+                for (const auto & part : precommitted_parts)
+                    part_names.emplace_back(part->name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "There are some PreActive parts ({}) to rollback, "
+                                "but data parts set is empty and table {} was not dropped. It's a bug",
+                                fmt::join(part_names, ", "), data.getStorageID().getNameForLogs());
+            }
+        }
+        else
+        {
+            data.removePartsFromWorkingSet(txn,
+                DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
+                /* clear_without_timeout = */ true, &lock);
+        }
     }
 
     clear();
@@ -5402,6 +5430,7 @@ static void selectBestProjection(
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
+        candidate.prewhere_info,
         candidate.required_columns,
         storage_snapshot->metadata,
         candidate.desc->metadata,
@@ -5425,6 +5454,7 @@ static void selectBestProjection(
     {
         auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
+            query_info.prewhere_info,
             required_columns,
             storage_snapshot->metadata,
             storage_snapshot->metadata,
@@ -5759,7 +5789,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     const auto & analysis_result = select.getAnalysisResult();
 
     query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
-    query_info.prewhere_info = analysis_result.prewhere_info;
 
     const auto & before_where = analysis_result.before_where;
     const auto & where_column_name = analysis_result.where_column_name;
@@ -6036,6 +6065,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         {
             auto normal_result_ptr = reader.estimateNumMarksToRead(
                 normal_parts,
+                query_info.prewhere_info,
                 analysis_result.required_columns,
                 metadata_snapshot,
                 metadata_snapshot,
@@ -6068,6 +6098,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     {
         query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
             parts,
+            query_info.prewhere_info,
             analysis_result.required_columns,
             metadata_snapshot,
             metadata_snapshot,
@@ -6149,8 +6180,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
     }
 
-    /// Just in case, reset prewhere info calculated from projection.
-    query_info.prewhere_info.reset();
     return *selected_candidate;
 }
 
@@ -7100,18 +7129,18 @@ ReservationPtr MergeTreeData::balancedReservation(
     return reserved_space;
 }
 
-ColumnsDescription MergeTreeData::getObjectColumns(
+ColumnsDescription MergeTreeData::getConcreteObjectColumns(
     const DataPartsVector & parts, const ColumnsDescription & storage_columns)
 {
-    return DB::getObjectColumns(
+    return DB::getConcreteObjectColumns(
         parts.begin(), parts.end(),
         storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 }
 
-ColumnsDescription MergeTreeData::getObjectColumns(
+ColumnsDescription MergeTreeData::getConcreteObjectColumns(
     boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns)
 {
-    return DB::getObjectColumns(
+    return DB::getConcreteObjectColumns(
         range.begin(), range.end(),
         storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 }
@@ -7120,21 +7149,21 @@ void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lo
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasObjectColumns(columns))
+    if (!hasDynamicSubcolumns(columns))
         return;
 
     auto range = getDataPartsStateRange(DataPartState::Active);
-    object_columns = getObjectColumns(range, columns);
+    object_columns = getConcreteObjectColumns(range, columns);
 }
 
 void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPartsLock & /*lock*/)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasObjectColumns(columns))
+    if (!hasDynamicSubcolumns(columns))
         return;
 
-    DB::updateObjectColumns(object_columns, part->getColumns());
+    DB::updateObjectColumns(object_columns, columns, part->getColumns());
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const

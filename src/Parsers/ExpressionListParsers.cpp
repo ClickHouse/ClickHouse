@@ -682,7 +682,7 @@ public:
 
     bool parseLambda()
     {
-        // 0. If empty - create function tuple with 0 args
+        // 1. If empty - create function tuple with 0 args
         if (isCurrentElementEmpty())
         {
             auto function = makeASTFunction("tuple");
@@ -693,16 +693,16 @@ public:
         if (operands.size() != 1 || !operators.empty() || !mergeElement())
             return false;
 
-        /// 1. If there is already tuple do nothing
+        /// 2. If there is already tuple do nothing
         if (tryGetFunctionName(elements.back()) == "tuple")
         {
             pushOperand(elements.back());
             elements.pop_back();
         }
-        /// 2. Put all elements in a single tuple
+        /// 3. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", elements);
+            auto function = makeASTFunction("tuple", std::move(elements));
             elements.clear();
             pushOperand(function);
         }
@@ -1052,11 +1052,19 @@ public:
                 if (!mergeElement())
                     return false;
 
-            // Special case for (('a', 'b')) -> tuple(('a', 'b'))
             if (!is_tuple && elements.size() == 1)
+            {
+                // Special case for (('a', 'b')) = tuple(('a', 'b'))
                 if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
                         is_tuple = true;
+
+                // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
+                auto test_pos = pos;
+                auto test_expected = expected;
+                if (parseOperator(test_pos, "->", test_expected))
+                    is_tuple = true;
+            }
 
             finished = true;
         }
@@ -1197,6 +1205,9 @@ public:
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 if (!mergeElement())
+                    return false;
+
+                if (elements.size() != 2)
                     return false;
 
                 elements = {makeASTFunction("CAST", elements[0], elements[1])};
@@ -1408,7 +1419,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (state == 2)
+        if (state == 2 && elements.size() == 2)
             std::swap(elements[1], elements[0]);
 
         node = makeASTFunction("position", std::move(elements));
@@ -1733,49 +1744,54 @@ public:
 
         if (state == 0)
         {
+            state = 1;
+
             auto begin = pos;
             auto init_expected = expected;
             ASTPtr string_literal;
+            String literal;
+
             //// A String literal followed INTERVAL keyword,
             /// the literal can be a part of an expression or
             /// include Number and INTERVAL TYPE at the same time
-            if (ParserStringLiteral{}.parse(pos, string_literal, expected))
+            if (ParserStringLiteral{}.parse(pos, string_literal, expected)
+                && string_literal->as<ASTLiteral &>().value.tryGet(literal))
             {
-                String literal;
-                if (string_literal->as<ASTLiteral &>().value.tryGet(literal))
+                Tokens tokens(literal.data(), literal.data() + literal.size());
+                IParser::Pos token_pos(tokens, 0);
+                Expected token_expected;
+                ASTPtr expr;
+
+                if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                    return false;
+
+                /// case: INTERVAL '1' HOUR
+                /// back to begin
+                if (!token_pos.isValid())
                 {
-                    Tokens tokens(literal.data(), literal.data() + literal.size());
-                    IParser::Pos token_pos(tokens, 0);
-                    Expected token_expected;
-                    ASTPtr expr;
-
-                    if (!ParserNumber{}.parse(token_pos, expr, token_expected))
-                    {
-                        return false;
-                    }
-                    else
-                    {
-                        /// case: INTERVAL '1' HOUR
-                        /// back to begin
-                        if (!token_pos.isValid())
-                        {
-                            pos = begin;
-                            expected = init_expected;
-                        }
-                        else
-                        {
-                            /// case: INTERVAL '1 HOUR'
-                            if (!parseIntervalKind(token_pos, token_expected, interval_kind))
-                                return false;
-
-                            elements = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
-                            finished = true;
-                            return true;
-                        }
-                    }
+                    pos = begin;
+                    expected = init_expected;
+                    return true;
                 }
+
+                /// case: INTERVAL '1 HOUR'
+                if (!parseIntervalKind(token_pos, token_expected, interval_kind))
+                    return false;
+
+                pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
+
+                /// case: INTERVAL '1 HOUR 1 SECOND ...'
+                while (token_pos.isValid())
+                {
+                    if (!ParserNumber{}.parse(token_pos, expr, token_expected) ||
+                        !parseIntervalKind(token_pos, token_expected, interval_kind))
+                        return false;
+
+                    pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
+                }
+
+                finished = true;
             }
-            state = 1;
             return true;
         }
 
@@ -1790,6 +1806,17 @@ public:
                 finished = true;
             }
         }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (elements.size() == 1)
+            node = elements[0];
+        else
+            node = makeASTFunction("tuple", std::move(elements));
 
         return true;
     }
