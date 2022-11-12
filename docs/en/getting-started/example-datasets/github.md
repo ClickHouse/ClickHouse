@@ -1821,7 +1821,7 @@ Note we limit to users with more than 20 changes to focus on regular committers 
 ```sql
 SELECT
     author,
-    countIf((file_extension NOT IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
+    countIf((file_extension IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
 FROM git.file_changes
@@ -1831,26 +1831,26 @@ ORDER BY code DESC
 LIMIT 20
 
 ┌─author───────────────┬─test─┬──code─┬─────────ratio_code─┐
-│ Alexey Milovidov     │ 7346 │ 41799 │ 0.8505239597110591 │
-│ Nikolai Kochetov     │ 1106 │ 13361 │ 0.9235501486140872 │
-│ alesapin             │ 1981 │  8796 │ 0.8161826111162661 │
-│ kssenii              │  660 │  6769 │ 0.9111589715977925 │
-│ Maksim Kita          │ 1148 │  5862 │ 0.8362339514978602 │
-│ Alexander Tokmakov   │ 1135 │  5727 │ 0.8345963276012824 │
-│ Vitaly Baranov       │ 1283 │  5521 │ 0.8114344503233392 │
-│ Ivan Lezhankin       │  726 │  4698 │ 0.8661504424778761 │
-│ Anton Popov          │  831 │  4346 │ 0.8394823256712381 │
-│ Ivan                 │ 4257 │  4269 │ 0.5007037297677692 │
-│ Azat Khuzhin         │ 1756 │  3697 │ 0.6779754263708051 │
-│ Amos Bird            │  624 │  2901 │ 0.8229787234042554 │
-│ proller              │ 1226 │  2377 │ 0.6597280044407439 │
-│ chertus              │  696 │  2359 │  0.772176759410802 │
-│ alexey-milovidov     │  254 │  2321 │ 0.9013592233009708 │
-│ Alexey Arno          │  207 │  2310 │ 0.9177592371871275 │
-│ Vitaliy Lyudvichenko │  294 │  2283 │ 0.8859138533178114 │
-│ Robert Schulze       │  251 │  2196 │ 0.8974254188802615 │
-│ CurtizJ              │  705 │  2158 │ 0.7537548026545582 │
-│ Alexander Kuzmenkov  │ 1094 │  2092 │ 0.6566227244193346 │
+│ Alexey Milovidov     │ 4208 │ 41799 │ 0.9085356576173191 │
+│ Nikolai Kochetov     │  446 │ 13361 │ 0.9676975447236909 │
+│ alesapin             │ 1893 │  8796 │ 0.8229020488352512 │
+│ kssenii              │  649 │  6769 │ 0.9125101105419251 │
+│ Maksim Kita          │  272 │  5862 │ 0.9556569938050212 │
+│ Alexander Tokmakov   │  949 │  5727 │ 0.8578490113840623 │
+│ Vitaly Baranov       │  988 │  5521 │  0.848210170533108 │
+│ Ivan Lezhankin       │  270 │  4698 │ 0.9456521739130435 │
+│ Anton Popov          │  264 │  4346 │ 0.9427331887201735 │
+│ Ivan                 │  862 │  4269 │ 0.8320015591502631 │
+│ Azat Khuzhin         │  957 │  3697 │ 0.7943704340352385 │
+│ Amos Bird            │  121 │  2901 │ 0.9599602911978822 │
+│ proller              │  549 │  2377 │ 0.8123718386876282 │
+│ chertus              │   17 │  2359 │ 0.9928451178451179 │
+│ alexey-milovidov     │  167 │  2321 │ 0.9328778135048231 │
+│ Alexey Arno          │   67 │  2310 │ 0.9718132099284813 │
+│ Vitaliy Lyudvichenko │  247 │  2283 │ 0.9023715415019763 │
+│ Robert Schulze       │  111 │  2196 │  0.951885565669701 │
+│ CurtizJ              │  144 │  2158 │ 0.9374456993918332 │
+│ Alexander Kuzmenkov  │  134 │  2092 │ 0.9398023360287511 │
 └──────────────────────┴──────┴───────┴────────────────────┘
 
 20 rows in set. Elapsed: 0.034 sec. Processed 266.05 thousand rows, 4.65 MB (7.93 million rows/s., 138.76 MB/s.)
