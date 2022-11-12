@@ -80,7 +80,7 @@ public:
         const IndexDescription & index,
         const SelectQueryInfo & query,
         ContextPtr context,
-        const String& metric_name);
+        const String& distance_name);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -95,7 +95,7 @@ private:
     std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
 
     ApproximateNearestNeighbour::ANNCondition condition;
-    const String metric_name;
+    const String distance_name;
 };
 
 
@@ -103,10 +103,10 @@ class MergeTreeIndexAnnoy : public IMergeTreeIndex
 {
 public:
 
-    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& metric_name_)
+    MergeTreeIndexAnnoy(const IndexDescription & index_, uint64_t number_of_trees_, const String& distance_name_)
         : IMergeTreeIndex(index_)
         , number_of_trees(number_of_trees_)
-        , metric_name(metric_name_)
+        , distance_name(distance_name_)
     {}
 
     ~MergeTreeIndexAnnoy() override = default;
@@ -121,7 +121,7 @@ public:
 
 private:
     const uint64_t number_of_trees;
-    const String metric_name;
+    const String distance_name;
 };
 
 

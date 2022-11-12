@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Distance>
@@ -200,8 +201,8 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
     const IndexDescription & /*index*/,
     const SelectQueryInfo & query,
     ContextPtr context,
-    const String& metric_name_)
-    : condition(query, context), metric_name(metric_name_)
+    const String& distance_name_)
+    : condition(query, context), distance_name(distance_name_)
 {}
 
 
@@ -212,22 +213,22 @@ bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 {
-    return condition.alwaysUnknownOrTrue(metric_name);
+    return condition.alwaysUnknownOrTrue(distance_name);
 }
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    if (metric_name == "L2Distance")
+    if (distance_name == "L2Distance")
     {
         return getUsefulRangesImpl<::Annoy::Euclidean>(idx_granule);
     }
-    else if (metric_name == "cosineDistance")
+    else if (distance_name == "cosineDistance")
     {
         return getUsefulRangesImpl<::Annoy::Angular>(idx_granule);
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong metric type {}", metric_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
     }
 }
 
@@ -294,52 +295,52 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
-    if (metric_name == "L2Distance")
+    if (distance_name == "L2Distance")
     {
         return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block);
     }
-    if (metric_name == "cosineDistance")
+    if (distance_name == "cosineDistance")
     {
         return std::make_shared<MergeTreeIndexGranuleAnnoy<::Annoy::Angular> >(index.name, index.sample_block);
     }
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Wrong metric name {}", metric_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
-    if (metric_name == "L2Distance")
+    if (distance_name == "L2Distance")
     {
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Euclidean> >(index.name, index.sample_block, number_of_trees);
     }
-    if (metric_name == "cosineDistance")
+    if (distance_name == "cosineDistance")
     {
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<::Annoy::Angular> >(index.name, index.sample_block, number_of_trees);
     }
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Wrong metric name {}", metric_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown distance name. Must be 'L2Distance' or 'cosineDistance'. Got {}", distance_name);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context, metric_name);
+    return std::make_shared<MergeTreeIndexConditionAnnoy>(index, query, context, distance_name);
 };
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
     uint64_t param = 100;
-    String metric_name = "L2Distance";
+    String distance_name = "L2Distance";
     if (!index.arguments.empty() && !index.arguments[0].tryGet<uint64_t>(param))
     {
-        if (!index.arguments[0].tryGet<String>(metric_name))
+        if (!index.arguments[0].tryGet<String>(distance_name))
         {
             throw Exception("Can't parse first argument", ErrorCodes::INCORRECT_DATA);
         }
     }
-    if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(metric_name))
+    if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(distance_name))
     {
         throw Exception("Can't parse second argument", ErrorCodes::INCORRECT_DATA);
     }
-    return std::make_shared<MergeTreeIndexAnnoy>(index, param, metric_name);
+    return std::make_shared<MergeTreeIndexAnnoy>(index, param, distance_name);
 }
 
 static void assertIndexColumnsType(const Block & header)
@@ -380,7 +381,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 2)
     {
-        throw Exception("Annoy index must no more than two arguments.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Annoy index must not have more than two paramters", ErrorCodes::INCORRECT_QUERY);
     }
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
