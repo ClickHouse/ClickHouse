@@ -685,7 +685,16 @@ public:
     static constexpr bool DateTime64Supported = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_)
+    {
+        /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
+        /// Enforce that either both of them are changed or none are
+        constexpr bool declares_destroy_and_hasTrivialDestructor =
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
+        static_assert(declares_destroy_and_hasTrivialDestructor,
+            "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
+    }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {

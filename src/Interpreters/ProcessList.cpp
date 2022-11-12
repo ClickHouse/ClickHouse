@@ -262,17 +262,17 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         user_process_list.user_memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
 
+        if (!total_network_throttler && settings.max_network_bandwidth_for_all_users)
+        {
+            total_network_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_all_users);
+        }
+
         if (!user_process_list.user_throttler)
         {
             if (settings.max_network_bandwidth_for_user)
                 user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
             else if (settings.max_network_bandwidth_for_all_users)
                 user_process_list.user_throttler = total_network_throttler;
-        }
-
-        if (!total_network_throttler && settings.max_network_bandwidth_for_all_users)
-        {
-            total_network_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_all_users);
         }
     }
 
