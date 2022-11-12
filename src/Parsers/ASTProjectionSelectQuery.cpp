@@ -119,64 +119,6 @@ ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
     return children[positions[expr]];
 }
 
-namespace
-{
-
-ASTPtr wrapAsOrderByElement(const ASTPtr & expr)
-{
-    auto elem = std::make_shared<ASTOrderByElement>();
-
-    elem->direction = 1; /// Currently it cannot be specified in projection definition so it is ASC default
-    elem->nulls_direction = elem->direction;
-    elem->nulls_direction_was_explicitly_specified = false;
-    elem->with_fill = false;
-    elem->children.push_back(expr);
-
-    return elem;
-}
-
-/// Currently the ORDER BY clause in projection definition is parsed differently from ORDER BY of a standalone SELECT query.
-/// This function converts this simplified AST into AST compatible with SELECT query.
-/// If ORDER BY clause has single element then simple_order_by represents this element,
-/// otherwise simple_order_by is a function "tuple" of all elements.
-ASTPtr cloneToOrderByASTForSelect(const ASTPtr & simple_order_by)
-{
-    ASTPtr expression_list = std::make_shared<ASTExpressionList>();
-    if (simple_order_by->children.empty())
-    {
-        expression_list->children.emplace_back(wrapAsOrderByElement(simple_order_by->clone()));
-    }
-    else
-    {
-        auto * func = simple_order_by->as<ASTFunction>();
-        if (!func || func->name != "tuple")
-        {
-            expression_list->children.emplace_back(wrapAsOrderByElement(func->clone()));
-        }
-        else
-        {
-            if (func->children.size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected structure of ORDER BY clause in projection definition {}",
-                    func->dumpTree(0));
-
-            auto * params = func->children[0]->as<ASTExpressionList>();
-            if (!params)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected structure of ORDER BY clause in projection definition {}; Expression list expected",
-                    func->dumpTree(0));
-
-            for (auto & child : params->children)
-            {
-                expression_list->children.emplace_back(wrapAsOrderByElement(child->clone()));
-            }
-        }
-    }
-    return expression_list;
-}
-
-}
-
 ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
@@ -184,11 +126,22 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     if (with())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
     if (select())
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select()->clone());
+    {
+        ASTPtr select_list = select()->clone();
+        if (orderBy())
+        {
+            /// Add ORDER BY list to SELECT for simplicity. It is Ok because we only uses this to find all required columns.
+            auto * expressions = select_list->as<ASTExpressionList>();
+            if (!expressions)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected structure of SELECT clause in projection definition {}; Expression list expected",
+                    select_list->dumpTree(0));
+            expressions->children.emplace_back(orderBy()->clone());
+        }
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
-    if (orderBy())
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, cloneToOrderByASTForSelect(orderBy()));
     return node;
 }
 
