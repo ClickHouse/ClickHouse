@@ -2637,7 +2637,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
 {
     if (data_variants.empty())
-        throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception("Empty data passed to Aggregator::prepareVariantsToMerge.", ErrorCodes::EMPTY_DATA_PASSED);
 
     LOG_TRACE(log, "Merging aggregated data");
 
