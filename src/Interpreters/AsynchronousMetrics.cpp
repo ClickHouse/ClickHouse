@@ -1139,7 +1139,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
     catch (...)
     {
-        LOG_DEBUG(log, getCurrentExceptionMessage(false));
+        LOG_DEBUG(log, "Cannot read the statistics from block devices: {}", getCurrentExceptionMessage(false));
 
         /// Try to reopen block devices in case of error
         /// (i.e. ENOENT or ENODEV means that some disk had been replaced, and it may appear with a new name)
