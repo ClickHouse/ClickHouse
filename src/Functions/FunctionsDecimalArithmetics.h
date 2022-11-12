@@ -36,7 +36,7 @@ struct DecimalOpHerpers
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        std::vector<UInt8> result(76, 0);
+        std::vector<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
         UInt16 i_n2;
 
