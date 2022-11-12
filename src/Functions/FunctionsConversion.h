@@ -2828,9 +2828,9 @@ private:
         };
     }
 
-#define GENERATE_INTERVAL_CASE(INTEVAL_KIND) \
-            case IntervalKind::INTEVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTEVAL_KIND, PositiveMonotonicity>::create(), from_type);
+#define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
+            case IntervalKind::INTERVAL_KIND: \
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
 
     static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
     {
