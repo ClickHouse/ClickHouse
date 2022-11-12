@@ -243,7 +243,8 @@ struct Adder
 #endif
     }
 
-    static void add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    static void ALWAYS_INLINE
+    add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         bool use_single_level_hash_table = true;
         if constexpr (IsUniqExactData<Data>::value)
@@ -264,7 +265,7 @@ struct Adder
 
 private:
     template <bool use_single_level_hash_table>
-    static void
+    static void ALWAYS_INLINE
     add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         if (!flags)
@@ -330,7 +331,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    void addBatchSinglePlace(
+    void ALWAYS_INLINE addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {
