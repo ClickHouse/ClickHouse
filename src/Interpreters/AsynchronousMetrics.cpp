@@ -24,8 +24,8 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <Databases/IDatabase.h>
+#include <base/errnoToString.h>
 #include <chrono>
-
 
 #include "config.h"
 
@@ -123,9 +123,9 @@ void AsynchronousMetrics::openSensors()
         {
             LOG_WARNING(
                 &Poco::Logger::get("AsynchronousMetrics"),
-                "Thermal monitor '{}' exists but could not be read, error {}.",
+                "Thermal monitor '{}' exists but could not be read: {}.",
                 thermal_device_index,
-                e.getErrno());
+                errnoToString(e.getErrno()));
             continue;
         }
 
@@ -252,10 +252,10 @@ void AsynchronousMetrics::openSensorsChips()
             {
                 LOG_WARNING(
                     &Poco::Logger::get("AsynchronousMetrics"),
-                    "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.",
+                    "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
                     sensor_name,
-                    e.getErrno());
+                    errnoToString(e.getErrno()));
                 continue;
             }
 
@@ -1083,7 +1083,17 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
             BlockDeviceStatValues current_values{};
             BlockDeviceStatValues & prev_values = block_device_stats[name];
-            current_values.read(*device);
+
+            try
+            {
+                current_values.read(*device);
+            }
+            catch (const ErrnoException & e)
+            {
+                LOG_DEBUG(log, "Cannot read statistics about the block device '{}': {}.",
+                    name, errnoToString(e.getErrno()));
+                continue;
+            }
 
             BlockDeviceStatValues delta_values = current_values - prev_values;
             prev_values = current_values;
@@ -1129,10 +1139,10 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, getCurrentExceptionMessage(false));
 
         /// Try to reopen block devices in case of error
-        /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
+        /// (i.e. ENOENT or ENODEV means that some disk had been replaced, and it may appear with a new name)
         try
         {
             openBlockDevices();
@@ -1271,7 +1281,9 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 }
                 catch (const ErrnoException & e)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"), "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.", hwmon_name, sensor_name, e.getErrno());
+                    LOG_DEBUG(log, "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
+                        hwmon_name, sensor_name, errnoToString(e.getErrno()));
+                    continue;
                 }
 
                 if (sensor_name.empty())
