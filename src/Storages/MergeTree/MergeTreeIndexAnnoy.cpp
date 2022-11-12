@@ -381,7 +381,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 2)
     {
-        throw Exception("Annoy index must not have more than two paramters", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Annoy index must not have more than two parameters", ErrorCodes::INCORRECT_QUERY);
     }
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
