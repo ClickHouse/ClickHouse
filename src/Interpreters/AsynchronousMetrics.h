@@ -18,16 +18,23 @@
 
 namespace Poco
 {
-class Logger;
+    class Logger;
 }
 
 namespace DB
 {
 
-class ProtocolServerAdapter;
 class ReadBuffer;
 
-using AsynchronousMetricValue = double;
+struct AsynchronousMetricValue
+{
+    double value;
+    const char * documentation;
+
+    AsynchronousMetricValue(double value_, const char * documentation_) : value(value_), documentation(documentation_) {}
+    AsynchronousMetricValue(size_t value_, const char * documentation_) : value(value_), documentation(documentation_) {}
+};
+
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 struct ProtocolServerMetrics
@@ -42,6 +49,9 @@ struct ProtocolServerMetrics
   *
   * This includes both ClickHouse-related metrics (like memory usage of ClickHouse process)
   *  and common OS-related metrics (like total memory usage on the server).
+  *
+  * All the values are either gauge type (like the total number of tables, the current memory usage).
+  * Or delta-counters representing some accumulation during the interval of time.
   */
 class AsynchronousMetrics : WithContext
 {
