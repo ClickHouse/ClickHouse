@@ -703,7 +703,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 #if !defined(OS_FREEBSD)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
-            " ClickHouse does not use shared memory, and the only case for this metric to be higher than zero is the usage of the system's C library (`libc`)."
+            " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
         new_values["MemoryCode"] = { data.code,
@@ -870,40 +870,40 @@ void AsynchronousMetrics::update(TimePoint update_time)
                             delta_values_all_cpus = delta_values;
 
                         new_values["OSUserTime" + cpu_suffix] = { delta_values.user * multiplier,
-                            "The ratio of time the CPU core was running userspace code. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core)."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSNiceTime" + cpu_suffix] = { delta_values.nice * multiplier,
-                            "The ratio of time the CPU core was running userspace code with higher priority. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSSystemTime" + cpu_suffix] = { delta_values.system * multiplier,
-                            "The ratio of time the CPU core was running OS kernel (system) code. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSIdleTime" + cpu_suffix] = { delta_values.idle * multiplier,
-                            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " This does not include the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core)."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSIOWaitTime" + cpu_suffix] = { delta_values.iowait * multiplier,
-                            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as the processes were waiting for IO. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSIrqTime" + cpu_suffix] = { delta_values.irq * multiplier,
-                            "The ratio of time spent for running hardware interrupt requests on the CPU. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " A high number of this metric may indicate hardware misconfiguration or a very high network load."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSSoftIrqTime" + cpu_suffix] = { delta_values.softirq * multiplier,
-                            "The ratio of time spent for running software interrupt requests on the CPU. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " A high number of this metric may indicate inefficient software running on the system."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSStealTime" + cpu_suffix] = { delta_values.steal * multiplier,
-                            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " Not every virtualized environments present this metric, and most of them don't."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSGuestTime" + cpu_suffix] = { delta_values.guest * multiplier,
-                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man procfs`). This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " This metric is irrelevant for ClickHouse, but still exists for completeness."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                         new_values["OSGuestNiceTime" + cpu_suffix] = { delta_values.guest_nice * multiplier,
-                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest was set to a higher priority (See `man procfs`). This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
                             " This metric is irrelevant for ClickHouse, but still exists for completeness."
                             " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
                     }
@@ -932,7 +932,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                     skipToNextLineOrEOF(*proc_stat);
                     new_values["OSProcessesRunning"] = { processes_running,
                         "The number of runnable (running or ready to run) threads by the operating system."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "procs_blocked")
                 {
@@ -941,7 +941,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                     skipToNextLineOrEOF(*proc_stat);
                     new_values["OSProcessesBlocked"] = { processes_blocked,
                         "Number of threads blocked waiting for I/O to complete (`man procfs`)."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else
                     skipToNextLineOrEOF(*proc_stat);
@@ -951,9 +951,9 @@ void AsynchronousMetrics::update(TimePoint update_time)
             {
                 ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
 
-                new_values["OSInterrupts"] = { delta_values.interrupts, "The number of interrupts on the host machine. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                new_values["OSContextSwitches"] = { delta_values.context_switches, "The number of context switches that the system underwent on the host machine. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                new_values["OSProcessesCreated"] = { delta_values.processes_created, "The number of processes created. This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                new_values["OSInterrupts"] = { delta_values.interrupts, "The number of interrupts on the host machine. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                new_values["OSContextSwitches"] = { delta_values.context_switches, "The number of context switches that the system underwent on the host machine. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                new_values["OSProcessesCreated"] = { delta_values.processes_created, "The number of processes created. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
 
                 /// Also write values normalized to 0..1 by diving to the number of CPUs.
                 /// These values are good to be averaged across the cluster of non-uniform servers.
@@ -1056,35 +1056,35 @@ void AsynchronousMetrics::update(TimePoint update_time)
                         " See the `OSMemoryAvailable` metric instead."
                         " For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable."
                         " See also https://www.linuxatemyram.com/."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "MemAvailable:")
                 {
                     new_values["OSMemoryAvailable"] = { bytes, "The amount of memory available to be used by programs, in bytes. This is very similar to the `OSMemoryFreePlusCached` metric."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "Buffers:")
                 {
                     new_values["OSMemoryBuffers"] = { bytes, "The amount of memory used by OS kernel buffers, in bytes. This should be typically small, and large values may indicate a misconfiguration of the OS."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "Cached:")
                 {
                     free_plus_cached_bytes += bytes;
                     new_values["OSMemoryCached"] = { bytes, "The amount of memory used by the OS page cache, in bytes. Typically, almost all available memory is used by the OS page cache - high values of this metric are normal and expected."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
                 else if (name == "SwapCached:")
                 {
                     new_values["OSMemorySwapCached"] = { bytes, "The amount of memory in swap that was also loaded in RAM. Swap should be disabled on production systems. If the value of this metric is large, it indicates a misconfiguration."
-                        " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
 
                 skipToNextLineOrEOF(*meminfo);
             }
 
-            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, "The amount of free memory or OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`."
-                " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+            new_values["OSMemoryFreePlusCached"] = { free_plus_cached_bytes, "The amount of free memory plus OS page cache memory on the host system, in bytes. This memory is available to be used by programs. The value should be very similar to `OSMemoryAvailable`."
+                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
         }
         catch (...)
         {
@@ -1153,7 +1153,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             uint64_t open_files = 0;
             readText(open_files, *file_nr);
             new_values["OSOpenFiles"] = { open_files, "The total number of opened files on the host machine."
-                " This is system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
         }
         catch (...)
         {
