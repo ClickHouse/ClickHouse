@@ -18,6 +18,7 @@ add_headers_and_sources(external External)
 add_headers_and_sources(shuffle Shuffle)
 add_headers_and_sources(operator Operator)
 add_headers_and_sources(jni jni)
+add_headers_and_sources(aggregate AggregateFunctions)
 
 include_directories(
         ${JNI_INCLUDE_DIRS}
@@ -42,6 +43,7 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${jni_sources}
         ${substrait_source}
         ${operator_sources}
+        ${aggregate_sources}
         local_engine_jni.cpp)
 
 
@@ -249,3 +251,4 @@ message(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 if (ENABLE_TESTS)
     add_subdirectory(tests)
 endif ()
+

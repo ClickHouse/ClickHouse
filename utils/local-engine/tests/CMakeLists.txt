@@ -22,19 +22,19 @@ include(FetchContent)
 FetchContent_Declare(googlebenchmark GIT_REPOSITORY https://github.com/google/benchmark GIT_TAG main)
 FetchContent_MakeAvailable(googlebenchmark)
 include_directories(
-    ${builder_headers}
-    ${parser_headers}
+        ${builder_headers}
+        ${parser_headers}
 )
 
 target_compile_options(benchmark PUBLIC
-    -Wno-extra-semi-stmt
-    -Wno-format-nonliteral
-    -Wno-missing-noreturn
-    -Wno-old-style-cast
-    -Wno-undef
-    -Wno-used-but-marked-unused
-    -Wno-zero-as-null-pointer-constant
-)
+        -Wno-extra-semi-stmt
+        -Wno-format-nonliteral
+        -Wno-missing-noreturn
+        -Wno-old-style-cast
+        -Wno-undef
+        -Wno-used-but-marked-unused
+        -Wno-zero-as-null-pointer-constant
+        )
 
 grep_gtest_sources("${ClickHouse_SOURCE_DIR}/utils/local_engine/tests" local_engine_gtest_sources)
 

@@ -174,10 +174,12 @@ QueryPlanPtr SerializedPlanParser::parseReadRealWithJavaIter(const substrait::Re
     auto pos = iter.find(':');
     auto iter_index = std::stoi(iter.substr(pos + 1, iter.size()));
     auto plan = std::make_unique<QueryPlan>();
+
     auto source = std::make_shared<SourceFromJavaIter>(parseNameStruct(rel.base_schema()), input_iters[iter_index]);
     QueryPlanStepPtr source_step = std::make_unique<ReadFromPreparedSource>(Pipe(source), context);
     source_step->setStepDescription("Read From Java Iter");
     plan->addStep(std::move(source_step));
+
     return plan;
 }
 
@@ -503,12 +505,13 @@ QueryPlanPtr SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
         if (logger->trace())
         {
             WriteBufferFromOwnString plan_string;
+            WriteBufferFromOwnString pipeline_string;
             QueryPlan::ExplainPlanOptions options;
             options.header = true;
             query_plan->explainPlan(plan_string, options);
             LOG_TRACE(
                 &Poco::Logger::get("SerializedPlanParser"),
-                "pipeline \n{}\n,pipeline output:\n{}",
+                "<ch plan>: \n{}\n<pipeline output>:\n{}\n",
                 plan_string.str(),
                 query_plan->getCurrentDataStream().header.dumpStructure());
         }
@@ -659,6 +662,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 auto source = query_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
                 auto target = source;
 
+                bool need_convert = false;
                 for (size_t i = 0; i < measure_positions.size(); i++)
                 {
                     if (!isTypeMatched(measure_types[i], source[measure_positions[i]].type))
@@ -666,15 +670,19 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                         auto target_type = parseType(measure_types[i]);
                         target[measure_positions[i]].type = target_type;
                         target[measure_positions[i]].column = target_type->createColumn();
+                        need_convert = true;
                     }
                 }
-                ActionsDAGPtr convert_action
-                    = ActionsDAG::makeConvertingActions(source, target, DB::ActionsDAG::MatchColumnsMode::Position);
-                if (convert_action)
-                {
-                    QueryPlanStepPtr convert_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_action);
-                    convert_step->setStepDescription("Convert Aggregate Output");
-                    query_plan->addStep(std::move(convert_step));
+
+                if (need_convert) {
+                    ActionsDAGPtr convert_action
+                        = ActionsDAG::makeConvertingActions(source, target, DB::ActionsDAG::MatchColumnsMode::Position);
+                    if (convert_action)
+                    {
+                        QueryPlanStepPtr convert_step = std::make_unique<ExpressionStep>(query_plan->getCurrentDataStream(), convert_action);
+                        convert_step->setStepDescription("Convert Aggregate Output");
+                        query_plan->addStep(std::move(convert_step));
+                    }
                 }
             }
             break;
@@ -732,32 +740,30 @@ AggregateFunctionPtr getAggregateFunction(const std::string & name, DataTypes ar
     return factory.get(name, arg_types, Array{}, properties);
 }
 
-QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const substrait::AggregateRel & rel, bool & is_final)
+
+NamesAndTypesList SerializedPlanParser::blockToNameAndTypeList(const Block & header)
 {
-    std::set<substrait::AggregationPhase> phase_set;
-    for (int i = 0; i < rel.measures_size(); ++i)
+    NamesAndTypesList types;
+    for (const auto & name : header.getNames())
     {
-        const auto & measure = rel.measures(i);
-        phase_set.emplace(measure.measure().phase());
+        const auto * column = header.findByName(name);
+        types.push_back(NameAndTypePair(column->name, column->type));
     }
-    if (phase_set.size() > 1)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "too many aggregate phase!");
-    }
-    bool final = true;
-    if (phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE)
-        || phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE))
-        final = false;
-    bool only_merge = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
+    return types;
+}
 
-    is_final = final;
-
+void SerializedPlanParser::addPreProjectStepIfNeeded(
+    QueryPlan & plan,
+    const substrait::AggregateRel & rel,
+    std::vector<std::string> & measure_names,
+    std::map<std::string, std::string> & nullable_measure_names)
+{
     auto input = plan.getCurrentDataStream();
     ActionsDAGPtr expression = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
-    std::vector<std::string> measure_names;
     std::vector<String> required_columns;
-    std::vector<std::string> nullable_measure_names;
+    std::vector<std::string> to_wrap_nullable;
     String measure_name;
+    bool need_pre_project = false;
     for (const auto & measure : rel.measures())
     {
         auto which_measure_type = WhichDataType(parseType(measure.measure().output_type()));
@@ -767,12 +773,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         }
         auto arg = measure.measure().arguments(0).value();
 
-        if (arg.has_scalar_function())
-        {
-            parseFunction(input.header, arg, measure_name, required_columns, expression, true);
-            measure_names.emplace_back(measure_name);
-        }
-        else if (arg.has_selection())
+        if (arg.has_selection())
         {
             measure_name = input.header.getByPosition(arg.selection().direct_reference().struct_field().field()).name;
             measure_names.emplace_back(measure_name);
@@ -783,23 +784,65 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
             expression->addOrReplaceInIndex(*node);
             measure_name = node->result_name;
             measure_names.emplace_back(measure_name);
+            need_pre_project = true;
         }
         else
         {
+            // this includes the arg.has_scalar_function() case
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "unsupported aggregate argument type {}.", arg.DebugString());
         }
-        if (which_measure_type.isNullable())
+
+        if (which_measure_type.isNullable() &&
+            measure.measure().phase() == substrait::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE &&
+            !expression->findInIndex(measure_name).result_type->isNullable()
+            )
         {
-            nullable_measure_names.emplace_back(measure_name);
+            to_wrap_nullable.emplace_back(measure_name);
+            need_pre_project = true;
         }
     }
-    if (!final)
-    {
-        wrapNullable(nullable_measure_names, expression);
+    wrapNullable(to_wrap_nullable, expression, nullable_measure_names);
+
+    if (need_pre_project) {
+        auto expression_before_aggregate = std::make_unique<ExpressionStep>(input, expression);
+        expression_before_aggregate->setStepDescription("Before Aggregate");
+        plan.addStep(std::move(expression_before_aggregate));
     }
-    auto expression_before_aggregate = std::make_unique<ExpressionStep>(input, expression);
-    expression_before_aggregate->setStepDescription("Before Aggregate");
-    plan.addStep(std::move(expression_before_aggregate));
+}
+
+
+/**
+ * Gluten will use a pre projection step (search needsPreProjection in HashAggregateExecBaseTransformer)
+ * so this function can assume all group and agg args are direct references or literals
+ */
+QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const substrait::AggregateRel & rel, bool & is_final)
+{
+    std::set<substrait::AggregationPhase> phase_set;
+    for (int i = 0; i < rel.measures_size(); ++i)
+    {
+        const auto & measure = rel.measures(i);
+        phase_set.emplace(measure.measure().phase());
+    }
+
+    bool has_first_stage = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE);
+    bool has_inter_stage = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE);
+    bool has_final_stage = phase_set.contains(substrait::AggregationPhase::AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
+
+    if (phase_set.size() > 1)
+    {
+        if (phase_set.size() == 2 && has_first_stage && has_inter_stage) {
+            // this will happen in a sql like:
+            // select sum(a), count(distinct b) from T
+        } else {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "too many aggregate phase!");
+        }
+    }
+
+    is_final = has_final_stage;
+
+    std::vector<std::string> measure_names;
+    std::map<std::string, std::string> nullable_measure_names;
+    addPreProjectStepIfNeeded(plan, rel, measure_names, nullable_measure_names);
 
     ColumnNumbers keys = {};
     if (rel.groupings_size() == 1)
@@ -831,7 +874,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         auto function_name_idx = function_signature.find(':');
         //        assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
         auto function_name = function_signature.substr(0, function_name_idx);
-        if (only_merge)
+        if (measure.measure().phase() != substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE)
         {
             agg.column_name = measure_names.at(i);
         }
@@ -839,20 +882,29 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         {
             agg.column_name = function_name + "(" + measure_names.at(i) + ")";
         }
-        agg.arguments = ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
-        auto arg_type = plan.getCurrentDataStream().header.getByName(measure_names.at(i)).type;
+
+        // if measure arg has nullable version, use it
+        auto input_column = measure_names.at(i);
+        auto entry = nullable_measure_names.find(input_column);
+        if (entry != nullable_measure_names.end()) {
+            input_column = entry->second;
+        }
+        agg.arguments = ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(input_column)};
+        auto arg_type = plan.getCurrentDataStream().header.getByName(input_column).type;
         if (const auto * function_type = checkAndGetDataType<DataTypeAggregateFunction>(arg_type.get()))
         {
-            agg.function = getAggregateFunction(function_name + "Merge", {arg_type});
+            auto suffix = "PartialMerge";
+            agg.function = getAggregateFunction(function_name + suffix, {arg_type});
         }
         else
         {
             auto arg = arg_type;
-            if (only_merge)
+            if (measure.measure().phase() != substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE)
             {
                 auto first = getAggregateFunction(function_name, {arg_type});
                 arg = first->getStateType();
-                function_name = function_name + "Merge";
+                auto suffix = "PartialMerge";
+                function_name = function_name + suffix;
             }
 
             agg.function = getAggregateFunction(function_name, {arg});
@@ -860,10 +912,10 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         aggregates.push_back(agg);
     }
 
-    if (only_merge)
+    if (has_final_stage)
     {
         auto transform_params = std::make_shared<AggregatingTransformParams>(
-            this->getMergedAggregateParam(plan.getCurrentDataStream().header, keys, aggregates), final);
+            this->getMergedAggregateParam(plan.getCurrentDataStream().header, keys, aggregates), true);
         return std::make_unique<MergingAggregatedStep>(plan.getCurrentDataStream(), transform_params, false, 1, 1);
     }
     else
@@ -871,7 +923,7 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
         auto aggregating_step = std::make_unique<AggregatingStep>(
             plan.getCurrentDataStream(),
             this->getAggregateParam(plan.getCurrentDataStream().header, keys, aggregates),
-            final,
+            false,
             1000000,
             1,
             1,
@@ -883,16 +935,6 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
     }
 }
 
-NamesAndTypesList SerializedPlanParser::blockToNameAndTypeList(const Block & header)
-{
-    NamesAndTypesList types;
-    for (const auto & name : header.getNames())
-    {
-        const auto * column = header.findByName(name);
-        types.push_back(NameAndTypePair(column->name, column->type));
-    }
-    return types;
-}
 
 std::string
 SerializedPlanParser::getFunctionName(const std::string & function_signature, const substrait::Expression_ScalarFunction & function)
@@ -1366,6 +1408,15 @@ QueryPlanPtr SerializedPlanParser::parse(const std::string & plan)
     return std::move(res);
 }
 
+QueryPlanPtr SerializedPlanParser::parseJson(const std::string & json_plan)
+{
+    auto plan_ptr = std::make_unique<substrait::Plan>();
+    google::protobuf::util::JsonStringToMessage(
+        google::protobuf::stringpiece_internal::StringPiece(json_plan.c_str()),
+        plan_ptr.get());
+    return parse(std::move(plan_ptr));
+}
+
 void SerializedPlanParser::initFunctionEnv()
 {
     registerFunctions();
@@ -1580,15 +1631,16 @@ void SerializedPlanParser::removeNullable(std::vector<String> require_columns, A
     }
 }
 
-void SerializedPlanParser::wrapNullable(std::vector<String> columns, ActionsDAGPtr actionsDag)
+void SerializedPlanParser::wrapNullable(std::vector<String> columns, ActionsDAGPtr actionsDag,
+                                        std::map<std::string, std::string>& nullable_measure_names)
 {
     for (const auto & item : columns)
     {
-        auto function_builder = FunctionFactory::instance().get("toNullable", this->context);
         ActionsDAG::NodeRawConstPtrs args;
         args.emplace_back(&actionsDag->findInIndex(item));
-        const auto & node = actionsDag->addFunction(function_builder, args, item);
-        actionsDag->addOrReplaceInIndex(node);
+        const auto * node = toFunctionNode(actionsDag, "toNullable", args);
+        actionsDag->addOrReplaceInIndex(*node);
+        nullable_measure_names[item] = node->result_name;
     }
 }
 
@@ -1698,7 +1750,7 @@ SparkRowInfoPtr LocalExecutor::next()
 {
     checkNextValid();
     SparkRowInfoPtr row_info = writeBlockToSparkRow(currentBlock());
-    produce();
+    consume();
     if (this->spark_buffer)
     {
         this->ch_column_to_spark_row->freeMem(spark_buffer->address, spark_buffer->size);

@@ -25,6 +25,8 @@
 #include <gtest/gtest.h>
 #include <substrait/plan.pb.h>
 #include "testConfig.h"
+#include "Common/Logger.h"
+#include "Common/DebugUtils.h"
 
 using namespace local_engine;
 using namespace dbms;
@@ -239,6 +241,44 @@ TEST(TESTUtil, TestByteToLong)
     ASSERT_EQ(expected, result);
 }
 
+
+TEST(TestSimpleAgg, TestGenerate)
+{
+//    dbms::SerializedSchemaBuilder schema_builder;
+//    auto * schema = schema_builder.column("l_orderkey", "I64")
+//                        .column("l_partkey", "I64")
+//                        .column("l_suppkey", "I64")
+//                        .build();
+//    dbms::SerializedPlanBuilder plan_builder;
+//    auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(6)});
+//    auto plan
+//        = plan_builder.registerSupportedFunctions()
+//              .aggregate({}, {measure})
+//              .read(
+//                  //"/home/kyligence/Documents/test-dataset/intel-gazelle-test-" + std::to_string(state.range(0)) + ".snappy.parquet",
+//                  "/data0/tpch100_zhichao/parquet_origin/lineitem/part-00087-066b93b4-39e1-4d46-83ab-d7752096b599-c000.snappy.parquet",
+//                  std::move(schema))
+//              .build();
+    local_engine::SerializedPlanParser parser(local_engine::SerializedPlanParser::global_context);
+////    auto query_plan = parser.parse(std::move(plan));
+
+    //std::ifstream t("/home/hongbin/develop/experiments/221011_substrait_agg_on_empty_table.json");
+    //std::ifstream t("/home/hongbin/develop/experiments/221101_substrait_agg_on_simple_table_last_phrase.json");
+    std::ifstream t("/home/hongbin/develop/experiments/221102_substrait_agg_and_countdistinct_second_phrase.json");
+    std::string str((std::istreambuf_iterator<char>(t)),
+                    std::istreambuf_iterator<char>());
+    auto query_plan = parser.parseJson(str);
+    local_engine::LocalExecutor local_executor;
+    local_executor.execute(std::move(query_plan));
+    while (local_executor.hasNext())
+    {
+        //local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+
+        auto block = local_executor.nextColumnar();
+        debug::headBlock(*block);
+    }
+}
+
 TEST(TestSubstrait, TestGenerate)
 {
     dbms::SerializedSchemaBuilder schema_builder;
@@ -318,6 +358,8 @@ TEST(ReadBufferFromFile, seekBackwards)
 
 int main(int argc, char ** argv)
 {
+    local_engine::Logger::initConsoleLogger();
+
     SharedContextHolder shared_context = Context::createShared();
     local_engine::SerializedPlanParser::global_context = Context::createGlobal(shared_context.get());
     local_engine::SerializedPlanParser::global_context->makeGlobalContext();
