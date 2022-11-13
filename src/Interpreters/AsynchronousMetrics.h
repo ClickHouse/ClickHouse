@@ -31,8 +31,9 @@ struct AsynchronousMetricValue
     double value;
     const char * documentation;
 
-    AsynchronousMetricValue(double value_, const char * documentation_) : value(value_), documentation(documentation_) {}
-    AsynchronousMetricValue(size_t value_, const char * documentation_) : value(value_), documentation(documentation_) {}
+    template <typename T>
+    AsynchronousMetricValue(T value_, const char * documentation_)
+        : value(static_cast<double>(value_)), documentation(documentation_) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
 };
 
