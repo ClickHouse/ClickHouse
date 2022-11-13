@@ -34,11 +34,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 /// uniq
 
@@ -243,20 +238,21 @@ struct Adder
 #endif
     }
 
+    template <bool can_use_two_level_hash_table>
     static void ALWAYS_INLINE
     add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         bool use_single_level_hash_table = true;
-        if constexpr (IsUniqExactData<Data>::value)
+        if constexpr (can_use_two_level_hash_table)
             if (data.set.isTwoLevel())
                 use_single_level_hash_table = false;
 
         if (use_single_level_hash_table)
-            add<true>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<true>(data, columns, num_args, row_begin, row_end, flags, null_map);
         else
-            add<false>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addImpl<false>(data, columns, num_args, row_begin, row_end, flags, null_map);
 
-        if constexpr (IsUniqExactData<Data>::value)
+        if constexpr (can_use_two_level_hash_table)
         {
             if (data.set.isSingleLevel() && data.set.size() > 100'000)
                 data.set.convertToTwoLevel();
@@ -266,7 +262,7 @@ struct Adder
 private:
     template <bool use_single_level_hash_table>
     static void ALWAYS_INLINE
-    add(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    addImpl(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
     {
         if (!flags)
         {
@@ -304,15 +300,15 @@ private:
 
 
 /// Calculates the number of different values approximately or exactly.
-template <typename T, typename Data>
-class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
+template <typename T, typename Data, bool is_able_to_parallelize_merge>
+class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data, is_able_to_parallelize_merge>>
 {
 private:
     static constexpr size_t num_args = 1;
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data, is_able_to_parallelize_merge>>(argument_types_, {})
     {
     }
 
@@ -339,7 +335,8 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+        detail::Adder<T, Data>::template add<is_able_to_parallelize_merge>(
+            this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
     }
 
     void addManyDefaults(
@@ -364,7 +361,8 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+        detail::Adder<T, Data>::template add<is_able_to_parallelize_merge>(
+            this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -372,17 +370,14 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    bool isAbleToParallelizeMerge() const override
-    {
-        return std::is_same_v<Data, AggregateFunctionUniqExactData<T>>;
-    }
+    bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)
+        if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
+            this->data(place).set.merge(this->data(rhs).set);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -406,8 +401,11 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
-template <typename Data, bool is_exact, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>
+template <typename Data, bool is_exact, bool argument_is_tuple, bool is_able_to_parallelize_merge>
+class AggregateFunctionUniqVariadic final
+    : public IAggregateFunctionDataHelper<
+          Data,
+          AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple, is_able_to_parallelize_merge>>
 {
 private:
     using T = typename Data::Set::value_type;
@@ -417,7 +415,9 @@ private:
 
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>(arguments, {})
+        : IAggregateFunctionDataHelper<
+            Data,
+            AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple, is_able_to_parallelize_merge>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -447,7 +447,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
+        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::template add<is_able_to_parallelize_merge>(
             this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
     }
 
@@ -464,7 +464,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
+        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::template add<is_able_to_parallelize_merge>(
             this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
@@ -473,17 +473,14 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    bool isAbleToParallelizeMerge() const override
-    {
-        return detail::IsUniqExactData<Data>::value;
-    }
+    bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {
-        if constexpr (detail::IsUniqExactData<Data>::value)
+        if constexpr (is_able_to_parallelize_merge)
             this->data(place).set.merge(this->data(rhs).set, &thread_pool);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
+            this->data(place).set.merge(this->data(rhs).set);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
