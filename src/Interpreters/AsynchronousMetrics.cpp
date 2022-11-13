@@ -394,7 +394,7 @@ static Value saveJemallocMetricImpl(
     Value value{};
     size_t size = sizeof(value);
     mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
-    values[clickhouse_full_name] = { value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html" };
+    values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
 
@@ -1482,7 +1482,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                new_values[fmt::format("EDAC{}_Correctable", i)] = { errors, "The number of correctable ECC memory errors",
+                new_values[fmt::format("EDAC{}_Correctable", i)] = { errors,
+                    "The number of correctable ECC memory errors."
                     " A high number of this value indicates bad RAM which has to be immediately replaced,"
                     " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption." };
             }
@@ -1493,7 +1494,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                new_values[fmt::format("EDAC{}_Uncorrectable", i)] = { errors, "The number of uncorrectable ECC memory errors",
+                new_values[fmt::format("EDAC{}_Uncorrectable", i)] = { errors,
+                    "The number of uncorrectable ECC memory errors."
                     " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
                     " because it indicates potential data corruption." };
             }
@@ -1519,24 +1521,36 @@ void AsynchronousMetrics::update(TimePoint update_time)
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
+        new_values["FilesystemMainPathTotalBytes"] = { stat.f_blocks * stat.f_frsize,
+            "The size of the volume where the main ClickHouse path is mounted, in bytes." };
+        new_values["FilesystemMainPathAvailableBytes"] = { stat.f_bavail * stat.f_frsize,
+            "Available bytes on the volume where the main ClickHouse path is mounted." };
+        new_values["FilesystemMainPathUsedBytes"] = { (stat.f_blocks - stat.f_bavail) * stat.f_frsize,
+            "Used bytes on the volume where the main ClickHouse path is mounted." };
+        new_values["FilesystemMainPathTotalINodes"] = { stat.f_files,
+            "The total number of inodes on the volume where the main ClickHouse path is mounted. If it is less than 25 million, it indicates a misconfiguration." };
+        new_values["FilesystemMainPathAvailableINodes"] = { stat.f_favail,
+            "The number of available inodes on the volume where the main ClickHouse path is mounted. If it is close to zero, it indicates a misconfiguration, and you will get 'no space left on device' even when the disk is not full." };
+        new_values["FilesystemMainPathUsedINodes"] = { stat.f_files - stat.f_favail,
+            "The number of used inodes on the volume where the main ClickHouse path is mounted. This value mostly corresponds to the number of files." };
     }
 
     {
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
+        new_values["FilesystemLogsPathTotalBytes"] = { stat.f_blocks * stat.f_frsize,
+            "The size of the volume where ClickHouse logs path is mounted, in bytes. It's recommended to have at least 10 GB for logs." };
+        new_values["FilesystemLogsPathAvailableBytes"] = { stat.f_bavail * stat.f_frsize,
+            "Available bytes on the volume where ClickHouse logs path is mounted. If this value approaches zero, you should tune the log rotation in the configuration file." };
+        new_values["FilesystemLogsPathUsedBytes"] = { (stat.f_blocks - stat.f_bavail) * stat.f_frsize,
+            "Used bytes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathTotalINodes"] = { stat.f_files,
+            "The total number of inodes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathAvailableINodes"] = { stat.f_favail,
+            "The number of available inodes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathUsedINodes"] = { stat.f_files - stat.f_favail,
+            "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
 
     /// Free and total space on every configured disk.
@@ -1553,10 +1567,14 @@ void AsynchronousMetrics::update(TimePoint update_time)
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = total;
-            new_values[fmt::format("DiskUsed_{}", name)] = total - available;
-            new_values[fmt::format("DiskAvailable_{}", name)] = available;
-            new_values[fmt::format("DiskUnreserved_{}", name)] = unreserved;
+            new_values[fmt::format("DiskTotal_{}", name)] = { total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
+                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
+                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
+                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
         }
     }
 
