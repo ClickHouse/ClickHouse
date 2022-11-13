@@ -33,6 +33,7 @@ struct AsynchronousMetricValue
 
     AsynchronousMetricValue(double value_, const char * documentation_) : value(value_), documentation(documentation_) {}
     AsynchronousMetricValue(size_t value_, const char * documentation_) : value(value_), documentation(documentation_) {}
+    AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
