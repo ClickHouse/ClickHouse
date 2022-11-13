@@ -1200,7 +1200,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
 #define BLOCK_DEVICE_EXPLANATION \
     " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
-    " See https://www.kernel.org/doc/Documentation/block/stat.txt"
+    " Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt"
 
             new_values["BlockReadOps_" + name] = { delta_values.read_ios,
                 "Number of read operations requested from the block device."
@@ -1403,7 +1403,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             Int64 temperature = 0;
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = { temperature * 0.001,
-                "The temperature of the corresponding device in ℃. A sensor can return an unrealistic value." };
+                "The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`" };
         }
     }
     catch (...)
@@ -1443,10 +1443,10 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
                 if (sensor_name.empty())
                     new_values[fmt::format("Temperature_{}", hwmon_name)] = { temperature * 0.001,
-                        "The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value." };
+                        "The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
                 else
                     new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = { temperature * 0.001,
-                        "The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value." };
+                        "The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
             }
         }
     }
@@ -1485,7 +1485,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 new_values[fmt::format("EDAC{}_Correctable", i)] = { errors,
                     "The number of correctable ECC memory errors."
                     " A high number of this value indicates bad RAM which has to be immediately replaced,"
-                    " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption." };
+                    " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption."
+                    " Source: `/sys/devices/system/edac/mc/`" };
             }
 
             if (edac[i].second)
@@ -1497,7 +1498,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 new_values[fmt::format("EDAC{}_Uncorrectable", i)] = { errors,
                     "The number of uncorrectable ECC memory errors."
                     " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
-                    " because it indicates potential data corruption." };
+                    " because it indicates potential data corruption."
+                    " Source: `/sys/devices/system/edac/mc/`" };
             }
         }
     }
