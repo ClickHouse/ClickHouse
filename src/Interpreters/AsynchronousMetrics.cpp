@@ -1054,7 +1054,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                         " This does not include the memory used by the OS page cache memory, in bytes."
                         " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
                         " See the `OSMemoryAvailable` metric instead."
-                        " For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable."
+                        " For convenience we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable."
                         " See also https://www.linuxatemyram.com/."
                         " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
                 }
