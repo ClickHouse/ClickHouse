@@ -320,9 +320,15 @@ public:
         if (!isDecimal(arguments[0].type) || !isDecimal(arguments[1].type))
             throw Exception("Arguments for " + getName() + " function must be Decimal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 3 && !isUnsignedInteger(arguments[2].type))
-            throw Exception("Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() +
-                                    ". Should be constant Integer from range[0, 76]", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 3)
+        {
+            WhichDataType which_scale(arguments[2].type.get());
+            if (which_scale.isUInt16())
+                throw Exception(
+                    "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
+                        + ". Should be constant Integer from range[0, 76]",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         UInt16 scale = arguments.size() == 3 ? checkAndGetColumnConst<ColumnConst>(arguments[2].column.get())->getValue<UInt16>() :
                                              std::max(getDecimalScale(*arguments[0].type->getPtr()), getDecimalScale(*arguments[1].type->getPtr()));
