@@ -669,7 +669,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
     auto epoch = updateJemallocEpoch();
-    new_values["jemalloc.epoch"] = { epoch, "An internal incremental update number of the statistics of JeMalloc (a low-level memory allocator), used in all other `jemalloc` metrics." };
+    new_values["jemalloc.epoch"] = { epoch, "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other `jemalloc` metrics." };
 
     // Collect the statistics themselves.
     saveJemallocMetric<size_t>(new_values, "allocated");
