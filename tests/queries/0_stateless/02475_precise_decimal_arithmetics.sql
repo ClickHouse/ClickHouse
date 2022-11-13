@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT divideDecimal(toDecimal32(0, 2), toDecimal128(11.123456, 6));
 SELECT divideDecimal(toDecimal64(123.123, 3), toDecimal64(0, 1)); -- { serverError 153 }
 SELECT multiplyDecimal(toDecimal32(0, 2), toDecimal128(11.123456, 6));
