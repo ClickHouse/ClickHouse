@@ -1210,7 +1210,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 BLOCK_DEVICE_EXPLANATION };
             new_values["BlockDiscardOps_" + name] = { delta_values.discard_ops,
                 "Number of discard operations requested from the block device. These operations are relevant for SSD."
-                " They are not used by ClickHouse, but can be used by other processes on the system."
+                " Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
 
             new_values["BlockReadMerges_" + name] = { delta_values.read_merges,
@@ -1221,7 +1221,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 BLOCK_DEVICE_EXPLANATION };
             new_values["BlockDiscardMerges_" + name] = { delta_values.discard_merges,
                 "Number of discard operations requested from the block device and merged together by the OS IO scheduler."
-                " These operations are relevant for SSD. They are not used by ClickHouse, but can be used by other processes on the system."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
 
             new_values["BlockReadBytes_" + name] = { delta_values.read_sectors * sector_size,
@@ -1235,7 +1235,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 BLOCK_DEVICE_EXPLANATION };
             new_values["BlockDiscardBytes_" + name] = { delta_values.discard_sectors * sector_size,
                 "Number of discarded bytes on the block device."
-                " These operations are relevant for SSD. They are not used by ClickHouse, but can be used by other processes on the system."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
 
             new_values["BlockReadTime_" + name] = { delta_values.read_ticks * time_multiplier,
@@ -1246,7 +1246,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
                 BLOCK_DEVICE_EXPLANATION };
             new_values["BlockDiscardTime_" + name] = { delta_values.discard_ticks * time_multiplier,
                 "Time in seconds spend in discard operations requested from the block device, summed across all the operations."
-                " These operations are relevant for SSD. They are not used by ClickHouse, but can be used by other processes on the system."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
                 BLOCK_DEVICE_EXPLANATION };
 
             new_values["BlockInFlightOps_" + name] = { delta_values.in_flight_ios,
