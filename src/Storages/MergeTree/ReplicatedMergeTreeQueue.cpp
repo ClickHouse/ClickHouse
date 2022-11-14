@@ -733,7 +733,7 @@ namespace
 {
 
 Names getPartNamesToMutate(
-    const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & virtual_parts, const ActiveDataPartSet & current_parts, const DropPartsRanges & drop_ranges)
+    const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts, const DropPartsRanges & drop_ranges)
 {
     Names result;
     for (const auto & pair : mutation.block_numbers)
@@ -745,29 +745,15 @@ Names getPartNamesToMutate(
         /// because they are not consecutive in `parts`.
         MergeTreePartInfo covering_part_info(
             partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
-
-        for (const String & covered_part_name : virtual_parts.getPartsCoveredBy(covering_part_info))
+        for (const String & covered_part_name : parts.getPartsCoveredBy(covering_part_info))
         {
-            auto virtual_part_info = MergeTreePartInfo::fromPartName(covered_part_name, virtual_parts.getFormatVersion());
-            if (virtual_part_info.getDataVersion() < block_num)
+            auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, parts.getFormatVersion());
+            if (part_info.getDataVersion() < block_num)
             {
                 /// We don't need to mutate part if it's covered by DROP_RANGE
                 if (!drop_ranges.hasDropRange(part_info))
                     result.push_back(covered_part_name);
             }
-            else
-            {
-                auto covered_current_parts = current_parts.getPartsCoveredBy(virtual_part_info);
-                for (const auto & current_part_name : covered_current_parts)
-                {
-                    auto current_part_info = MergeTreePartInfo::fromPartName(current_part_name, current_parts.getFormatVersion());
-                    /// We don't need to mutate part if it's covered by DROP_RANGE
-                    if (current_part_info.getDataVersion() < block_num && !drop_ranges.hasDropRange(current_part_info))
-                        result.push_back(current_part_name);
-
-                }
-            }
-
         }
     }
 
@@ -875,8 +861,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 /// Initialize `mutation.parts_to_do`.
                 /// We need to mutate all parts in `current_parts` and all parts that will appear after queue entries execution.
                 /// So, we need to mutate all parts in virtual_parts (with the corresponding block numbers).
-                Strings virtual_parts_to_mutate = getPartNamesToMutate(*entry, virtual_parts, current_parts, drop_ranges);
-                for (const String & part_to_mutate : parts_to_mutate)
+                Strings virtual_parts_to_mutate = getPartNamesToMutate(*entry, virtual_parts, drop_ranges);
+                for (const String & current_part_to_mutate : virtual_parts_to_mutate)
                 {
                     assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
                     mutation.parts_to_do.add(current_part_to_mutate);
@@ -2349,7 +2335,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     {
         std::lock_guard lock(queue.state_mutex);
 
-        size_t suddenly_appeared_parts = getPartNamesToMutate(mutation, queue.virtual_parts, queue.current_parts, queue.drop_ranges).size();
+        size_t suddenly_appeared_parts = getPartNamesToMutate(mutation, queue.virtual_parts, queue.drop_ranges).size();
         if (suddenly_appeared_parts)
         {
             LOG_TRACE(queue.log, "Mutation {} is not done yet because {} parts to mutate suddenly appeared.", mutation.znode_name, suddenly_appeared_parts);
