@@ -6,8 +6,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Functions/IFunction.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -32,7 +30,6 @@ public:
             return;
 
         const auto * function_node = node->as<FunctionNode>();
-        LOG_ERROR(&Poco::Logger::get("FunctionStatefulVisitor"), "{}", node->dumpTree());
 
         auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(function_node->getFunctionName());
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)

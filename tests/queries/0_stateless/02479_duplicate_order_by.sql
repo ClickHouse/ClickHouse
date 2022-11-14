@@ -70,7 +70,6 @@ FROM
 )
 GROUP BY number;
 
-
 SELECT '-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery';
 EXPLAIN QUERY TREE run_passes = 1
 SELECT any(number)
@@ -86,7 +85,6 @@ FROM
     ORDER BY number DESC
 )
 GROUP BY number;
-
 
 SELECT '-- check that optimization is applied recursively to subqueries as well';
 SELECT '-- GROUP BY with aggregation function which does NOT depend on order -> eliminate ORDER BY in most inner subquery here';
@@ -105,8 +103,7 @@ FROM
 )
 ORDER BY a ASC;
 
-
-SELECT '-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in most inner subquery here';
+SELECT '-- GROUP BY with aggregation function which depends on order -> eliminate ORDER BY in most inner subquery since the order will be changed by ORDER BY in main query';
 EXPLAIN QUERY TREE run_passes = 1
 SELECT a
 FROM
@@ -122,7 +119,7 @@ FROM
 )
 ORDER BY a ASC;
 
-SELECT '-- Check that optimization works for subqueries as well, - the same query as previous one used as subquery here';
+SELECT '-- Check that optimization works for subqueries as well, - main query have nor ORDER BY nor GROUP BY';
 EXPLAIN QUERY TREE run_passes = 1
 SELECT a
 FROM

@@ -8,7 +8,9 @@ namespace DB
 /** Remove ORDER BY duplicate
   *
   * Example: SELECT * FROM (SELECT * FROM t ORDER BY a) ORDER BY a
-  * Result: SELECT * FROM (SELECT * FROM t ORDER BY a)
+  * Result: SELECT * FROM (SELECT * FROM t) ORDER BY a
+  *
+  * See more examples in tests - 02479_duplicate_order_by.sql
   */
 class DuplicateOrderByPass final : public IQueryTreePass
 {

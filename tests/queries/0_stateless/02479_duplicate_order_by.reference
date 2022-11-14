@@ -208,7 +208,7 @@ QUERY id: 0
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
--- GROUP BY with aggregation function which depends on order -> keep ORDER BY in most inner subquery here
+-- GROUP BY with aggregation function which depends on order -> eliminate ORDER BY in most inner subquery since the order will be changed by ORDER BY in main query
 QUERY id: 0
   PROJECTION COLUMNS
     a UInt64
@@ -245,7 +245,7 @@ QUERY id: 0
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
--- Check that optimization works for subqueries as well, - the same query as previous one used as subquery here
+-- Check that optimization works for subqueries as well, - main query have nor ORDER BY nor GROUP BY
 QUERY id: 0
   PROJECTION COLUMNS
     a UInt64
