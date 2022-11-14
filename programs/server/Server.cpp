@@ -805,41 +805,43 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
         /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
-
-        String calculated_binary_hash = getHashOfLoadedBinaryHex();
-
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
-                " (calculated checksum: {})", calculated_binary_hash);
-        }
-        else if (calculated_binary_hash == stored_binary_hash)
-        {
-            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
         }
         else
         {
-            /// If program is run under debugger, ptrace will fail.
-            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            String calculated_binary_hash = getHashOfLoadedBinaryHex();
+            if (calculated_binary_hash == stored_binary_hash)
             {
-                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
             }
             else
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable {2} was changed just after startup;"
-                    " - the executable {2} was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file {2} was intentionally modified;"
-                    " - a logical error in the code."
-                    , calculated_binary_hash, stored_binary_hash, executable_path);
+                /// If program is run under debugger, ptrace will fail.
+                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                {
+                    /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                    global_context->addWarningMessage(fmt::format(
+                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                        calculated_binary_hash));
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Calculated checksum of the executable ({0}) does not correspond"
+                        " to the reference checksum stored in the executable ({1})."
+                        " This may indicate one of the following:"
+                        " - the executable {2} was changed just after startup;"
+                        " - the executable {2} was corrupted on disk due to faulty hardware;"
+                        " - the loaded executable was corrupted in memory due to faulty hardware;"
+                        " - the file {2} was intentionally modified;"
+                        " - a logical error in the code.",
+                        calculated_binary_hash,
+                        stored_binary_hash,
+                        executable_path);
+                }
             }
         }
     }
