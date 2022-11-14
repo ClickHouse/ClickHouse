@@ -25,7 +25,6 @@ class Insert(Thread):
 
     def run(self):
         client = clickhouse_driver.Client('localhost')
-        ea = 0
         i = 0
         offset = 500
 
