@@ -16,14 +16,14 @@ Queries in ClickHouse can be divided into several types:
 
 The following settings regulate user permissions by the type of query:
 
--   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
+-   [readonly](#settings_readonly) — Restricts permissions for Write and DDL queries, and selectively on Change settings queries.
 -   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` can be performed with any settings.
 
 ## readonly {#settings_readonly}
 
-Restricts permissions for reading data, write data and change settings queries.
+Restricts permissions for read data, write data, and change settings queries.
 
 See how the queries are divided into types [above](#permissions_for_queries).
 
@@ -37,7 +37,7 @@ After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl`
 
 When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
 
-Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
+Setting `readonly = 1` prohibits the user from changing settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
 
 Default value: 0
 
@@ -52,8 +52,6 @@ Possible values:
 -   0 — DDL queries are not allowed.
 -   1 — DDL queries are allowed.
 
-You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+You can’t run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
 Default value: 1
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
