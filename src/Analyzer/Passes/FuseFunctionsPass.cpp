@@ -79,6 +79,16 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
     function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
     function_node->getArguments().getNodes() = { argument };
 
+    function_node->getArgumentsNode() = std::make_shared<ListNode>(QueryTreeNodes{argument});
+
+    if (!parameters.empty())
+    {
+        QueryTreeNodes parameter_nodes;
+        for (const auto & param : parameters)
+            parameter_nodes.emplace_back(std::make_shared<ConstantNode>(param));
+        function_node->getParametersNode() = std::make_shared<ListNode>(std::move(parameter_nodes));
+    }
+
     return function_node;
 }
 
@@ -128,7 +138,9 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     }
 }
 
-FunctionNodePtr createFusedQuantilesNode(const std::unordered_set<QueryTreeNodePtr *> nodes, const QueryTreeNodePtr & argument)
+/// Reorder nodes according to the value of the quantile level parameter.
+/// Levels are sorted in ascending order to make pass result deterministic.
+FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes, const QueryTreeNodePtr & argument)
 {
     Array parameters;
     parameters.reserve(nodes.size());
@@ -152,7 +164,34 @@ FunctionNodePtr createFusedQuantilesNode(const std::unordered_set<QueryTreeNodeP
         if (!constant_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
-        parameters.push_back(constant_value->getValue());
+        const auto & value = constant_value->getValue();
+        if (value.getType() != Field::Types::Float64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' should have parameter of type Float64, got '{}'",
+                function_name, value.getTypeName());
+
+        parameters.push_back(value);
+    }
+
+    {
+        /// Sort nodes and parameters in ascending order of quantile level
+        std::vector<size_t> permutation(nodes.size());
+        std::iota(permutation.begin(), permutation.end(), 0);
+        std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].get<Float64>() < parameters[j].get<Float64>(); });
+
+        std::vector<QueryTreeNodePtr *> new_nodes;
+        new_nodes.reserve(permutation.size());
+
+        Array new_parameters;
+        new_parameters.reserve(permutation.size());
+
+        for (size_t i : permutation)
+        {
+            new_nodes.emplace_back(nodes[i]);
+            new_parameters.emplace_back(std::move(parameters[i]));
+        }
+        nodes = std::move(new_nodes);
+        parameters = std::move(new_parameters);
     }
 
     return createResolvedAggregateFunction("quantiles", argument, parameters);
@@ -183,11 +222,13 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
     FuseFunctionsVisitor visitor_quantile({"quantile"});
     visitor_quantile.visit(query_tree_node);
 
-    for (auto & [argument, nodes] : visitor_quantile.argument_to_functions_mapping)
+    for (auto & [argument, nodes_set] : visitor_quantile.argument_to_functions_mapping)
     {
-        size_t nodes_size = nodes.size();
+        size_t nodes_size = nodes_set.size();
         if (nodes_size < 2)
             continue;
+
+        std::vector<QueryTreeNodePtr *> nodes(nodes_set.begin(), nodes_set.end());
 
         auto quantiles_node = createFusedQuantilesNode(nodes, argument.node);
         auto result_array_type = std::dynamic_pointer_cast<const DataTypeArray>(quantiles_node->getResultType());
@@ -196,11 +237,10 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
                 "Unexpected return type '{}' of function '{}', should be array",
                 quantiles_node->getResultType(), quantiles_node->getFunctionName());
 
-        size_t array_index = 1;
-        for (auto * node : nodes)
+        for (size_t i = 0; i < nodes_set.size(); ++i)
         {
-            *node = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, array_index);
-            array_index += 1;
+            size_t array_index = i + 1;
+            *nodes[i] = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, array_index);
         }
     }
 }
