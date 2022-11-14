@@ -29,9 +29,9 @@ See how the queries are divided into types [above](#permissions_for_queries).
 
 Possible values:
 
--   0 — All queries are allowed.
--   1 — Only read data queries are allowed.
--   2 — Read data and change settings queries are allowed.
+-   0 — Read, Write, and Change settings queries are allowed.
+-   1 — Only Read data queries are allowed.
+-   2 — Read data and Change settings queries are allowed.
 
 After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
 
