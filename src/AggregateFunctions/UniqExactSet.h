@@ -78,11 +78,13 @@ public:
         if (isSingleLevel())
             asSingleLevel().write(out);
         else
-            getTwoLevelSet()->writeAsSingleLevel(out);
+            /// We have to preserve compatibility with the old implementation that used only single level hash sets.
+            asTwoLevel().writeAsSingleLevel(out);
     }
 
     size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
+    /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
     {
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());

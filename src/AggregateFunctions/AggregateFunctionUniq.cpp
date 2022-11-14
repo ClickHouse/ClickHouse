@@ -139,6 +139,7 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     auto assign_bool_param = [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
     {
+        /// Using two level hash set if we wouldn't be able to merge in parallel can cause ~10% slowdown.
         if (settings && settings->max_threads > 1)
             return createAggregateFunctionUniq<
                 true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>, true /* is_able_to_parallelize_merge */>(name, argument_types, params, settings);

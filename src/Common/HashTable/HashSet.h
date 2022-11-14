@@ -11,6 +11,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
 /** NOTE HashSet could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
   * Also, key must be of type, that zero bytes is compared equals to zero key.
@@ -49,13 +57,12 @@ public:
 
 template <
     typename Key,
-    typename TCell,
+    typename TCell, /// Supposed to have no state (HashTableNoState)
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator>
 class TwoLevelHashSetTable
-    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>,
-      protected TCell::State
+    : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:
     using Self = TwoLevelHashSetTable;
@@ -65,18 +72,26 @@ public:
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
     /// Used by uniqExact to preserve backward compatibility.
-    void writeAsSingleLevel(DB::WriteBuffer & wb)
+    void writeAsSingleLevel(DB::WriteBuffer & wb) const
     {
-        TCell::State::write(wb);
         DB::writeVarUInt(this->size(), wb);
 
+        bool zero_written = false;
         for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+        {
             if (this->impls[i].hasZero())
+            {
+                if (zero_written)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No more than one zero value expected");
                 this->impls[i].zeroValue()->write(wb);
+                zero_written = true;
+            }
+        }
 
+        static constexpr HashTableNoState state;
         for (auto ptr = this->begin(); ptr != this->end(); ++ptr)
-            if (!ptr->isZero(*this))
-                ptr->write(wb);
+            if (!ptr.getPtr()->isZero(state))
+                ptr.getPtr()->write(wb);
     }
 };
 

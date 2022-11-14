@@ -34,7 +34,6 @@ namespace DB
 {
 struct Settings;
 
-
 /// uniq
 
 struct AggregateFunctionUniqUniquesHashSetData
@@ -144,12 +143,12 @@ namespace detail
 {
 
 template <typename T>
-struct IsUniqExactData : std::false_type
+struct IsUniqExactSet : std::false_type
 {
 };
 
-template <typename T>
-struct IsUniqExactData<AggregateFunctionUniqExactData<T>> : std::true_type
+template <typename T1, typename T2>
+struct IsUniqExactSet<UniqExactSet<T1, T2>> : std::true_type
 {
 };
 
@@ -180,21 +179,21 @@ template <typename T> struct AggregateFunctionUniqTraits
 template <typename T, typename Data, bool is_variadic = false, bool is_exact = false, bool argument_is_tuple = false>
 struct Adder
 {
+    /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
+    /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
     template <bool use_single_level_hash_table = true>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
         if constexpr (is_variadic)
         {
-            if constexpr (IsUniqExactData<Data>::value)
+            if constexpr (IsUniqExactSet<typename Data::Set>::value)
                 data.set.template insert<T, use_single_level_hash_table>(
                     UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
             else
                 data.set.insert(T{UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)});
-            return;
         }
-
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>
-            || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T>>)
+        else if constexpr (
+            std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData> || std::is_same_v<Data, AggregateFunctionUniqHLL12Data<T>>)
         {
             const auto & column = *columns[0];
             if constexpr (!std::is_same_v<T, String>)
@@ -244,8 +243,7 @@ struct Adder
     {
         bool use_single_level_hash_table = true;
         if constexpr (can_use_two_level_hash_table)
-            if (data.set.isTwoLevel())
-                use_single_level_hash_table = false;
+            use_single_level_hash_table = data.set.isSingleLevel();
 
         if (use_single_level_hash_table)
             addImpl<true>(data, columns, num_args, row_begin, row_end, flags, null_map);
