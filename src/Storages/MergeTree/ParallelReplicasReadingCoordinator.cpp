@@ -37,7 +37,7 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 {
     auto * log = &Poco::Logger::get("ParallelReplicasReadingCoordinator");
     Stopwatch watch;
-    
+
     String request_description = request.toString();
     std::lock_guard lock(mutex);
 
