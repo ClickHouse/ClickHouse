@@ -7,21 +7,23 @@
 
 #include <consistent_hashing.h>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
+    extern const int BAD_ARGUMENTS;
 }
 
-static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
+static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size > MAX_RANGES_SIZE)
-        throw Poco::Exception("Too large ranges size.");
+    if (size > DEFAULT_MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too large ranges size: {}.", size);
 
     ranges.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -95,14 +97,21 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
 
 UInt64 PartitionReadRequest::getConsistentHash(size_t buckets) const
 {
-    auto hash = SipHash();
+    SipHash hash;
+
+    hash.update(partition_id.size());
     hash.update(partition_id);
+
+    hash.update(part_name.size());
     hash.update(part_name);
+
+    hash.update(projection_name.size());
     hash.update(projection_name);
 
     hash.update(block_range.begin);
     hash.update(block_range.end);
 
+    hash.update(mark_ranges.size());
     for (const auto & range : mark_ranges)
     {
         hash.update(range.begin);
@@ -118,7 +127,7 @@ void PartitionReadResponse::serialize(WriteBuffer & out) const
     /// Must be the first
     writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
-    writeVarUInt(static_cast<UInt64>(denied), out);
+    writeBinary(denied, out);
     writeMarkRangesBinary(mark_ranges, out);
 }
 
