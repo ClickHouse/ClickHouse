@@ -5,8 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/hex.h>
-#include "Columns/IColumn.h"
-#include "DataTypes/IDataType.h"
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
