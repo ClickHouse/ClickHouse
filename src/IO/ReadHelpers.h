@@ -843,7 +843,8 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
     char s[16];
     size_t size = buf.read(s, sizeof(s));
 
-    auto ret_false = [&]() {
+    auto ret_false = [&]()
+    {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw ParsingException(std::string("Cannot parse IPv4 ") + s, ErrorCodes::CANNOT_PARSE_IPV4);
         else
@@ -897,7 +898,8 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
     char s[40];
     size_t size = buf.read(s, sizeof(s));
 
-    auto ret_false = [&]() {
+    auto ret_false = [&]()
+    {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw ParsingException(std::string("Cannot parse IPv6 ") + s, ErrorCodes::CANNOT_PARSE_IPV6);
         else
@@ -909,7 +911,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
     if (parseIPv6(s, reinterpret_cast<unsigned char *>(ip.toUnderType().items)))
         return ReturnType(true);
-    
+
     return ret_false();
 }
 
