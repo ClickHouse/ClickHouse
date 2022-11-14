@@ -5,6 +5,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include "base/IPv4andIPv6.h"
 #include <algorithm>
 
 namespace DB
@@ -72,6 +73,8 @@ INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
 INSTANTIATE(char *)
 INSTANTIATE(UUID)
+INSTANTIATE(IPv4)
+INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 

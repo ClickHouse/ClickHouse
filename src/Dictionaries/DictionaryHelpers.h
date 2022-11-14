@@ -267,6 +267,14 @@ public:
         {
             return ColumnType::create(size);
         }
+        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv4>)
+        {
+            return ColumnType::create(size);
+        }
+        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv6>)
+        {
+            return ColumnType::create(size);
+        }
         else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);

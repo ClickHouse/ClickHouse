@@ -37,6 +37,8 @@ String FieldVisitorDump::operator() (const UInt256 & x) const { return formatQuo
 String FieldVisitorDump::operator() (const Int128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
 String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
 String FieldVisitorDump::operator() (const UUID & x) const { return formatQuotedWithPrefix(x, "UUID_"); }
+String FieldVisitorDump::operator() (const IPv4 & x) const { return formatQuotedWithPrefix(x, "IPv4_"); }
+String FieldVisitorDump::operator() (const IPv6 & x) const { return formatQuotedWithPrefix(x, "IPv6_"); }
 String FieldVisitorDump::operator() (const bool & x) const { return formatQuotedWithPrefix(x, "Bool_"); }
 
 

@@ -17,6 +17,8 @@ public:
     String operator() (const Int128 & x) const;
     String operator() (const Int256 & x) const;
     String operator() (const UUID & x) const;
+    String operator() (const IPv4 & x) const;
+    String operator() (const IPv6 & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;

@@ -52,7 +52,9 @@ public:
         if (!isStringOrFixedString(arguments[0])
             && !isArray(arguments[0])
             && !isMap(arguments[0])
-            && !isUUID(arguments[0]))
+            && !isUUID(arguments[0])
+            && !isIPv4(arguments[0])
+            && !isIPv6(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<ResultType>>();

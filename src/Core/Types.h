@@ -7,6 +7,7 @@
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/UUID.h>
+#include <base/IPv4andIPv6.h>
 
 
 namespace DB
@@ -83,6 +84,8 @@ enum class TypeIndex
     LowCardinality,
     Map,
     Object,
+    IPv4,
+    IPv6,
 };
 
 

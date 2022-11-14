@@ -518,82 +518,6 @@ private:
     }
 };
 
-template <IPStringToNumExceptionMode exception_mode>
-class FunctionToIPv4 : public FunctionIPv4StringToNum<exception_mode>
-{
-public:
-    using Base = FunctionIPv4StringToNum<exception_mode>;
-
-    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
-        ? "toIPv4"
-        : (exception_mode == IPStringToNumExceptionMode::Default ? "toIPv4OrDefault" : "toIPv4OrNull");
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToIPv4>(context); }
-
-    explicit FunctionToIPv4(ContextPtr context) : Base(context) { }
-
-    String getName() const override { return name; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = DataTypeFactory::instance().get("IPv4");
-
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
-    }
-};
-
-template <IPStringToNumExceptionMode exception_mode>
-class FunctionToIPv6 : public FunctionIPv6StringToNum<exception_mode>
-{
-public:
-    using Base = FunctionIPv6StringToNum<exception_mode>;
-
-    static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
-        ? "toIPv6"
-        : (exception_mode == IPStringToNumExceptionMode::Default ? "toIPv6OrDefault" : "toIPv6OrNull");
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToIPv6>(context); }
-
-    explicit FunctionToIPv6(ContextPtr context) : Base(context) { }
-
-    String getName() const override { return name; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = DataTypeFactory::instance().get("IPv6");
-
-        if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
-    }
-};
-
 class FunctionMACNumToString : public IFunction
 {
 public:
@@ -1146,18 +1070,11 @@ REGISTER_FUNCTION(Coding)
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>();
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>();
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>();
-    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Throw>>();
-    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Default>>();
-    factory.registerFunction<FunctionToIPv4<IPStringToNumExceptionMode::Null>>();
 
     factory.registerFunction<FunctionIPv6NumToString>();
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>();
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>();
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Null>>();
-    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Throw>>();
-    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Default>>();
-    factory.registerFunction<FunctionToIPv6<IPStringToNumExceptionMode::Null>>();
-
 
     /// MySQL compatibility aliases:
     factory.registerAlias("INET_ATON", FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>::name, FunctionFactory::CaseInsensitive);
