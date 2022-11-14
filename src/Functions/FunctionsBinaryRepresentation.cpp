@@ -65,13 +65,27 @@ struct HexImpl
         }
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
     {
-        while (pos < end)
+        if (!reverse_order)
         {
-            writeHexByteUppercase(*pos, out);
-            ++pos;
-            out += word_size;
+            while (pos < end)
+            {
+                writeHexByteUppercase(*pos, out);
+                ++pos;
+                out += word_size;
+            }
+        }
+        else
+        {
+            auto start_pos = pos;
+            pos = end - 1;
+            while (pos >= start_pos)
+            {
+                writeHexByteUppercase(*pos, out);
+                --pos;
+                out += word_size;
+            }
         }
         *out = '\0';
         ++out;
@@ -95,7 +109,8 @@ struct HexImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
+            bool reverse_order = (std::endian::native == std::endian::big);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -174,7 +189,9 @@ struct BinImpl
         for (size_t i = 0; i < size; ++i)
         {
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
+
+            bool reverse_order = (std::endian::native == std::endian::big);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out, reverse_order);
 
             pos += hex_length;
             out_offsets[i] = pos;
@@ -182,13 +199,27 @@ struct BinImpl
         col_res = std::move(col_str);
     }
 
-    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
+    static void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out, bool reverse_order = false)
     {
-        while (pos < end)
+        if (!reverse_order)
         {
-            writeBinByte(*pos, out);
-            ++pos;
-            out += word_size;
+            while (pos < end)
+            {
+                writeBinByte(*pos, out);
+                ++pos;
+                out += word_size;
+            }
+        }
+        else
+        {
+            auto start_pos = pos;
+            pos = end - 1;
+            while (pos >= start_pos)
+            {
+                writeBinByte(*pos, out);
+                --pos;
+                out += word_size;
+            }
         }
         *out = '\0';
         ++out;
