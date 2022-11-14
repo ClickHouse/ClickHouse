@@ -1,23 +1,13 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
-#include <algorithm>
-#include <vector>
-#include <compare>
-#include <numeric>
-#include <unordered_map>
 #include <map>
-#include <iostream>
-#include <set>
-#include <cassert>
-
 
 #include <Common/logger_useful.h>
-#include <base/types.h>
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
-#include "IO/WriteBufferFromString.h"
-#include <Storages/MergeTree/MarkRange.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
+
 
 namespace DB
 {
@@ -45,14 +35,14 @@ public:
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
-    AtomicStopwatch watch;
+    Stopwatch watch;
+    SCOPE_EXIT({
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {} ns", watch.elapsed());
+    });
+
     std::lock_guard lock(mutex);
 
     auto partition_it = partitions.find(request.partition_id);
-
-    SCOPE_EXIT({
-        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ns", watch.elapsed());
-    });
 
     PartToRead::PartAndProjectionNames part_and_projection
     {
