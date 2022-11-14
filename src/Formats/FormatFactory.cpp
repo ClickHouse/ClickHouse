@@ -445,8 +445,8 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
-    KnownFormatNames::instance().add(name);
     registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -455,7 +455,6 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     if (target)
         throw Exception("FormatFactory: Non trivial prefix and suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(non_trivial_prefix_and_suffix_checker);
-    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker)
@@ -486,6 +485,7 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
     registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
