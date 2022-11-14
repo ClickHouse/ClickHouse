@@ -208,23 +208,7 @@ QUERY id: 0
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
--- { echoOn }
-SELECT '-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in most inner subquery here';
 -- GROUP BY with aggregation function which depends on order -> keep ORDER BY in most inner subquery here
-EXPLAIN QUERY TREE run_passes = 1
-SELECT a
-FROM
-(
-    SELECT any(number) AS a
-    FROM
-    (
-        SELECT *
-        FROM numbers(3)
-        ORDER BY number ASC
-    )
-    GROUP BY number
-)
-ORDER BY a ASC;
 QUERY id: 0
   PROJECTION COLUMNS
     a UInt64
@@ -261,3 +245,53 @@ QUERY id: 0
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
+-- Check that optimization works for subqueries as well, - the same query as previous one used as subquery here
+QUERY id: 0
+  PROJECTION COLUMNS
+    a UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
+  JOIN TREE
+    QUERY id: 3, is_subquery: 1
+      PROJECTION COLUMNS
+        a UInt64
+      PROJECTION
+        LIST id: 4, nodes: 1
+          FUNCTION id: 5, function_name: any, function_type: aggregate, result_type: UInt64
+            ARGUMENTS
+              LIST id: 6, nodes: 1
+                COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
+      JOIN TREE
+        QUERY id: 8, is_subquery: 1
+          PROJECTION COLUMNS
+            number UInt64
+          PROJECTION
+            LIST id: 9, nodes: 1
+              COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
+          JOIN TREE
+            QUERY id: 11, is_subquery: 1
+              PROJECTION COLUMNS
+                number UInt64
+              PROJECTION
+                LIST id: 12, nodes: 1
+                  COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 14
+              JOIN TREE
+                TABLE_FUNCTION id: 14, table_function_name: numbers
+                  ARGUMENTS
+                    LIST id: 15, nodes: 1
+                      CONSTANT id: 16, constant_value: UInt64_3, constant_value_type: UInt8
+          ORDER BY
+            LIST id: 17, nodes: 1
+              SORT id: 18, sort_direction: ASCENDING, with_fill: 0
+                EXPRESSION
+                  COLUMN id: 19, column_name: number, result_type: UInt64, source_id: 11
+      GROUP BY
+        LIST id: 20, nodes: 1
+          COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
+  WHERE
+    FUNCTION id: 21, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 22, nodes: 2
+          COLUMN id: 2, column_name: a, result_type: UInt64, source_id: 3
+          CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
