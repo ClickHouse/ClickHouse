@@ -33,17 +33,26 @@ public:
 
         if (function_node->getFunctionName() == "count" && !first_argument_constant_literal.isNull())
         {
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
         }
-        else if (function_node->getFunctionName() == "sum" && first_argument_constant_literal.getType() == Field::Types::UInt64 &&
+        else if (function_node->getFunctionName() == "sum" &&
+            first_argument_constant_literal.getType() == Field::Types::UInt64 &&
             first_argument_constant_literal.get<UInt64>() == 1)
         {
-            auto result_type = function_node->getResultType();
-            AggregateFunctionProperties properties;
-            auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
-            function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(result_type));
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
         }
+    }
+private:
+    static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
+    {
+        auto function_result_type = function_node.getResultType();
+
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 };
 

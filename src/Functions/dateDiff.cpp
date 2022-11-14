@@ -35,109 +35,14 @@ namespace ErrorCodes
 namespace
 {
 
-/** dateDiff('unit', t1, t2, [timezone])
-  * age('unit', t1, t2, [timezone])
-  * t1 and t2 can be Date, Date32, DateTime or DateTime64
-  *
-  * If timezone is specified, it applied to both arguments.
-  * If not, timezones from datatypes t1 and t2 are used.
-  * If that timezones are not the same, the result is unspecified.
-  *
-  * Timezone matters because days can have different length.
-  */
-template <bool is_date_diff>
-class FunctionDateDiff : public IFunction
+template <bool is_diff>
+class DateDiffImpl
 {
 public:
-    static constexpr auto name = is_date_diff ? "dateDiff" : "age";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    String getName() const override
-    {
-        return name;
-    }
+    explicit DateDiffImpl(const String & name_) : name(name_) {}
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
-                getName(), arguments.size());
-
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} (unit) must be String",
-                getName());
-
-        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be Date, Date32, DateTime or DateTime64",
-                getName());
-
-        if (!isDate(arguments[2]) && !isDate32(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Third argument for function {} must be Date, Date32, DateTime or DateTime64",
-                getName()
-                );
-
-        if (arguments.size() == 4 && !isString(arguments[3]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Fourth argument for function {} (timezone) must be String",
-                getName());
-
-        return std::make_shared<DataTypeInt64>();
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        const auto * unit_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-        if (!unit_column)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "First argument for function {} must be constant String",
-                getName());
-
-        String unit = Poco::toLower(unit_column->getValue<String>());
-
-        const IColumn & x = *arguments[1].column;
-        const IColumn & y = *arguments[2].column;
-
-        size_t rows = input_rows_count;
-        auto res = ColumnInt64::create(rows);
-
-        const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
-        const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
-
-        if (unit == "year" || unit == "yy" || unit == "yyyy")
-            dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "quarter" || unit == "qq" || unit == "q")
-            dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "month" || unit == "mm" || unit == "m")
-            dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "week" || unit == "wk" || unit == "ww")
-            dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "day" || unit == "dd" || unit == "d")
-            dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hh" || unit == "h")
-            dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "minute" || unit == "mi" || unit == "n")
-            dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "second" || unit == "ss" || unit == "s")
-            dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} does not support '{}' unit", getName(), unit);
-
-        return res;
-    }
-
-private:
     template <typename Transform>
     void dispatchForColumns(
         const IColumn & x, const IColumn & y,
@@ -163,7 +68,7 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column for first argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                getName());
+                name);
     }
 
     template <typename Transform, typename LeftColumnType>
@@ -191,7 +96,7 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                getName());
+                name);
     }
 
     template <typename Transform, typename T1>
@@ -211,7 +116,7 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column for second argument of function {}, must be Date, Date32, DateTime or DateTime64",
-                getName());
+                name);
     }
 
     template <typename Transform, typename LeftColumnType, typename RightColumnType>
@@ -262,7 +167,7 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        if constexpr (is_date_diff)
+        if constexpr (is_diff)
             return static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
         else
@@ -349,6 +254,174 @@ private:
         else
             return v;
     }
+private:
+    String name;
+};
+
+
+/** dateDiff('unit', t1, t2, [timezone])
+  * age('unit', t1, t2, [timezone])
+  * t1 and t2 can be Date, Date32, DateTime or DateTime64
+  *
+  * If timezone is specified, it applied to both arguments.
+  * If not, timezones from datatypes t1 and t2 are used.
+  * If that timezones are not the same, the result is unspecified.
+  *
+  * Timezone matters because days can have different length.
+  */
+template <bool is_date_diff>
+class FunctionDateDiff : public IFunction
+{
+public:
+    static constexpr auto name = is_date_diff ? "dateDiff" : "age";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 3 && arguments.size() != 4)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
+                getName(), arguments.size());
+
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} (unit) must be String",
+                getName());
+
+        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName());
+
+        if (!isDate(arguments[2]) && !isDate32(arguments[2]) && !isDateTime(arguments[2]) && !isDateTime64(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Third argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName()
+                );
+
+        if (arguments.size() == 4 && !isString(arguments[3]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Fourth argument for function {} (timezone) must be String",
+                getName());
+
+        return std::make_shared<DataTypeInt64>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * unit_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!unit_column)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "First argument for function {} must be constant String",
+                getName());
+
+        String unit = Poco::toLower(unit_column->getValue<String>());
+
+        const IColumn & x = *arguments[1].column;
+        const IColumn & y = *arguments[2].column;
+
+        size_t rows = input_rows_count;
+        auto res = ColumnInt64::create(rows);
+
+        const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
+        const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
+
+        if (unit == "year" || unit == "yy" || unit == "yyyy")
+            impl.template dispatchForColumns<ToRelativeYearNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "quarter" || unit == "qq" || unit == "q")
+            impl.template dispatchForColumns<ToRelativeQuarterNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "month" || unit == "mm" || unit == "m")
+            impl.template dispatchForColumns<ToRelativeMonthNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "week" || unit == "wk" || unit == "ww")
+            impl.template dispatchForColumns<ToRelativeWeekNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "day" || unit == "dd" || unit == "d")
+            impl.template dispatchForColumns<ToRelativeDayNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "hour" || unit == "hh" || unit == "h")
+            impl.template dispatchForColumns<ToRelativeHourNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "minute" || unit == "mi" || unit == "n")
+            impl.template dispatchForColumns<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else if (unit == "second" || unit == "ss" || unit == "s")
+            impl.template dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, timezone_x, timezone_y, res->getData());
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} does not support '{}' unit", getName(), unit);
+
+        return res;
+    }
+private:
+    DateDiffImpl<is_date_diff> impl{name};
+};
+
+
+/** TimeDiff(t1, t2)
+  * t1 and t2 can be Date or DateTime
+  */
+class FunctionTimeDiff : public IFunction
+{
+    using ColumnDateTime64 = ColumnDecimal<DateTime64>;
+public:
+    static constexpr auto name = "TimeDiff";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeDiff>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName());
+
+        if (!isDate(arguments[1]) && !isDate32(arguments[1]) && !isDateTime(arguments[1]) && !isDateTime64(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function {} must be Date, Date32, DateTime or DateTime64",
+                getName()
+                );
+
+        return std::make_shared<DataTypeInt64>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const IColumn & x = *arguments[0].column;
+        const IColumn & y = *arguments[1].column;
+
+        size_t rows = input_rows_count;
+        auto res = ColumnInt64::create(rows);
+
+        impl.dispatchForColumns<ToRelativeSecondNumImpl<ResultPrecision::Extended>>(x, y, DateLUT::instance(), DateLUT::instance(), res->getData());
+
+        return res;
+    }
+private:
+    DateDiffImpl<true> impl{name};
 };
 
 }
@@ -356,6 +429,20 @@ private:
 REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+}
+
+REGISTER_FUNCTION(TimeDiff)
+{
+    factory.registerFunction<FunctionTimeDiff>({R"(
+Returns the difference between two dates or dates with time values. The difference is calculated in seconds units (see toRelativeSecondNum).
+It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
+
+Example:
+[example:typical]
+)",
+    Documentation::Examples{
+        {"typical", "SELECT timeDiff(UTCTimestamp(), now());"}},
+    Documentation::Categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Age)

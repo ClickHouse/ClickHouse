@@ -2151,3 +2151,20 @@ def materialized_database_mysql_date_type_to_date32(
         "SELECT b from test_database.a order by a FORMAT TSV",
         "1970-01-01\n1971-02-16\n2101-05-16\n2022-02-16\n" + "2104-06-06\n",
     )
+
+
+def savepoint(clickhouse_node, mysql_node, mysql_host):
+    db = "savepoint"
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY)")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    mysql_node.query("BEGIN")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
+    mysql_node.query("SAVEPOINT savepoint_1")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
+    mysql_node.query("ROLLBACK TO savepoint_1")
+    mysql_node.query("COMMIT")
