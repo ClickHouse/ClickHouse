@@ -46,7 +46,7 @@ struct DecimalOpHerpers
             i_n2 = 0;
             for (Int32 j = len2 - 1; j >= 0; --j)
             {
-                if (unlikely(i_n1 + i_n2 >= 76))
+                if (unlikely(i_n1 + i_n2 >= len1 + len2))
                     throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
                 UInt16 sum = num1[i] * num2[j] + result[i_n1 + i_n2] + carry;
                 carry = sum / 10;
@@ -55,7 +55,11 @@ struct DecimalOpHerpers
             }
 
             if (carry > 0)
+            {
+                if (unlikely(i_n1 + i_n2 >= len1 + len2))
+                    throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
                 result[i_n1 + i_n2] += carry;
+            }
 
             ++i_n1;
         }
@@ -79,22 +83,24 @@ struct DecimalOpHerpers
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
-        Int256 temp = number[idx];
+        Int256 temp = 0;
+
         while (temp < divisor && max_index > idx)
         {
-            temp = temp * 10 + number[++idx];
+            temp = temp * 10 + number[idx];
+            ++idx;
         }
 
         if (unlikely(temp == 0))
             return {0};
 
-        result.push_back(temp / divisor);
-
-        while (max_index > idx)
+        while (max_index >= idx)
         {
-            temp = (temp % divisor) * 10 + number[++idx];
             result.push_back(temp / divisor);
+            temp = (temp % divisor) * 10 + number[idx];
+            ++idx;
         }
+        result.push_back(temp / divisor);
 
         return result;
     }
