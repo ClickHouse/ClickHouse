@@ -745,7 +745,7 @@ Our core data structure, the Merge Tree, is obviously under constant evolution w
 
 ## Distribution of contributors with respect to docs and code over the month
 
-**During data capture the changes on the `docs/` folder have been filtered out so this is an estimate only**
+**During data capture the changes on the `docs/` folder have been filtered out due to a very commit dirty history. The results of this query are therefore not accurate.**
 
 Do we write more docs at certain times of the month e.g., around release dates? We can use the `countIf` function to compute a simple ratio, visualizing the result using the `bar` function.
 
@@ -804,7 +804,7 @@ FROM
 31 rows in set. Elapsed: 0.043 sec. Processed 7.54 million rows, 40.53 MB (176.71 million rows/s., 950.40 MB/s.)
 ```
 
-Maybe a little more near the end of the month, but overall we keep a good even distribution.
+Maybe a little more near the end of the month, but overall we keep a good even distribution. Again this is unrealiable due to the filtering of the docs filter during data insertion.
 
 ## Authors with the most diverse impact
 
@@ -1318,7 +1318,7 @@ A Sankey chart (SuperSet) allows this to be visualized nicely. Note we increase 
 
 Alexey clearly likes removing other peoples code. Lets exclude him for a more balanced view of code removal.
 
-![](./images/superset-authors-matrix_v3.png)
+![](./images/superset-authors-matrix_v2.png)
 
 ## Who is the highest percentage contributor per day of week?
 
@@ -1570,7 +1570,59 @@ LIMIT 10
 
 ## List files that were rewritten most number of times?
 
-We consider a rewrite to be when over 50% of the file are deleted, and 50% added. Adjust the query to your own interpretation of what constitutes this.
+
+The simplest approach to this question might be to simply count the most number of line modifications per path (restricted to current files) e.g.:
+
+```sql
+WITH current_files AS
+    (
+        SELECT path
+        FROM
+        (
+            SELECT
+                old_path AS path,
+                max(time) AS last_time,
+                2 AS change_type
+            FROM git.file_changes
+            GROUP BY old_path
+            UNION ALL
+            SELECT
+                path,
+                max(time) AS last_time,
+                argMax(change_type, time) AS change_type
+            FROM git.file_changes
+            GROUP BY path
+        )
+        GROUP BY path
+        HAVING (argMax(change_type, last_time) != 2) AND (NOT match(path, '(^dbms/)|(^libs/)|(^tests/testflows/)|(^programs/server/store/)'))
+        ORDER BY path ASC
+    )
+SELECT
+    path,
+    count() AS c
+FROM git.line_changes
+WHERE (file_extension IN ('h', 'cpp', 'sql')) AND (path IN (current_files))
+GROUP BY path
+ORDER BY c DESC
+LIMIT 10
+
+┌─path───────────────────────────────────────────────────┬─────c─┐
+│ src/Storages/StorageReplicatedMergeTree.cpp            │ 21871 │
+│ src/Storages/MergeTree/MergeTreeData.cpp               │ 17709 │
+│ programs/client/Client.cpp                             │ 15882 │
+│ src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp │ 14249 │
+│ src/Interpreters/InterpreterSelectQuery.cpp            │ 12636 │
+│ src/Parsers/ExpressionListParsers.cpp                  │ 11794 │
+│ src/Analyzer/QueryAnalysisPass.cpp                     │ 11760 │
+│ src/Coordination/KeeperStorage.cpp                     │ 10225 │
+│ src/Functions/FunctionsConversion.h                    │  9247 │
+│ src/Parsers/ExpressionElementParsers.cpp               │  8197 │
+└────────────────────────────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.160 sec. Processed 8.07 million rows, 98.99 MB (50.49 million rows/s., 619.49 MB/s.)
+```
+
+This doesn't capture the notion of a "re-write" however, where a large portion of the file changes in any commit. This requires a more complex query. If we consider a rewrite to be when over 50% of the file are deleted, and 50% added. You can adjust the query to your own interpretation of what constitutes this.
 
 The query is limited to the current files only. We list all file changes by grouping by `path` and `commit_hash`, returning the number of lines added and removed. Using a window function, we estimate the file's total size at any moment in time by performing a cumulative sum and estimating the impact of any change on file size as `lines added - lines removed`. Using this statistic, we can calculate the percentage of the file that has been added or removed for each change. Finally, we count the number of file changes that constitute a rewrite per file i.e. `(percent_add >= 0.5) AND (percent_delete >= 0.5) AND current_size > 50`. Note we require files to be more than 50 lines to avoid early contributions to a file being counted as a rewrite. This also avoids a bias to very small files, which may be more likely to be rewritten.
 
@@ -1858,7 +1910,7 @@ LIMIT 20
 
 We can plot this distribution as a histogram.
 
-[play](https://play.clickhouse.com/play?user=play#V0lUSCAoCiAgICAgICAgU0VMRUNUIGhpc3RvZ3JhbSgxMCkocmF0aW9fY29kZSkgQVMgaGlzdAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gTk9UIElOICgnaCcsICdjcHAnKSkgQU5EIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkgQVMgdGVzdCwKICAgICAgICAgICAgICAgIGNvdW50SWYoKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoTk9UIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkpIEFTIGNvZGUsCiAgICAgICAgICAgICAgICBjb2RlIC8gKGNvZGUgKyB0ZXN0KSBBUyByYXRpb19jb2RlCiAgICAgICAgICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICAgICAgICAgIEdST1VQIEJZIGF1dGhvcgogICAgICAgICAgICBIQVZJTkcgY29kZSA+IDIwCiAgICAgICAgKQogICAgKSBBUyBoaXN0ClNFTEVDVAogICAgYXJyYXlKb2luKGhpc3QpLjEgQVMgbG93ZXIsCiAgICBhcnJheUpvaW4oaGlzdCkuMiBBUyB1cHBlciwKICAgIGJhcihhcnJheUpvaW4oaGlzdCkuMywgMCwgMTAwLCAyMCkgQVMgYmFy)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCAoCiAgICAgICAgU0VMRUNUIGhpc3RvZ3JhbSgxMCkocmF0aW9fY29kZSkgQVMgaGlzdAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzaCcsICdweScsICdleHBlY3QnKSkgQU5EIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkgQVMgdGVzdCwKICAgICAgICAgICAgICAgIGNvdW50SWYoKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoTk9UIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkpIEFTIGNvZGUsCiAgICAgICAgICAgICAgICBjb2RlIC8gKGNvZGUgKyB0ZXN0KSBBUyByYXRpb19jb2RlCiAgICAgICAgICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICAgICAgICAgIEdST1VQIEJZIGF1dGhvcgogICAgICAgICAgICBIQVZJTkcgY29kZSA+IDIwCiAgICAgICAgICAgIE9SREVSIEJZIGNvZGUgREVTQwogICAgICAgICAgICBMSU1JVCAyMAogICAgICAgICkKICAgICkgQVMgaGlzdApTRUxFQ1QKICAgIGFycmF5Sm9pbihoaXN0KS4xIEFTIGxvd2VyLAogICAgYXJyYXlKb2luKGhpc3QpLjIgQVMgdXBwZXIsCiAgICBiYXIoYXJyYXlKb2luKGhpc3QpLjMsIDAsIDEwMCwgNTAwKSBBUyBiYXI=)
 
 ```sql
 WITH (
@@ -1867,70 +1919,79 @@ WITH (
         (
             SELECT
                 author,
-                countIf((file_extension NOT IN ('h', 'cpp')) AND (path LIKE '%tests%')) AS test,
+                countIf((file_extension IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
             FROM git.file_changes
             GROUP BY author
             HAVING code > 20
+            ORDER BY code DESC
+            LIMIT 20
         )
     ) AS hist
 SELECT
     arrayJoin(hist).1 AS lower,
     arrayJoin(hist).2 AS upper,
-    bar(arrayJoin(hist).3, 0, 100, 20) AS bar
+    bar(arrayJoin(hist).3, 0, 100, 500) AS bar
 
-┌────────────────lower─┬───────────────upper─┬─bar───────────┐
-│ 0.033562166285278416 │ 0.08337307389808846 │ ▏             │
-│  0.08337307389808846 │ 0.17470067710547066 │ ▍             │
-│  0.17470067710547066 │ 0.25909878535992237 │ ▍             │
-│  0.25909878535992237 │  0.3775444108257119 │ ▋             │
-│   0.3775444108257119 │  0.5108436376911997 │ ███▏          │
-│   0.5108436376911997 │   0.627700343453621 │ █████▋        │
-│    0.627700343453621 │  0.7417374581723406 │ ███████████▊  │
-│   0.7417374581723406 │  0.8467725898688147 │ ████████████▏ │
-│   0.8467725898688147 │  0.9427852671078976 │ ██████████▌   │
-│   0.9427852671078976 │                   1 │ █████████▊    │
-└──────────────────────┴─────────────────────┴───────────────┘
-
-10 rows in set. Elapsed: 0.053 sec. Processed 266.05 thousand rows, 4.65 MB (5.01 million rows/s., 87.61 MB/s.)
+┌──────────────lower─┬──────────────upper─┬─bar─────────────────────┐
+│ 0.7943704340352385 │ 0.8033711363614333 │ █████                   │
+│ 0.8033711363614333 │ 0.8199118213401927 │ █████▋                  │
+│ 0.8199118213401927 │ 0.8378309872629326 │ ████████▋               │
+│ 0.8378309872629326 │ 0.8530295909585852 │ █████▋                  │
+│ 0.8530295909585852 │ 0.8828273906355679 │ ██████▎                 │
+│ 0.8828273906355679 │ 0.9237540060993992 │ ███████████████         │
+│ 0.9237540060993992 │ 0.9477682629346298 │ ██████████████████████▌ │
+│ 0.9477682629346298 │ 0.9627948304418104 │ ███████████████▋        │
+│ 0.9627948304418104 │  0.981300247585602 │ ██████████              │
+│  0.981300247585602 │ 0.9928451178451179 │ █████▋                  │
+└────────────────────┴────────────────────┴─────────────────────────┘
+10 rows in set. Elapsed: 0.051 sec. Processed 266.05 thousand rows, 4.65 MB (5.24 million rows/s., 91.64 MB/s.)
 ```
 
 Most contributors write more code than tests, as you'd expect.
 
-What about who adds the most comments when contributing code?
+What about who adds the most comments when contributing code? 
 
-[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb21tZW50JykgQVMgY29tbWVudHMsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZSwKICAgIGNvbW1lbnRzIC8gKGNvbW1lbnRzICsgY29kZSkgQVMgcmF0aW9fY29tbWVudHMKRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKV0hFUkUgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoc2lnbiA9IDEpCkdST1VQIEJZIGF1dGhvcgpIQVZJTkcgY29kZSA+IDIwCk9SREVSIEJZIGNvZGUgREVTQwpMSU1JVCAxMA==)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBhdmcocmF0aW9fY29tbWVudHMpIEFTIGF2Z19yYXRpb19jb21tZW50cywKICAgIHN1bShjb2RlKSBBUyBjb2RlCkZST00KKAogICAgU0VMRUNUCiAgICAgICAgYXV0aG9yLAogICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgIGNvdW50SWYobGluZV90eXBlID0gJ0NvbW1lbnQnKSBBUyBjb21tZW50cywKICAgICAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZSwKICAgICAgICBpZihjb21tZW50cyA+IDAsIGNvbW1lbnRzIC8gKGNvbW1lbnRzICsgY29kZSksIDApIEFTIHJhdGlvX2NvbW1lbnRzCiAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgR1JPVVAgQlkKICAgICAgICBhdXRob3IsCiAgICAgICAgY29tbWl0X2hhc2gKKQpHUk9VUCBCWSBhdXRob3IKT1JERVIgQlkgY29kZSBERVNDCkxJTUlUIDEwCg==)
 
 ```sql
 SELECT
     author,
-    countIf(line_type = 'Comment') AS comments,
-    countIf(line_type = 'Code') AS code,
-    comments / (comments + code) AS ratio_comments
-FROM git.line_changes
-WHERE (file_extension IN ('h', 'cpp', 'sql')) AND (sign = 1)
+    avg(ratio_comments) AS avg_ratio_comments,
+    sum(code) AS code
+FROM
+(
+    SELECT
+        author,
+        commit_hash,
+        countIf(line_type = 'Comment') AS comments,
+        countIf(line_type = 'Code') AS code,
+        if(comments > 0, comments / (comments + code), 0) AS ratio_comments
+    FROM git.line_changes
+    GROUP BY
+        author,
+        commit_hash
+)
 GROUP BY author
-HAVING code > 20
 ORDER BY code DESC
 LIMIT 10
-
-┌─author─────────────┬─comments─┬───code─┬───────ratio_comments─┐
-│ Alexey Milovidov   │    30867 │ 356978 │  0.07958591705449342 │
-│ Nikolai Kochetov   │    11128 │ 113261 │  0.08946128676973045 │
-│ Vitaly Baranov     │     5120 │  84504 │  0.05712755511916451 │
-│ Maksim Kita        │     6184 │  78778 │  0.07278548056778325 │
-│ alesapin           │     7456 │  72279 │  0.09350975105035429 │
-│ kssenii            │     5804 │  61852 │  0.08578692207638643 │
-│ Alexey Arno        │     4430 │  61674 │   0.0670156117632821 │
-│ Alexander Tokmakov │     4022 │  41964 │  0.08746140129604663 │
-│ Anton Popov        │     2067 │  38448 │ 0.051018141429100335 │
-│ Ivan               │      947 │  33711 │  0.02732413872698944 │
-└────────────────────┴──────────┴────────┴──────────────────────┘
-
-10 rows in set. Elapsed: 0.047 sec. Processed 7.54 million rows, 31.57 MB (161.75 million rows/s., 677.77 MB/s.)
+┌─author─────────────┬──avg_ratio_comments─┬────code─┐
+│ Alexey Milovidov   │  0.1034915408309902 │ 1147196 │
+│ s-kat              │  0.1361718900215362 │  614224 │
+│ Nikolai Kochetov   │ 0.08722993407690126 │  218328 │
+│ alesapin           │  0.1040477684726504 │  198082 │
+│ Vitaly Baranov     │ 0.06446875712939285 │  161801 │
+│ Maksim Kita        │ 0.06863376297549255 │  156381 │
+│ Alexey Arno        │ 0.11252677608033655 │  146642 │
+│ Vitaliy Zakaznikov │ 0.06199215397180561 │  138530 │
+│ kssenii            │ 0.07455322590796751 │  131143 │
+│ Artur              │ 0.12383737231074826 │  121484 │
+└────────────────────┴─────────────────────┴─────────┘
+10 rows in set. Elapsed: 0.290 sec. Processed 7.54 million rows, 394.57 MB (26.00 million rows/s., 1.36 GB/s.)
 ```
-Surprisingly high % for all our contributors and part of what makes our code so readable.
+
+Note we sort by code contributions. Surprisingly high % for all our largest contributors and part of what makes our code so readable.
 
 ## How does an authors commits change over time with respect to code/comments percentage?
 
@@ -2393,4 +2454,46 @@ FORMAT PrettyCompactMonoBlock
 
 This is particularly difficult to get an exact result due to the inability to currently keep state in array functions. This will be possible with an `arrayFold` or `arrayReduce`, which allows state to be held on each iteration.
 
-We welcome solutions here.
+An approximate solution, sufficient for a high-level analysis, may look something like this:
+
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBsaW5lX251bWJlcl9uZXcsCiAgICBhcmdNYXgoYXV0aG9yLCB0aW1lKSwKICAgIGFyZ01heChsaW5lLCB0aW1lKQpGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwpXSEVSRSBwYXRoIElOIGZpbGVfcGF0aF9oaXN0b3J5KCdzcmMvU3RvcmFnZXMvU3RvcmFnZVJlcGxpY2F0ZWRNZXJnZVRyZWUuY3BwJykKR1JPVVAgQlkgbGluZV9udW1iZXJfbmV3Ck9SREVSIEJZIGxpbmVfbnVtYmVyX25ldyBBU0MKTElNSVQgMjA=)
+
+```sql
+SELECT
+    line_number_new,
+    argMax(author, time),
+    argMax(line, time)
+FROM git.line_changes
+WHERE path IN file_path_history('src/Storages/StorageReplicatedMergeTree.cpp')
+GROUP BY line_number_new
+ORDER BY line_number_new ASC
+LIMIT 20
+
+┌─line_number_new─┬─argMax(author, time)─┬─argMax(line, time)────────────────────────────────────────────┐
+│               1 │ Alexey Milovidov     │ #include <Disks/DiskSpaceMonitor.h>                           │
+│               2 │ s-kat                │ #include <Common/FieldVisitors.h>                             │
+│               3 │ Anton Popov          │ #include <cstddef>                                            │
+│               4 │ Alexander Burmak     │ #include <Common/typeid_cast.h>                               │
+│               5 │ avogar               │ #include <Common/ThreadPool.h>                                │
+│               6 │ Alexander Burmak     │ #include <Common/DiskSpaceMonitor.h>                          │
+│               7 │ Alexander Burmak     │ #include <Common/ZooKeeper/Types.h>                           │
+│               8 │ Alexander Burmak     │ #include <Common/escapeForFileName.h>                         │
+│               9 │ Alexander Burmak     │ #include <Common/formatReadable.h>                            │
+│              10 │ Alexander Burmak     │ #include <Common/thread_local_rng.h>                          │
+│              11 │ Alexander Burmak     │ #include <Common/typeid_cast.h>                               │
+│              12 │ Nikolai Kochetov     │ #include <Storages/MergeTree/DataPartStorageOnDisk.h>         │
+│              13 │ alesapin             │ #include <Disks/ObjectStorages/IMetadataStorage.h>            │
+│              14 │ alesapin             │                                                               │
+│              15 │ Alexey Milovidov     │ #include <DB/Databases/IDatabase.h>                           │
+│              16 │ Alexey Zatelepin     │ #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h> │
+│              17 │ CurtizJ              │ #include <Storages/MergeTree/MergeTreeDataPart.h>             │
+│              18 │ Kirill Shvakov       │ #include <Parsers/ASTDropQuery.h>                             │
+│              19 │ s-kat                │ #include <Storages/MergeTree/PinnedPartUUIDs.h>               │
+│              20 │ Nikita Mikhaylov     │ #include <Storages/MergeTree/MergeMutateExecutor.h>           │
+└─────────────────┴──────────────────────┴───────────────────────────────────────────────────────────────┘
+20 rows in set. Elapsed: 0.547 sec. Processed 7.88 million rows, 679.20 MB (14.42 million rows/s., 1.24 GB/s.)
+```
+
+We welcome exact and improved solutions here.
+
+
