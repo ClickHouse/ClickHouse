@@ -1,8 +1,8 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
-#include <poll.h>
-
+#include <Common/Epoll.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -21,10 +21,9 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_FCNTL;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_POLL;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int CANNOT_FCNTL;
 }
 
 static bool tryMakeFdNonBlocking(int fd)
@@ -64,68 +63,76 @@ static void makeFdBlocking(int fd)
         throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
-static bool pollFd(int fd, size_t timeout_milliseconds, int events)
-{
-    pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = events;
-    pfd.revents = 0;
-
-    int res;
-
-    while (true)
-    {
-        Stopwatch watch;
-        res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
-
-        if (res < 0)
-        {
-            if (errno != EINTR)
-                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
-
-            const auto elapsed = watch.elapsedMilliseconds();
-            if (timeout_milliseconds <= elapsed)
-                break;
-            timeout_milliseconds -= elapsed;
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    return res > 0;
-}
-
 class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit TimeoutReadBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_)
+    explicit TimeoutReadBufferFromFileDescriptor(
+        int stdout_fd_, int stderr_fd_, size_t timeout_milliseconds_, ExternalCommandStderrReaction stderr_reaction_)
+        : stdout_fd(stdout_fd_)
+        , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
+        , stderr_reaction(stderr_reaction_)
     {
-        makeFdNonBlocking(fd);
+        makeFdNonBlocking(stdout_fd);
+        makeFdNonBlocking(stderr_fd);
+
+        epoll.add(stdout_fd);
+        if (stderr_reaction != ExternalCommandStderrReaction::NONE)
+            epoll.add(stderr_fd);
     }
 
     bool nextImpl() override
     {
+        static constexpr size_t STDERR_BUFFER_SIZE = 16_KiB;
         size_t bytes_read = 0;
 
         while (!bytes_read)
         {
-            if (!pollFd(fd, timeout_milliseconds, POLLIN))
+            epoll_event events[2];
+            events[0].data.fd = events[1].data.fd = -1;
+            size_t num_events = epoll.getManyReady(2, events, static_cast<int>(timeout_milliseconds));
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
-            ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+            bool has_stdout = false;
+            bool has_stderr = false;
+            for (size_t i = 0; i < num_events; ++i)
+            {
+                if (events[i].data.fd == stdout_fd)
+                    has_stdout = true;
+                else if (events[i].data.fd == stderr_fd)
+                    has_stderr = true;
+            }
 
-            if (-1 == res && errno != EINTR)
-                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            if (has_stderr)
+            {
+                stderr_buf.resize(STDERR_BUFFER_SIZE);
+                ssize_t res = ::read(stderr_fd, stderr_buf.data(), stderr_buf.size());
 
-            if (res == 0)
-                break;
+                if (res > 0)
+                {
+                    stderr_buf.resize(res);
+                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", stderr_buf);
+                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                        LOG_WARNING(
+                            &::Poco::Logger::get("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", stderr_buf);
+                }
+            }
 
-            if (res > 0)
-                bytes_read += res;
+            if (has_stdout)
+            {
+                ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
+
+                if (-1 == res && errno != EINTR)
+                    throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+                if (res == 0)
+                    break;
+
+                if (res > 0)
+                    bytes_read += res;
+            }
         }
 
         if (bytes_read > 0)
@@ -143,27 +150,33 @@ public:
 
     void reset() const
     {
-        makeFdBlocking(fd);
+        makeFdBlocking(stdout_fd);
+        makeFdBlocking(stderr_fd);
     }
 
     ~TimeoutReadBufferFromFileDescriptor() override
     {
-        tryMakeFdBlocking(fd);
+        tryMakeFdBlocking(stdout_fd);
+        tryMakeFdBlocking(stderr_fd);
     }
 
 private:
-    int fd;
+    int stdout_fd;
+    int stderr_fd;
     size_t timeout_milliseconds;
+    ExternalCommandStderrReaction stderr_reaction;
+    Epoll epoll;
+    String stderr_buf;
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_)
-        , timeout_milliseconds(timeout_milliseconds_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
+        epoll.add(fd, nullptr, EPOLLOUT);
     }
 
     void nextImpl() override
@@ -175,10 +188,13 @@ public:
 
         while (bytes_written != offset())
         {
-            if (!pollFd(fd, timeout_milliseconds, POLLOUT))
+            epoll_event events[1];
+            events[0].data.fd = -1;
+            size_t num_events = epoll.getManyReady(1, events, static_cast<int>(timeout_milliseconds));
+            if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe write timeout exceeded {} milliseconds", timeout_milliseconds);
 
-            ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+            ssize_t res = ::write(events[0].data.fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
                 throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
@@ -201,6 +217,7 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
+    Epoll epoll;
 };
 
 class ShellCommandHolder
@@ -248,6 +265,7 @@ namespace
             ContextPtr context_,
             const std::string & format_,
             size_t command_read_timeout_milliseconds,
+            ExternalCommandStderrReaction stderr_reaction,
             const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
@@ -260,7 +278,11 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command_read_timeout_milliseconds)
+            , timeout_command_out(
+                  command->out.getFD(),
+                  command->err.getFD(),
+                  command_read_timeout_milliseconds,
+                  stderr_reaction)
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
         {
@@ -534,7 +556,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
-        auto timeout_write_buffer = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+        auto timeout_write_buffer
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
 
         input_pipes[i].resize(1);
 
@@ -570,6 +593,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         context,
         configuration.format,
         configuration.command_read_timeout_milliseconds,
+        configuration.stderr_reaction,
         std::move(sample_block),
         std::move(process),
         std::move(tasks),

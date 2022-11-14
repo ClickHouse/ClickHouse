@@ -322,4 +322,27 @@
         <command>input_parameter.py {test_parameter:UInt64}</command>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_throw_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_always_error.py</command>
+        <stderr_reaction>throw</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_log_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_always_error.py</command>
+        <stderr_reaction>log</stderr_reaction>
+    </function>
 </functions>

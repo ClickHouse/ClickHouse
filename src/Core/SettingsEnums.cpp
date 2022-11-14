@@ -181,4 +181,9 @@ IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", S3QueueAction::KEEP},
                         {"delete", S3QueueAction::DELETE}})
+
+IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ExternalCommandStderrReaction::NONE},
+     {"log", ExternalCommandStderrReaction::LOG},
+     {"throw", ExternalCommandStderrReaction::THROW}})
 }
