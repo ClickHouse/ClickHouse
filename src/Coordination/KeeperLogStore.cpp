@@ -4,9 +4,9 @@
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_)
+KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_, nuraft::ptr<nuraft::raft_server> * raft_server)
     : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, rotate_interval_, force_sync_, log, compress_logs_)
+    , changelog(changelogs_path, rotate_interval_, force_sync_, log, compress_logs_, raft_server)
 {
     if (force_sync_)
         LOG_INFO(log, "force_sync enabled");
@@ -109,7 +109,7 @@ uint64_t KeeperLogStore::size() const
 void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*count*/)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flush();
+    changelog.flushAsync();
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
@@ -130,6 +130,12 @@ bool KeeperLogStore::flushChangelogAndShutdown()
     changelog.flush();
     changelog.shutdown();
     return true;
+}
+
+uint64_t KeeperLogStore::last_durable_index()
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.lastDurableIndex();
 }
 
 }

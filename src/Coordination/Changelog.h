@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libnuraft/nuraft.hxx>
+#include <libnuraft/raft_server.hxx>
 #include <city.h>
 #include <optional>
 #include <IO/WriteBufferFromFile.h>
@@ -75,7 +76,7 @@ class Changelog
 
 public:
     Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
-            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
+            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true, nuraft::ptr<nuraft::raft_server> * raft_server_ = nullptr);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
@@ -121,11 +122,18 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
+    void flushAsync();
+
     void shutdown();
 
     uint64_t size() const
     {
         return logs.size();
+    }
+
+    uint64_t lastDurableIndex() const
+    {
+        return last_durable_idx;
     }
 
     /// Fsync log to disk
@@ -175,6 +183,25 @@ private:
     /// 128 is enough, even if log is not removed, it's not a problem
     ConcurrentBoundedQueue<std::string> log_files_to_delete_queue{128};
     ThreadFromGlobalPool clean_log_thread;
+
+    struct AppendLog
+    {
+        uint64_t index;
+        nuraft::ptr<nuraft::log_entry> log_entry;
+    };
+
+    struct Flush
+    {};
+
+    using WriteOperation = std::variant<AppendLog, Flush>;
+
+    void writeThread();
+
+    ThreadFromGlobalPool write_thread;
+    ConcurrentBoundedQueue<WriteOperation> write_operations;
+
+    std::atomic<uint64_t> last_durable_idx{0};
+    nuraft::ptr<nuraft::raft_server> * raft_server{nullptr};
 };
 
 }

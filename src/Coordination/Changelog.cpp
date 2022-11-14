@@ -273,13 +273,16 @@ Changelog::Changelog(
     uint64_t rotate_interval_,
     bool force_sync_,
     Poco::Logger * log_,
-    bool compress_logs_)
+    bool compress_logs_,
+    nuraft::ptr<nuraft::raft_server> * raft_server_)
     : changelogs_dir(changelogs_dir_)
     , changelogs_detached_dir(changelogs_dir / "detached")
     , rotate_interval(rotate_interval_)
     , force_sync(force_sync_)
     , log(log_)
     , compress_logs(compress_logs_)
+    , write_operations(std::numeric_limits<size_t>::max())
+    , raft_server(raft_server_)
 {
     /// Load all files in changelog directory
     namespace fs = std::filesystem;
@@ -299,6 +302,8 @@ Changelog::Changelog(
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir.generic_string());
 
     clean_log_thread = ThreadFromGlobalPool([this] { cleanLogThread(); });
+
+    write_thread = ThreadFromGlobalPool([this] { writeThread(); });
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -503,7 +508,8 @@ void Changelog::removeAllLogs()
 void Changelog::rotate(uint64_t new_start_log_index)
 {
     /// Flush previous log
-    flush();
+    if (current_writer)
+        current_writer->flush(force_sync);
 
     /// Start new one
     ChangelogFileDescription new_description;
@@ -540,6 +546,44 @@ ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_e
     return record;
 }
 
+void Changelog::writeThread()
+{
+    size_t last_appended = 0;
+    while (true)
+    {
+        WriteOperation write_operation;
+        if (!write_operations.pop(write_operation))
+            break;
+
+        std::visit([&, this]<typename WriteOperationType>(const WriteOperationType & operation) -> void
+        {
+            if constexpr (std::same_as<WriteOperationType, AppendLog>)
+            {
+                const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
+                const bool log_is_complete = operation.index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
+
+                if (log_is_complete)
+                    rotate(operation.index);
+
+                current_writer->appendRecord(buildRecord(operation.index, operation.log_entry));
+
+                last_appended = operation.index;
+            }
+            else
+            {
+                if (current_writer)
+                    current_writer->flush(force_sync);
+
+                last_durable_idx = last_appended;
+
+                if (*raft_server)
+                    (*raft_server)->notify_log_append_completion(true);
+            }
+        }, write_operation);
+    }
+}
+
+
 void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!current_writer)
@@ -548,15 +592,11 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     if (logs.empty())
         min_log_id = index;
 
-    const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
-    const bool log_is_complete = index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
-
-    if (log_is_complete)
-        rotate(index);
-
-    current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = log_entry;
     max_log_id = index;
+
+    if (!write_operations.push(AppendLog{index, log_entry}))
+        std::abort();
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -747,8 +787,14 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
 
 void Changelog::flush()
 {
-    if (current_writer)
-        current_writer->flush(force_sync);
+    flushAsync();
+    last_durable_idx.wait(max_log_id);
+}
+
+void Changelog::flushAsync()
+{
+    if (!write_operations.push(Flush{}))
+        std::abort();
 }
 
 void Changelog::shutdown()
