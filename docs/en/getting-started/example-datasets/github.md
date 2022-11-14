@@ -2345,23 +2345,23 @@ WITH commit_days AS
     )
 SELECT
     author,
-    arrayMax(arrayMap(x -> length(x), arraySplit(x -> (x = 0), groupArray(consecutive_day)))) AS max_consecutive_days
+    arrayMax(arrayMap(x -> length(x), arraySplit(x -> (x = 0), groupArray(consecutive_day)))) - 1 AS max_consecutive_days
 FROM commit_days
 GROUP BY author
 ORDER BY max_consecutive_days DESC
 LIMIT 10
 
 ┌─author───────────┬─max_consecutive_days─┐
-│ kssenii          │                   33 │
-│ Alexey Milovidov │                   31 │
-│ alesapin         │                   27 │
-│ Azat Khuzhin     │                   24 │
-│ Nikolai Kochetov │                   16 │
-│ Igor Nikonov     │                   12 │
-│ feng lv          │                   12 │
-│ alexey-milovidov │                   12 │
-│ Maksim Kita      │                   12 │
-│ Nikita Vasilev   │                   12 │
+│ kssenii          │                   32 │
+│ Alexey Milovidov │                   30 │
+│ alesapin         │                   26 │
+│ Azat Khuzhin     │                   23 │
+│ Nikolai Kochetov │                   15 │
+│ feng lv          │                   11 │
+│ alexey-milovidov │                   11 │
+│ Igor Nikonov     │                   11 │
+│ Maksim Kita      │                   11 │
+│ Nikita Vasilev   │                   11 │
 └──────────────────┴──────────────────────┘
 
 10 rows in set. Elapsed: 0.025 sec. Processed 62.78 thousand rows, 395.47 KB (2.54 million rows/s., 16.02 MB/s.)
