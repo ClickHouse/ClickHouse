@@ -29,11 +29,7 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return (
-        f"docker run "
-        # For sysctl
-        "--privileged "
-        "--network=host "
-        f"--volume={workspace_path}:/workspace "
+        f"docker run --network=host --volume={workspace_path}:/workspace "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
         f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
@@ -69,7 +65,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)

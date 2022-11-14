@@ -90,8 +90,6 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"removal_tid",                                 getTransactionIDDataType()},
         {"creation_csn",                                std::make_shared<DataTypeUInt64>()},
         {"removal_csn",                                 std::make_shared<DataTypeUInt64>()},
-
-        {"has_lightweight_delete",                      std::make_shared<DataTypeUInt8>()},
     }
     )
 {
@@ -198,9 +196,9 @@ void StorageSystemParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
         }
         else
         {
@@ -307,8 +305,6 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->hasLightweightDelete());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

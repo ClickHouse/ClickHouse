@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: "性能测试"
 ---

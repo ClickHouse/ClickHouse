@@ -1,7 +1,9 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
+#include "config_formats.h"
 
 namespace DB
 {
@@ -86,7 +88,6 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
-void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorages()
 {
@@ -170,8 +171,6 @@ void registerStorages()
     #if USE_SQLITE
     registerStorageSQLite(factory);
     #endif
-
-    registerStorageKeeperMap(factory);
 }
 
 }

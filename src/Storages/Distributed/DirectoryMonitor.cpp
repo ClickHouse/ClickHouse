@@ -106,7 +106,7 @@ namespace
 
                 for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
                 {
-                    address.replica_index = static_cast<UInt32>(replica_index);
+                    address.replica_index = replica_index;
                     make_connection(address);
                 }
             }
@@ -139,11 +139,6 @@ namespace
         /// .bin file cannot have zero rows/bytes.
         size_t rows = 0;
         size_t bytes = 0;
-
-        UInt32 shard_num = 0;
-        std::string cluster;
-        std::string distributed_table;
-        std::string remote_table;
 
         /// dumpStructure() of the header -- obsolete
         std::string block_header_string;
@@ -198,14 +193,6 @@ namespace
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
                             in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
-            }
-
-            if (header_buf.hasPendingData())
-            {
-                readVarUInt(distributed_header.shard_num, header_buf);
-                readStringBinary(distributed_header.cluster, header_buf);
-                readStringBinary(distributed_header.distributed_table, header_buf);
-                readStringBinary(distributed_header.remote_table, header_buf);
             }
 
             /// Add handling new data here, for example:
@@ -622,8 +609,6 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
-
     Stopwatch watch;
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
 
@@ -634,17 +619,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
-            distributed_header.client_info.client_trace_context,
-            this->storage.getContext()->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
-        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
-        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
-        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
-
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
@@ -661,18 +637,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
     catch (Exception & e)
     {
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(std::current_exception());
-
         e.addMessage(fmt::format("While sending {}", file_path));
         maybeMarkAsBroken(file_path, e);
-        throw;
-    }
-    catch (...)
-    {
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(std::current_exception());
-
         throw;
     }
 
@@ -819,18 +785,10 @@ struct StorageDistributedDirectoryMonitor::Batch
             }
             else
             {
-                std::vector<std::string> files;
+                std::vector<std::string> files(file_index_to_path.size());
                 for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
-                {
-                    if (file_info.index() > 8)
-                    {
-                        files.push_back("...");
-                        break;
-                    }
-
-                    files.push_back(file_info.value().second);
-                }
-                e.addMessage(fmt::format("While sending batch, nums: {}, files: {}", file_index_to_path.size(), fmt::join(files, "\n")));
+                    files[file_info.index()] = file_info.value().second;
+                e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
             }
@@ -896,10 +854,6 @@ private:
             ReadBufferFromFile in(file_path->second);
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-                distributed_header.client_info.client_trace_context,
-                parent.storage.getContext()->getOpenTelemetrySpanLog());
-
             if (!remote)
             {
                 remote = std::make_unique<RemoteInserter>(connection, timeouts,
@@ -933,11 +887,6 @@ private:
             {
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
-
-                // this function is called in a separated thread, so we set up the trace context from the file
-                OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-                    distributed_header.client_info.client_trace_context,
-                    parent.storage.getContext()->getOpenTelemetrySpanLog());
 
                 RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/arithmetic-functions
 sidebar_position: 34
 sidebar_label: Arithmetic
 ---

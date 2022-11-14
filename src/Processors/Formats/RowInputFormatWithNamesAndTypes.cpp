@@ -5,7 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
-
 namespace DB
 {
 

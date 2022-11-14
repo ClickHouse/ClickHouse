@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/RangeGenerator.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
