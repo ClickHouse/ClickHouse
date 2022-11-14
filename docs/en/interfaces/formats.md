@@ -13,7 +13,7 @@ The supported formats are:
 | Format                                                                                    | Input | Output |
 |-------------------------------------------------------------------------------------------|------|--------|
 | [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
+| [TabSeparatedRaon Big-Endian platformsw](#tabseparatedraw)                                                       | ✔    | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
 | [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
@@ -1213,8 +1213,8 @@ SELECT * FROM json_each_row_nested
 
 ## BSONEachRow {#bsoneachrow}
 
-In this format, ClickHouse formats/parses each row as a separated BSON Document.
-Each column is formatted as a single BSON field with column name as a key.
+In this format, ClickHouse formats/parses data as a sequence of BSON documents without any separator between them.
+Each row is formatted as a single document and each column is formatted as a single BSON document field with column name as a key.
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -1264,6 +1264,8 @@ For input it uses the following correspondence between BSON types and ClickHouse
 
 Other BSON types are not supported. Also, it performs conversion between different integer types (for example, you can insert BSON int32 value into ClickHouse UInt8). 
 Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) can be parsed from BSON Binary value with `\x00` binary subtype. In this case this format will validate that the size of binary data equals the size of expected value.
+
+Note: this format don't work properly on Big-Endian platforms.
 
 ### BSON format settings {#bson-format-settings}
 

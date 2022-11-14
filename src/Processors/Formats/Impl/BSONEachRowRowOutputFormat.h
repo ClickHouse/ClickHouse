@@ -40,6 +40,7 @@ namespace DB
  * Named Tuple             | \x03 document
  * Map (with String keys)  | \x03 document
  *
+ * Note: on Big-Endian platforms this format will not work properly.
  */
 
 class BSONEachRowRowOutputFormat final : public IRowOutputFormat
@@ -53,10 +54,6 @@ public:
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override { }
-
-    /// No totals and extremes.
-    void consumeTotals(Chunk) override { }
-    void consumeExtremes(Chunk) override { }
 
     void serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name);
 

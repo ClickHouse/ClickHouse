@@ -40,6 +40,8 @@ namespace DB
  * Big integers and decimals Int128/UInt128/Int256/UInt256/Decimal128/Decimal256
  * can be parsed from BSON Binary value with \x00 binary subtype. In this case
  * we validate that the size of binary data equals the size of expected value.
+ *
+ * Note: this format will not work on Big-Endian platforms.
  */
 
 class ReadBuffer;
@@ -92,7 +94,7 @@ private:
     DataTypes types;
 
     size_t current_document_start;
-    BSON_SIZE_TYPE current_document_size;
+    BSONSizeT current_document_size;
 };
 
 class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader

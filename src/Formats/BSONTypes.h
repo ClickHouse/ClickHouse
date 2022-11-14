@@ -8,8 +8,9 @@ namespace DB
 
 static const uint8_t BSON_DOCUMENT_END = 0x00;
 using BSON_SIZE_TYPE = uint32_t;
-static const BSON_SIZE_TYPE MAX_BSON_SIZE = UINT32_MAX;
+static const BSONSizeT MAX_BSON_SIZE = std::numeric_limits<BSONSizeT>::max();
 
+/// See details on https://bsonspec.org/spec.html
 enum class BSONType
 {
     DOUBLE = 0x01,

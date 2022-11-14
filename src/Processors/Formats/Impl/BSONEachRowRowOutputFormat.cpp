@@ -57,7 +57,7 @@ static void writeBSONSize(size_t size, WriteBuffer & buf)
     if (size > MAX_BSON_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too large document/value size: {}. Maximum allowed size: {}.", size, MAX_BSON_SIZE);
 
-    writePODBinary<BSON_SIZE_TYPE>(BSON_SIZE_TYPE(size), buf);
+    writePODBinary<BSONSizeT>(BSONSizeT(size), buf);
 }
 
 template <typename Type>
@@ -150,27 +150,27 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Decimal128:
         {
-            return size + sizeof(BSON_SIZE_TYPE) + 1 + sizeof(UInt128); // Size of a binary + binary subtype + 16 bytes of value
+            return size + sizeof(BSONSizeT) + 1 + sizeof(UInt128); // Size of a binary + binary subtype + 16 bytes of value
         }
         case TypeIndex::Int256: [[fallthrough]];
         case TypeIndex::UInt256: [[fallthrough]];
         case TypeIndex::Decimal256:
         {
-            return size + sizeof(BSON_SIZE_TYPE) + 1 + sizeof(UInt256); // Size of a binary + binary subtype + 32 bytes of value
+            return size + sizeof(BSONSizeT) + 1 + sizeof(UInt256); // Size of a binary + binary subtype + 32 bytes of value
         }
         case TypeIndex::String:
         {
             const auto & string_column = assert_cast<const ColumnString &>(column);
-            return size + sizeof(BSON_SIZE_TYPE) + string_column.getDataAt(row_num).size + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+            return size + sizeof(BSONSizeT) + string_column.getDataAt(row_num).size + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
         }
         case TypeIndex::FixedString:
         {
             const auto & string_column = assert_cast<const ColumnFixedString &>(column);
-            return size + sizeof(BSON_SIZE_TYPE) + string_column.getN() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+            return size + sizeof(BSONSizeT) + string_column.getN() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
         }
         case TypeIndex::UUID:
         {
-            return size + sizeof(BSON_SIZE_TYPE) + 1 + sizeof(UUID); // Size of data + BSON binary subtype + 16 bytes of value
+            return size + sizeof(BSONSizeT) + 1 + sizeof(UUID); // Size of data + BSON binary subtype + 16 bytes of value
         }
         case TypeIndex::LowCardinality:
         {
@@ -190,7 +190,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         }
         case TypeIndex::Array:
         {
-            size += sizeof(BSON_SIZE_TYPE); // Size of a document
+            size += sizeof(BSONSizeT); // Size of a document
 
             const auto & nested_type = assert_cast<const DataTypeArray *>(data_type.get())->getNestedType();
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
@@ -206,7 +206,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         }
         case TypeIndex::Tuple:
         {
-            size += sizeof(BSON_SIZE_TYPE); // Size of a document
+            size += sizeof(BSONSizeT); // Size of a document
 
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(data_type.get());
             const auto & nested_types = tuple_type->getElements();
@@ -225,7 +225,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         }
         case TypeIndex::Map:
         {
-            size += sizeof(BSON_SIZE_TYPE); // Size of a document
+            size += sizeof(BSONSizeT); // Size of a document
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
@@ -407,7 +407,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
 
             writeBSONTypeAndKeyName(BSONType::ARRAY, name, out);
 
-            size_t document_size = sizeof(BSON_SIZE_TYPE);
+            size_t document_size = sizeof(BSONSizeT);
             for (size_t i = 0; i < array_size; ++i)
                 document_size += countBSONFieldSize(nested_column, nested_type, offset + i, std::to_string(i)); // Add size of each value from array
             document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
@@ -432,7 +432,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             BSONType bson_type = have_explicit_names ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
-            size_t document_size = sizeof(BSON_SIZE_TYPE);
+            size_t document_size = sizeof(BSONSizeT);
             for (size_t i = 0; i < nested_columns.size(); ++i)
             {
                 String key_name = have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i);
@@ -466,7 +466,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
 
             writeBSONTypeAndKeyName(BSONType::DOCUMENT, name, out);
 
-            size_t document_size = sizeof(BSON_SIZE_TYPE);
+            size_t document_size = sizeof(BSONSizeT);
             for (size_t i = 0; i < map_size; ++i)
             {
                 String key = toValidUTF8String(key_column->getDataAt(offset + i).toString());
@@ -493,7 +493,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
 void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     /// We should calculate and write document size before its content
-    size_t document_size = sizeof(BSON_SIZE_TYPE);
+    size_t document_size = sizeof(BSONSizeT);
     for (size_t i = 0; i != columns.size(); ++i)
         document_size += countBSONFieldSize(*columns[i], fields[i].type, row_num, fields[i].name);
     document_size += sizeof(BSON_DOCUMENT_END);
