@@ -669,12 +669,11 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
     if (task->data_part->isProjectionPart())
     {
         part_name = task->data_part->getParentPart()->name;
-        projection_name  = task->data_part->name;
+        projection_name = task->data_part->name;
     }
     else
     {
         part_name = task->data_part->name;
-        projection_name = "";
     }
 
     PartBlockRange block_range
