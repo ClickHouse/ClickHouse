@@ -49,11 +49,11 @@ public:
             /// Do not apply for `count()` with without arguments or `count(*)`, only `count(x)` is supported.
             return;
 
-        argument_to_functions_mapping[argument_nodes[0]].push_back(&node);
+        argument_to_functions_mapping[argument_nodes[0]].insert(&node);
     }
 
     /// argument -> list of sum/count/avg functions with this argument
-    QueryTreeNodePtrWithHashMap<std::vector<QueryTreeNodePtr *>> argument_to_functions_mapping;
+    QueryTreeNodePtrWithHashMap<std::unordered_set<QueryTreeNodePtr *>> argument_to_functions_mapping;
 
 private:
     std::unordered_set<String> names_to_collect;
@@ -128,7 +128,7 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     }
 }
 
-FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> nodes, const QueryTreeNodePtr & argument)
+FunctionNodePtr createFusedQuantilesNode(const std::unordered_set<QueryTreeNodePtr *> nodes, const QueryTreeNodePtr & argument)
 {
     Array parameters;
     parameters.reserve(nodes.size());
@@ -196,8 +196,12 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
                 "Unexpected return type '{}' of function '{}', should be array",
                 quantiles_node->getResultType(), quantiles_node->getFunctionName());
 
-        for (size_t i = 0; i < nodes_size; ++i)
-            *nodes[i] = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, i + 1);
+        size_t array_index = 1;
+        for (auto * node : nodes)
+        {
+            *node = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, array_index);
+            array_index += 1;
+        }
     }
 }
 
