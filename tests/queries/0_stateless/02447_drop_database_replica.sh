@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 db="rdb_$CLICKHOUSE_DATABASE"
 
 $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 -q "create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1')"
-$CLICKHOUSE_CLIENT -q "create table $db.t as system.query_log"   # Suppress style check: $CLICKHOUSE_DATABASE
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.t as system.query_log"   # Suppress style check: current_database=$CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT -q "show tables from $db"
 
 $CLICKHOUSE_CLIENT -q "system drop database replica 's1|r1' from table t" 2>&1| grep -Fac "SYNTAX_ERROR"
@@ -27,12 +27,12 @@ $CLICKHOUSE_CLIENT -q "system drop database replica 's1|r1' from database $db2" 
 $CLICKHOUSE_CLIENT -q "detach database $db2"
 $CLICKHOUSE_CLIENT -q "system drop database replica 's1|r2' from database $db"
 $CLICKHOUSE_CLIENT -q "attach database $db2" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "create table $db2.t2 as system.query_log" 2>&1| grep -Fac "Database is in readonly mode"   # Suppress style check: $CLICKHOUSE_DATABASE
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db2.t2 as system.query_log" 2>&1| grep -Fac "Database is in readonly mode"   # Suppress style check: current_database=$CLICKHOUSE_DATABASE
 
 $CLICKHOUSE_CLIENT -q "detach database $db"
 $CLICKHOUSE_CLIENT -q "system drop database replica 's1|r1' from zkpath '/test/$CLICKHOUSE_DATABASE/rdb/'"
 $CLICKHOUSE_CLIENT -q "attach database $db" 2>/dev/null
-$CLICKHOUSE_CLIENT -q "create table $db.t2 as system.query_log" 2>&1| grep -Fac "Database is in readonly mode"   # Suppress style check: $CLICKHOUSE_DATABASE
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.t2 as system.query_log" 2>&1| grep -Fac "Database is in readonly mode"   # Suppress style check: current_database=$CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT -q "show tables from $db"
 
 db3="${db}_3"
