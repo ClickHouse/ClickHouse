@@ -52,10 +52,10 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
+    , name_map(header_.getNamesToIndexesMap())
     , prev_positions(header_.columns())
     , types(header_.getDataTypes())
 {
-    name_map = getPort().getHeader().getNamesToIndexesMap();
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
@@ -114,7 +114,7 @@ static UInt8 readBSONType(ReadBuffer & in)
 
 static size_t readBSONSize(ReadBuffer & in)
 {
-    BSON_SIZE_TYPE size;
+    BSONSizeT size;
     readBinary(size, in);
     return size;
 }
@@ -330,7 +330,7 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     auto & nested_column = array_column.getData();
 
     size_t document_start = in->count();
-    BSON_SIZE_TYPE document_size;
+    BSONSizeT document_size;
     readBinary(document_size, *in);
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
@@ -357,7 +357,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     size_t read_nested_columns = 0;
 
     size_t document_start = in->count();
-    BSON_SIZE_TYPE document_size;
+    BSONSizeT document_size;
     readBinary(document_size, *in);
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
@@ -415,7 +415,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     auto & offsets = column_map.getNestedColumn().getOffsets();
 
     size_t document_start = in->count();
-    BSON_SIZE_TYPE document_size;
+    BSONSizeT document_size;
     readBinary(document_size, *in);
     while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
@@ -631,7 +631,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size);
             break;
@@ -639,14 +639,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::DOCUMENT: [[fallthrough]];
         case BSONType::ARRAY:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size - sizeof(size));
             break;
         }
         case BSONType::BINARY:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size + 1);
             break;
@@ -671,14 +671,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::DB_POINTER:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size + 12);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size - sizeof(size));
             break;
@@ -793,7 +793,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             in.ignore(size);
             return makeNullable(std::make_shared<DataTypeString>());
@@ -842,7 +842,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::BINARY:
         {
-            BSON_SIZE_TYPE size;
+            BSONSizeT size;
             readBinary(size, in);
             auto subtype = getBSONBinarySubtype(readBSONType(in));
             in.ignore(size);
@@ -877,7 +877,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
 NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types)
 {
     size_t document_start = in.count();
-    BSON_SIZE_TYPE document_size;
+    BSONSizeT document_size;
     readBinary(document_size, in);
     NamesAndTypesList names_and_types;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
@@ -923,7 +923,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
     while (!in.eof() && memory.size() < min_bytes && number_of_rows < max_rows)
     {
-        BSON_SIZE_TYPE document_size;
+        BSONSizeT document_size;
         readBinary(document_size, in);
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
