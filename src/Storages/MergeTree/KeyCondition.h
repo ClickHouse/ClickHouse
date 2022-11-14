@@ -2,11 +2,16 @@
 
 #include <optional>
 
-#include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Storages/SelectQueryInfo.h>
 
+#include <Parsers/ASTExpressionList.h>
+
+#include <Interpreters/Set.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/TreeRewriter.h>
+
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
@@ -205,45 +210,37 @@ public:
 class KeyCondition
 {
 public:
-    /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
+    /// Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters
     KeyCondition(
         const ASTPtr & query,
         const ASTs & additional_filter_asts,
-        TreeRewriterResultPtr syntax_analyzer_result,
+        Block block_with_constants,
         PreparedSetsPtr prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
+        NameSet array_joined_column_names,
         bool single_point_ = false,
         bool strict_ = false);
 
+    /** Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters.
+      * Select query, additional filters, prepared sets are initialized using query info.
+      */
     KeyCondition(
         const SelectQueryInfo & query_info,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr_,
         bool single_point_ = false,
-        bool strict_ = false)
-        : KeyCondition(
-            query_info.query,
-            query_info.filter_asts,
-            query_info.syntax_analyzer_result,
-            query_info.prepared_sets,
-            context,
-            key_column_names,
-            key_expr_,
-            single_point_,
-            strict_)
-    {
-    }
+        bool strict_ = false);
 
+    /// Construct key condition from ActionsDAG nodes
     KeyCondition(
         ActionDAGNodes dag_nodes,
-        TreeRewriterResultPtr syntax_analyzer_result,
-        PreparedSetsPtr prepared_sets_,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
+        NameSet array_joined_column_names,
         bool single_point_ = false,
         bool strict_ = false);
 
@@ -275,6 +272,7 @@ public:
     /// Checks that the index can not be used
     /// FUNCTION_UNKNOWN will be AND'ed (if any).
     bool alwaysUnknownOrTrue() const;
+
     /// Checks that the index can not be used
     /// Does not allow any FUNCTION_UNKNOWN (will instantly return true).
     bool anyUnknownOrAlwaysTrue() const;
@@ -313,10 +311,18 @@ public:
       * Returns false, if expression isn't constant.
       */
     static bool getConstant(
-            const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
+        const ASTPtr & expr,
+        Block & block_with_constants,
+        Field & out_value,
+        DataTypePtr & out_type);
 
+    /** Calculate expressions, that depend only on constants.
+      * For index to work when something like "WHERE Date = toDate(now())" is written.
+      */
     static Block getBlockWithConstants(
-        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context);
+        const ASTPtr & query,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        ContextPtr context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
@@ -373,13 +379,10 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
 
 public:
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
     static const AtomMap atom_map;
-
-    class Tree;
-    class FunctionTree;
 
 private:
     BoolMask checkInRange(
@@ -390,9 +393,7 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    void traverseAST(const Tree & node, ContextPtr context, Block & block_with_constants);
-    bool tryParseAtomFromAST(const Tree & node, ContextPtr context, Block & block_with_constants, RPNElement & out);
-    static bool tryParseLogicalOperatorFromAST(const FunctionTree & func, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,
@@ -401,17 +402,16 @@ private:
       *  and fills chain of possibly-monotonic functions.
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
-        const Tree & node,
-        ContextPtr context,
+        const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-        const Tree & node,
+        const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        std::vector<FunctionTree> & out_functions_chain);
+        std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
         const String & expr_name,
@@ -422,21 +422,24 @@ private:
         std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
-        const Tree & node,
+        const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type);
 
     bool canConstantBeWrappedByFunctions(
-        const Tree & node, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
-        const FunctionTree & func,
-        ContextPtr context,
+        const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
         size_t & out_key_column_num);
 
@@ -472,15 +475,16 @@ private:
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
 
-    NameSet array_joined_columns;
-    PreparedSetsPtr prepared_sets;
+    /// Array joined column names
+    NameSet array_joined_column_names;
 
     // If true, always allow key_expr to be wrapped by function
     bool single_point;
+
     // If true, do not use always_monotonic information to transform constants
     bool strict;
 };
 
-String extractFixedPrefixFromLikePattern(const String & like_pattern);
+String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }

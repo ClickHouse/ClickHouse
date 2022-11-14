@@ -332,7 +332,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     for (auto & column : columns)
-        if (isObject(column.type))
+        if (column.type->hasDynamicSubcolumns())
             column.type = block.getByName(column.name).type;
 
     static const String TMP_PREFIX = "tmp_insert_";
@@ -524,8 +524,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
-    MergeTreeDataPartType part_type,
-    const String & relative_path,
     bool is_temp,
     IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
@@ -537,6 +535,21 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
 
+    MergeTreeDataPartType part_type;
+    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
+    {
+        part_type = MergeTreeDataPartType::InMemory;
+    }
+    else
+    {
+        /// Size of part would not be greater than block.bytes() + epsilon
+        size_t expected_size = block.bytes();
+        // just check if there is enough space on parent volume
+        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
+        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
+    }
+
+    auto relative_path = part_name + (is_temp ? ".tmp_proj" : ".proj");
     auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path);
     auto new_data_part = data.createPart(
         part_name,
@@ -627,77 +640,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
-    MergeTreeData & data,
-    Poco::Logger * log,
-    Block block,
-    const ProjectionDescription & projection,
-    IMergeTreeDataPart * parent_part)
-{
-    String part_name = projection.name;
-    MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
-    {
-        part_type = MergeTreeDataPartType::InMemory;
-    }
-    else
-    {
-        /// Size of part would not be greater than block.bytes() + epsilon
-        size_t expected_size = block.bytes();
-        // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
-        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
-    }
-
-    return writeProjectionPartImpl(
-        part_name,
-        part_type,
-        part_name + ".proj" /* relative_path */,
-        false /* is_temp */,
-        parent_part,
-        data,
-        log,
-        block,
-        projection);
-}
-
-/// This is used for projection materialization process which may contain multiple stages of
-/// projection part merges.
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
-    MergeTreeData & data,
-    Poco::Logger * log,
-    Block block,
-    const ProjectionDescription & projection,
-    IMergeTreeDataPart * parent_part,
-    size_t block_num)
-{
-    String part_name = fmt::format("{}_{}", projection.name, block_num);
-    MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
-    {
-        part_type = MergeTreeDataPartType::InMemory;
-    }
-    else
-    {
-        /// Size of part would not be greater than block.bytes() + epsilon
-        size_t expected_size = block.bytes();
-        // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
-        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
-    }
-
-    return writeProjectionPartImpl(
-        part_name,
-        part_type,
-        part_name + ".tmp_proj" /* relative_path */,
-        true /* is_temp */,
-        parent_part,
-        data,
-        log,
-        block,
-        projection);
-}
-
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionPart(
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,
@@ -706,13 +648,32 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionP
 {
     return writeProjectionPartImpl(
         projection.name,
-        MergeTreeDataPartType::InMemory,
-        projection.name + ".proj" /* relative_path */,
         false /* is_temp */,
         parent_part,
         data,
         log,
-        block,
+        std::move(block),
+        projection);
+}
+
+/// This is used for projection materialization process which may contain multiple stages of
+/// projection part merges.
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
+    const MergeTreeData & data,
+    Poco::Logger * log,
+    Block block,
+    const ProjectionDescription & projection,
+    IMergeTreeDataPart * parent_part,
+    size_t block_num)
+{
+    String part_name = fmt::format("{}_{}", projection.name, block_num);
+    return writeProjectionPartImpl(
+        part_name,
+        true /* is_temp */,
+        parent_part,
+        data,
+        log,
+        std::move(block),
         projection);
 }
 
