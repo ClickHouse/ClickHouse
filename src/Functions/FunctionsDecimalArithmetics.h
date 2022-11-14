@@ -153,7 +153,7 @@ struct DivideDecimalsImpl
             ++scale_a;
         }
 
-        while (scale_a > scale_b + result_scale && a_digits.size())
+        while (scale_a > scale_b + result_scale && !a_digits.empty())
         {
             a_digits.pop_back();
             --scale_a;
@@ -196,11 +196,14 @@ struct MultiplyDecimalsImpl
             ++product_scale;
         }
 
-        while (product_scale > result_scale)
+        while (product_scale > result_scale&& !multiplied.empty())
         {
             multiplied.pop_back();
             --product_scale;
         }
+
+        if (multiplied.empty())
+            return Decimal256(0);
 
         if (multiplied.size() > 76)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
