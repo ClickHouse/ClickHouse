@@ -397,6 +397,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (isObject(type))
     {
+        if (src.getType() == Field::Types::Object)
+            return src;  /// Already in needed type.
+
         const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
         if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
         {
