@@ -692,7 +692,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .mark_ranges = std::move(requested_ranges)
     };
 
-    /// Constistent hashing won't work with reading in order, because at the end of the execution
+    /// Consistent hashing won't work with reading in order, because at the end of the execution
     /// we could possibly seek back
     if (!delayed && canUseConsistentHashingForParallelReading())
     {
