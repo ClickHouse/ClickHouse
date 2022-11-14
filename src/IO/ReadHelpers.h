@@ -1068,7 +1068,7 @@ inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little 
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        auto & item = x.items[std::size(x.items) - i - 1];
+        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
         readBinaryBigEndian(item, buf);
     }
 }
