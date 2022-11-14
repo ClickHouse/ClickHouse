@@ -451,6 +451,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (auto * insert_query = ast->as<ASTInsertQuery>())
         {
+            context->setInsertFormat(insert_query->format);
             if (insert_query->settings_ast)
                 InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
             insert_query->tail = istr;
@@ -530,7 +531,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    StoragePtr storage = context->executeTableFunction(input_function);
+                    StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
                     auto pipe = getSourceFromASTInsertQuery(

@@ -1996,54 +1996,24 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
 
     /// Load current inserts
-    std::unordered_set<String> lock_holder_paths;
-    for (const String & entry : zookeeper->getChildren(fs::path(queue.zookeeper_path) / "temp"))
+    Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
+    std::vector<std::string> paths;
+    paths.reserve(partitions.size());
+    for (const String & partition : partitions)
+        paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
+
+    auto locks_children = zookeeper->getChildren(paths);
+
+    for (size_t i = 0; i < partitions.size(); ++i)
     {
-        if (startsWith(entry, "abandonable_lock-"))
-            lock_holder_paths.insert(fs::path(queue.zookeeper_path) / "temp" / entry);
-    }
-
-    if (!lock_holder_paths.empty())
-    {
-        Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-        std::vector<std::string> paths;
-        paths.reserve(partitions.size());
-        for (const String & partition : partitions)
-            paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
-
-        auto locks_children = zookeeper->getChildren(paths);
-
-        struct BlockInfoInZooKeeper
+        Strings partition_block_numbers = locks_children[i].names;
+        for (const String & entry : partition_block_numbers)
         {
-            String partition;
-            Int64 number;
-            String zk_path;
-            std::future<Coordination::GetResponse> contents_future;
-        };
-
-        std::vector<BlockInfoInZooKeeper> block_infos;
-        for (size_t i = 0; i < partitions.size(); ++i)
-        {
-            Strings partition_block_numbers = locks_children[i].names;
-            for (const String & entry : partition_block_numbers)
-            {
-                /// TODO: cache block numbers that are abandoned.
-                /// We won't need to check them on the next iteration.
-                if (startsWith(entry, "block-"))
-                {
-                    Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-                    String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
-                    block_infos.emplace_back(
-                        BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
-                }
-            }
-        }
-
-        for (auto & block : block_infos)
-        {
-            Coordination::GetResponse resp = block.contents_future.get();
-            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.contains(resp.data))
-                committing_blocks[block.partition].insert(block.number);
+            if (!startsWith(entry, "block-"))
+                continue;
+            Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
+            String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
+            committing_blocks[partitions[i]].insert(block_number);
         }
     }
 
