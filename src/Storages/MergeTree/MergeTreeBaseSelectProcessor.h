@@ -194,7 +194,6 @@ private:
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
     void splitCurrentTaskRangesAndFillBuffer();
-
 };
 
 }
