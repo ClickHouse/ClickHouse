@@ -29,7 +29,8 @@ public:
     Exception() = default;
 
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
-    struct MessageMasked {
+    struct MessageMasked
+    {
         std::string msg;
         MessageMasked(const std::string & msg_);
     };
