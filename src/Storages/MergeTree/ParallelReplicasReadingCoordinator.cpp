@@ -35,10 +35,8 @@ public:
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
+    auto * log = &Poco::Logger::get("ParallelReplicasReadingCoordinator");
     Stopwatch watch;
-    SCOPE_EXIT({
-        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {} ns", watch.elapsed());
-    });
 
     std::lock_guard lock(mutex);
 
@@ -70,6 +68,7 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
         partitions.insert({request.partition_id, std::move(partition_reading)});
 
+        LOG_TRACE(log, "Request is first in partition, accepted in {} ns: {}", watch.elapsed(), request.toString());
         return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
     }
 
@@ -85,6 +84,7 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     {
         case PartSegments::IntersectionResult::REJECT:
         {
+            LOG_TRACE(log, "Request rejected in {} ns: {}", watch.elapsed(), request.toString());
             return {.denied = true, .mark_ranges = {}};
         }
         case PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION:
@@ -100,6 +100,12 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
             auto result_ranges = result.convertToMarkRangesFinal();
             const bool denied = result_ranges.empty();
+
+            if (denied)
+                LOG_TRACE(log, "Request rejected due to intersection in {} ns: {}", watch.elapsed(), request.toString());
+            else
+                LOG_TRACE(log, "Request accepted partially in {} ns: {}", watch.elapsed(), request.toString());
+
             return {.denied = denied, .mark_ranges = std::move(result_ranges)};
         }
         case PartSegments::IntersectionResult::NO_INTERSECTION:
@@ -111,6 +117,7 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
             );
             partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
 
+            LOG_TRACE(log, "Request accepted in {} ns: {}", watch.elapsed(), request.toString());
             return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
         }
     }
