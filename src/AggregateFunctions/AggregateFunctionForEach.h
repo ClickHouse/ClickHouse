@@ -174,7 +174,7 @@ public:
 
     bool hasTrivialDestructor() const override
     {
-        return nested_func->hasTrivialDestructor();
+        return std::is_trivially_destructible_v<AggregateFunctionForEachData> && nested_func->hasTrivialDestructor();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

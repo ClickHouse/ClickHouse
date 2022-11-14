@@ -27,6 +27,7 @@ void registerTableFunctions()
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
+    registerTableFunctionOSS(factory);
 #endif
 
 #if USE_HDFS

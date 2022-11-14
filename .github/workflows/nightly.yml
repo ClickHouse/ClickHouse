@@ -10,6 +10,9 @@ env:
   workflow_dispatch:
 
 jobs:
+  Debug:
+    # The task for having a preserved ENV and event.json for later investigation
+    uses: ./.github/workflows/debug.yml
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
