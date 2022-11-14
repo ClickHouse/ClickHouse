@@ -41,7 +41,8 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
 namespace detail
 {
     template <unsigned... digits>
-    struct ToChars {
+    struct ToChars
+    {
         static const char value[];
         static const size_t size;
      };
