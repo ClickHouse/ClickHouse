@@ -133,6 +133,7 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
 {
     using Op = ModuloLegacyImpl<A, B>;
 };
+
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -177,6 +178,24 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 REGISTER_FUNCTION(ModuloLegacy)
 {
     factory.registerFunction<FunctionModuloLegacy>();
+}
+
+struct NamePositiveModulo
+{
+    static constexpr auto name = "positive_modulo";
+};
+using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloImpl, NamePositiveModulo, false>;
+
+REGISTER_FUNCTION(PositiveModulo)
+{
+    factory.registerFunction<FunctionPositiveModulo>(
+        {
+            R"(
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
+        )",
+            Documentation::Examples{{"positive_modulo", "SELECT positive_modulo(-1000, 32);"}},
+            Documentation::Categories{"Arithmetic"}},
+        FunctionFactory::CaseInsensitive);
 }
 
 }
