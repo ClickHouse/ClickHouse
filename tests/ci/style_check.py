@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import csv
 import logging
 import os
 import subprocess
 import sys
-import atexit
+
+from typing import List, Tuple
 
 
 from clickhouse_helper import (
@@ -29,8 +31,10 @@ from upload_result_helper import upload_results
 NAME = "Style Check"
 
 
-def process_result(result_folder):
-    test_results = []
+def process_result(
+    result_folder: str,
+) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
+    test_results = []  # type: List[Tuple[str, str]]
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible
@@ -57,7 +61,7 @@ def process_result(result_folder):
     try:
         results_path = os.path.join(result_folder, "test_results.tsv")
         with open(results_path, "r", encoding="utf-8") as fd:
-            test_results = list(csv.reader(fd, delimiter="\t"))
+            test_results = list(csv.reader(fd, delimiter="\t"))  # type: ignore
         if len(test_results) == 0:
             raise Exception("Empty results")
 
@@ -81,7 +85,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def checkout_head(pr_info: PRInfo):
+def checkout_head(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
@@ -107,7 +111,7 @@ def checkout_head(pr_info: PRInfo):
     git_runner(f"git checkout -f head-{pr_info.head_ref}")
 
 
-def commit_push_staged(pr_info: PRInfo):
+def commit_push_staged(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
     assert pr_info.number
