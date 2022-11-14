@@ -229,8 +229,8 @@ def create_test_html_report(
         if has_test_logs and not with_raw_logs:
             headers.append("Logs")
 
-        headers = "".join(["<th>" + h + "</th>" for h in headers])
-        test_part = HTML_TEST_PART.format(headers=headers, rows=rows_part)
+        headers_html = "".join(["<th>" + h + "</th>" for h in headers])
+        test_part = HTML_TEST_PART.format(headers=headers_html, rows=rows_part)
     else:
         test_part = ""
 
@@ -341,7 +341,7 @@ def create_build_html_report(
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
-            delta = "unknown"
+            delta = "unknown"  # type: ignore
 
         row += "<td>{}</td>".format(str(delta))
 
