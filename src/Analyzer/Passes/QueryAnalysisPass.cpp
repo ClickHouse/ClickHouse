@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
+#include <Common/NamePrompter.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -1056,6 +1058,32 @@ private:
         const ProjectionName & fill_to_expression_projection_name,
         const ProjectionName & fill_step_expression_projection_name);
 
+    static void collectCompoundExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+        const DataTypePtr & compound_expression_type,
+        const Identifier & valid_identifier_prefix,
+        std::unordered_set<Identifier> & valid_identifiers_result);
+
+    static void collectTableExpressionValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+        const QueryTreeNodePtr & table_expression,
+        const TableExpressionData & table_expression_data,
+        std::unordered_set<Identifier> & valid_identifiers_result);
+
+    static void collectScopeValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+        const IdentifierResolveScope & scope,
+        bool allow_expression_identifiers,
+        bool allow_function_identifiers,
+        bool allow_table_expression_identifiers,
+        std::unordered_set<Identifier> & valid_identifiers_result);
+
+    static void collectScopeWithParentScopesValidIdentifiersForTypoCorrection(const Identifier & unresolved_identifier,
+        const IdentifierResolveScope & scope,
+        bool allow_expression_identifiers,
+        bool allow_function_identifiers,
+        bool allow_table_expression_identifiers,
+        std::unordered_set<Identifier> & valid_identifiers_result);
+
+    static std::vector<String> collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers);
+
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path);
 
     static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
@@ -1075,6 +1103,12 @@ private:
     /// Resolve identifier functions
 
     static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
+
+    QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
+        size_t identifier_bind_size,
+        const QueryTreeNodePtr & compound_expression,
+        String compound_expression_source,
+        IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
@@ -1356,6 +1390,233 @@ ProjectionName QueryAnalyzer::calculateSortColumnProjectionName(const QueryTreeN
     }
 
     return sort_column_projection_name_buffer.str();
+}
+
+/// Get valid identifiers for typo correction from compound expression
+void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
+    const Identifier & unresolved_identifier,
+    const DataTypePtr & compound_expression_type,
+    const Identifier & valid_identifier_prefix,
+    std::unordered_set<Identifier> & valid_identifiers_result)
+{
+    std::vector<std::pair<Identifier, const IDataType *>> identifiers_with_types_to_process;
+    identifiers_with_types_to_process.emplace_back(valid_identifier_prefix, compound_expression_type.get());
+
+    while (!identifiers_with_types_to_process.empty())
+    {
+        auto [identifier, type] = identifiers_with_types_to_process.back();
+        identifiers_with_types_to_process.pop_back();
+
+        if (identifier.getPartsSize() + 1 > unresolved_identifier.getPartsSize())
+            continue;
+
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(type))
+            type = array->getNestedType().get();
+
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(type);
+
+        if (!tuple)
+            continue;
+
+        const auto & tuple_element_names = tuple->getElementNames();
+        size_t tuple_element_names_size = tuple_element_names.size();
+
+        for (size_t i = 0; i < tuple_element_names_size; ++i)
+        {
+            const auto & element_name = tuple_element_names[i];
+            const auto & element_type = tuple->getElements()[i];
+
+            identifier.push_back(element_name);
+
+            valid_identifiers_result.insert(identifier);
+            identifiers_with_types_to_process.emplace_back(identifier, element_type.get());
+
+            identifier.pop_back();
+        }
+    }
+}
+
+/// Get valid identifiers for typo correction from table expression
+void QueryAnalyzer::collectTableExpressionValidIdentifiersForTypoCorrection(
+    const Identifier & unresolved_identifier,
+    const QueryTreeNodePtr & table_expression,
+    const TableExpressionData & table_expression_data,
+    std::unordered_set<Identifier> & valid_identifiers_result)
+{
+    for (const auto & [column_name, column_node] : table_expression_data.column_name_to_column_node)
+    {
+        Identifier column_identifier(column_name);
+        if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
+            valid_identifiers_result.insert(column_identifier);
+
+        collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+            column_node->getColumnType(),
+            column_identifier,
+            valid_identifiers_result);
+
+        if (table_expression->hasAlias())
+        {
+            Identifier column_identifier_with_alias({table_expression->getAlias()});
+            for (const auto & column_identifier_part : column_identifier)
+                column_identifier_with_alias.push_back(column_identifier_part);
+
+            if (unresolved_identifier.getPartsSize() == column_identifier_with_alias.getPartsSize())
+                valid_identifiers_result.insert(column_identifier_with_alias);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_alias,
+                valid_identifiers_result);
+        }
+
+        if (!table_expression_data.table_name.empty())
+        {
+            Identifier column_identifier_with_table_name({table_expression_data.table_name});
+            for (const auto & column_identifier_part : column_identifier)
+                column_identifier_with_table_name.push_back(column_identifier_part);
+
+            if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name.getPartsSize())
+                valid_identifiers_result.insert(column_identifier_with_table_name);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_table_name,
+                valid_identifiers_result);
+        }
+
+        if (!table_expression_data.database_name.empty() && !table_expression_data.table_name.empty())
+        {
+            Identifier column_identifier_with_table_name_and_database_name({table_expression_data.database_name, table_expression_data.table_name});
+            for (const auto & column_identifier_part : column_identifier)
+                column_identifier_with_table_name_and_database_name.push_back(column_identifier_part);
+
+            if (unresolved_identifier.getPartsSize() == column_identifier_with_table_name_and_database_name.getPartsSize())
+                valid_identifiers_result.insert(column_identifier_with_table_name_and_database_name);
+
+            collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                column_node->getColumnType(),
+                column_identifier_with_table_name_and_database_name,
+                valid_identifiers_result);
+        }
+    }
+}
+
+/// Get valid identifiers for typo correction from scope without looking at parent scopes
+void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
+    const Identifier & unresolved_identifier,
+    const IdentifierResolveScope & scope,
+    bool allow_expression_identifiers,
+    bool allow_function_identifiers,
+    bool allow_table_expression_identifiers,
+    std::unordered_set<Identifier> & valid_identifiers_result)
+{
+    bool identifier_is_short = unresolved_identifier.isShort();
+    bool identifier_is_compound = unresolved_identifier.isCompound();
+
+    if (allow_expression_identifiers)
+    {
+        for (const auto & [name, expression] : scope.alias_name_to_expression_node)
+        {
+            auto expression_identifier = Identifier(name);
+            valid_identifiers_result.insert(expression_identifier);
+
+            auto expression_node_type = expression->getNodeType();
+
+            if (identifier_is_compound && isExpressionNodeType(expression_node_type))
+            {
+                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                    expression->getResultType(),
+                    expression_identifier,
+                    valid_identifiers_result);
+            }
+        }
+
+        for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
+        {
+            collectTableExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                table_expression,
+                table_expression_data,
+                valid_identifiers_result);
+        }
+    }
+
+    if (identifier_is_short)
+    {
+        if (allow_function_identifiers)
+        {
+            for (const auto & [name, _] : scope.alias_name_to_expression_node)
+                valid_identifiers_result.insert(Identifier(name));
+        }
+
+        if (allow_table_expression_identifiers)
+        {
+            for (const auto & [name, _] : scope.alias_name_to_table_expression_node)
+                valid_identifiers_result.insert(Identifier(name));
+        }
+    }
+
+    for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
+    {
+        auto expression_node_type = expression->getNodeType();
+
+        if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
+        {
+            auto expression_identifier = Identifier(argument_name);
+
+            if (identifier_is_compound)
+            {
+                collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
+                    expression->getResultType(),
+                    expression_identifier,
+                    valid_identifiers_result);
+            }
+
+            valid_identifiers_result.insert(expression_identifier);
+        }
+        else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
+        {
+            valid_identifiers_result.insert(Identifier(argument_name));
+        }
+        else if (allow_table_expression_identifiers && isTableExpressionNodeType(expression_node_type))
+        {
+            valid_identifiers_result.insert(Identifier(argument_name));
+        }
+    }
+}
+
+void QueryAnalyzer::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(
+    const Identifier & unresolved_identifier,
+    const IdentifierResolveScope & scope,
+    bool allow_expression_identifiers,
+    bool allow_function_identifiers,
+    bool allow_table_expression_identifiers,
+    std::unordered_set<Identifier> & valid_identifiers_result)
+{
+    const IdentifierResolveScope * current_scope = &scope;
+
+    while (current_scope)
+    {
+        collectScopeValidIdentifiersForTypoCorrection(unresolved_identifier,
+            *current_scope,
+            allow_expression_identifiers,
+            allow_function_identifiers,
+            allow_table_expression_identifiers,
+            valid_identifiers_result);
+
+        current_scope = current_scope->parent_scope;
+    }
+}
+
+std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
+{
+    std::vector<String> prompting_strings;
+    prompting_strings.reserve(valid_identifiers.size());
+
+    for (const auto & valid_identifier : valid_identifiers)
+        prompting_strings.push_back(valid_identifier.getFullName());
+
+    NamePrompter<1> prompter;
+    return prompter.getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.
@@ -1701,6 +1962,55 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     return std::make_shared<TableNode>(std::move(storage), storage_lock, storage_snapshot);
 }
 
+/// Resolve identifier from compound expression
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
+    size_t identifier_bind_size,
+    const QueryTreeNodePtr & compound_expression,
+    String compound_expression_source,
+    IdentifierResolveScope & scope)
+{
+    Identifier compound_expression_identifier;
+    for (size_t i = 0; i < identifier_bind_size; ++i)
+        compound_expression_identifier.push_back(expression_identifier[i]);
+
+    IdentifierView nested_path(expression_identifier);
+    nested_path.popFirst(identifier_bind_size);
+
+    auto expression_type = compound_expression->getResultType();
+
+    if (!nestedIdentifierCanBeResolved(expression_type, nested_path))
+    {
+        std::unordered_set<Identifier> valid_identifiers;
+        collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
+            expression_type,
+            compound_expression_identifier,
+            valid_identifiers);
+
+        auto hints = collectIdentifierTypoHints(expression_identifier, valid_identifiers);
+
+        String compound_expression_from_error_message;
+        if (!compound_expression_source.empty())
+        {
+            compound_expression_from_error_message += " from ";
+            compound_expression_from_error_message += compound_expression_source;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
+            expression_identifier,
+            nested_path,
+            expression_type->getName(),
+            compound_expression_from_error_message,
+            scope.scope_node->formatASTForErrorMessage(),
+            getHintsErrorMessageSuffix(hints));
+    }
+
+    auto tuple_element_result = wrapExpressionNodeInTupleElement(compound_expression, nested_path);
+    resolveFunction(tuple_element_result, scope);
+
+    return tuple_element_result;
+}
+
 /** Resolve identifier from expression arguments.
   *
   * Expression arguments can be initialized during lambda analysis or they could be provided externally.
@@ -1716,8 +2026,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
   * It is important to support edge cases, where we lookup for table or function node, but argument has same name.
   * Example: WITH (x -> x + 1) AS func, (func -> func(1) + func) AS lambda SELECT lambda(1);
   *
-  * 3. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap node
-  * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
+  * 3. If identifier is compound and identifier lookup is in expression context use `tryResolveIdentifierFromCompoundExpression`.
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
@@ -1742,15 +2051,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
-    {
-        auto nested_path = IdentifierView(identifier_lookup.identifier);
-        nested_path.popFirst();
-
-        auto tuple_element_result = wrapExpressionNodeInTupleElement(it->second, nested_path);
-        resolveFunction(tuple_element_result, scope);
-
-        return tuple_element_result;
-    }
+        return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
 
     return it->second;
 }
@@ -1817,11 +2118,7 @@ bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifi
   * If identifier is resolved, depending on lookup context, erase entry from expression or lambda map. Check QueryExpressionsAliasVisitor documentation.
   * Pop node from current scope expressions in resolve process stack.
   *
-  * 5. If identifier is compound and identifier lookup is in expression context, pop first part from identifier lookup and wrap alias node
-  * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
-  *
-  * Example: SELECT value AS alias, alias.nested_path.
-  * Result: SELECT value AS alias, tupleElement(value, 'nested_path') value.nested_path.
+  * 5. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings)
 {
@@ -1902,23 +2199,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
 
     QueryTreeNodePtr result = it->second;
 
-    /** If identifier is compound and it is expression identifier lookup, wrap compound expression into
-      * tuple elements functions.
-      *
-      * Example: SELECT compound_expression AS alias, alias.first.second;
-      * Result: SELECT compound_expression AS alias, tupleElement(tupleElement(compound_expression, 'first'), 'second');
-      */
     if (identifier_lookup.identifier.isCompound() && result)
     {
         if (identifier_lookup.isExpressionLookup())
         {
-            auto nested_path = IdentifierView(identifier_lookup.identifier);
-            nested_path.popFirst();
-
-            auto tuple_element_result = wrapExpressionNodeInTupleElement(result, nested_path);
-            resolveFunction(tuple_element_result, scope);
-
-            result = tuple_element_result;
+            return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
         }
         else if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
         {
@@ -1939,9 +2224,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
   * 2. If identifier full name match table column use column. Save information that we resolve identifier using full name.
   * 3. Else if identifier binds to table column, use column.
   * 4. Try to resolve column ALIAS expression if it exists.
-  * 5. If identifier was compound and was not resolved using full name during step 1 pop first part from identifier lookup and wrap column node
-  * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
+  * 5. If identifier was compound and was not resolved using full name during step 1 use `tryResolveIdentifierFromCompoundExpression`.
   * This can be the case with compound ALIAS columns.
+  *
   * Example:
   * CREATE TABLE test_table (id UInt64, value Tuple(id UInt64, value String), alias_value ALIAS value.id) ENGINE=TinyLog;
   */
@@ -1967,15 +2252,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableColumns(const Ident
     QueryTreeNodePtr result = it->second;
 
     if (!full_column_name_match && identifier.isCompound())
-    {
-        auto nested_path = IdentifierView(identifier_lookup.identifier);
-        nested_path.popFirst();
-
-        auto tuple_element_result = wrapExpressionNodeInTupleElement(it->second, nested_path);
-        resolveFunction(tuple_element_result, scope);
-
-        result = tuple_element_result;
-    }
+        return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
 
     return result;
 }
@@ -2106,25 +2383,39 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 result_column = it->second;
         }
 
-        if (!result_column || (!match_full_identifier && !compound_identifier))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Identifier '{}' cannot be resolved from {}{}. In scope {}",
-                identifier.getFullName(),
-                table_expression_data.table_expression_description,
-                table_expression_data.table_expression_name.empty() ? "" : " with name " + table_expression_data.table_expression_name,
-                scope.scope_node->formatASTForErrorMessage());
-
-        QueryTreeNodePtr result_expression = result_column;
+        QueryTreeNodePtr result_expression;
         bool clone_is_needed = true;
+
+        String table_expression_source = table_expression_data.table_expression_description;
+        if (!table_expression_data.table_expression_name.empty())
+            table_expression_source += " with name " + table_expression_data.table_expression_name;
 
         if (!match_full_identifier && compound_identifier)
         {
-            IdentifierView nested_path(identifier_view);
-            nested_path.popFirst();
-            auto tuple_element_result = wrapExpressionNodeInTupleElement(result_expression, identifier_view);
-            resolveFunction(tuple_element_result, scope);
-            result_expression = std::move(tuple_element_result);
+            size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
+            result_expression = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, identifier_bind_size, result_column, table_expression_source, scope);
             clone_is_needed = false;
+        }
+        else
+        {
+            result_expression = result_column;
+        }
+
+        if (!result_expression)
+        {
+            std::unordered_set<Identifier> valid_identifiers;
+            collectTableExpressionValidIdentifiersForTypoCorrection(identifier,
+                table_expression_node,
+                table_expression_data,
+                valid_identifiers);
+
+            auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
+                identifier.getFullName(),
+                table_expression_source,
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
         }
 
         if (clone_is_needed)
@@ -3941,10 +4232,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (function_node.isWindowFunction())
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-               "Aggregate function with name {} does not exists. In scope {}",
+        {
+            std::string error_message = fmt::format("Aggregate function with name {} does not exists. In scope {}",
                function_name,
                scope.scope_node->formatASTForErrorMessage());
+
+            AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
+        }
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
@@ -3970,10 +4265,36 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (!function)
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
-           throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-               "Function with name {} does not exists. In scope {}",
-               function_name,
-               scope.scope_node->formatASTForErrorMessage());
+        {
+            std::vector<std::string> possible_function_names;
+
+            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context);
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = UserDefinedSQLFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = FunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            for (auto & [name, lambda_node] : scope.alias_name_to_lambda_node)
+            {
+                if (lambda_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    possible_function_names.push_back(name);
+            }
+
+            NamePrompter<2> name_prompter;
+            auto hints = name_prompter.getHints(function_name, possible_function_names);
+
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Function with name {} does not exists. In scope {}{}",
+                function_name,
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
+        }
 
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
@@ -4309,12 +4630,22 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                 if (allow_table_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::TABLE_EXPRESSION);
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Unknown {}{} identifier '{}' in scope {}",
+                std::unordered_set<Identifier> valid_identifiers;
+                collectScopeWithParentScopesValidIdentifiersForTypoCorrection(unresolved_identifier,
+                    scope,
+                    true,
+                    allow_lambda_expression,
+                    allow_table_expression,
+                    valid_identifiers);
+
+                auto hints = collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
+
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier '{}' in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     unresolved_identifier.getFullName(),
-                    scope.scope_node->formatASTForErrorMessage());
+                    scope.scope_node->formatASTForErrorMessage(),
+                    getHintsErrorMessageSuffix(hints));
             }
 
             if (node->getNodeType() == QueryTreeNodeType::LIST)
@@ -4876,16 +5207,14 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
         table_expression_data.table_expression_description = "subquery";
-
-        if (table_expression_node->hasAlias())
-            table_expression_data.table_expression_name = table_expression_node->getAlias();
     }
     else if (table_function_node)
     {
         table_expression_data.table_expression_description = "table_function";
-        if (table_function_node->hasAlias())
-            table_expression_data.table_expression_name = table_function_node->getAlias();
     }
+
+    if (table_expression_node->hasAlias())
+        table_expression_data.table_expression_name = table_expression_node->getAlias();
 
     if (table_node || table_function_node)
     {
