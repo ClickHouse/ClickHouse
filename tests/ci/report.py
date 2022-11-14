@@ -101,7 +101,7 @@ def _format_header(header, branch_name, branch_url=None):
         result = "ClickHouse " + result
     result += " for "
     if branch_url:
-        result += '<a href="{url}">{name}</a>'.format(url=branch_url, name=branch_name)
+        result += f'<a href="{branch_url}">{branch_name}</a>'
     else:
         result += branch_name
     return result
@@ -140,9 +140,7 @@ def _get_html_url(url):
     if isinstance(url, tuple):
         href, name = url[0], _get_html_url_name(url)
     if href and name:
-        return '<a href="{href}">{name}</a>'.format(
-            href=href, name=_get_html_url_name(url)
-        )
+        return f'<a href="{href}">{_get_html_url_name(url)}</a>'
     return ""
 
 
@@ -199,13 +197,7 @@ def create_test_html_report(
                 num_fails = num_fails + 1
                 is_fail_id = 'id="fail' + str(num_fails) + '" '
 
-            row += (
-                "<td "
-                + is_fail_id
-                + 'style="{}">'.format(style)
-                + test_status
-                + "</td>"
-            )
+            row += f'<td {is_fail_id}style="{style}">{test_status}</td>'
 
             if test_time is not None:
                 row += "<td>" + test_time + "</td>"
@@ -317,33 +309,33 @@ def create_build_html_report(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"
-        row += "<td>{}</td>".format(build_result.compiler)
+        row += f"<td>{build_result.compiler}</td>"
         if build_result.build_type:
-            row += "<td>{}</td>".format(build_result.build_type)
+            row += f"<td>{build_result.build_type}</td>"
         else:
-            row += "<td>{}</td>".format("relwithdebuginfo")
+            row += "<td>relwithdebuginfo</td>"
         if build_result.sanitizer:
-            row += "<td>{}</td>".format(build_result.sanitizer)
+            row += f"<td>{build_result.sanitizer}</td>"
         else:
-            row += "<td>{}</td>".format("none")
+            row += "<td>none</td>"
 
-        row += "<td>{}</td>".format(build_result.libraries)
+        row += f"<td>{build_result.libraries}</td>"
 
         if build_result.status:
             style = _get_status_style(build_result.status)
-            row += '<td style="{}">{}</td>'.format(style, build_result.status)
+            row += f'<td style="{style}">{build_result.status}</td>'
         else:
             style = _get_status_style("error")
-            row += '<td style="{}">{}</td>'.format(style, "error")
+            row += f'<td style="{style}">error</td>'
 
-        row += '<td><a href="{}">link</a></td>'.format(build_log_url)
+        row += f'<td><a href="{build_log_url}">link</a></td>'
 
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
             delta = "unknown"  # type: ignore
 
-        row += "<td>{}</td>".format(str(delta))
+        row += f"<td>{delta}</td>"
 
         links = ""
         link_separator = "<br/>"
@@ -355,7 +347,7 @@ def create_build_html_report(
                 links += link_separator
             if links:
                 links = links[: -len(link_separator)]
-            row += "<td>{}</td>".format(links)
+            row += f"<td>{links}</td>"
 
         row += "</tr>"
         rows += row
