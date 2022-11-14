@@ -72,10 +72,10 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     : IInputFormat(header_, in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
-    , name_to_index(header_.getNamesToIndexesMap())
     , serializations(header_.getSerializations())
     , reader(std::move(reader_))
 {
+    name_to_index = getPort().getHeader().getNamesToIndexesMap();
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(

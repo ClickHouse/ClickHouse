@@ -39,10 +39,10 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , name_map(header_.getNamesToIndexesMap())
     , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
 {
+    name_map = getPort().getHeader().getNamesToIndexesMap();
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header_.columns(); ++i)
