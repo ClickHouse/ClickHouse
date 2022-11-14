@@ -107,7 +107,14 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 
     {
         std::lock_guard guard(processors_mutex);
-        processors.insert(processors.end(), new_processors.begin(), new_processors.end());
+        /// Do not add new processors to existing list, since the query was already cancelled.
+        if (cancelled)
+        {
+            for (auto & processor : new_processors)
+                processor.cancel();
+            return false;
+        }
+        processors.insert(processors->end(), new_processors.begin(), new_processors.end());
     }
 
     uint64_t num_processors = processors.size();
@@ -361,6 +368,7 @@ void ExecutingGraph::cancel()
     std::lock_guard guard(processors_mutex);
     for (auto & processor : processors)
         processor->cancel();
+    cancelled = true;
 }
 
 }

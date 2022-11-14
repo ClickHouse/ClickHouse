@@ -153,6 +153,8 @@ private:
     std::mutex processors_mutex;
 
     UpgradableMutex nodes_mutex;
+
+    bool cancelled = false;
 };
 
 }
