@@ -583,13 +583,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            queue->push(ast, context);
+            auto insert_future = queue->push(ast, context);
 
             if (settings.wait_for_async_insert)
             {
                 auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
-                auto query_id = context->getCurrentQueryId();
-                auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
+                auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(insert_future), timeout);
                 res.pipeline = QueryPipeline(Pipe(std::move(source)));
             }
 

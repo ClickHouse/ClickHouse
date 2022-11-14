@@ -100,42 +100,25 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && qu
 
 void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr exception_)
 {
-    std::lock_guard lock(mutex);
-    finished = true;
+    if (finished.exchange(true))
+        return;
+
     if (exception_)
+    {
+        promise.set_exception(exception_);
         ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
-    exception = exception_;
-    cv.notify_all();
+    }
+    else
+    {
+        promise.set_value();
+    }
 }
 
-bool AsynchronousInsertQueue::InsertData::Entry::wait(const Milliseconds & timeout) const
-{
-    std::unique_lock lock(mutex);
-    return cv.wait_for(lock, timeout, [&] { return finished; });
-}
-
-bool AsynchronousInsertQueue::InsertData::Entry::isFinished() const
-{
-    std::lock_guard lock(mutex);
-    return finished;
-}
-
-std::exception_ptr AsynchronousInsertQueue::InsertData::Entry::getException() const
-{
-    std::lock_guard lock(mutex);
-    return exception;
-}
-
-
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, Milliseconds cleanup_timeout_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size)
     : WithContext(context_)
-    , cleanup_timeout(cleanup_timeout_)
     , pool(pool_size)
     , dump_by_first_update_thread(&AsynchronousInsertQueue::busyCheck, this)
-    , cleanup_thread(&AsynchronousInsertQueue::cleanup, this)
 {
-    using namespace std::chrono;
-
     assert(pool_size);
 }
 
@@ -146,30 +129,23 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
 
     shutdown = true;
-    {
-        std::lock_guard lock(deadline_mutex);
-        are_tasks_available.notify_one();
-    }
-    {
-        std::lock_guard lock(cleanup_mutex);
-        cleanup_can_run.notify_one();
-    }
+    are_tasks_available.notify_one();
 
     assert(dump_by_first_update_thread.joinable());
     dump_by_first_update_thread.join();
-
-    assert(cleanup_thread.joinable());
-    cleanup_thread.join();
-
     pool.wait();
 
-    std::lock_guard lock(currently_processing_mutex);
-    for (const auto & [_, entry] : currently_processing_queries)
     {
-        if (!entry->isFinished())
-            entry->finish(std::make_exception_ptr(Exception(
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Wait for async insert timeout exceeded)")));
+        std::lock_guard lock(queue_mutex);
+
+        for (auto & [_, elem] : queue)
+        {
+            for (const auto & entry : elem.data->entries)
+            {
+                entry->finish(std::make_exception_ptr(Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
+            }
+        }
     }
 
     LOG_TRACE(log, "Asynchronous insertion queue finished");
@@ -181,11 +157,11 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     /// lambda copyable and allow to save it to the thread pool.
     pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
     {
-        processData(key, std::move(*data), std::move(global_context));
+        processData(std::move(key), std::move(*data), std::move(global_context));
     });
 }
 
-void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
+std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 {
     query = query->clone();
     const auto & settings = query_context->getSettingsRef();
@@ -214,97 +190,71 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
+
     InsertQuery key{query, settings};
+    InsertDataPtr data_to_process;
+    std::future<void> insert_future;
 
     {
-        /// Firstly try to get entry from queue without exclusive lock.
-        std::shared_lock read_lock(rwlock);
-        if (auto it = queue.find(key); it != queue.end())
+        std::lock_guard lock(queue_mutex);
+
+        auto [it, inserted] = queue_iterators.try_emplace(key);
+        if (inserted)
         {
-            pushImpl(std::move(entry), it);
-            return;
+            auto now = std::chrono::steady_clock::now();
+            auto timeout = now + Milliseconds{it->first.settings.async_insert_busy_timeout_ms};
+            it->second = queue.emplace(timeout, Container{key, std::make_unique<InsertData>(now)}).first;
         }
+
+        auto queue_it = it->second;
+        auto & data = queue_it->second.data;
+        size_t entry_data_size = entry->bytes.size();
+
+        assert(data);
+        data->size += entry_data_size;
+        data->entries.emplace_back(entry);
+        insert_future = entry->getFuture();
+
+        LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
+            data->entries.size(), data->size, queryToString(it->first.query));
+
+        /// Here we check whether we hit the limit on maximum data size in the buffer.
+        /// And use setting from query context.
+        /// It works, because queries with the same set of settings are already grouped together.
+        if (data->size > it->first.settings.async_insert_max_data_size)
+        {
+            data_to_process = std::move(data);
+            queue_iterators.erase(it);
+            queue.erase(queue_it);
+        }
+
+        CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
+        ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
+        ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
     }
 
-    std::lock_guard write_lock(rwlock);
-    auto it = queue.emplace(key, std::make_shared<Container>()).first;
-    pushImpl(std::move(entry), it);
-}
-
-void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator it)
-{
-    auto & [data_mutex, data] = *it->second;
-    std::lock_guard data_lock(data_mutex);
-
-    if (!data)
-    {
-        auto now = std::chrono::steady_clock::now();
-        data = std::make_unique<InsertData>(now);
-
-        std::lock_guard lock(deadline_mutex);
-        deadline_queue.insert({now + Milliseconds{it->first.settings.async_insert_busy_timeout_ms}, it});
+    if (data_to_process)
+        scheduleDataProcessingJob(key, std::move(data_to_process), getContext());
+    else
         are_tasks_available.notify_one();
-    }
 
-    size_t entry_data_size = entry->bytes.size();
-
-    data->size += entry_data_size;
-    data->entries.emplace_back(entry);
-
-    {
-        std::lock_guard currently_processing_lock(currently_processing_mutex);
-        currently_processing_queries.emplace(entry->query_id, entry);
-    }
-
-    LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
-        data->entries.size(), data->size, queryToString(it->first.query));
-
-    /// Here we check whether we hit the limit on maximum data size in the buffer.
-    /// And use setting from query context!
-    /// It works, because queries with the same set of settings are already grouped together.
-    if (data->size > it->first.settings.async_insert_max_data_size)
-        scheduleDataProcessingJob(it->first, std::move(data), getContext());
-
-    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
-    ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
-    ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
-}
-
-void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
-{
-    InsertData::EntryPtr entry;
-
-    {
-        std::lock_guard lock(currently_processing_mutex);
-        auto it = currently_processing_queries.find(query_id);
-        if (it == currently_processing_queries.end())
-            return;
-
-        entry = it->second;
-    }
-
-    bool finished = entry->wait(timeout);
-
-    if (!finished)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout.count());
-
-    if (auto exception = entry->getException())
-        std::rethrow_exception(exception);
+    return insert_future;
 }
 
 void AsynchronousInsertQueue::busyCheck()
 {
     while (!shutdown)
     {
-        std::vector<QueueIterator> entries_to_flush;
+        std::vector<Container> entries_to_flush;
         {
-            std::unique_lock deadline_lock(deadline_mutex);
-            are_tasks_available.wait_for(deadline_lock, Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [this]()
+            std::unique_lock lock(queue_mutex);
+
+            are_tasks_available.wait_for(lock, Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [this]
             {
                 if (shutdown)
                     return true;
 
-                if (!deadline_queue.empty() && deadline_queue.begin()->first < std::chrono::steady_clock::now())
+                if (!queue.empty() && queue.begin()->first < std::chrono::steady_clock::now())
                     return true;
 
                 return false;
@@ -317,90 +267,21 @@ void AsynchronousInsertQueue::busyCheck()
 
             while (true)
             {
-                if (deadline_queue.empty() || deadline_queue.begin()->first > now)
+                if (queue.empty() || queue.begin()->first > now)
                     break;
 
-                entries_to_flush.emplace_back(deadline_queue.begin()->second);
-                deadline_queue.erase(deadline_queue.begin());
+                auto it = queue.begin();
+                queue_iterators.erase(it->second.key);
+
+                entries_to_flush.emplace_back(std::move(it->second));
+                queue.erase(it);
             }
         }
 
-        std::shared_lock read_lock(rwlock);
         for (auto & entry : entries_to_flush)
-        {
-            auto & [key, elem] = *entry;
-            std::lock_guard data_lock(elem->mutex);
-            if (!elem->data)
-                continue;
-
-            scheduleDataProcessingJob(key, std::move(elem->data), getContext());
-        }
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext());
     }
 }
-
-void AsynchronousInsertQueue::cleanup()
-{
-    while (true)
-    {
-        {
-            std::unique_lock cleanup_lock(cleanup_mutex);
-            cleanup_can_run.wait_for(cleanup_lock, Milliseconds(cleanup_timeout), [this]() -> bool { return shutdown; });
-
-            if (shutdown)
-                return;
-        }
-
-        std::vector<InsertQuery> keys_to_remove;
-
-        {
-            std::shared_lock read_lock(rwlock);
-
-            for (auto & [key, elem] : queue)
-            {
-                std::lock_guard data_lock(elem->mutex);
-                if (!elem->data)
-                    keys_to_remove.push_back(key);
-            }
-        }
-
-        if (!keys_to_remove.empty())
-        {
-            std::lock_guard write_lock(rwlock);
-            size_t total_removed = 0;
-
-            for (const auto & key : keys_to_remove)
-            {
-                auto it = queue.find(key);
-                if (it != queue.end() && !it->second->data)
-                {
-                    queue.erase(it);
-                    ++total_removed;
-                }
-            }
-
-            if (total_removed)
-                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", total_removed);
-        }
-
-        {
-            std::vector<String> ids_to_remove;
-            std::lock_guard lock(currently_processing_mutex);
-
-            for (const auto & [query_id, entry] : currently_processing_queries)
-                if (entry->isFinished())
-                    ids_to_remove.push_back(query_id);
-
-            if (!ids_to_remove.empty())
-            {
-                for (const auto & id : ids_to_remove)
-                    currently_processing_queries.erase(id);
-
-                LOG_TRACE(log, "Removed {} finished entries from asynchronous insertion queue", ids_to_remove.size());
-            }
-        }
-    }
-}
-
 
 static void appendElementsToLogSafe(
     AsynchronousInsertLog & log,

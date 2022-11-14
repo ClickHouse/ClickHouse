@@ -28,7 +28,6 @@ NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
         {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"entries.finished", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())},
-        {"entries.exception", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     };
 }
 
@@ -41,12 +40,9 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         return;
 
     auto [queue, queue_lock] = insert_queue->getQueueLocked();
-    for (const auto & [key, elem] : queue)
+    for (const auto & [_, elem] : queue)
     {
-        std::lock_guard elem_lock(elem->mutex);
-
-        if (!elem->data)
-            continue;
+        const auto & [key, data] = elem;
 
         auto time_in_microseconds = [](const time_point<steady_clock> & timestamp)
         {
@@ -75,43 +71,24 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         }
 
         res_columns[i++]->insert(insert_query.format);
-        res_columns[i++]->insert(time_in_microseconds(elem->data->first_update));
-        res_columns[i++]->insert(elem->data->size);
+        res_columns[i++]->insert(time_in_microseconds(data->first_update));
+        res_columns[i++]->insert(data->size);
 
         Array arr_query_id;
         Array arr_bytes;
         Array arr_finished;
         Array arr_exception;
 
-        for (const auto & entry : elem->data->entries)
+        for (const auto & entry : data->entries)
         {
             arr_query_id.push_back(entry->query_id);
             arr_bytes.push_back(entry->bytes.size());
             arr_finished.push_back(entry->isFinished());
-
-            if (auto exception = entry->getException())
-            {
-                try
-                {
-                    std::rethrow_exception(exception);
-                }
-                catch (const Exception & e)
-                {
-                    arr_exception.push_back(e.displayText());
-                }
-                catch (...)
-                {
-                    arr_exception.push_back("Unknown exception");
-                }
-            }
-            else
-                arr_exception.push_back("");
         }
 
         res_columns[i++]->insert(arr_query_id);
         res_columns[i++]->insert(arr_bytes);
         res_columns[i++]->insert(arr_finished);
-        res_columns[i++]->insert(arr_exception);
     }
 }
 
