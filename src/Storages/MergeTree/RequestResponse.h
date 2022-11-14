@@ -35,7 +35,6 @@ struct PartitionReadRequest
     MarkRanges mark_ranges;
 
     void serialize(WriteBuffer & out) const;
-    void describe(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
 
     UInt64 getConsistentHash(size_t buckets) const;
