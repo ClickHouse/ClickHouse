@@ -153,9 +153,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        /// When deserializing a bool it might trigger UBSAN if the input is not 0 or 1, so it's better to use a Int8
-        static_assert(sizeof(bool) == sizeof(Int8));
-        Int8 flag = true;
+        bool flag = true;
         if constexpr (serialize_flag)
             readBinary(flag, buf);
         if (flag)
