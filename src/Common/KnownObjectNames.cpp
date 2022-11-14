@@ -10,8 +10,8 @@ bool KnownObjectNames::exists(const String & name) const
     std::lock_guard lock{mutex};
     if (names.contains(name))
         return true;
-    
-    if (case_insensitive_names.empty())
+
+    if (!case_insensitive_names.empty())
     {
         String lower_name = Poco::toLower(name);
         if (case_insensitive_names.contains(lower_name))

@@ -2,8 +2,8 @@
 #include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 

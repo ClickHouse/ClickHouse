@@ -71,6 +71,6 @@ public:
 
 /// Wipes sensitive data and cuts to a specified maximum length in one function call.
 /// If the maximum length is zero then the function doesn't cut to the maximum length.
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length = 0);
+std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length);
 
 }

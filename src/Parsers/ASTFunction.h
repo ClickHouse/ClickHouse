@@ -42,7 +42,7 @@ public:
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
 
-    /// Kind of this function-like expression, how it's actually used.
+    /// Specifies where this function-like expression is used.
     enum class Kind
     {
         ORDINARY_FUNCTION,

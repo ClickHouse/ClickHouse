@@ -641,17 +641,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (arguments->children[i]->as<ASTSetQuery>())
                 settings.ostr << "SETTINGS ";
 
-            if ((i == 1) && special_hilite_regexp
-                && highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-"))
-            {
-                continue;
-            }
-
             if (!settings.show_secrets && (secret_arguments.first <= i) && (i < secret_arguments.second))
             {
                 settings.ostr << "'[HIDDEN]'";
                 if (size - 1 < secret_arguments.second)
                     break; /// All other arguments should also be hidden.
+                continue;
+            }
+
+            if ((i == 1) && special_hilite_regexp
+                && highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-"))
+            {
                 continue;
             }
 
