@@ -26,6 +26,7 @@ void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
 void registerTableFunctionHudi(TableFunctionFactory & factory);
 void registerTableFunctionDelta(TableFunctionFactory & factory);
+void registerTableFunctionOSS(TableFunctionFactory & factory);
 #endif
 
 #if USE_HDFS

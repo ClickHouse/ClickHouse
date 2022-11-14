@@ -29,6 +29,8 @@ void registerTableFunctions()
     registerTableFunctionCOS(factory);
     registerTableFunctionHudi(factory);
     registerTableFunctionDelta(factory);
+    registerTableFunctionOSS(factory);
+
 #endif
 
 #if USE_HDFS
