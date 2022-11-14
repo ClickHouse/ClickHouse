@@ -41,8 +41,6 @@ struct PartLogElement
         TTL_DELETE_MERGE = 3,
         /// Merge with recompression
         TTL_RECOMPRESS_MERGE = 4,
-        /// Merge assigned to drop parts (with TTLMergeSelector)
-        TTL_DROP_MERGE = 5,
     };
 
     String query_id;
