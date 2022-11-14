@@ -672,7 +672,7 @@ void finalizeMutatedPart(
     new_data_part->getColumns().writeText(*out_columns);
     out_columns->finalize(); /// close fd
 
-    new_data_paTrt->rows_count = source_part->rows_count;
+    new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
     new_data_part->index = source_part->index;
     new_data_part->minmax_idx = source_part->minmax_idx;
