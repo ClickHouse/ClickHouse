@@ -1424,9 +1424,8 @@ public:
         if (chars.size() > col_str.getN())
             return false;
 
-        std::string str = reinterpret_cast<const char *>(chars.data());
-
-        col_str.insertData(str.data(), str.size());
+        chars.resize_fill(col_str.getN());
+        col_str.insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
 
 
         return true;
@@ -1443,9 +1442,9 @@ public:
         traverse(element, buf);
         buf.finalize();
 
-        for (unsigned long i = 0; i < fixed_length - chars.size(); ++i)
-            chars.push_back(0);
-
+        if (chars.size() > fixed_length)
+            return false;
+        chars.resize_fill(fixed_length);
         assert_cast<ColumnLowCardinality &>(dest).insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
 
         return true;
