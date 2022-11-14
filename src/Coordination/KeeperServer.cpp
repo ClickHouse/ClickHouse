@@ -136,7 +136,8 @@ KeeperServer::KeeperServer(
         configuration_and_settings_->log_storage_path,
         configuration_and_settings_->state_file_path,
         config,
-        coordination_settings);
+        coordination_settings,
+        &raft_instance_raw);
 }
 
 /**
@@ -266,6 +267,7 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
+    params.parallel_log_appending_ = true;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
@@ -348,6 +350,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
+    raft_instance_raw = raft_instance;
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");

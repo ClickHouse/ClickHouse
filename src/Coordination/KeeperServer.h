@@ -29,6 +29,7 @@ private:
 
     struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance;
+    nuraft::ptr<nuraft::raft_server> raft_instance_raw;
     nuraft::ptr<nuraft::asio_service> asio_service;
     std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
     // because some actions can be applied
