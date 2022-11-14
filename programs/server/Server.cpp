@@ -60,6 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Storages/NamedCollections.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -732,6 +733,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
+    NamedCollectionFactory::instance().initialize(config());
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -1279,6 +1282,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
+            NamedCollectionFactory::instance().reload(*config);
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1486,11 +1490,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     SCOPE_EXIT({
-        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
-        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
-        main_config_reloader.reset();
-        access_control.stopPeriodicReloading();
-
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1789,9 +1788,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            /// Stop reloading of the main config. This must be done before everything else because it
+            /// can try to access/modify already deleted objects.
+            /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            main_config_reloader.reset();
+            access_control.stopPeriodicReloading();
 
             is_cancelled = true;
+
+            LOG_DEBUG(log, "Waiting for current connections to close.");
 
             size_t current_connections = 0;
             {
