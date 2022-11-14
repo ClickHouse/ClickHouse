@@ -38,7 +38,6 @@ $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, '
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'int128 Int128, uint128 UInt128, int256 Int256, uint256 UInt256')"
 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
-$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow)"
 
 
 echo "Decimals"
@@ -47,7 +46,6 @@ $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'decimal
 
 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
-$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow)"
 
 
 echo "Strings"

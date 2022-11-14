@@ -52,10 +52,10 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , name_map(header_.getNamesToIndexesMap())
     , prev_positions(header_.columns())
     , types(header_.getDataTypes())
 {
+    name_map = getPort().getHeader().getNamesToIndexesMap();
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)

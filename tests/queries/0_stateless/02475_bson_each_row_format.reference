@@ -12,7 +12,7 @@ uint16	Nullable(Int32)
 int32	Nullable(Int32)					
 uint32	Nullable(Int64)					
 int64	Nullable(Int64)					
-uint64	Nullable(UInt64)					
+uint64	Nullable(Int64)					
 false	0	0	0	0	0	0	0	0
 true	1	1	1	1	1	1	1	1
 true	2	2	2	2	2	2	2	2
@@ -25,7 +25,7 @@ Integers conversion
 1	-1
 1	255
 1	-1
-uint64	Nullable(UInt64)					
+uint64	Nullable(Int64)					
 int64	Nullable(Int64)					
 4294967297	-4294967297
 Floats
@@ -51,11 +51,6 @@ int128	Nullable(String)
 uint128	Nullable(String)					
 int256	Nullable(String)					
 uint256	Nullable(String)					
-\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
-\0\0ÀME6æáýÿÿÿÿÿÿ	\0\0@²ºÉà\0\0\0\0\0\0	\0\0\0\0\0ðâþïÛ€­ Œi„ûÿÿÿÿÿÿÿÿÿÿÿÿÿ	\0\0\0\0\0$ãRßs–ñ{\0\0\0\0\0\0\0\0\0\0\0\0\0
-\0\0€›Šl>ÌÃûÿÿÿÿÿÿ	\0\0€du“Á3<\0\0\0\0\0\0	\0\0\0\0\0àÅýß·9ZAÓ\b÷ÿÿÿÿÿÿÿÿÿÿÿÿÿ	\0\0\0\0\0 : HþÆ¥¾ç,ã÷\b\0\0\0\0\0\0\0\0\0\0\0\0\0
-\0\0@éÏ¢]²¥ùÿÿÿÿÿÿ	\0\0À0]¢MZ\0\0\0\0\0\0	\0\0\0\0\0Ð¨üÏ“‚Ub¤<+Œòÿÿÿÿÿÿÿÿÿÿÿÿÿ	\0\0\0\0\00W0l}ªø[ÃÔs\r\0\0\0\0\0\0\0\0\0\0\0\0\0
-\0\0\07Ù|˜‡÷ÿÿÿÿÿÿ	\0\0\0Éê&ƒgx\b\0\0\0\0\0\0	\0\0\0\0\0À‹û¿or´‚0¦9îÿÿÿÿÿÿÿÿÿÿÿÿÿ	\0\0\0\0\0@t@üK}ÏYÆï\0\0\0\0\0\0\0\0\0\0\0\0\0
 Decimals
 0	0	1970-01-01 00:00:00.000000	0	0
 42.422	42.424242	1970-01-02 03:46:40.000000	42.424242424242	42.424242424242424242424242
@@ -67,11 +62,6 @@ decimal64	Nullable(Int64)
 datetime64	Nullable(DateTime64(6, \'UTC\'))					
 decimal128	Nullable(String)					
 decimal256	Nullable(String)					
-0	0	1970-01-01 00:00:00.000000	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
-42422	42424242	1970-01-02 03:46:40.000000	²Iæ©•&\0\0\0\0\0\0\0\0\0\0	²É&ÆZEÊ®#\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
-84844	84848484	1970-01-03 07:33:20.000000	d“ÌS+M\0\0\0\0\0\0\0\0\0\0	d“M&ŒµŠ”]/F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
-127266	127272726	1970-01-04 11:20:00.000000	Ý²ýÀs\0\0\0\0\0\0\0\0\0\0	]t9RÐ^\fGi\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
-169688	169696968	1970-01-05 15:06:40.000000	È&™§Vš\0\0\0\0\0\0\0\0\0\0	È&›Lk)»^Œ\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 Strings
 	\0\0\0\0\0
 HelloWorld	b\0\0\0\0
@@ -142,7 +132,7 @@ Array
 [0,1]	['Hello']
 [0,1,2]	['Hello']
 [0,1,2,3]	['Hello']
-arr1	Array(Nullable(UInt64))					
+arr1	Array(Nullable(Int64))					
 arr2	Array(Nullable(String))					
 []	['Hello']
 [0]	['Hello']
@@ -162,7 +152,7 @@ Tuple
 ('Hello',4)
 OK
 OK
-tuple	Tuple(x Nullable(UInt64), s Nullable(String))					
+tuple	Tuple(x Nullable(Int64), s Nullable(String))					
 (0,'Hello')
 (1,'Hello')
 (2,'Hello')
@@ -180,7 +170,7 @@ tuple	Tuple(x Nullable(UInt64), s Nullable(String))
 (4,'Hello')
 OK
 OK
-tuple	Tuple(Nullable(UInt64), Nullable(String))					
+tuple	Tuple(Nullable(Int64), Nullable(String))					
 (0,'Hello')
 (1,'Hello')
 (2,'Hello')
@@ -194,7 +184,7 @@ OK
 {'a':2,'b':3}
 {'a':3,'b':4}
 {'a':4,'b':5}
-map	Map(String, Nullable(UInt64))					
+map	Map(String, Nullable(Int64))					
 {'a':0,'b':1}
 {'a':1,'b':2}
 {'a':2,'b':3}
@@ -219,7 +209,7 @@ nested3	Map(String, Map(String, Nullable(Int64)))
 [({'a':[0,1],'b':[0,1,2]},[{'c':([0,1],[0,1,2])},{'d':([0,1,2,3],[0,1,2,3,4])}])]
 [({'a':[0,1,2],'b':[0,1,2,3]},[{'c':([0,1,2],[0,1,2,3])},{'d':([0,1,2,3,4],[0,1,2,3,4,5])}])]
 [({'a':[0,1,2,3],'b':[0,1,2,3,4]},[{'c':([0,1,2,3],[0,1,2,3,4])},{'d':([0,1,2,3,4,5],[0,1,2,3,4,5,6])}])]
-nested	Array(Tuple(Map(String, Array(Nullable(Int64))), Array(Map(String, Array(Array(Nullable(UInt64)))))))					
+nested	Array(Tuple(Map(String, Array(Nullable(Int64))), Array(Map(String, Array(Array(Nullable(Int64)))))))					
 [({'a':[],'b':[0]},[{'c':[[],[0]]},{'d':[[0,1],[0,1,2]]}])]
 [({'a':[0],'b':[0,1]},[{'c':[[0],[0,1]]},{'d':[[0,1,2],[0,1,2,3]]}])]
 [({'a':[0,1],'b':[0,1,2]},[{'c':[[0,1],[0,1,2]]},{'d':[[0,1,2,3],[0,1,2,3,4]]}])]
@@ -229,11 +219,11 @@ Schema inference
 x	Nullable(Int32)					
 x	Nullable(Int64)					
 x	Nullable(Int64)					
-OK
+FAIL
 x	Array(Nullable(Int32))					
 x	Array(Nullable(Int64))					
 x	Array(Nullable(Int64))					
-OK
+FAIL
 OK
 OK
 OK
