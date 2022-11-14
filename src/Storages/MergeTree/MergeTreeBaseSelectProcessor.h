@@ -189,7 +189,7 @@ private:
     /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
     bool getDelayedTasks();
 
-    /// It will form a request a request to coordinator and
+    /// It will form a request to coordinator and
     /// then reinitialize the mark ranges of this->task object
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
