@@ -39,6 +39,9 @@ struct PartitionReadRequest
     void deserialize(ReadBuffer & in);
 
     UInt64 getConsistentHash(size_t buckets) const;
+
+    /// Describe it for debugging purposes.
+    String toString() const;
 };
 
 struct PartitionReadResponse

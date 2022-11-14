@@ -4,6 +4,7 @@
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 
 #include <consistent_hashing.h>
 
@@ -59,6 +60,28 @@ void PartitionReadRequest::serialize(WriteBuffer & out) const
     writeVarInt(block_range.end, out);
 
     writeMarkRangesBinary(mark_ranges, out);
+}
+
+
+String PartitionReadRequest::toString() const
+{
+    WriteBufferFromOwnString out;
+    out << "partition: " << partition_id << ", part: " << part_name;
+    if (!projection_name.empty())
+        out << ", projection: " << projection_name;
+    out << ", block range: [" << block_range.begin << ", " << block_range.end << "]";
+    out << ", mark ranges: ";
+
+    bool is_first = true;
+    for (const auto & [begin, end] : mark_ranges)
+    {
+        if (!is_first)
+            out << ", ";
+        out << "[" << begin << ", " << end << ")";
+        is_first = false;
+    }
+
+    return out.str();
 }
 
 
