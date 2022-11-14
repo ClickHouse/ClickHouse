@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/// Represents a segment [left; right]
+/// Represents a segment [left; right] of part's block numbers.
 struct PartBlockRange
 {
     Int64 begin;
