@@ -5,18 +5,16 @@ namespace DB
 {
 
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
-    const Block & header_,
-    size_t num_inputs,
-    SortDescription description_,
-    const String & version_column,
-    size_t max_block_size,
-    WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+        const Block & header, size_t num_inputs,
+        SortDescription description_, const String & version_column,
+        size_t max_block_size,
+        WriteBuffer * out_row_sources_buf_,
+        bool use_average_block_sizes)
+        : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
+        , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
 {
     if (!version_column.empty())
-        version_column_number = header_.getPositionByName(version_column);
+        version_column_number = header.getPositionByName(version_column);
 }
 
 void ReplacingSortedAlgorithm::insertRow()

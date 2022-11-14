@@ -126,7 +126,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(RandomString)
+void registerFunctionRandomString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRandomString>();
 }

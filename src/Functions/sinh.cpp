@@ -13,7 +13,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(Sinh)
+void registerFunctionSinh(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSinh>();
 }

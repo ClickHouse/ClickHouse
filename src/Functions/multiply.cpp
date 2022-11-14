@@ -53,7 +53,7 @@ struct MultiplyImpl
 struct NameMultiply { static constexpr auto name = "multiply"; };
 using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMultiply>;
 
-REGISTER_FUNCTION(Multiply)
+void registerFunctionMultiply(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiply>();
 }

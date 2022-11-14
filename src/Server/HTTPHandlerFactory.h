@@ -5,9 +5,9 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
@@ -63,7 +63,7 @@ public:
         };
     }
 
-    void addFiltersFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+    void addFiltersFromConfig(Poco::Util::AbstractConfiguration & config, const std::string & prefix)
     {
         Poco::Util::AbstractConfiguration::Keys filters_type;
         config.keys(prefix, filters_type);
@@ -126,34 +126,16 @@ private:
     std::function<std::unique_ptr<HTTPRequestHandler> ()> creator;
 };
 
-HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server, const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix);
 
-HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix);
 
 HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & config_prefix);
+createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix);
 
-/// @param server - used in handlers to check IServer::isCancelled()
-/// @param config - not the same as server.config(), since it can be newer
-/// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & name);
-
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 }

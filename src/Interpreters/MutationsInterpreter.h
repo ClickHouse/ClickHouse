@@ -43,16 +43,14 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_,
-        bool return_all_columns_ = false,
-        bool return_deleted_rows_ = false);
+        bool can_execute_);
 
     void validate();
 
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    QueryPipelineBuilder execute();
+    QueryPipeline execute();
 
     /// Only changed columns.
     Block getUpdatedHeader() const;
@@ -80,15 +78,13 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
-
 private:
     ASTPtr prepare(bool dry_run);
 
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    QueryPipelineBuilderPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
@@ -100,8 +96,6 @@ private:
     ContextPtr context;
     bool can_execute;
     SelectQueryOptions select_limits;
-
-    bool apply_deleted_mask = true;
 
     ASTPtr mutation_ast;
 
@@ -158,12 +152,6 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
-
-    // whether all columns should be returned, not just updated
-    bool return_all_columns;
-
-    // whether we should return deleted or nondeleted rows on DELETE mutation
-    bool return_deleted_rows;
 };
 
 }

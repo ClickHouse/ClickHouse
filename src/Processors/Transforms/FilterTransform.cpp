@@ -29,12 +29,11 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
 
 Block FilterTransform::transformHeader(
     Block header,
-    const ActionsDAG * expression,
+    const ActionsDAG & expression,
     const String & filter_column_name,
     bool remove_filter_column)
 {
-    if (expression)
-        header = expression->updateHeader(std::move(header));
+    header = expression.updateHeader(std::move(header));
 
     if (remove_filter_column)
         header.erase(filter_column_name);
@@ -49,21 +48,18 @@ FilterTransform::FilterTransform(
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
-    bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
+    bool on_totals_)
     : ISimpleTransform(
             header_,
-            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
+            transformHeader(header_, expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
-    , rows_filtered(rows_filtered_)
 {
     transformed_header = getInputPort().getHeader();
-    if (expression)
-        expression->execute(transformed_header);
+    expression->execute(transformed_header);
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
@@ -78,7 +74,7 @@ IProcessor::Status FilterTransform::prepare()
             /// Optimization for `WHERE column in (empty set)`.
             /// The result will not change after set was created, so we can skip this check.
             /// It is implemented in prepare() stop pipeline before reading from input port.
-            || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
+            || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name))))
     {
         input.close();
         output.finish();
@@ -103,14 +99,6 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    auto chunk_rows_before = chunk.getNumRows();
-    doTransform(chunk);
-    if (rows_filtered)
-        *rows_filtered += chunk_rows_before - chunk.getNumRows();
-}
-
-void FilterTransform::doTransform(Chunk & chunk)
-{
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
@@ -118,8 +106,7 @@ void FilterTransform::doTransform(Chunk & chunk)
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
 
-        if (expression)
-            expression->execute(block, num_rows_before_filtration);
+        expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
     }

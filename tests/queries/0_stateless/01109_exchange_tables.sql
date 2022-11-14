@@ -29,9 +29,10 @@ SELECT * FROM t2;
 
 DROP DATABASE IF EXISTS test_01109_other_atomic;
 DROP DATABASE IF EXISTS test_01109_ordinary;
+SET default_database_engine='Atomic';
 CREATE DATABASE test_01109_other_atomic;
-set allow_deprecated_database_ordinary=1;
-CREATE DATABASE test_01109_ordinary ENGINE=Ordinary;
+SET default_database_engine='Ordinary';
+CREATE DATABASE test_01109_ordinary;
 
 CREATE TABLE test_01109_other_atomic.t3 ENGINE=MergeTree() ORDER BY tuple()
     AS SELECT rowNumberInAllBlocks() + (SELECT max((*,*).1.1) + 1 FROM (SELECT (*,) FROM t1 UNION ALL SELECT (*,) FROM t2)), *

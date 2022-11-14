@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/data_type_families
----
-# data_type_families
+# system.data_type_families {#system_tables-data_type_families}
 
 Contains information about supported [data types](../../sql-reference/data-types/index.md).
 

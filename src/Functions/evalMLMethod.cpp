@@ -92,7 +92,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(EvalMLMethod)
+void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEvalMLMethod>();
 }

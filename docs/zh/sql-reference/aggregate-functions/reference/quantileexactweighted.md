@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantileexactweighted
-sidebar_position: 203
+toc_priority: 203
 ---
 
 # quantileExactWeighted {#quantileexactweighted}

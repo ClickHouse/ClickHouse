@@ -90,7 +90,6 @@ private:
 
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
-    /// @param next - notify next after begin, used on writer lock failures
-    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept;
+    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;
 };
 }

@@ -1,7 +1,6 @@
 ---
-slug: /zh/introduction/distinctive-features
-sidebar_position: 2
-sidebar_label: ClickHouse的特性
+toc_priority: 2
+toc_title: ClickHouse的特性
 ---
 
 # ClickHouse的特性 {#clickhouse-de-te-xing}

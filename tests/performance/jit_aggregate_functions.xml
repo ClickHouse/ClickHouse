@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <settings>
         <compile_aggregate_expressions>1</compile_aggregate_expressions>
         <min_count_to_compile_aggregate_expression>0</min_count_to_compile_aggregate_expression>

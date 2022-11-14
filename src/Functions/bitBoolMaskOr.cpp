@@ -47,7 +47,7 @@ using FunctionBitBoolMaskOr = BinaryArithmeticOverloadResolver<BitBoolMaskOrImpl
 
 }
 
-REGISTER_FUNCTION(BitBoolMaskOr)
+void registerFunctionBitBoolMaskOr(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitBoolMaskOr>();
 }

@@ -9,7 +9,7 @@ struct NameIndexOf { static constexpr auto name = "indexOf"; };
 /// doesn't.
 using FunctionIndexOf = FunctionArrayIndex<IndexOfAction, NameIndexOf>;
 
-REGISTER_FUNCTION(IndexOf)
+void registerFunctionIndexOf(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIndexOf>();
 }

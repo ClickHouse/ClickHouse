@@ -45,7 +45,7 @@ using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRou
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : PositiveMonotonicity {};
 
-REGISTER_FUNCTION(RoundDuration)
+void registerFunctionRoundDuration(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRoundDuration>();
 }

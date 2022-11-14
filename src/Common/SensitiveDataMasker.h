@@ -31,7 +31,7 @@ namespace Util
 ///  context can't own, as Context is destroyed before logger,
 ///    and logger lives longer and logging can still happen after Context destruction.
 ///    resetting masker in the logger at the moment of
-///    context destruction can't be done without synchronization / locks in a safe manner.
+///    context destruction can't be done w/o synchronization / locks in a safe manner.
 ///
 ///  logger is Poco derived and i didn't want to brake it's interface,
 ///    also logger can be dynamically reconfigured without server restart,
@@ -69,4 +69,4 @@ public:
     size_t rulesCount() const;
 };
 
-}
+};

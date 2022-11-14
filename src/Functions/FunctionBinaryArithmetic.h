@@ -39,8 +39,6 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -416,8 +414,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
                         scale_a);
                 return;
             }
@@ -425,8 +423,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
                         scale_b);
                 return;
             }
@@ -437,8 +435,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
                         scale_a);
                 return;
             }
@@ -446,8 +444,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
                         scale_b);
                 return;
             }
@@ -457,20 +455,12 @@ public:
         {
             processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
-                return applyScaledDiv<is_decimal_a>(
-                    static_cast<NativeResultType>(left), right, scale_a);
+                return applyScaledDiv<is_decimal_a>(left, right, scale_a);
             });
             return;
         }
 
-        processWithRightNullmapImpl<op_case>(
-            a, b, c, size, right_nullmap,
-            [](const auto & left, const auto & right)
-            {
-                return apply(
-                    static_cast<NativeResultType>(left),
-                    static_cast<NativeResultType>(right));
-            });
+        processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [](const auto & left, const auto & right){ return apply(left, right); });
     }
 
     template <bool is_decimal_a, bool is_decimal_b, class A, class B>
@@ -668,8 +658,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_is_date_or_datetime = isDateOrDate32(type0) || isDateTime(type0) || isDateTime64(type0);
-        bool second_is_date_or_datetime = isDateOrDate32(type1) || isDateTime(type1) || isDateTime64(type1);
+        bool first_is_date_or_datetime = isDate(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDate(type1) || isDateTime(type1) || isDateTime64(type1);
 
         /// Exactly one argument must be Date or DateTime
         if (first_is_date_or_datetime == second_is_date_or_datetime)
@@ -708,7 +698,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
         else
         {
-            if (isDateOrDate32(type_time))
+            if (isDate(type_time))
                 function_name = is_plus ? "addDays" : "subtractDays";
             else
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
@@ -904,7 +894,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (isDateOrDate32(arguments[1].type) || isDateTime(arguments[1].type) || isDateTime64(arguments[1].type))
+        if (isDate(arguments[1].type) || isDateTime(arguments[1].type) || isDateTime64(arguments[1].type))
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -1004,10 +994,8 @@ class FunctionBinaryArithmetic : public IFunction
         /// non-vector result
         if (col_left_const && col_right_const)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+            const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
+            const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
@@ -1031,16 +1019,14 @@ class FunctionBinaryArithmetic : public IFunction
         }
         else if (col_left_const && col_right)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+            const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
         }
         else if (col_left && col_right_const)
         {
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+            const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
@@ -1112,7 +1098,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (isDateOrDate32(new_arguments[1].type) || isDateTime(new_arguments[1].type) || isDateTime64(new_arguments[1].type))
+            if (isDate(new_arguments[1].type) || isDateTime(new_arguments[1].type) || isDateTime64(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -1193,21 +1179,6 @@ public:
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
-                        if constexpr (is_division)
-                        {
-                            if (context->getSettingsRef().decimal_check_overflow)
-                            {
-                                /// Check overflow by using operands scale (based on big decimal division implementation details):
-                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
-                                /// i.e. int_operand = decimal_operand*10^scale
-                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
-                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
-                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
-                                /// Note: it doesn't detect all possible overflow during big decimal division
-                                if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
-                                    throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
-                            }
-                        }
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
@@ -1779,71 +1750,61 @@ public:
                     return {true, is_constant_positive, true};
                 }
             }
-            return {false, true, false, false};
+            return {false, true, false};
         }
 
         // For simplicity, we treat every single value interval as positive monotonic.
         if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
-            return {true, true, false, false};
+            return {true, true, false};
 
         if (name_view == "minus" || name_view == "plus")
         {
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
-                auto left_type = removeNullable(removeLowCardinality(left.type));
-                auto right_type = removeNullable(removeLowCardinality(right.type));
-                auto ret_type = removeNullable(removeLowCardinality(return_type));
-
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
-                           {right_type->createColumnConst(1, point), right_type, right.name}};
+                        = {{left.column->cloneResized(1), left.type, left.name},
+                           {right.type->createColumnConst(1, point), right.type, right.name}};
 
-                    /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
-                    /// It was possible to check monotonicity for nullable right type which result to exception.
-                    /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
-                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
+                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;
                 };
-
-                bool is_positive_monotonicity = applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
-                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point));
+                transform(left_point);
+                transform(right_point);
 
                 if (name_view == "plus")
                 {
                     // Check if there is an overflow
-                    if (is_positive_monotonicity)
-                        return {true, true, false, true};
+                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                        return {true, true, false};
                     else
-                        return {false, true, false, false};
+                        return {false, true, false};
                 }
                 else
                 {
                     // Check if there is an overflow
-                    if (!is_positive_monotonicity)
-                        return {true, false, false, true};
+                    if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
+                            != applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                        return {true, false, false};
                     else
-                        return {false, false, false, false};
+                        return {false, false, false};
                 }
             }
             // variable +|- constant
             else if (right.column && isColumnConst(*right.column))
             {
-                auto left_type = removeNullable(removeLowCardinality(left.type));
-                auto right_type = removeNullable(removeLowCardinality(right.type));
-                auto ret_type = removeNullable(removeLowCardinality(return_type));
-
                 auto transform = [&](const Field & point)
                 {
                     ColumnsWithTypeAndName columns_with_constant
-                        = {{left_type->createColumnConst(1, point), left_type, left.name},
-                           {right_type->createColumnConst(1, (*right.column)[0]), right_type, right.name}};
+                        = {{left.type->createColumnConst(1, point), left.type, left.name},
+                           {right.column->cloneResized(1), right.type, right.name}};
 
-                    auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
+                    auto col = Base::executeImpl(columns_with_constant, return_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
                     return point_transformed;
@@ -1852,33 +1813,31 @@ public:
                 // Check if there is an overflow
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                    return {true, true, false, true};
+                    return {true, true, false};
                 else
-                    return {false, true, false, false};
+                    return {false, true, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
         {
-            bool is_strict = name_view == "divide";
-
             // const / variable
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
+                    return {true, true, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0))
                     && applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
                 {
-                    return {true, is_constant_positive, false, is_strict};
+                    return {true, is_constant_positive, false};
                 }
                 else if (
                     applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
-                    return {true, !is_constant_positive, false, is_strict};
+                    return {true, !is_constant_positive, false};
                 }
             }
             // variable / constant
@@ -1886,11 +1845,11 @@ public:
             {
                 auto constant = (*right.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+                    return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
-                return {true, is_constant_positive, true, is_strict};
+                return {true, is_constant_positive, true};
             }
         }
         return {false, true, false};

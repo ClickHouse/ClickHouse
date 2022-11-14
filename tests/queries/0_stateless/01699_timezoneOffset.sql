@@ -42,3 +42,4 @@ SELECT 'Tehran DST Years:';
 SELECT number, (toDateTime('1970-06-01 00:00:00', 'Asia/Tehran') + INTERVAL number YEAR) AS DST_Y, timezoneOffset(DST_Y) AS t FROM numbers(51) where t != 12600;
 SELECT 'Shanghai DST Years:';
 SELECT number, (toDateTime('1970-08-01 00:00:00', 'Asia/Shanghai') + INTERVAL number YEAR) AS DST_Y, timezoneOffset(DST_Y) AS t FROM numbers(51) where t != 28800;
+
