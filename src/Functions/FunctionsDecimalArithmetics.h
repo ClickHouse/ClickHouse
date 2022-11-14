@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-struct DecimalOpHerpers
+struct DecimalOpHelpers
 {
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
@@ -145,7 +145,7 @@ struct DivideDecimalsImpl
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(a.value * sign_a);
+        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
 
         while (scale_a < scale_b + result_scale)
         {
@@ -162,11 +162,11 @@ struct DivideDecimalsImpl
         if (a_digits.empty())
             return Decimal256(0);
 
-        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value * sign_b);
+        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > 76)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-        return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(divided));
+        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(divided));
     }
 };
 
@@ -184,10 +184,10 @@ struct MultiplyDecimalsImpl
 
         Int8 sign_a = a.value < 0 ? -1 : 1;
         Int8 sign_b = b.value < 0 ? -1 : 1;
-        std::vector<UInt8> a_digits = DecimalOpHerpers::toDigits(a.value * sign_a);
-        std::vector<UInt8> b_digits = DecimalOpHerpers::toDigits(b.value * sign_b);
+        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
+        std::vector<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
 
-        std::vector<UInt8> multiplied = DecimalOpHerpers::multiply(a_digits, b_digits);
+        std::vector<UInt8> multiplied = DecimalOpHelpers::multiply(a_digits, b_digits);
 
         UInt16 product_scale = scale_a + scale_b;
         while (product_scale < result_scale)
@@ -208,7 +208,7 @@ struct MultiplyDecimalsImpl
         if (multiplied.size() > 76)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
-        return Decimal256(sign_a * sign_b * DecimalOpHerpers::fromDigits(multiplied));
+        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
 };
 
@@ -379,60 +379,60 @@ private:
     //long resolver to call proper templated func
     ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        WhichDataType which_divident(arguments[0].type.get());
+        WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());
-        if (which_divident.isDecimal32())
+        if (which_dividend.isDecimal32())
         {
-            using DividentType = DataTypeDecimal32;
+            using DividendType = DataTypeDecimal32;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
         }
 
-        else if (which_divident.isDecimal64())
+        else if (which_dividend.isDecimal64())
         {
-            using DividentType = DataTypeDecimal64;
+            using DividendType = DataTypeDecimal64;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-
-        }
-
-        else if (which_divident.isDecimal128())
-        {
-            using DividentType = DataTypeDecimal128;
-            if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
 
         }
 
-        else if (which_divident.isDecimal256())
+        else if (which_dividend.isDecimal128())
         {
-            using DividentType = DataTypeDecimal256;
+            using DividendType = DataTypeDecimal128;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
             else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividentType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+
+        }
+
+        else if (which_dividend.isDecimal256())
+        {
+            using DividendType = DataTypeDecimal256;
+            if (which_divisor.isDecimal32())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+            else if (which_divisor.isDecimal64())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+            else if (which_divisor.isDecimal128())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+            else if (which_divisor.isDecimal256())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
 
         }
 
