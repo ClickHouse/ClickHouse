@@ -2,6 +2,7 @@
 
 #include "Decimal.h"
 #include "UUID.h"
+#include "IPv4andIPv6.h"
 
 namespace DB
 {
@@ -35,6 +36,8 @@ TN_MAP(Float32)
 TN_MAP(Float64)
 TN_MAP(String)
 TN_MAP(UUID)
+TN_MAP(IPv4)
+TN_MAP(IPv6)
 TN_MAP(Decimal32)
 TN_MAP(Decimal64)
 TN_MAP(Decimal128)

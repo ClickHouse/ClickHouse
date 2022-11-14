@@ -284,6 +284,8 @@ public:
             !which.isFloat() &&
             !which.isDecimal() &&
             !which.isUUID() &&
+            !which.isIPv4() &&
+            !which.isIPv6() &&
             !which.isAggregateFunction())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

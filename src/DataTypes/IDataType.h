@@ -374,6 +374,8 @@ struct WhichDataType
     constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
+    constexpr bool isIPv4() const { return idx == TypeIndex::IPv4; }
+    constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
@@ -410,6 +412,8 @@ inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_t
 inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
 inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
 inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
+inline bool isIPv4(const DataTypePtr & data_type) { return WhichDataType(data_type).isIPv4(); }
+inline bool isIPv6(const DataTypePtr & data_type) { return WhichDataType(data_type).isIPv6(); }
 
 template <typename T>
 inline bool isObject(const T & data_type)
@@ -475,7 +479,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
 
 template <typename T>

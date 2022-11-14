@@ -21,6 +21,8 @@ REGISTER_FUNCTION(ExternalDictionaries)
     factory.registerFunction<FunctionDictGetDate>();
     factory.registerFunction<FunctionDictGetDateTime>();
     factory.registerFunction<FunctionDictGetUUID>();
+    factory.registerFunction<FunctionDictGetIPv4>();
+    factory.registerFunction<FunctionDictGetIPv6>();
     factory.registerFunction<FunctionDictGetString>();
     factory.registerFunction<FunctionDictGetHierarchy>();
     factory.registerFunction<FunctionDictIsIn>();
@@ -39,6 +41,8 @@ REGISTER_FUNCTION(ExternalDictionaries)
     factory.registerFunction<FunctionDictGetDateOrDefault>();
     factory.registerFunction<FunctionDictGetDateTimeOrDefault>();
     factory.registerFunction<FunctionDictGetUUIDOrDefault>();
+    factory.registerFunction<FunctionDictGetIPv4OrDefault>();
+    factory.registerFunction<FunctionDictGetIPv6OrDefault>();
     factory.registerFunction<FunctionDictGetStringOrDefault>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>();

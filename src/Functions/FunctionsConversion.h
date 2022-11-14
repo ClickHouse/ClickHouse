@@ -55,6 +55,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Core/Types.h>
 
 
@@ -73,6 +74,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
@@ -207,6 +210,14 @@ struct ConvertImpl
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
+                {
+                    throw Exception("Conversion between numeric types and IPv4 is not supported. Probably the passed IPv4 is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> != std::is_same_v<ToDataType, DataTypeIPv6>)
+                {
+                    throw Exception("Conversion between numeric types and IPv6 is not supported. Probably the passed IPv6 is unquoted", ErrorCodes::NOT_IMPLEMENTED);
                 }
                 else
                 {
@@ -993,6 +1004,22 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
     x = tmp.toUnderType();
 }
 
+template <>
+inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv4 tmp;
+    readIPv4Text(tmp, rb);
+    x = tmp.toUnderType();
+}
+
+template <>
+inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv6 tmp;
+    readIPv6Text(tmp, rb);
+    x = tmp.toUnderType();
+}
+
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
@@ -1037,6 +1064,28 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 {
     UUID tmp;
     if (!tryReadUUIDText(tmp, rb))
+        return false;
+
+    x = tmp.toUnderType();
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv4 tmp;
+    if (!tryReadIPv4Text(tmp, rb))
+        return false;
+
+    x = tmp.toUnderType();
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    IPv6 tmp;
+    if (!tryReadIPv6Text(tmp, rb))
         return false;
 
     x = tmp.toUnderType();
@@ -1763,7 +1812,9 @@ public:
                 || e.code() == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-                || e.code() == ErrorCodes::CANNOT_PARSE_UUID)
+                || e.code() == ErrorCodes::CANNOT_PARSE_UUID
+                || e.code() == ErrorCodes::CANNOT_PARSE_IPV4
+                || e.code() == ErrorCodes::CANNOT_PARSE_IPV6)
             {
                 e.addMessage("Cannot parse "
                     + result_type->getName() + " from "
@@ -1847,6 +1898,16 @@ private:
                               (bad_right && std::is_same_v<LeftDataType, DataTypeUUID>))
                 {
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
+                }
+                else if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeIPv4>) ||
+                              (bad_right && std::is_same_v<LeftDataType, DataTypeIPv4>))
+                {
+                    throw Exception("Wrong IPv4 conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
+                }
+                else if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeIPv6>) ||
+                              (bad_right && std::is_same_v<LeftDataType, DataTypeIPv6>))
+                {
+                    throw Exception("Wrong IPv6 conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
                 {
@@ -2340,6 +2401,8 @@ struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
+struct NameToIPv4 { static constexpr auto name = "toIPv4"; };
+struct NameToIPv6 { static constexpr auto name = "toIPv6"; };
 
 using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
@@ -2361,6 +2424,8 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToD
 using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
+using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
+using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
@@ -2390,6 +2455,8 @@ template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; }
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
 template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
+template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
+template <> struct FunctionTo<DataTypeIPv6> { using Type = FunctionToIPv6; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal32; };
@@ -2425,6 +2492,8 @@ struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero";
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
 struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
 struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
+struct NameToIPv4OrZero { static constexpr auto name = "toIPv4OrZero"; };
+struct NameToIPv6OrZero { static constexpr auto name = "toIPv6OrZero"; };
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -2449,6 +2518,8 @@ using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToIPv4OrZero = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToIPv6OrZero = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -2473,6 +2544,8 @@ struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull";
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
 struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
 struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
+struct NameToIPv4OrNull { static constexpr auto name = "toIPv4OrNull"; };
+struct NameToIPv6OrNull { static constexpr auto name = "toIPv6OrNull"; };
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -2497,6 +2570,8 @@ using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Deci
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToIPv4OrNull = FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToIPv6OrNull = FunctionConvertFromString<DataTypeIPv6, NameToIPv6OrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
@@ -3728,7 +3803,9 @@ private:
                 std::is_same_v<ToDataType, DataTypeDate> ||
                 std::is_same_v<ToDataType, DataTypeDate32> ||
                 std::is_same_v<ToDataType, DataTypeDateTime> ||
-                std::is_same_v<ToDataType, DataTypeUUID>)
+                std::is_same_v<ToDataType, DataTypeUUID> ||
+                std::is_same_v<ToDataType, DataTypeIPv4> ||
+                std::is_same_v<ToDataType, DataTypeIPv6>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;

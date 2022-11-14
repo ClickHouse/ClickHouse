@@ -85,6 +85,18 @@ namespace
         {
             operator()(x.toUnderType());
         }
+        void operator() (const IPv4 & x) const
+        {
+            UInt8 type = Field::Types::IPv4;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const IPv6 & x) const
+        {
+            UInt8 type = Field::Types::IPv6;
+            hash.update(type);
+            hash.update(x);
+        }
         void operator() (const Float64 & x) const
         {
             UInt8 type = Field::Types::Float64;

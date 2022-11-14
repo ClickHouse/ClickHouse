@@ -85,6 +85,8 @@ TEST(ColumnVector, Filter)
     testFilter<Float32>();
     testFilter<Float64>();
     testFilter<UUID>();
+    testFilter<IPv4>();
+    testFilter<IPv6>();
 }
 
 template <typename T>
