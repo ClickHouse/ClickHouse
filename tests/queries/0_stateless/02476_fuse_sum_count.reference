@@ -281,3 +281,4 @@ QUERY id: 0
 0	0	nan
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
 45	10	4.5	Decimal(38, 0)	UInt64	Float64
+-2	-2
