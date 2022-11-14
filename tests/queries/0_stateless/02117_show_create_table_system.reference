@@ -23,7 +23,8 @@ COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
-    `value` Float64
+    `value` Float64,
+    `description` String
 )
 ENGINE = SystemAsynchronousMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
