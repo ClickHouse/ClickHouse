@@ -153,13 +153,16 @@ struct DivideDecimalsImpl
             ++scale_a;
         }
 
-        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value * sign_b);
-
-        while (scale_a > scale_b + result_scale)
+        while (scale_a > scale_b + result_scale && a_digits.size())
         {
+            a_digits.pop_back();
             --scale_a;
-            divided.pop_back();
         }
+
+        if (a_digits.empty())
+            return Decimal256(0);
+
+        std::vector<UInt8> divided = DecimalOpHerpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > 76)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
