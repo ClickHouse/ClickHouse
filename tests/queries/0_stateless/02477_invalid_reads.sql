@@ -2,6 +2,10 @@
 SELECT finalizeAggregation(CAST(unhex('0F00000030'), 'AggregateFunction(min, String)')); -- { serverError 33 }
 SELECT finalizeAggregation(CAST(unhex('FFFF000030'), 'AggregateFunction(min, String)')); -- { serverError 33 }
 
+-- UBSAN
+SELECT 'ubsan', hex(finalizeAggregation(CAST(unhex('4000000030313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233010000000000000000'),
+                                             'AggregateFunction(argMax, String, UInt64)')));
+
 -- aggThrow should check for errors in its input
 SELECT finalizeAggregation(CAST('', 'AggregateFunction(aggThrow(0.), UInt8)')); -- { serverError 32 }
 
