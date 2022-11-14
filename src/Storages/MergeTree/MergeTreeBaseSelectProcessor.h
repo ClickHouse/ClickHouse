@@ -45,7 +45,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension = {});
+        std::optional<ParallelReadingExtension> extension_ = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
