@@ -1868,12 +1868,12 @@ There are a few ways we can address this question. Focusing on the code to test 
 
 Note we limit to users with more than 20 changes to focus on regular committers and avoid a bias to one-off contributions.
 
-[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NoJywgJ3B5JywgJ2V4cGVjdCcpKSBBTkQgKHBhdGggTElLRSAnJXRlc3RzJScpKSBBUyB0ZXN0LAogICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkgQU5EIChOT1QgKHBhdGggTElLRSAnJXRlc3RzJScpKSkgQVMgY29kZSwKICAgIGNvZGUgLyAoY29kZSArIHRlc3QpIEFTIHJhdGlvX2NvZGUKRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKR1JPVVAgQlkgYXV0aG9yCkhBVklORyBjb2RlID4gMjAKT1JERVIgQlkgY29kZSBERVNDCkxJTUlUIDIw)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcsICdzaCcsICdweScsICdleHBlY3QnKSkgQU5EIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkgQVMgdGVzdCwKICAgIGNvdW50SWYoKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoTk9UIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkpIEFTIGNvZGUsCiAgICBjb2RlIC8gKGNvZGUgKyB0ZXN0KSBBUyByYXRpb19jb2RlCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCkdST1VQIEJZIGF1dGhvcgpIQVZJTkcgY29kZSA+IDIwCk9SREVSIEJZIGNvZGUgREVTQwpMSU1JVCAyMA==)
 
 ```sql
 SELECT
     author,
-    countIf((file_extension IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
+    countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
 FROM git.file_changes
@@ -1883,26 +1883,26 @@ ORDER BY code DESC
 LIMIT 20
 
 ┌─author───────────────┬─test─┬──code─┬─────────ratio_code─┐
-│ Alexey Milovidov     │ 4208 │ 41799 │ 0.9085356576173191 │
-│ Nikolai Kochetov     │  446 │ 13361 │ 0.9676975447236909 │
-│ alesapin             │ 1893 │  8796 │ 0.8229020488352512 │
-│ kssenii              │  649 │  6769 │ 0.9125101105419251 │
-│ Maksim Kita          │  272 │  5862 │ 0.9556569938050212 │
-│ Alexander Tokmakov   │  949 │  5727 │ 0.8578490113840623 │
-│ Vitaly Baranov       │  988 │  5521 │  0.848210170533108 │
-│ Ivan Lezhankin       │  270 │  4698 │ 0.9456521739130435 │
-│ Anton Popov          │  264 │  4346 │ 0.9427331887201735 │
-│ Ivan                 │  862 │  4269 │ 0.8320015591502631 │
-│ Azat Khuzhin         │  957 │  3697 │ 0.7943704340352385 │
-│ Amos Bird            │  121 │  2901 │ 0.9599602911978822 │
-│ proller              │  549 │  2377 │ 0.8123718386876282 │
-│ chertus              │   17 │  2359 │ 0.9928451178451179 │
-│ alexey-milovidov     │  167 │  2321 │ 0.9328778135048231 │
-│ Alexey Arno          │   67 │  2310 │ 0.9718132099284813 │
-│ Vitaliy Lyudvichenko │  247 │  2283 │ 0.9023715415019763 │
-│ Robert Schulze       │  111 │  2196 │  0.951885565669701 │
-│ CurtizJ              │  144 │  2158 │ 0.9374456993918332 │
-│ Alexander Kuzmenkov  │  134 │  2092 │ 0.9398023360287511 │
+│ Alexey Milovidov     │ 6617 │ 41799 │ 0.8633303040317251 │
+│ Nikolai Kochetov     │  916 │ 13361 │ 0.9358408629263851 │
+│ alesapin             │ 2408 │  8796 │  0.785076758300607 │
+│ kssenii              │  869 │  6769 │ 0.8862267609321812 │
+│ Maksim Kita          │  799 │  5862 │ 0.8800480408347096 │
+│ Alexander Tokmakov   │ 1472 │  5727 │ 0.7955271565495208 │
+│ Vitaly Baranov       │ 1764 │  5521 │ 0.7578586135895676 │
+│ Ivan Lezhankin       │  843 │  4698 │ 0.8478613968597726 │
+│ Anton Popov          │  599 │  4346 │ 0.8788675429726996 │
+│ Ivan                 │ 2630 │  4269 │ 0.6187853312074214 │
+│ Azat Khuzhin         │ 1664 │  3697 │  0.689610147360567 │
+│ Amos Bird            │  400 │  2901 │ 0.8788245986064829 │
+│ proller              │ 1207 │  2377 │ 0.6632254464285714 │
+│ chertus              │  453 │  2359 │ 0.8389046941678521 │
+│ alexey-milovidov     │  303 │  2321 │ 0.8845274390243902 │
+│ Alexey Arno          │  169 │  2310 │ 0.9318273497377975 │
+│ Vitaliy Lyudvichenko │  334 │  2283 │ 0.8723729461215132 │
+│ Robert Schulze       │  182 │  2196 │ 0.9234650967199327 │
+│ CurtizJ              │  460 │  2158 │ 0.8242933537051184 │
+│ Alexander Kuzmenkov  │  298 │  2092 │ 0.8753138075313808 │
 └──────────────────────┴──────┴───────┴────────────────────┘
 
 20 rows in set. Elapsed: 0.034 sec. Processed 266.05 thousand rows, 4.65 MB (7.93 million rows/s., 138.76 MB/s.)
@@ -1910,7 +1910,7 @@ LIMIT 20
 
 We can plot this distribution as a histogram.
 
-[play](https://play.clickhouse.com/play?user=play#V0lUSCAoCiAgICAgICAgU0VMRUNUIGhpc3RvZ3JhbSgxMCkocmF0aW9fY29kZSkgQVMgaGlzdAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzaCcsICdweScsICdleHBlY3QnKSkgQU5EIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkgQVMgdGVzdCwKICAgICAgICAgICAgICAgIGNvdW50SWYoKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoTk9UIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkpIEFTIGNvZGUsCiAgICAgICAgICAgICAgICBjb2RlIC8gKGNvZGUgKyB0ZXN0KSBBUyByYXRpb19jb2RlCiAgICAgICAgICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICAgICAgICAgIEdST1VQIEJZIGF1dGhvcgogICAgICAgICAgICBIQVZJTkcgY29kZSA+IDIwCiAgICAgICAgICAgIE9SREVSIEJZIGNvZGUgREVTQwogICAgICAgICAgICBMSU1JVCAyMAogICAgICAgICkKICAgICkgQVMgaGlzdApTRUxFQ1QKICAgIGFycmF5Sm9pbihoaXN0KS4xIEFTIGxvd2VyLAogICAgYXJyYXlKb2luKGhpc3QpLjIgQVMgdXBwZXIsCiAgICBiYXIoYXJyYXlKb2luKGhpc3QpLjMsIDAsIDEwMCwgNTAwKSBBUyBiYXI=)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCAoCiAgICAgICAgU0VMRUNUIGhpc3RvZ3JhbSgxMCkocmF0aW9fY29kZSkgQVMgaGlzdAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnLCAnc2gnLCAncHknLCAnZXhwZWN0JykpIEFORCAocGF0aCBMSUtFICcldGVzdHMlJykpIEFTIHRlc3QsCiAgICAgICAgICAgICAgICBjb3VudElmKChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcpKSBBTkQgKE5PVCAocGF0aCBMSUtFICcldGVzdHMlJykpKSBBUyBjb2RlLAogICAgICAgICAgICAgICAgY29kZSAvIChjb2RlICsgdGVzdCkgQVMgcmF0aW9fY29kZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBhdXRob3IKICAgICAgICAgICAgSEFWSU5HIGNvZGUgPiAyMAogICAgICAgICAgICBPUkRFUiBCWSBjb2RlIERFU0MKICAgICAgICAgICAgTElNSVQgMjAKICAgICAgICApCiAgICApIEFTIGhpc3QKU0VMRUNUCiAgICBhcnJheUpvaW4oaGlzdCkuMSBBUyBsb3dlciwKICAgIGFycmF5Sm9pbihoaXN0KS4yIEFTIHVwcGVyLAogICAgYmFyKGFycmF5Sm9pbihoaXN0KS4zLCAwLCAxMDAsIDUwMCkgQVMgYmFy)
 
 ```sql
 WITH (
@@ -1919,7 +1919,7 @@ WITH (
         (
             SELECT
                 author,
-                countIf((file_extension IN ('h', 'cpp', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
+                countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
             FROM git.file_changes
@@ -1934,18 +1934,18 @@ SELECT
     arrayJoin(hist).2 AS upper,
     bar(arrayJoin(hist).3, 0, 100, 500) AS bar
 
-┌──────────────lower─┬──────────────upper─┬─bar─────────────────────┐
-│ 0.7943704340352385 │ 0.8033711363614333 │ █████                   │
-│ 0.8033711363614333 │ 0.8199118213401927 │ █████▋                  │
-│ 0.8199118213401927 │ 0.8378309872629326 │ ████████▋               │
-│ 0.8378309872629326 │ 0.8530295909585852 │ █████▋                  │
-│ 0.8530295909585852 │ 0.8828273906355679 │ ██████▎                 │
-│ 0.8828273906355679 │ 0.9237540060993992 │ ███████████████         │
-│ 0.9237540060993992 │ 0.9477682629346298 │ ██████████████████████▌ │
-│ 0.9477682629346298 │ 0.9627948304418104 │ ███████████████▋        │
-│ 0.9627948304418104 │  0.981300247585602 │ ██████████              │
-│  0.981300247585602 │ 0.9928451178451179 │ █████▋                  │
-└────────────────────┴────────────────────┴─────────────────────────┘
+┌──────────────lower─┬──────────────upper─┬─bar───────────────────────────┐
+│ 0.6187853312074214 │ 0.6410053888179964 │ █████                         │
+│ 0.6410053888179964 │ 0.6764177968945693 │ █████                         │
+│ 0.6764177968945693 │ 0.7237343804750673 │ █████                         │
+│ 0.7237343804750673 │ 0.7740802855073157 │ █████▋                        │
+│ 0.7740802855073157 │  0.807297655565091 │ ████████▋                     │
+│  0.807297655565091 │ 0.8338381996094653 │ ██████▎                       │
+│ 0.8338381996094653 │ 0.8533566747727687 │ ████████▋                     │
+│ 0.8533566747727687 │  0.871392376017531 │ █████████▍                    │
+│  0.871392376017531 │  0.904916108899021 │ ████████████████████████████▋ │
+│  0.904916108899021 │ 0.9358408629263851 │ █████████████████▌            │
+└────────────────────┴────────────────────┴───────────────────────────────┘
 10 rows in set. Elapsed: 0.051 sec. Processed 266.05 thousand rows, 4.65 MB (5.24 million rows/s., 91.64 MB/s.)
 ```
 
