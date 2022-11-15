@@ -1,52 +1,124 @@
 #pragma once
 
-#include <DataTypes/Serializations/SerializationNumber.h>
+//#include <DataTypes/Serializations/SerializationNumber.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Columns/ColumnsNumber.h>
+#include "DataTypes/Serializations/SerializationInfo.h"
 
 namespace DB
 {
 
-class SerializationIPv4 : public SimpleTextSerialization
+template <typename IPv>
+class SerializationIP : public SimpleTextSerialization
 {
 public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
+    {
+        writeText(assert_cast<const ColumnVector<IPv> &>(column).getData()[row_num], ostr);
+    }
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override
+    {
+        IPv x;
+        readText(x, istr);
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+        if (whole && !istr.eof())
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv");
+    }
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        serializeText(column, row_num, ostr, settings);
+    }
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        deserializeText(column, istr, settings, false);
+    }
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        writeChar('\'', ostr);
+        serializeText(column, row_num, ostr, settings);
+        writeChar('\'', ostr);
+    }
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override
+    {
+        IPv x;
+        assertChar('\'', istr);
+        readText(x, istr);
+        assertChar('\'', istr);
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    }
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        writeChar('"', ostr);
+        serializeText(column, row_num, ostr, settings);
+        writeChar('"', ostr);
+    }
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override
+    {
+        IPv x;
+        assertChar('"', istr);
+        readText(x, istr);
+        assertChar('"', istr);
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
+    }
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
+    {
+        writeChar('"', ostr);
+        serializeText(column, row_num, ostr, settings);
+        writeChar('"', ostr);
+    }
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & /*settings*/) const override
+    {
+        IPv value;
+        readCSV(value, istr);
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(value);
+    }
+
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override
+    {
+        IPv x = field.get<IPv>();
+        writeBinary(x, ostr);
+    }
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override
+    {
+        IPv x;
+        readBinary(x, istr);
+        field = NearestFieldType<IPv>(x);
+    }
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
+    {
+        writeBinary(assert_cast<const ColumnVector<IPv> &>(column).getData()[row_num], ostr);
+    }
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
+    {
+        IPv4 x;
+        readBinary(x, istr);
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
+    }
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override
+    {
+        const typename ColumnVector<IPv>::Container & x = typeid_cast<const ColumnVector<IPv> &>(column).getData();
+
+        size_t size = x.size();
+
+        if (limit == 0 || offset + limit > size)
+            limit = size - offset;
+
+        if (limit)
+            ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(IPv) * limit);
+    }
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const override
+    {
+        typename ColumnVector<IPv>::Container & x = typeid_cast<ColumnVector<IPv> &>(column).getData();
+        size_t initial_size = x.size();
+        x.resize(initial_size + limit);
+        size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
+        x.resize(initial_size + size / sizeof(IPv));
+    }
 };
 
-class SerializationIPv6 : public SimpleTextSerialization
-{
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-};
+using SerializationIPv4 = SerializationIP<IPv4>;
+using SerializationIPv6 = SerializationIP<IPv6>;
 
 }

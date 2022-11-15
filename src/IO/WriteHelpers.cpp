@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <cinttypes>
 #include <utility>
+#include <Common/formatIPv6.h>
 #include <Common/hex.h>
 
 
@@ -102,19 +103,11 @@ void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 {
-    size_t shift = 120;
-    for (int i = 0; i < 8; ++i)
-    {
-        size_t idx = (ip.toUnderType() >> shift) & 0xFF;
-        buf.write(&hex_byte_to_char_lowercase_table[idx * 2], 2);
-        shift -= 8;
-        idx = (ip.toUnderType() >> shift) & 0xFF;
-        buf.write(&hex_byte_to_char_lowercase_table[idx * 2], 2);
-        if (shift == 0)
-            break;
-        shift -= 8;
-        buf.write(':');
-    }
+    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+    char * paddr = addr;
+
+    formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
+    buf.write(addr, paddr - addr);
 }
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
