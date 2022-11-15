@@ -107,12 +107,12 @@ private:
     /// Dump the data only inside this pool.
     ThreadPool pool;
 
-    /// Uses async_insert_busy_timeout_ms and busyCheck().
+    /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
-    void busyCheck(size_t shard_num);
+    void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);

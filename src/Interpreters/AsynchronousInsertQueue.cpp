@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_FORMAT;
+    extern const int BAD_ARGUMENTS;
 }
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
@@ -134,7 +135,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
 
     for (size_t i = 0; i < pool_size; ++i)
-        dump_by_first_update_threads.emplace_back([this, i] { busyCheck(i); });
+        dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
 }
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
@@ -263,7 +264,7 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
     return insert_future;
 }
 
-void AsynchronousInsertQueue::busyCheck(size_t shard_num)
+void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
 {
     auto & shard = queue_shards[shard_num];
 
