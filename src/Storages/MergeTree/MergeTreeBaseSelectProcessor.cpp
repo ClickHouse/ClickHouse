@@ -198,11 +198,101 @@ bool MergeTreeBaseSelectProcessor::getDelayedTasks()
 }
 
 
+struct MergeTreeBaseSelectProcessor::AsyncReadingState
+{
+    /// NotStarted -> InProgress -> IsFinished -> NotStarted ...
+    enum class Stage
+    {
+        NotStarted,
+        InProgress,
+        IsFinished,
+    };
+
+    struct Control
+    {
+        EventFD event;
+        std::atomic<Stage> stage = Stage::NotStarted;
+
+        void finish()
+        {
+            stage = Stage::IsFinished;
+            event.write();
+        }
+    };
+
+    /// setResult and setException are the only methods
+    /// which can be called from background thread.
+    /// Invariant:
+    ///   * background thread changes status InProgress -> IsFinished
+    ///   * (status == InProgress) => (MergeTreeBaseSelectProcessor is alive)
+
+    void setResult(std::optional<Chunk> chunk_)
+    {
+        chunk = std::move(chunk_);
+        control->finish();
+    }
+
+    void setException(std::exception_ptr exception_)
+    {
+        exception = exception_;
+        control->finish();
+    }
+
+    std::shared_ptr<Control> start()
+    {
+        control->stage = Stage::InProgress;
+        return control;
+    }
+
+    std::optional<Chunk> getResult()
+    {
+        control->event.read();
+        control->stage = Stage::NotStarted;
+
+        if (exception)
+            std::rethrow_exception(exception);
+
+        return std::move(chunk);
+    }
+
+    Stage getStage() const { return control->stage; }
+    int getFD() const { return control->event.fd; }
+
+    AsyncReadingState()
+    {
+        control = std::make_shared<Control>();
+    }
+
+    ~AsyncReadingState()
+    {
+        /// Here we wait for async task if needed.
+        /// ~AsyncReadingState and Control::finish can be run concurrently.
+        /// It's important to store std::shared_ptr<Control> into bg pool task.
+        /// Otherwise following is possible:
+        ///
+        ///  (executing thread)                         (bg pool thread)
+        ///                                             Control::finish()
+        ///                                             stage = Stage::IsFinished;
+        ///  ~MergeTreeBaseSelectProcessor()
+        ///  ~AsyncReadingState()
+        ///  control->stage != Stage::InProgress
+        ///  ~EventFD()
+        ///                                             event.write()
+        if (control->stage == Stage::InProgress)
+            control->event.read();
+    }
+
+private:
+    std::optional<Chunk> chunk;
+    std::exception_ptr exception;
+    std::shared_ptr<Control> control;
+};
+
+
 ISource::Status MergeTreeBaseSelectProcessor::prepare()
 {
     if (!reader_settings.use_asynchronous_read_from_pool)
         return ISource::prepare();
-
 
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
     if (isCancelled())
@@ -211,7 +301,7 @@ ISource::Status MergeTreeBaseSelectProcessor::prepare()
         return ISource::Status::Finished;
     }
 
-    if (async_reading_state && !async_reading_state->is_done)
+    if (async_reading_state && async_reading_state->getStage() == AsyncReadingState::Stage::InProgress)
         return ISource::Status::Async;
 
     return ISource::prepare();
@@ -223,34 +313,38 @@ std::optional<Chunk> MergeTreeBaseSelectProcessor::tryGenerate()
     if (!reader_settings.use_asynchronous_read_from_pool)
         return read();
 
-    if (async_reading_state && async_reading_state->is_done)
-    {
-        async_reading_state->event.read();
-        async_reading_state->is_done = false;
-        return std::move(async_reading_state->chunk);
-    }
-
     if (!async_reading_state)
-        async_reading_state = std::make_shared<AsyncReadingState>();
+        async_reading_state = std::make_unique<AsyncReadingState>();
 
-    auto job = [this]()
+    if (async_reading_state->getStage() == AsyncReadingState::Stage::IsFinished)
+        return async_reading_state->getResult();
+
+    assert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
+
+    /// It is important to store Control into job.
+    /// Otherwise, race between job and ~MergeTreeBaseSelectProcessor is possible.
+    /// See ~AsyncReadingState
+    auto job = [control = async_reading_state->start(), this]()
     {
         try
         {
-            async_reading_state->chunk = read();
+            async_reading_state->setResult(read());
         }
         catch (...)
         {
-            async_reading_state->exception = std::current_exception();
+            async_reading_state->setException(std::current_exception());
         }
-
-        async_reading_state->is_done = true;
-        async_reading_state->event.write();
     };
 
     IOThreadPool::get().scheduleOrThrowOnError(std::move(job));
 
     return Chunk();
+}
+
+
+int MergeTreeBaseSelectProcessor::schedule()
+{
+    return async_reading_state->getFD();
 }
 
 
