@@ -4,6 +4,7 @@
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 namespace DB
 {
@@ -12,15 +13,18 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 {
     ParserKeyword s_alter("ALTER");
     ParserKeyword s_collection("NAMED COLLECTION");
+    ParserKeyword s_delete("DELETE");
 
     ParserIdentifier name_p;
     ParserSetQuery set_p;
+    ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
     bool if_exists = false;
 
     ASTPtr collection_name;
-    ASTPtr changes;
+    ASTPtr set;
+    std::vector<std::string> delete_keys;
 
     if (!s_alter.ignore(pos, expected))
         return false;
@@ -37,15 +41,32 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
             return false;
     }
 
-    if (!set_p.parse(pos, changes, expected))
-        return false;
+    if (!set_p.parse(pos, set, expected))
+    {
+        if (!s_delete.ignore(pos, expected))
+            return false;
+
+        while (true)
+        {
+            if (!delete_keys.empty() && !s_comma.ignore(pos))
+                break;
+
+            ASTPtr key;
+            if (!name_p.parse(pos, key, expected))
+                return false;
+
+            delete_keys.push_back(getIdentifierName(key));
+        }
+    }
 
     auto query = std::make_shared<ASTAlterNamedCollectionQuery>();
 
-    tryGetIdentifierNameInto(collection_name, query->collection_name);
+    query->collection_name = getIdentifierName(collection_name);
     query->if_exists = if_exists;
     query->cluster = std::move(cluster_str);
-    query->changes = changes;
+    if (set)
+        query->changes = set->as<ASTSetQuery>()->changes;
+    query->delete_keys = delete_keys;
 
     node = query;
     return true;

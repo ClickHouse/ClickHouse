@@ -3,7 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Storages/NamedCollections.h>
+#include <Storages/NamedCollectionUtils.h>
 
 
 namespace DB
@@ -22,9 +22,9 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     if (query.if_exists)
-        NamedCollectionFactory::instance().removeIfExists(query.collection_name);
+        NamedCollectionUtils::removeIfExistsFromSQL(query.collection_name, current_context);
     else
-        NamedCollectionFactory::instance().remove(query.collection_name);
+        NamedCollectionUtils::removeFromSQL(query.collection_name, current_context);
 
     return {};
 }

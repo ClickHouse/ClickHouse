@@ -1375,11 +1375,10 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserKeyword s_named_collection("NAMED COLLECTION");
     ParserKeyword s_as("AS");
 
+    ParserToken s_comma(TokenType::Comma);
     ParserIdentifier name_p;
-    ParserSetQuery set_p;
 
     ASTPtr collection_name;
-    ASTPtr collection_def;
     String cluster_str;
 
     if (!s_create.ignore(pos, expected))
@@ -1400,13 +1399,23 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!s_as.ignore(pos, expected))
         return false;
 
-    if (!set_p.parse(pos, collection_def, expected))
-        return false;
+    SettingsChanges changes;
+
+    while (true)
+    {
+        if (!changes.empty() && !s_comma.ignore(pos))
+            break;
+
+        changes.push_back(SettingChange{});
+
+        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
+            return false;
+    }
 
     auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
 
     tryGetIdentifierNameInto(collection_name, query->collection_name);
-    query->collection_def = collection_def;
+    query->changes = changes;
 
     node = query;
     return true;
@@ -1523,15 +1532,13 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateDictionaryQuery dictionary_p;
     ParserCreateLiveViewQuery live_view_p;
     ParserCreateWindowViewQuery window_view_p;
-    ParserCreateNamedCollectionQuery named_collection_p;
 
     return table_p.parse(pos, node, expected)
         || database_p.parse(pos, node, expected)
         || view_p.parse(pos, node, expected)
         || dictionary_p.parse(pos, node, expected)
         || live_view_p.parse(pos, node, expected)
-        || window_view_p.parse(pos, node, expected)
-        || named_collection_p.parse(pos, node, expected);
+        || window_view_p.parse(pos, node, expected);
 }
 
 }

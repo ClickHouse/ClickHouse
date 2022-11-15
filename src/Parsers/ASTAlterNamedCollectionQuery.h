@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -11,7 +12,8 @@ class ASTAlterNamedCollectionQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     std::string collection_name;
-    ASTPtr changes;
+    SettingsChanges changes;
+    std::vector<std::string> delete_keys;
     bool if_exists = false;
 
     String getID(char) const override { return "AlterNamedCollectionQuery"; }
