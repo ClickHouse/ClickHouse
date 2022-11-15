@@ -55,7 +55,7 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         else
             res = std::make_shared<DataTypeInt16>();
     }
-    else if (type_name == "int" || type_name == "mediumint")
+    else if (type_name == "int" || type_name == "mediumint" || type_name == "integer")
     {
         if (is_unsigned)
             res = std::make_shared<DataTypeUInt32>();
