@@ -638,7 +638,8 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
     for (const MergeTreeData::DataPartPtr & part : source_parts)
     {
         /// Exclude expired parts
-        if (part->ttl_infos.part_max_ttl <= current_time)
+        time_t part_max_ttl = part->ttl_infos.part_max_ttl;
+        if (part_max_ttl && part_max_ttl <= current_time)
             continue;
 
         res += part->getBytesOnDisk();
