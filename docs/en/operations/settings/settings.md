@@ -3399,6 +3399,17 @@ Use schema from cache for URL with last modification time validation (for urls w
 
 Default value: `true`.
 
+## use_structure_from_insertion_table_in_table_functions {use_structure_from_insertion_table_in_table_functions}
+
+Use structure from insertion table instead of schema inference from data.
+
+Possible values:
+- 0 - disabled
+- 1 - enabled
+- 2 - auto
+
+Default value: 2.
+
 ## compatibility {#compatibility}
 
 This setting changes other settings according to provided ClickHouse version.
