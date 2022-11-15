@@ -13,7 +13,7 @@ The supported formats are:
 | Format                                                                                    | Input | Output |
 |-------------------------------------------------------------------------------------------|------|--------|
 | [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaon Big-Endian platformsw](#tabseparatedraw)                                                       | ✔    | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                 | ✔    | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
 | [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |

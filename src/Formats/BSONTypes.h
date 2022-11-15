@@ -7,7 +7,7 @@ namespace DB
 {
 
 static const uint8_t BSON_DOCUMENT_END = 0x00;
-using BSON_SIZE_TYPE = uint32_t;
+using BSONSizeT = uint32_t;
 static const BSONSizeT MAX_BSON_SIZE = std::numeric_limits<BSONSizeT>::max();
 
 /// See details on https://bsonspec.org/spec.html
@@ -53,6 +53,5 @@ std::string getBSONTypeName(BSONType type);
 
 BSONBinarySubtype getBSONBinarySubtype(uint8_t value);
 std::string getBSONBinarySubtypeName(BSONBinarySubtype subtype);
-
 
 }
