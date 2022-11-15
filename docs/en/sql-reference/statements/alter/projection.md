@@ -5,11 +5,11 @@ sidebar_label: PROJECTION
 title: "Projections"
 ---
 
-Projections store data in a format that optimizes query execution, this feature is useful if:
-You need to run queries on a column that is not a part of the primary key,
-For Pre-aggregate columns, it will reduce both computation and IO.
+Projections store data in a format that optimizes query execution, this feature is useful for:
+- Running queries on a column that is not a part of the primary key
+- Pre-aggregating columns, it will reduce both computation and IO
 
-You can define one or more projections for a table, and during the query analysis the projection with least data to scan will be selected by ClickHouse without modifying the query provided by the user.
+You can define one or more projections for a table, and during the query analysis the projection with the least data to scan will be selected by ClickHouse without modifying the query provided by the user.
 
 ## Example filtering without using primary keys
 
@@ -60,7 +60,7 @@ To verify that a query is using the projection, we could review the `system.quer
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-## Example for pre-aggregate query
+## Example pre-aggregation query
 
 Creating the table with the Projection:
 ```
@@ -98,7 +98,7 @@ INSERT INTO visits SELECT
    'IOS'
 FROM numbers(100, 500);
 ```
-We will execute a first query using `GROUP BY` using the field `user_agent`, this query will not use the projection defined as the pre-aggregate do not match.
+We will execute a first query using `GROUP BY` using the field `user_agent`, this query will not use the projection defined as the pre-aggregation does not match.
 ```
 SELECT
     user_agent,
@@ -107,7 +107,7 @@ FROM visits
 GROUP BY user_agent
 ```
 
-To use the projection we could execute queries that select partially or all the pre-aggregate and `GROUP BY` fields.
+To use the projection we could execute queries that select part of, or all of the pre-aggregation and `GROUP BY` fields.
 ```
 SELECT
     user_agent
