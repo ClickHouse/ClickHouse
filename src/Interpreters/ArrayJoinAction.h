@@ -11,17 +11,25 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
+class DataTypeArray;
+class ColumnArray;
+
+const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type, bool allow_map = false);
+const ColumnArray * getArrayJoinColumn(const ColumnPtr & column, bool allow_map = false);
+
+
 class ArrayJoinAction
 {
 public:
     NameSet columns;
     bool is_left = false;
     bool is_unaligned = false;
+    bool allow_map = true;
 
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;
     FunctionOverloadResolverPtr function_greatest;
-    FunctionOverloadResolverPtr function_arrayResize;
+    FunctionOverloadResolverPtr function_array_resize;
 
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
