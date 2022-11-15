@@ -514,14 +514,11 @@ private:
     static void mapIPv4ToIPv6(UInt32 in, UInt8 * buf)
     {
         unalignedStore<UInt64>(buf, 0);
-        if (std::endian::native == std::endian::little)
-        {
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
-        } 
-        else
-        {
+#else
             unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(__builtin_bswap32(ntohl(in))) << 32));
-        }
+#endif
     }
 };
 

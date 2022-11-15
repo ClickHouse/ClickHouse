@@ -136,7 +136,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             if (!parseIPv4(curtok, tp))
                 return clear_dst();
 
-            if (std::endian::native == std::endian::little)
+            if constexpr (std::endian::native == std::endian::little)
                 std::reverse(tp, tp + IPV4_BINARY_LENGTH);
 
             tp += IPV4_BINARY_LENGTH;
@@ -207,7 +207,7 @@ inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail
     for (size_t octet = 0; octet < limit; ++octet)
     {
         uint8_t value = 0;
-        if (std::endian::native == std::endian::little)
+        if constexpr (std::endian::native == std::endian::little)
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
