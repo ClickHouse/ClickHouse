@@ -28,7 +28,7 @@ struct MergeTreeReaderSettings
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
-    bool use_asynchronous_read_from_pool = false;
+    bool use_asynchronous_read_from_pool = true;
 };
 
 struct MergeTreeWriterSettings
