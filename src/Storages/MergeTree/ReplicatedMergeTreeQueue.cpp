@@ -2400,18 +2400,6 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
         }
     }
 
-    {
-        std::lock_guard lock(queue.state_mutex);
-
-        auto queue_representation = getQueueRepresentation(queue.queue, queue.format_version);
-        size_t suddenly_appeared_parts = getPartNamesToMutate(mutation, queue.current_parts, queue_representation, queue.format_version).size();
-        if (suddenly_appeared_parts)
-        {
-            LOG_TRACE(queue.log, "Mutation {} is not done yet because {} parts to mutate suddenly appeared.", mutation.znode_name, suddenly_appeared_parts);
-            return false;
-        }
-    }
-
     return true;
 }
 
