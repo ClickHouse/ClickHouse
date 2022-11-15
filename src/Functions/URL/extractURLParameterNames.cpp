@@ -35,6 +35,13 @@ public:
         return 0;
     }
 
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
+    {
+        return std::nullopt;
+    }
+
+
     void init(const ColumnsWithTypeAndName & /*arguments*/) {}
 
     /// Called for each next string.

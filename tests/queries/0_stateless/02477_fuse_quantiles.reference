@@ -1,0 +1,148 @@
+799.2	Nullable(Float64)	899.1	Nullable(Float64)
+800.2	Float64	900.1	Float64
+498.5	500.5	800.2	801.2	900.1
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantile(minus(a, 1)) Nullable(Float64)
+    plus(quantile(minus(b, 1)), 1) Float64
+    plus(quantile(0.8)(minus(b, 1)), 1) Float64
+    plus(quantile(0.8)(minus(b, 1)), 2) Float64
+    plus(quantile(0.9)(minus(b, 1)), 1) Float64
+  PROJECTION
+    LIST id: 1, nodes: 5
+      FUNCTION id: 2, function_name: quantile, function_type: aggregate, result_type: Nullable(Float64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Nullable(Int64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: a, result_type: Nullable(Int32), source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 10, nodes: 2
+            FUNCTION id: 11, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  FUNCTION id: 13, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+                          ARGUMENTS
+                            LIST id: 16, nodes: 2
+                              COLUMN id: 17, column_name: b, result_type: Int32, source_id: 7
+                              CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+                  CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 21, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 22, nodes: 2
+            FUNCTION id: 23, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 24, nodes: 2
+                  FUNCTION id: 13, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+                          ARGUMENTS
+                            LIST id: 16, nodes: 2
+                              COLUMN id: 17, column_name: b, result_type: Int32, source_id: 7
+                              CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+                  CONSTANT id: 25, constant_value: UInt64_2, constant_value_type: UInt8
+            CONSTANT id: 26, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 27, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 28, nodes: 2
+            FUNCTION id: 29, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 30, nodes: 2
+                  FUNCTION id: 13, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+                          ARGUMENTS
+                            LIST id: 16, nodes: 2
+                              COLUMN id: 17, column_name: b, result_type: Int32, source_id: 7
+                              CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+                  CONSTANT id: 31, constant_value: UInt64_3, constant_value_type: UInt8
+            CONSTANT id: 32, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 33, function_name: plus, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 34, nodes: 2
+            FUNCTION id: 35, function_name: arrayElement, function_type: ordinary, result_type: Float64
+              ARGUMENTS
+                LIST id: 36, nodes: 2
+                  FUNCTION id: 13, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                    ARGUMENTS
+                      LIST id: 14, nodes: 1
+                        FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Int64
+                          ARGUMENTS
+                            LIST id: 16, nodes: 2
+                              COLUMN id: 17, column_name: b, result_type: Int32, source_id: 7
+                              CONSTANT id: 18, constant_value: UInt64_1, constant_value_type: UInt8
+                  CONSTANT id: 37, constant_value: UInt64_4, constant_value_type: UInt8
+            CONSTANT id: 38, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, table_name: default.fuse_tbl
+501.5	501.5
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantile(0.5)(b) Float64
+    quantile(0.9)(b) Float64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: arrayElement, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: b, result_type: Float64, source_id: 7
+            CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 9, function_name: arrayElement, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 10, nodes: 2
+            FUNCTION id: 4, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: b, result_type: Float64, source_id: 7
+            CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    QUERY id: 7, is_subquery: 1
+      PROJECTION COLUMNS
+        b Float64
+      PROJECTION
+        LIST id: 12, nodes: 1
+          FUNCTION id: 13, function_name: plus, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 14, nodes: 2
+                COLUMN id: 15, column_name: x, result_type: Float64, source_id: 16
+                CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
+      JOIN TREE
+        QUERY id: 16, is_subquery: 1
+          PROJECTION COLUMNS
+            x Float64
+            quantile(0.9)(b) Float64
+          PROJECTION
+            LIST id: 18, nodes: 2
+              FUNCTION id: 19, function_name: arrayElement, function_type: ordinary, result_type: Float64
+                ARGUMENTS
+                  LIST id: 20, nodes: 2
+                    FUNCTION id: 21, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                      ARGUMENTS
+                        LIST id: 22, nodes: 1
+                          COLUMN id: 23, column_name: b, result_type: Int32, source_id: 24
+                    CONSTANT id: 25, constant_value: UInt64_1, constant_value_type: UInt8
+              FUNCTION id: 26, function_name: arrayElement, function_type: ordinary, result_type: Float64
+                ARGUMENTS
+                  LIST id: 27, nodes: 2
+                    FUNCTION id: 21, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+                      ARGUMENTS
+                        LIST id: 22, nodes: 1
+                          COLUMN id: 23, column_name: b, result_type: Int32, source_id: 24
+                    CONSTANT id: 28, constant_value: UInt64_2, constant_value_type: UInt8
+          JOIN TREE
+            TABLE id: 24, table_name: default.fuse_tbl
+      GROUP BY
+        LIST id: 29, nodes: 1
+          COLUMN id: 15, column_name: x, result_type: Float64, source_id: 16

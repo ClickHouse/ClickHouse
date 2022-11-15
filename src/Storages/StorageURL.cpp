@@ -280,7 +280,7 @@ namespace
                                 timeouts,
                                 credentials,
                                 settings.max_http_get_redirects,
-                                DBMS_DEFAULT_BUFFER_SIZE,
+                                settings.max_read_buffer_size,
                                 read_settings,
                                 headers,
                                 ReadWriteBufferFromHTTP::Range{0, std::nullopt},
@@ -341,7 +341,7 @@ namespace
                                     timeouts,
                                     credentials,
                                     settings.max_http_get_redirects,
-                                    DBMS_DEFAULT_BUFFER_SIZE,
+                                    settings.max_read_buffer_size,
                                     read_settings,
                                     headers,
                                     &context->getRemoteHostFilter(),
@@ -378,7 +378,7 @@ namespace
                             timeouts,
                             credentials,
                             settings.max_http_get_redirects,
-                            DBMS_DEFAULT_BUFFER_SIZE,
+                            settings.max_read_buffer_size,
                             read_settings,
                             headers,
                             ReadWriteBufferFromHTTP::Range{},
@@ -864,6 +864,8 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
+    auto settings = context->getSettingsRef();
+
     try
     {
         ReadWriteBufferFromHTTP buf(
@@ -872,8 +874,8 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             {},
             ConnectionTimeouts::getHTTPTimeouts(context),
             credentials,
-            context->getSettingsRef().max_http_get_redirects,
-            DBMS_DEFAULT_BUFFER_SIZE,
+            settings.max_http_get_redirects,
+            settings.max_read_buffer_size,
             context->getReadSettings(),
             headers,
             ReadWriteBufferFromHTTP::Range{},
