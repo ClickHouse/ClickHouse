@@ -1167,6 +1167,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()
         ))
         {
+            LOG_INFO(&Poco::Logger::get("LOGGER"), "{}", create.select->dumpTree());
             Block input_block = InterpreterSelectWithUnionQuery(
                 create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
 

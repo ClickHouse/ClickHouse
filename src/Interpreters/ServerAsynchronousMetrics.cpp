@@ -58,89 +58,123 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
-        new_values["MarkCacheBytes"] = mark_cache->weight();
-        new_values["MarkCacheFiles"] = mark_cache->count();
+        new_values["MarkCacheBytes"] = { mark_cache->weight(), "Total size of mark cache in bytes" };
+        new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
     {
-        new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
-        new_values["UncompressedCacheCells"] = uncompressed_cache->count();
+        new_values["UncompressedCacheBytes"] = { uncompressed_cache->weight(),
+            "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
+        new_values["UncompressedCacheCells"] = { uncompressed_cache->count(),
+            "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
     }
 
     if (auto index_mark_cache = getContext()->getIndexMarkCache())
     {
-        new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
-        new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
+        new_values["IndexMarkCacheBytes"] = { index_mark_cache->weight(), "Total size of mark cache for secondary indices in bytes." };
+        new_values["IndexMarkCacheFiles"] = { index_mark_cache->count(), "Total number of mark files cached in the mark cache for secondary indices." };
     }
 
     if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
     {
-        new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
-        new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
+        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->weight(),
+            "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
+        new_values["IndexUncompressedCacheCells"] = { index_uncompressed_cache->count(),
+            "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
     }
 
     if (auto mmap_cache = getContext()->getMMappedFileCache())
     {
-        new_values["MMapCacheCells"] = mmap_cache->count();
+        new_values["MMapCacheCells"] = { mmap_cache->count(),
+            "The number of files opened with `mmap` (mapped in memory)."
+            " This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`."
+            " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
     {
         auto caches = FileCacheFactory::instance().getAll();
+        size_t total_bytes = 0;
+        size_t total_files = 0;
+
         for (const auto & [_, cache_data] : caches)
         {
-            new_values["FilesystemCacheBytes"] = cache_data->cache->getUsedCacheSize();
-            new_values["FilesystemCacheFiles"] = cache_data->cache->getFileSegmentsNum();
+            total_bytes += cache_data->cache->getUsedCacheSize();
+            total_files += cache_data->cache->getFileSegmentsNum();
         }
+
+        new_values["FilesystemCacheBytes"] = { total_bytes,
+            "Total bytes in the `cache` virtual filesystem. This cache is hold on disk." };
+        new_values["FilesystemCacheFiles"] = { total_files,
+            "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
 
 #if USE_ROCKSDB
     if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
     {
-        new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
+        new_values["MergeTreeMetadataCacheSize"] = { metadata_cache->getEstimateNumKeys(),
+            "The size of the metadata cache for tables. This cache is experimental and not used in production." };
     }
 #endif
 
 #if USE_EMBEDDED_COMPILER
     if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        new_values["CompiledExpressionCacheBytes"] = compiled_expression_cache->weight();
-        new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
+        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->weight(),
+            "Total bytes used for the cache of JIT-compiled code." };
+        new_values["CompiledExpressionCacheCount"] = { compiled_expression_cache->count(),
+            "Total entries in the cache of JIT-compiled code." };
     }
 #endif
 
-
-    new_values["Uptime"] = getContext()->getUptimeSeconds();
+    new_values["Uptime"] = { getContext()->getUptimeSeconds(),
+        "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
 
     if (const auto stats = getHashTablesCacheStatistics())
     {
-        new_values["HashTableStatsCacheEntries"] = stats->entries;
-        new_values["HashTableStatsCacheHits"] = stats->hits;
-        new_values["HashTableStatsCacheMisses"] = stats->misses;
+        new_values["HashTableStatsCacheEntries"] = { stats->entries,
+            "The number of entries in the cache of hash table sizes."
+            " The cache for hash table sizes is used for predictive optimization of GROUP BY." };
+        new_values["HashTableStatsCacheHits"] = { stats->hits,
+            "The number of times the prediction of a hash table size was correct." };
+        new_values["HashTableStatsCacheMisses"] = { stats->misses,
+            "The number of times the prediction of a hash table size was incorrect." };
     }
 
     /// Free space in filesystems at data path and logs path.
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
+        new_values["FilesystemMainPathTotalBytes"] = { stat.f_blocks * stat.f_frsize,
+            "The size of the volume where the main ClickHouse path is mounted, in bytes." };
+        new_values["FilesystemMainPathAvailableBytes"] = { stat.f_bavail * stat.f_frsize,
+            "Available bytes on the volume where the main ClickHouse path is mounted." };
+        new_values["FilesystemMainPathUsedBytes"] = { (stat.f_blocks - stat.f_bavail) * stat.f_frsize,
+            "Used bytes on the volume where the main ClickHouse path is mounted." };
+        new_values["FilesystemMainPathTotalINodes"] = { stat.f_files,
+            "The total number of inodes on the volume where the main ClickHouse path is mounted. If it is less than 25 million, it indicates a misconfiguration." };
+        new_values["FilesystemMainPathAvailableINodes"] = { stat.f_favail,
+            "The number of available inodes on the volume where the main ClickHouse path is mounted. If it is close to zero, it indicates a misconfiguration, and you will get 'no space left on device' even when the disk is not full." };
+        new_values["FilesystemMainPathUsedINodes"] = { stat.f_files - stat.f_favail,
+            "The number of used inodes on the volume where the main ClickHouse path is mounted. This value mostly corresponds to the number of files." };
     }
 
     {
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
-        new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
-        new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
-        new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
+        new_values["FilesystemLogsPathTotalBytes"] = { stat.f_blocks * stat.f_frsize,
+            "The size of the volume where ClickHouse logs path is mounted, in bytes. It's recommended to have at least 10 GB for logs." };
+        new_values["FilesystemLogsPathAvailableBytes"] = { stat.f_bavail * stat.f_frsize,
+            "Available bytes on the volume where ClickHouse logs path is mounted. If this value approaches zero, you should tune the log rotation in the configuration file." };
+        new_values["FilesystemLogsPathUsedBytes"] = { (stat.f_blocks - stat.f_bavail) * stat.f_frsize,
+            "Used bytes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathTotalINodes"] = { stat.f_files,
+            "The total number of inodes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathAvailableINodes"] = { stat.f_favail,
+            "The number of available inodes on the volume where ClickHouse logs path is mounted." };
+        new_values["FilesystemLogsPathUsedINodes"] = { stat.f_files - stat.f_favail,
+            "The number of used inodes on the volume where ClickHouse logs path is mounted." };
     }
 
     /// Free and total space on every configured disk.
@@ -157,10 +191,14 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = total;
-            new_values[fmt::format("DiskUsed_{}", name)] = total - available;
-            new_values[fmt::format("DiskAvailable_{}", name)] = available;
-            new_values[fmt::format("DiskUnreserved_{}", name)] = unreserved;
+            new_values[fmt::format("DiskTotal_{}", name)] = { total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
+                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
+                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
+                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
         }
     }
 
@@ -240,25 +278,27 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             }
         }
 
-        new_values["ReplicasMaxQueueSize"] = max_queue_size;
-        new_values["ReplicasMaxInsertsInQueue"] = max_inserts_in_queue;
-        new_values["ReplicasMaxMergesInQueue"] = max_merges_in_queue;
+        new_values["ReplicasMaxQueueSize"] = { max_queue_size, "Maximum queue size (in the number of operations like get, merge) across Replicated tables." };
+        new_values["ReplicasMaxInsertsInQueue"] = { max_inserts_in_queue, "Maximum number of INSERT operations in the queue (still to be replicated) across Replicated tables." };
+        new_values["ReplicasMaxMergesInQueue"] = { max_merges_in_queue, "Maximum number of merge operations in the queue (still to be applied) across Replicated tables." };
 
-        new_values["ReplicasSumQueueSize"] = sum_queue_size;
-        new_values["ReplicasSumInsertsInQueue"] = sum_inserts_in_queue;
-        new_values["ReplicasSumMergesInQueue"] = sum_merges_in_queue;
+        new_values["ReplicasSumQueueSize"] = { sum_queue_size, "Sum queue size (in the number of operations like get, merge) across Replicated tables." };
+        new_values["ReplicasSumInsertsInQueue"] = { sum_inserts_in_queue, "Sum of INSERT operations in the queue (still to be replicated) across Replicated tables." };
+        new_values["ReplicasSumMergesInQueue"] = { sum_merges_in_queue, "Sum of merge operations in the queue (still to be applied) across Replicated tables." };
 
-        new_values["ReplicasMaxAbsoluteDelay"] = max_absolute_delay;
-        new_values["ReplicasMaxRelativeDelay"] = max_relative_delay;
+        new_values["ReplicasMaxAbsoluteDelay"] = { max_absolute_delay, "Maximum difference in seconds between the most fresh replicated part and the most fresh data part still to be replicated, across Replicated tables. A very high value indicates a replica with no data." };
+        new_values["ReplicasMaxRelativeDelay"] = { max_relative_delay, "Maximum difference between the replica delay and the delay of the most up-to-date replica of the same table, across Replicated tables." };
 
-        new_values["MaxPartCountForPartition"] = max_part_count_for_partition;
+        new_values["MaxPartCountForPartition"] = { max_part_count_for_partition, "Maximum number of parts per partition across all partitions of all tables of MergeTree family. Values larger than 300 indicates misconfiguration, overload, or massive data loading." };
 
-        new_values["NumberOfDatabases"] = number_of_databases;
-        new_values["NumberOfTables"] = total_number_of_tables;
+        new_values["NumberOfDatabases"] = { number_of_databases, "Total number of databases on the server." };
+        new_values["NumberOfTables"] = { total_number_of_tables, "Total number of tables summed across the databases on the server, excluding the databases that cannot contain MergeTree tables."
+            " The excluded database engines are those who generate the set of tables on the fly, like `Lazy`, `MySQL`, `PostgreSQL`, `SQlite`."};
 
-        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
-        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
-        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
+        new_values["TotalBytesOfMergeTreeTables"] = { total_number_of_bytes, "Total amount of bytes (compressed, including data and indices) stored in all tables of MergeTree family." };
+        new_values["TotalRowsOfMergeTreeTables"] = { total_number_of_rows, "Total amount of rows (records) stored in all tables of MergeTree family." };
+        new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
+            " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
     }
 
 #if USE_NURAFT
@@ -347,8 +387,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
     }
 
-    new_values["NumberOfDetachedParts"] = detached_parts_stats.count;
-    new_values["NumberOfDetachedByUserParts"] = detached_parts_stats.detached_by_user;
+
+    new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
+    new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
 }
 
 }
