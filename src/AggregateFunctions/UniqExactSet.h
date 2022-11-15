@@ -64,7 +64,7 @@ public:
                     }
                 };
 
-                for (size_t i = 0; i < thread_pool->getMaxThreads(); ++i)
+                for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
                     thread_pool->scheduleOrThrowOnError(thread_func);
                 thread_pool->wait();
             }
