@@ -3,13 +3,11 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts
 sidebar_position: 39
 sidebar_label: General Description
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Dictionaries 
 
-:::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries,  and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
-:::
+<CloudDetails />
 
 You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a DDL query, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 

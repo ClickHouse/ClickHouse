@@ -3,13 +3,11 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-s
 sidebar_position: 44
 sidebar_label: Dictionary Key and Fields
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Dictionary Key and Fields
 
-:::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
-:::
+<CloudDetails />
 
 The `structure` clause describes the dictionary key and fields available for queries.
 

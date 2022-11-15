@@ -4,16 +4,14 @@ sidebar_position: 46
 sidebar_label: Polygon Dictionaries With Grids
 title: "Polygon dictionaries"
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
 
 Example of a polygon dictionary configuration:
 
-:::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries,  and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
-:::
+<CloudDetails />
 
 ``` xml
 <dictionary>
