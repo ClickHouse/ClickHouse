@@ -25,9 +25,7 @@ ArrayJoinTransform::ArrayJoinTransform(
 void ArrayJoinTransform::transform(Chunk & chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    std::cout << "before:" << block.dumpStructure() << std::endl;
     array_join->execute(block);
-    std::cout << "after:" << block.dumpStructure() << std::endl;
     chunk.setColumns(block.getColumns(), block.rows());
 }
 
