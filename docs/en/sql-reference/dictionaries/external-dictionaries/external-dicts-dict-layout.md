@@ -25,7 +25,7 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
 
 :::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`. 
 Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
 :::
 

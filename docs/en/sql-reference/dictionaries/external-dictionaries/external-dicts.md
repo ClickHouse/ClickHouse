@@ -7,7 +7,7 @@ sidebar_label: General Description
 # Dictionaries 
 
 :::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries.
+If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries,  and create your dictionary as user `default`.
 Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
 :::
 
@@ -36,7 +36,7 @@ Dictionaries can be created with [DDL queries](../../../sql-reference/statements
 ## Creating a dictionary with a configuration file
 
 :::note
-Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above).
+Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.
 :::
 
 The dictionary configuration file has the following format:
