@@ -1255,9 +1255,11 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x05` binary, `\x02` old binary subtype | [String](../sql-reference/data-types/string.md)/[FixedString](../sql-reference/data-types/fixedstring.md)                                                    |
 | `\x05` binary, `\x03` old uuid subtype   | [UUID](../sql-reference/data-types/uuid.md)                                                                                                                  |
 | `\x05` binary, `\x04` uuid subtype       | [UUID](../sql-reference/data-types/uuid.md)                                                                                                                  |
+| `\x07` ObjectId                          | [String](../sql-reference/data-types/string.md)/[FixedString](../sql-reference/data-types/fixedstring.md)                                                    |
 | `\x08` boolean                           | [Bool](../sql-reference/data-types/boolean.md)                                                                                                               |
 | `\x09` datetime                          | [DateTime64](../sql-reference/data-types/datetime64.md)                                                                                                      |
 | `\x0A` null value                        | [NULL](../sql-reference/data-types/nullable.md)                                                                                                              |
+| `\x0D` JavaScript code                   | [String](../sql-reference/data-types/string.md)/[FixedString](../sql-reference/data-types/fixedstring.md)                                                    |
 | `\x0E` symbol                            | [String](../sql-reference/data-types/string.md)/[FixedString](../sql-reference/data-types/fixedstring.md)                                                    |
 | `\x10` int32                             | [Int32/UInt32](../sql-reference/data-types/int-uint.md)/[Decimal32](../sql-reference/data-types/decimal.md)                                                         |
 | `\x12` int64                             | [Int64/UInt64](../sql-reference/data-types/int-uint.md)/[Decimal64](../sql-reference/data-types/decimal.md)/[DateTime64](../sql-reference/data-types/datetime64.md) |
