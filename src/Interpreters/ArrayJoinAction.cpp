@@ -20,14 +20,14 @@ namespace ErrorCodes
 
 const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type, bool allow_map)
 {
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&*type))
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return array_type;
     else if (allow_map)
     {
-        if (const auto * map_type = typeid_cast<const DataTypeMap *>(&*type))
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
         {
             const auto & nested_type = map_type->getNestedType();
-            return typeid_cast<const DataTypeArray *>(&*nested_type);
+            return typeid_cast<const DataTypeArray *>(nested_type.get());
         }
     }
 
@@ -36,11 +36,11 @@ const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type, bool allow_
 
 const ColumnArray * getArrayJoinColumn(const ColumnPtr & column, bool allow_map)
 {
-    if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column))
+    if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.get()))
         return array;
     else if (allow_map)
     {
-        if (const auto * map = typeid_cast<const ColumnMap *>(&*column))
+        if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
             return typeid_cast<const ColumnArray *>(&map->getNestedColumn());
     }
     return nullptr;
@@ -71,7 +71,7 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
         if (!columns.contains(current.name))
             continue;
 
-        if (const auto * type = getArrayJoinDataType(current.type, allow_map))
+        if (const auto * type = getArrayJoinDataType(current.type))
         {
             current.column = nullptr;
             current.type = type->getNestedType();
@@ -87,7 +87,7 @@ void ArrayJoinAction::execute(Block & block)
         throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 
     ColumnPtr any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
-    const auto * any_array = getArrayJoinColumn(any_array_map_ptr, allow_map);
+    const auto * any_array = getArrayJoinColumn(any_array_map_ptr);
     if (!any_array)
         throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
 
@@ -108,24 +108,40 @@ void ArrayJoinAction::execute(Block & block)
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);
+            std::cout << src_col.dumpStructure() << std::endl;
 
-            ColumnsWithTypeAndName tmp_block{src_col}; //, {{}, uint64, {}}};
+            ColumnWithTypeAndName array_col;
+            array_col.name = name;
+            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
+            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
+
+            ColumnsWithTypeAndName tmp_block{array_col}; //, {{}, uint64, {}}};
             auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
 
             ColumnsWithTypeAndName tmp_block2{column_of_max_length, {len_col, uint64, {}}};
             column_of_max_length.column = function_greatest->build(tmp_block2)->execute(tmp_block2, uint64, rows);
         }
 
+        for (size_t i=0; i < column_of_max_length.column->size(); ++i)
+            std::cout << "row:" << i << ",max_length:" << column_of_max_length.column->get64(i) << std::endl;
+
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);
 
-            ColumnsWithTypeAndName tmp_block{src_col, column_of_max_length};
-            src_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, src_col.type, rows);
+            ColumnWithTypeAndName array_col;
+            array_col.name = name;
+            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
+            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
+
+            ColumnsWithTypeAndName tmp_block{array_col, column_of_max_length};
+            array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows);
+
+            src_col = std::move(array_col);
             any_array_map_ptr = src_col.column->convertToFullColumnIfConst();
         }
 
-        any_array = getArrayJoinColumn(any_array_map_ptr, allow_map);
+        any_array = getArrayJoinColumn(any_array_map_ptr);
         if (!any_array)
             throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
     }
@@ -135,16 +151,16 @@ void ArrayJoinAction::execute(Block & block)
         {
             const auto & src_col = block.getByName(name);
             ColumnWithTypeAndName array_col;
-            array_col.column = getArrayJoinColumn(src_col.column, allow_map)->clone();
-            array_col.type.reset(getArrayJoinDataType(src_col.type, allow_map));
             array_col.name = name;
+            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
+            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
 
             ColumnsWithTypeAndName tmp_block{array_col};
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size());
         }
 
         any_array_map_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
-        any_array = getArrayJoinColumn(any_array_map_ptr, allow_map);
+        any_array = getArrayJoinColumn(any_array_map_ptr);
         if (!any_array)
             throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
     }
@@ -154,39 +170,36 @@ void ArrayJoinAction::execute(Block & block)
     for (size_t i = 0; i < num_columns; ++i)
     {
         ColumnWithTypeAndName & current = block.safeGetByPosition(i);
-        std::cout << "current column:" << current.dumpStructure() << std::endl;
 
         if (columns.contains(current.name))
         {
-            if (const auto * type = getArrayJoinDataType(current.type, allow_map))
+            if (const auto * type = getArrayJoinDataType(current.type))
             {
-                if (typeid_cast<const DataTypeArray *>(&*current.type))
+                ColumnPtr array_ptr;
+                if (typeid_cast<const DataTypeArray *>(current.type.get()))
                 {
-                    ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name] : current.column;
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name] : current.column;
                     array_ptr = array_ptr->convertToFullColumnIfConst();
-
-                    const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-                    if (!is_unaligned && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_map_ptr)))
-                        throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-
-                    current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-                    current.type = type->getNestedType();
                 }
                 else
                 {
                     ColumnPtr map_ptr = current.column->convertToFullColumnIfConst();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
-
-                    current.column = map.getNestedColumn().getDataPtr();
-                    current.type = type->getNestedType();
+                    array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name] : map.getNestedColumnPtr();
                 }
+
+                const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
+                if (!is_unaligned && !array.hasEqualOffsets(*any_array))
+                    throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+
+                current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
+                current.type = type->getNestedType();
             }
             else
                 throw Exception("ARRAY JOIN of not array nor map: " + current.name, ErrorCodes::TYPE_MISMATCH);
         }
         else
         {
-            std::cout << "column size:" << current.column->size() << ",offsetsize:" << any_array->getOffsets().size() << std::endl;
             current.column = current.column->replicate(any_array->getOffsets());
         }
     }
