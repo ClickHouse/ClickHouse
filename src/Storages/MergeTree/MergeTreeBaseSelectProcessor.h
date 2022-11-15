@@ -66,10 +66,19 @@ protected:
     {
         Block block;
         size_t row_count = 0;
+        size_t num_read_rows = 0;
+        size_t num_read_bytes = 0;
+    };
+
+    struct ChunkWithProgress
+    {
+        Chunk chunk;
+        size_t num_read_rows = 0;
+        size_t num_read_bytes = 0;
     };
 
     std::optional<Chunk> tryGenerate() final;
-    std::optional<Chunk> read();
+    std::optional<ChunkWithProgress> read();
 
     int schedule() override;
 
