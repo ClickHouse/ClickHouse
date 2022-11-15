@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow)"
 
 echo "Decimals"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, 'decimal32 Decimal32(3), decimal64 Decimal64(6), decimal128 Decimal128(12), decimal256 Decimal256(24)') select number * 42.422::Decimal32(3) as decimal32, number * 42.424242::Decimal64(6) as decimal64, number * 42.424242424242::Decimal128(12) as decimal128, number * 42.424242424242424242424242::Decimal256(24) as decimal256 from numbers(5) settings engine_file_truncate_on_insert=1"
-$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'decimal32 Decimal32(3), datetime64 DateTime64(6), decimal128 Decimal128(12), decimal256 Decimal256(24)')"
+$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'decimal32 Decimal32(3), decimal64 Decimal64(6), decimal128 Decimal128(12), decimal256 Decimal256(24)')"
 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
 
