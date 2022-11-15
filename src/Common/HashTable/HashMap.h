@@ -103,11 +103,25 @@ struct HashMapCell
         DB::writeBinary(value.second, wb);
     }
 
+    void writeText(DB::WriteBuffer & wb) const
+    {
+        DB::writeDoubleQuoted(value.first, wb);
+        DB::writeChar(',', wb);
+        DB::writeDoubleQuoted(value.second, wb);
+    }
+
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)
     {
         DB::readBinary(value.first, rb);
         DB::readBinary(value.second, rb);
+    }
+
+    void readText(DB::ReadBuffer & rb)
+    {
+        DB::readDoubleQuoted(value.first, rb);
+        DB::assertChar(',', rb);
+        DB::readDoubleQuoted(value.second, rb);
     }
 
     static bool constexpr need_to_notify_cell_during_move = false;

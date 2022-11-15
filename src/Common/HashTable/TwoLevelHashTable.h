@@ -292,11 +292,32 @@ public:
             impls[i].write(wb);
     }
 
+    void writeText(DB::WriteBuffer & wb) const
+    {
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        {
+            if (i != 0)
+                DB::writeChar(',', wb);
+            impls[i].writeText(wb);
+        }
+    }
+
     void read(DB::ReadBuffer & rb)
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
     }
+
+    void readText(DB::ReadBuffer & rb)
+    {
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+        {
+            if (i != 0)
+                DB::assertChar(',', rb);
+            impls[i].readText(rb);
+        }
+    }
+
 
     size_t size() const
     {

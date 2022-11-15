@@ -259,6 +259,29 @@ TEST(HashTable, Erase)
 TEST(HashTable, SerializationDeserialization)
 {
     {
+        /// Use dummy hash to make it reproducible if default hash implementation will be changed
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<1>>;
+
+        Cont cont;
+
+        cont.insert(1);
+        cont.insert(2);
+        cont.insert(3);
+
+        WriteBufferFromOwnString wb;
+        cont.writeText(wb);
+
+        std::string expected = "3,1,2,3";
+
+        ASSERT_EQ(wb.str(), expected);
+
+        ReadBufferFromString rb(expected);
+
+        Cont deserialized;
+        deserialized.readText(rb);
+        ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
+    }
+    {
         using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
         Cont cont;
@@ -274,6 +297,22 @@ TEST(HashTable, SerializationDeserialization)
 
         Cont deserialized;
         deserialized.read(rb);
+        ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
+    }
+    {
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<1>>;
+        Cont cont;
+
+        WriteBufferFromOwnString wb;
+        cont.writeText(wb);
+
+        std::string expected = "0";
+        ASSERT_EQ(wb.str(), expected);
+
+        ReadBufferFromString rb(expected);
+
+        Cont deserialized;
+        deserialized.readText(rb);
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
