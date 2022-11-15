@@ -108,7 +108,6 @@ void ArrayJoinAction::execute(Block & block)
         for (const auto & name : columns)
         {
             auto & src_col = block.getByName(name);
-            std::cout << src_col.dumpStructure() << std::endl;
 
             ColumnWithTypeAndName array_col;
             array_col.name = name;
@@ -121,9 +120,6 @@ void ArrayJoinAction::execute(Block & block)
             ColumnsWithTypeAndName tmp_block2{column_of_max_length, {len_col, uint64, {}}};
             column_of_max_length.column = function_greatest->build(tmp_block2)->execute(tmp_block2, uint64, rows);
         }
-
-        for (size_t i=0; i < column_of_max_length.column->size(); ++i)
-            std::cout << "row:" << i << ",max_length:" << column_of_max_length.column->get64(i) << std::endl;
 
         for (const auto & name : columns)
         {
