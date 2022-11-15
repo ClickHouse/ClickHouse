@@ -26,9 +26,11 @@ namespace DB
  * \x05 binary, \x02 old binary subtype        | String/FixedString
  * \x05 binary, \x03 old uuid subtype          | UUID
  * \x05 binary, \x04 uuid subtype              | UUID
+ * \x07 ObjectId                               | String
  * \x08 boolean                                | Bool
  * \x09 datetime                               | DateTime64
  * \x0A null value                             | NULL
+ * \x0D JavaScript code                        | String
  * \x0E symbol                                 | String/FixedString
  * \x10 int32                                  | Int32/Decimal32
  * \x12 int64                                  | Int64/Decimal64/DateTime64

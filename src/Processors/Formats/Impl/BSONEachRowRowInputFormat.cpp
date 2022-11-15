@@ -262,7 +262,7 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
 template <bool is_fixed_string>
 static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson_type)
 {
-    if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL)
+    if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL || bson_type == BSONType::JAVA_SCRIPT_CODE)
     {
         auto size = readBSONSize(in);
         readAndInsertStringImpl<is_fixed_string>(in, column, size - 1);
@@ -279,6 +279,10 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot insert BSON Binary subtype {} into String column",
                 getBSONBinarySubtypeName(subtype));
+    }
+    else if (bson_type == BSONType::OBJECT_ID)
+    {
+        readAndInsertStringImpl<is_fixed_string>(in, column, 12);
     }
     else
     {
@@ -791,6 +795,8 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             return makeNullable(std::make_shared<DataTypeInt32>());
         }
         case BSONType::SYMBOL: [[fallthrough]];
+        case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
+        case BSONType::OBJECT_ID: [[fallthrough]];
         case BSONType::STRING:
         {
             BSONSizeT size;
@@ -925,6 +931,13 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+        if (min_bytes != 0 && document_size > 10 * min_bytes)
+            throw ParsingException(
+                ErrorCodes::INCORRECT_DATA,
+                "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
+                "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
+                min_bytes, document_size);
+
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
         memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
