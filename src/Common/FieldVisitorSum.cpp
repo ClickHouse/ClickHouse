@@ -24,7 +24,7 @@ bool FieldVisitorSum::operator() (Float64 & x) const { x += rhs.get<Float64>(); 
 bool FieldVisitorSum::operator() (Null &) const
 {
     /// Do not add anything
-    return rhs != 0;
+    return false;
 }
 
 bool FieldVisitorSum::operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
