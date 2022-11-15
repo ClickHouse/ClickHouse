@@ -137,7 +137,6 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 
     if (uncompressed_size == 0)
         return;
-    
     UInt8 bytes_size = source[0];
 
     if (bytes_size == 0)
