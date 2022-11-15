@@ -3,13 +3,11 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
 sidebar_position: 40
 sidebar_label: Configuring a Dictionary
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Configuring a Dictionary
 
-:::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries,  and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
-:::
+<CloudDetails />
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 

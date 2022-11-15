@@ -3,6 +3,7 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-l
 sidebar_position: 42
 sidebar_label: Dictionary Updates
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Dictionary Updates 
 
@@ -12,10 +13,7 @@ Dictionary updates (other than loading for first use) do not block queries. Duri
 
 Example of settings:
 
-:::tip
-If you are using a DICTIONARY with ClickHouse Cloud please use the DDL query option to create your dictionaries,  and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/docs/en/whats-new/cloud-capabilities.md).
-:::
+<CloudDetails />
 
 ``` xml
 <dictionary>
