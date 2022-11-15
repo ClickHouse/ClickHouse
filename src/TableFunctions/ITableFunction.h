@@ -4,6 +4,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
+#include <Common/Documentation.h>
 
 #include <memory>
 #include <string>
@@ -54,14 +55,16 @@ public:
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
 
     /// Check if table function needs a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// It's used for schema inference.
     virtual bool needStructureHint() const { return false; }
 
     /// Set a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// This hint could be used not to repeat schema in function arguments.
     virtual void setStructureHint(const ColumnsDescription &) {}
+
+    virtual bool supportsReadingSubsetOfColumns() { return true; }
 
     /// Create storage according to the query.
     StoragePtr
@@ -78,6 +81,14 @@ private:
 
     virtual const char * getStorageTypeName() const = 0;
 };
+
+/// Properties of table function that are independent of argument types and parameters.
+struct TableFunctionProperties
+{
+    Documentation documentation;
+    bool allow_readonly = false;
+};
+
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 
