@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Set
+from typing import Dict, Set, Union
 
 from unidiff import PatchSet  # type: ignore
 
@@ -16,6 +16,7 @@ from env_helper import (
 
 FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
+NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
