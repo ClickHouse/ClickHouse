@@ -524,7 +524,7 @@ public:
                 {
                     capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(rhs_size));
                     /// It might happen if the size was too big and the rounded value does not fit a size_t
-                    if (unlikely(capacity <= rhs_size))
+                    if (unlikely(capacity < rhs_size))
                         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", rhs_size);
 
                     /// Don't free large_data here.
