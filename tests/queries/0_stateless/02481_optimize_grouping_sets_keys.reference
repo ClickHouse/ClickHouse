@@ -1,0 +1,209 @@
+QUERY id: 0, group_by_type: grouping_sets
+  PROJECTION COLUMNS
+    k Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+            FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 8, nodes: 1
+                  COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE_FUNCTION id: 10, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_10000000, constant_value_type: UInt32
+  GROUP BY
+    LIST id: 13, nodes: 3
+      LIST id: 14, nodes: 1
+        FUNCTION id: 15, function_name: multiply, function_type: ordinary, result_type: UInt16
+          ARGUMENTS
+            LIST id: 16, nodes: 2
+              FUNCTION id: 17, function_name: modulo, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 18, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+                    CONSTANT id: 19, constant_value: UInt64_2, constant_value_type: UInt8
+              FUNCTION id: 20, function_name: modulo, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 21, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+                    CONSTANT id: 22, constant_value: UInt64_3, constant_value_type: UInt8
+      LIST id: 23, nodes: 1
+        FUNCTION id: 24, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 25, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 26, constant_value: UInt64_3, constant_value_type: UInt8
+      LIST id: 27, nodes: 1
+        FUNCTION id: 28, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 29, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 30, constant_value: UInt64_2, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 31, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 32, nodes: 2
+          FUNCTION id: 33, function_name: multiply, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 34, nodes: 2
+                FUNCTION id: 35, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+                  ARGUMENTS
+                    LIST id: 36, nodes: 1
+                      CONSTANT id: 37, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 38, function_name: avg, function_type: aggregate, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 39, nodes: 1
+                      COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+          CONSTANT id: 40, constant_value: Float64_3465735.3, constant_value_type: Float64
+  ORDER BY
+    LIST id: 41, nodes: 1
+      SORT id: 42, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+QUERY id: 0, group_by_type: grouping_sets
+  PROJECTION COLUMNS
+    k Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+            FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 8, nodes: 1
+                  COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE_FUNCTION id: 10, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_10000000, constant_value_type: UInt32
+  GROUP BY
+    LIST id: 13, nodes: 2
+      LIST id: 14, nodes: 2
+        FUNCTION id: 15, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 16, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 17, constant_value: UInt64_3, constant_value_type: UInt8
+        FUNCTION id: 18, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 19, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 20, constant_value: UInt64_2, constant_value_type: UInt8
+      LIST id: 21, nodes: 1
+        FUNCTION id: 22, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 23, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 24, constant_value: UInt64_4, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 25, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 26, nodes: 2
+          FUNCTION id: 27, function_name: multiply, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 28, nodes: 2
+                FUNCTION id: 29, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+                  ARGUMENTS
+                    LIST id: 30, nodes: 1
+                      CONSTANT id: 31, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 32, function_name: avg, function_type: aggregate, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 33, nodes: 1
+                      COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+          CONSTANT id: 34, constant_value: Float64_3465735.3, constant_value_type: Float64
+  ORDER BY
+    LIST id: 35, nodes: 1
+      SORT id: 36, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+QUERY id: 0, group_by_type: grouping_sets
+  PROJECTION COLUMNS
+    k Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
+            FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+              ARGUMENTS
+                LIST id: 8, nodes: 1
+                  COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+  JOIN TREE
+    TABLE_FUNCTION id: 10, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 11, nodes: 1
+          CONSTANT id: 12, constant_value: UInt64_10000000, constant_value_type: UInt32
+  GROUP BY
+    LIST id: 13, nodes: 2
+      LIST id: 14, nodes: 2
+        FUNCTION id: 15, function_name: multiply, function_type: ordinary, result_type: UInt16
+          ARGUMENTS
+            LIST id: 16, nodes: 2
+              FUNCTION id: 17, function_name: modulo, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 18, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+                    CONSTANT id: 19, constant_value: UInt64_2, constant_value_type: UInt8
+              FUNCTION id: 20, function_name: modulo, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 21, nodes: 2
+                    COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+                    CONSTANT id: 22, constant_value: UInt64_3, constant_value_type: UInt8
+        FUNCTION id: 23, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 24, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
+      LIST id: 26, nodes: 1
+        FUNCTION id: 27, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 28, nodes: 2
+              COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+              CONSTANT id: 29, constant_value: UInt64_2, constant_value_type: UInt8
+  HAVING
+    FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 31, nodes: 2
+          FUNCTION id: 32, function_name: multiply, function_type: ordinary, result_type: Float64
+            ARGUMENTS
+              LIST id: 33, nodes: 2
+                FUNCTION id: 34, function_name: log, function_type: ordinary, result_type: Float64, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
+                  ARGUMENTS
+                    LIST id: 35, nodes: 1
+                      CONSTANT id: 36, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 37, function_name: avg, function_type: aggregate, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 38, nodes: 1
+                      COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
+          CONSTANT id: 39, constant_value: Float64_3465735.3, constant_value_type: Float64
+  ORDER BY
+    LIST id: 40, nodes: 1
+      SORT id: 41, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          FUNCTION id: 7, function_name: avg, function_type: aggregate, result_type: Float64
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
