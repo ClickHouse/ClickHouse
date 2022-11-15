@@ -2070,10 +2070,10 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper " + str(ex))
+                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait ZooKeeper container")
+        raise Exception("Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)")
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:
