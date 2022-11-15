@@ -71,6 +71,8 @@ protected:
     std::optional<Chunk> tryGenerate() final;
     std::optional<Chunk> read();
 
+    int schedule() override;
+
     /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
     /// Creates new readers for a task it is needed. These methods are separate, because
@@ -160,16 +162,8 @@ protected:
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
-    struct AsyncReadingState
-    {
-        std::optional<Chunk> chunk;
-        std::exception_ptr exception;
-        EventFD event;
-        std::atomic_bool is_done = false;
-    };
-
-    std::shared_ptr<AsyncReadingState> async_reading_state;
-    bool is_async_reading_state = false;
+    struct AsyncReadingState;
+    std::unique_ptr<AsyncReadingState> async_reading_state;
 
     enum class Status
     {

@@ -96,7 +96,16 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 void PollingQueue::finish()
 {
     is_finished = true;
- 
+
+    uint64_t buf = 0;
+    while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
+    {
+        if (errno == EAGAIN)
+            break;
+
+        if (errno != EINTR)
+            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+    }
 }
 
 }
