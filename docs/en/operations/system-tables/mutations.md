@@ -15,7 +15,7 @@ Columns:
 
 -   `command` ([String](/docs/en/sql-reference/data-types/string.md)) — The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
--   `create_time` ([Datetime](/docs/en/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was submitted for execution.
+-   `create_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) —  Date and time when the mutation command was submitted for execution.
 
 -   `block_numbers.partition_id` ([Array](/docs/en/sql-reference/data-types/array.md)([String](/docs/en/sql-reference/data-types/string.md))) — For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty.
 
@@ -39,7 +39,7 @@ If there were problems with mutating some data parts, the following columns cont
 
 -   `latest_failed_part` ([String](/docs/en/sql-reference/data-types/string.md)) — The name of the most recent part that could not be mutated.
 
--   `latest_fail_time` ([Datetime](/docs/en/sql-reference/data-types/datetime.md)) — The date and time of the most recent part mutation failure.
+-   `latest_fail_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) — The date and time of the most recent part mutation failure.
 
 -   `latest_fail_reason` ([String](/docs/en/sql-reference/data-types/string.md)) — The exception message that caused the most recent part mutation failure.
 
