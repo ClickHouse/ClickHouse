@@ -15,7 +15,7 @@ namespace
 {
     constexpr const std::pair<size_t, size_t> npos{static_cast<size_t>(-1), static_cast<size_t>(-1)};
 
-    bool tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, String * res, bool allow_literal, bool allow_identifier)
+    bool tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, String * res, bool allow_identifier = true)
     {
         if (!function.arguments)
             return false;
@@ -29,16 +29,13 @@ namespace
             return false;
 
         ASTPtr argument = arguments[arg_idx];
-        if (allow_literal)
+        if (const auto * literal = argument->as<ASTLiteral>())
         {
-            if (const auto * literal = argument->as<ASTLiteral>())
-            {
-                if (literal->value.getType() != Field::Types::String)
-                    return false;
-                if (res)
-                    *res = literal->value.safeGet<String>();
-                return true;
-            }
+            if (literal->value.getType() != Field::Types::String)
+                return false;
+            if (res)
+                *res = literal->value.safeGet<String>();
+            return true;
         }
 
         if (allow_identifier)
@@ -86,7 +83,7 @@ namespace
             /// We need to distinguish that from s3('url', 'format', 'structure' [, 'compression_method']).
             /// So we will check whether the argument after 'url' is a format.
             String format;
-            if (!tryGetStringFromArgument(function, url_arg_idx + 1, &format, /* allow_literal= */ true, /* allow_identifier= */ false))
+            if (!tryGetStringFromArgument(function, url_arg_idx + 1, &format, /* allow_identifier= */ false))
             {
                 /// We couldn't evaluate the argument after 'url' so we don't know whether it is a format or `aws_access_key_id`.
                 /// So it's safer to wipe the next argument just in case.
@@ -100,6 +97,40 @@ namespace
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...) -> s3('url', 'aws_access_key_id', '[HIDDEN]', ...)
             return {url_arg_idx + 2, url_arg_idx + 3};
         }
+    }
+
+
+    /// Tries to get either a database name or a qualified table name from an argument.
+    /// Empty string is also allowed (it means the default database).
+    /// The function is used by findRemoteFunctionSecretArguments() to determine how many arguments to skip before a password.
+    bool tryGetDatabaseNameOrQualifiedTableName(
+        const ASTFunction & function,
+        size_t arg_idx,
+        std::optional<String> & res_database,
+        std::optional<QualifiedTableName> & res_qualified_table_name)
+    {
+        res_database.reset();
+        res_qualified_table_name.reset();
+
+        String str;
+        if (!tryGetStringFromArgument(function, arg_idx, &str, /* allow_identifier= */ true))
+            return false;
+
+        if (str.empty())
+        {
+            res_database = "";
+            return true;
+        }
+
+        auto qualified_table_name = QualifiedTableName::tryParseFromString(str);
+        if (!qualified_table_name)
+            return false;
+
+        if (qualified_table_name->database.empty())
+            res_database = std::move(qualified_table_name->table);
+        else
+            res_qualified_table_name = std::move(qualified_table_name);
+        return true;
     }
 
 
@@ -131,8 +162,9 @@ namespace
         }
         else
         {
-            String database;
-            if (!tryGetStringFromArgument(function, arg_num, &database, /* allow_literal= */ true, /* allow_identifier= */ true))
+            std::optional<String> database;
+            std::optional<QualifiedTableName> qualified_table_name;
+            if (!tryGetDatabaseNameOrQualifiedTableName(function, arg_num, database, qualified_table_name))
             {
                 /// We couldn't evaluate the argument so we don't know whether it is 'db.table' or just 'db'.
                 /// Hence we can't figure out whether we should skip one argument 'user' or two arguments 'table', 'user'
@@ -140,12 +172,12 @@ namespace
                 /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
                 /// before wiping it (because the `password` argument is always a literal string).
                 auto res = npos;
-                if (tryGetStringFromArgument(function, arg_num + 2, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false))
+                if (tryGetStringFromArgument(function, arg_num + 2, nullptr, /* allow_identifier= */ false))
                 {
                     /// Wipe either `password` or `user`.
                     res = {arg_num + 2, arg_num + 3};
                 }
-                if (tryGetStringFromArgument(function, arg_num + 3, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false))
+                if (tryGetStringFromArgument(function, arg_num + 3, nullptr, /* allow_identifier= */ false))
                 {
                     /// Wipe either `password` or `sharding_key`.
                     if (res == npos)
@@ -155,10 +187,13 @@ namespace
                 return res;
             }
 
+            /// Skip the current argument (which is either a database name or a qualified table name).
             ++arg_num;
-            auto qualified_name = QualifiedTableName::parseFromString(database);
-            if (qualified_name.database.empty())
-                ++arg_num; /// skip 'table' argument
+            if (database)
+            {
+                /// Skip the 'table' argument if the previous argument was a database name.
+                ++arg_num;
+            }
         }
 
         /// Skip username.
@@ -168,7 +203,7 @@ namespace
         /// remote('addresses_expr', db.table, 'user', 'password', ...) -> remote('addresses_expr', db.table, 'user', '[HIDDEN]', ...)
         /// The last argument can be also a `sharding_key`, so we need to check that argument is a literal string
         /// before wiping it (because the `password` argument is always a literal string).
-        bool can_be_password = tryGetStringFromArgument(function, arg_num, nullptr, /* allow_literal= */ true, /* allow_identifier= */ false);
+        bool can_be_password = tryGetStringFromArgument(function, arg_num, nullptr, /* allow_identifier= */ false);
         if (can_be_password)
             return {arg_num, arg_num + 1};
 
