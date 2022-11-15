@@ -1,10 +1,10 @@
 #pragma once
 
-//#include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include "DataTypes/Serializations/SerializationInfo.h"
+#include <base/TypeName.h>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ public:
         assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 
         if (whole && !istr.eof())
-            throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv");
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
     }
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
