@@ -46,7 +46,7 @@ public:
     }
 };
 
-class DeduplicateOrderByVisitor : public InDepthQueryTreeVisitor<DeduplicateOrderByVisitor>
+class RemoveRedundantOrderByClausesVisitor : public InDepthQueryTreeVisitor<RemoveRedundantOrderByClausesVisitor>
 {
     bool try_drop_order_by_in_subquery = false;
     bool an_upper_query_break_order = false;
@@ -106,9 +106,9 @@ public:
 
 }
 
-void DuplicateOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void RemoveRedundantOrderByClausesPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    DeduplicateOrderByVisitor visitor;
+    RemoveRedundantOrderByClausesVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

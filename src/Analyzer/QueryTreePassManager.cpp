@@ -196,7 +196,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
         manager.addPass(std::make_unique<FuseFunctionsPass>());
 
     if (settings.optimize_duplicate_order_by_and_distinct)
-        manager.addPass(std::make_unique<DuplicateOrderByPass>());
+        manager.addPass(std::make_unique<RemoveRedundantOrderByClausesPass>());
 }
 
 }

@@ -12,12 +12,12 @@ namespace DB
   *
   * See more examples in tests - 02479_duplicate_order_by.sql
   */
-class DuplicateOrderByPass final : public IQueryTreePass
+class RemoveRedundantOrderByClausesPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "DeduplicateOrderBy"; }
+    String getName() override { return "RemoveRedundantOrderByClausesPass"; }
 
-    String getDescription() override { return "Optimize query with ORDER BY duplicates"; }
+    String getDescription() override { return "Removes redundant ORDER BY clauses."; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 };
