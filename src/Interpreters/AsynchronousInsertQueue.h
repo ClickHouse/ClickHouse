@@ -120,10 +120,6 @@ private:
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
-    /// @param timeout - time to wait
-    /// @return true if shutdown requested
-    bool waitForShutdown(const Milliseconds & timeout);
-
 public:
     auto getQueueLocked(size_t shard_num) const
     {

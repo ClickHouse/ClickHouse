@@ -14,8 +14,7 @@ CREATE TABLE system.asynchronous_inserts
     `first_update` DateTime64(6),
     `total_bytes` UInt64,
     `entries.query_id` Array(String),
-    `entries.bytes` Array(UInt64),
-    `entries.finished` Array(UInt8)
+    `entries.bytes` Array(UInt64)
 )
 ENGINE = SystemAsynchronousInserts
 COMMENT 'SYSTEM TABLE is built on the fly.'
