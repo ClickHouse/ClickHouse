@@ -164,7 +164,7 @@ namespace
                 /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
                 wipePasswordFromArgument(*storage.engine, data, 4);
             }
-            else if (engine_name == "S3" || engine_name == "COSN")
+            else if (engine_name == "S3" || engine_name == "COSN" || engine_name == "OSS")
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 wipePasswordFromS3TableEngineArguments(*storage.engine, data);
@@ -222,7 +222,7 @@ namespace
                 /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
                 wipePasswordFromArgument(function, data, 4);
             }
-            else if (function.name == "s3" || function.name == "cosn")
+            else if (function.name == "s3" || function.name == "cosn" || function.name == "oss")
             {
                 /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
                 wipePasswordFromS3FunctionArguments(function, data, /* is_cluster_function= */ false);
