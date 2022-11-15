@@ -65,6 +65,19 @@ class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<Optimi
         return true;
     }
 
+    static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
+    {
+        QueryTreeNodes new_group_by_keys;
+        new_group_by_keys.reserve(grouping_set.size());
+        for (auto & group_by_elem : grouping_set)
+        {
+            if (!canBeEliminated(group_by_elem, grouping_set))
+                new_group_by_keys.push_back(group_by_elem);
+        }
+
+        grouping_set = std::move(new_group_by_keys);
+    }
+
 public:
     static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
     {
@@ -81,16 +94,16 @@ public:
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
-
-        QueryTreeNodes new_group_by_keys;
-        new_group_by_keys.reserve(group_by.size());
-        for (auto & group_by_elem : group_by)
+        if (query->isGroupByWithGroupingSets())
         {
-            if (!canBeEliminated(group_by_elem, group_by))
-                new_group_by_keys.push_back(group_by_elem);
+            for (auto & set : group_by)
+            {
+                auto & grouping_set = set->as<ListNode>()->getNodes();
+                optimizeGroupingSet(grouping_set);
+            }
         }
-
-        group_by = std::move(new_group_by_keys);
+        else
+            optimizeGroupingSet(group_by);
     }
 };
 
