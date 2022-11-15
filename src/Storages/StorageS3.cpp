@@ -1318,6 +1318,11 @@ void registerStorageCOS(StorageFactory & factory)
     return registerStorageS3Impl("COSN", factory);
 }
 
+void registerStorageOSS(StorageFactory & factory)
+{
+    return registerStorageS3Impl("OSS", factory);
+}
+
 NamesAndTypesList StorageS3::getVirtuals() const
 {
     return virtual_columns;
