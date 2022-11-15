@@ -9,7 +9,7 @@ import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dict
 
 <CloudDetails />
 
-You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a DDL query, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 
 ClickHouse:
 
@@ -29,7 +29,11 @@ The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tabl
 
 ## Creating a dictionary with a DDL query
 
-Dictionaries can be created with [DDL queries](../../../sql-reference/statements/create/dictionary.md).  This does not require any additional records in a server configuration file. This allows dictionaries to be worked with as first-class entities, like tables or views.
+Dictionaries can be created with [DDL queries](../../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
+- No additional records are added to server configuration files
+- The dictionaries can be worked with as first-class entities, like tables or views
+- Data can be read directly, using familiar SELECT rather than dictionary table functions
+- The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file
 

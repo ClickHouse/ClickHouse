@@ -130,4 +130,4 @@ Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionari
 **See Also**
 
 - For more information, see the [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) section.
-- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
