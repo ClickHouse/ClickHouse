@@ -47,7 +47,7 @@ void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, con
     }
 
     char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
-    istr.read(buffer, sizeof(buffer) - 1);
+    [[maybe_unused]] size_t read_bytes = istr.read(buffer, sizeof(buffer) - 1);
     UInt32 ipv4_value = 0;
 
     bool parse_result = parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value));
@@ -90,7 +90,7 @@ void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, con
     }
 
     char buffer[IPV6_MAX_TEXT_LENGTH + 1] = {'\0'};
-    istr.read(buffer, sizeof(buffer) - 1);
+    [[maybe_unused]] size_t read_bytes = istr.read(buffer, sizeof(buffer) - 1);
 
     std::string ipv6_value(IPV6_BINARY_LENGTH, '\0');
 
