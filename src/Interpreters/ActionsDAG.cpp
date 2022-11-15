@@ -467,7 +467,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             const auto * array = getArrayJoinColumn(key.column, true);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                                "ARRAY JOIN of not array: {}", node->result_name);
+                                "ARRAY JOIN of not array nor map: {}", node->result_name);
             res_column.column = array->getDataPtr()->cloneEmpty();
             break;
         }
