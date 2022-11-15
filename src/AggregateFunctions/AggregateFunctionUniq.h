@@ -42,17 +42,22 @@ struct AggregateFunctionUniqUniquesHashSetData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniq"; }
 };
 
 /// For a function that takes multiple arguments. Such a function pre-hashes them in advance, so TrivialHash is used here.
+template <bool is_exact_, bool argument_is_tuple_>
 struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 {
     using Set = UniquesHashSet<TrivialHash>;
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = true;
+    constexpr static bool is_exact = is_exact_;
+    constexpr static bool argument_is_tuple = argument_is_tuple_;
 
     static String getName() { return "uniq"; }
 };
@@ -60,45 +65,52 @@ struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 
 /// uniqHLL12
 
-template <typename T, bool dummy = false>
+template <typename T, bool is_able_to_parallelize_merge_>
 struct AggregateFunctionUniqHLL12Data
 {
     using Set = HyperLogLogWithSmallSetOptimization<T, 16, 12>;
     Set set;
 
-    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
 };
 
 template <>
-struct AggregateFunctionUniqHLL12Data<String>
+struct AggregateFunctionUniqHLL12Data<String, false>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
 };
 
 template <>
-struct AggregateFunctionUniqHLL12Data<UUID>
+struct AggregateFunctionUniqHLL12Data<UUID, false>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
 };
 
+template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_merge_>
 struct AggregateFunctionUniqHLL12DataForVariadic
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12, TrivialHash>;
     Set set;
 
-    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = true;
+    constexpr static bool is_exact = is_exact_;
+    constexpr static bool argument_is_tuple = argument_is_tuple_;
 
     static String getName() { return "uniqHLL12"; }
 };
@@ -119,6 +131,7 @@ struct AggregateFunctionUniqExactData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqExact"; }
 };
@@ -137,10 +150,19 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqExact"; }
 };
 
+template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_merge_>
+struct AggregateFunctionUniqExactDataForVariadic : AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
+{
+    constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
+    constexpr static bool is_variadic = true;
+    constexpr static bool is_exact = is_exact_;
+    constexpr static bool argument_is_tuple = argument_is_tuple_;
+};
 
 /// uniqTheta
 #if USE_DATASKETCHES
@@ -151,8 +173,18 @@ struct AggregateFunctionUniqThetaData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqTheta"; }
+};
+
+template <bool is_exact_, bool argument_is_tuple_>
+struct AggregateFunctionUniqThetaDataForVariadic : AggregateFunctionUniqThetaData
+{
+    constexpr static bool is_able_to_parallelize_merge = false;
+    constexpr static bool is_variadic = true;
+    constexpr static bool is_exact = is_exact_;
+    constexpr static bool argument_is_tuple = argument_is_tuple_;
 };
 
 #endif
@@ -194,7 +226,7 @@ template <typename T> struct AggregateFunctionUniqTraits
 /** The structure for the delegation work to add elements to the `uniq` aggregate functions.
   * Used for partial specialization to add strings.
   */
-template <typename T, typename Data, bool is_variadic = false, bool is_exact = false, bool argument_is_tuple = false>
+template <typename T, typename Data>
 struct Adder
 {
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
@@ -202,13 +234,13 @@ struct Adder
     template <bool use_single_level_hash_table = true>
     static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
     {
-        if constexpr (is_variadic)
+        if constexpr (Data::is_variadic)
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
                 data.set.template insert<T, use_single_level_hash_table>(
-                    UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
+                    UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
             else
-                data.set.insert(T{UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)});
+                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
         }
         else if constexpr (
             std::is_same_v<
@@ -417,20 +449,20 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
-template <typename Data, bool is_exact, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>
+template <typename Data>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>
 {
 private:
     using T = typename Data::Set::value_type;
 
-    static constexpr size_t is_variadic = true;
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
+    static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
+
     size_t num_args = 0;
 
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>(arguments, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -449,7 +481,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(this->data(place), columns, num_args, row_num);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
     void addBatchSinglePlace(
@@ -460,8 +492,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
-            this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -477,8 +508,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, Data, is_variadic, is_exact, argument_is_tuple>::add(
-            this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+        detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
