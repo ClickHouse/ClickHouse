@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/DuplicateOrderByPass.h>
+#include <Analyzer/Passes/RemoveRedundantOrderByPass.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>

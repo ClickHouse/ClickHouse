@@ -14,7 +14,7 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
-#include <Analyzer/Passes/DuplicateOrderByPass.h>
+#include <Analyzer/Passes/RemoveRedundantOrderByPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

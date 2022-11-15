@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Remove ORDER BY duplicate
+/** Remove redundant ORDER BY clauses
   *
   * Example: SELECT * FROM (SELECT * FROM t ORDER BY a) ORDER BY a
   * Result: SELECT * FROM (SELECT * FROM t) ORDER BY a
