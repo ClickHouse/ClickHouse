@@ -8,11 +8,18 @@ from time import sleep
 from typing import List, Optional, Tuple
 
 import github
-from github.GithubException import RateLimitExceededException
-from github.Issue import Issue
-from github.NamedUser import NamedUser
-from github.PullRequest import PullRequest
-from github.Repository import Repository
+
+# explicit reimport
+# pylint: disable=useless-import-alias
+from github.GithubException import (
+    RateLimitExceededException as RateLimitExceededException,
+)
+from github.Issue import Issue as Issue
+from github.NamedUser import NamedUser as NamedUser
+from github.PullRequest import PullRequest as PullRequest
+from github.Repository import Repository as Repository
+
+# pylint: enable=useless-import-alias
 
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
