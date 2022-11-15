@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
 
-import clickhouse_driver
+import os
+import sys
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+CLICKHOUSE_URL = os.environ.get('CLICKHOUSE_URL')
+CLICKHOUSE_TMP = os.environ.get('CLICKHOUSE_TMP')
+from pure_http_client import ClickHouseClient
+
 from threading import *
 import random
 
+client = ClickHouseClient()
+
 def create():
-    client = clickhouse_driver.Client('localhost')
-    result = client.execute(f"""DROP DATABASE IF EXISTS deleteme""")
-    result = client.execute(f"""CREATE DATABASE deleteme""")
-    result = client.execute(f"""CREATE TABLE deleteme.target (number Int64) Engine=MergeTree ORDER BY number""")
-    result = client.execute(f"""CREATE TABLE deleteme.landing (number Int64, n String, n2 String) Engine=MergeTree ORDER BY number""")
+    result = client.query(f"""DROP DATABASE IF EXISTS deleteme""")
+    result = client.query(f"""CREATE DATABASE deleteme""")
+    result = client.query(f"""CREATE TABLE deleteme.target (number Int64) Engine=MergeTree ORDER BY number""")
+    result = client.query(f"""CREATE TABLE deleteme.landing (number Int64, n String, n2 String) Engine=MergeTree ORDER BY number""")
 
 
 def destroy():
-    client = clickhouse_driver.Client('localhost')
-    result = client.execute(f"""DROP DATABASE IF EXISTS deleteme""")
+    result = client.query(f"""DROP DATABASE IF EXISTS deleteme""")
 
 
 class Insert(Thread):
@@ -24,13 +33,12 @@ class Insert(Thread):
         super().__init__()
 
     def run(self):
-        client = clickhouse_driver.Client('localhost')
         i = 0
         offset = 500
 
         while i < self.number_inserts:
             try:
-                result = client.execute(f"""INSERT INTO deleteme.landing SELECT number, toString(number), toString(number) from system.numbers limit {i}, {offset}""")
+                result = client.query(f"""INSERT INTO deleteme.landing SELECT number, toString(number), toString(number) from system.numbers limit {i}, {offset}""")
                 i += random.randint(400,500)
 
                 if self.poison_pill.is_set():
@@ -52,17 +60,16 @@ class CreateAndDropMVs(Thread):
 
     def run(self):
         try:
-            client = clickhouse_driver.Client('localhost')
             while True:
                 drop="DROP TABLE IF EXISTS deleteme.mv"
-                result = client.execute(drop)
+                result = client.query(drop)
                 matview="CREATE MATERIALIZED VIEW IF NOT EXISTS deleteme.mv1 TO deleteme.target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2, c.number, c.n, c.n2 FROM deleteme.landing a CROSS JOIN deleteme.landing b CROSS JOIN deleteme.landing c)"
-                result = client.execute(matview)
+                result = client.query(matview)
 
                 drop="DROP TABLE IF EXISTS deleteme.mv1"
-                result = client.execute(drop)
+                result = client.query(drop)
                 matview="CREATE MATERIALIZED VIEW IF NOT EXISTS deleteme.mv TO deleteme.target AS select count() as number FROM (SELECT a.number, a.n, a.n2, b.number, b.n, b.n2, c.number, c.n, c.n2 FROM deleteme.landing a CROSS JOIN deleteme.landing b CROSS JOIN deleteme.landing c)"
-                result = client.execute(matview)
+                result = client.query(matview)
                 if self.poison_pill.is_set():
                     break
 
