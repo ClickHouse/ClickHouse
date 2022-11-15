@@ -895,7 +895,7 @@ inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 {
-    char s[40];
+    char s[40] {};
     size_t size = buf.read(s, sizeof(s));
 
     auto ret_false = [&]()
