@@ -349,7 +349,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;
 
             auto state_buf = nuraft::buffer::alloc(buffer_size);
-            read_buf.read(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+            read_buf.readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
 
             SipHash hash;
             hash.update(version);

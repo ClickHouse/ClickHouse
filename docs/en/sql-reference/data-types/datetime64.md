@@ -4,7 +4,7 @@ sidebar_position: 49
 sidebar_label: DateTime64
 ---
 
-# Datetime64
+# DateTime64
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
