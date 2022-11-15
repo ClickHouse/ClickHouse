@@ -16,25 +16,29 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_);
     ~AsynchronousInsertQueue();
 
     std::future<void> push(ASTPtr query, ContextPtr query_context);
-    void waitForProcessingQuery(const String & query_id, const Milliseconds & timeout);
+    size_t getPoolSize() const { return pool_size; }
 
 private:
 
     struct InsertQuery
     {
+    public:
         ASTPtr query;
+        String query_str;
         Settings settings;
+        UInt128 hash;
 
         InsertQuery(const ASTPtr & query_, const Settings & settings_);
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
-
         bool operator==(const InsertQuery & other) const;
-        struct Hash { UInt64 operator()(const InsertQuery & insert_query) const; };
+
+    private:
+        UInt128 calculateHash() const;
     };
 
     struct InsertData
@@ -57,16 +61,10 @@ private:
             std::atomic_bool finished = false;
         };
 
-        explicit InsertData(std::chrono::steady_clock::time_point now) : first_update(now) {}
-
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
-        size_t size = 0;
-
-        /// Timestamp of the first insert into queue, or after the last queue dump.
-        /// Used to detect for how long the queue is active, so we can dump it by timer.
-        std::chrono::time_point<std::chrono::steady_clock> first_update;
+        size_t size_in_bytes = 0;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -78,31 +76,43 @@ private:
     };
 
     /// Ordered container
+    /// Key is a timestamp of the first insert into batch.
+    /// Used to detect for how long the batch is active, so we can dump it by timer.
     using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
     using QueueIterator = Queue::iterator;
-    using QueueIteratorByKey = std::unordered_map<InsertQuery, QueueIterator, InsertQuery::Hash>;
+    using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
-    mutable std::mutex queue_mutex;
-    mutable std::condition_variable are_tasks_available;
+    struct QueueShard
+    {
+        mutable std::mutex mutex;
+        mutable std::condition_variable are_tasks_available;
 
-    Queue queue;
-    QueueIteratorByKey queue_iterators;
+        Queue queue;
+        QueueIteratorByKey iterators;
+    };
+
+    const size_t pool_size;
+    std::vector<QueueShard> queue_shards;
 
     /// Logic and events behind queue are as follows:
-    ///  - busy_timeout:   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
-    ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
+    ///  - async_insert_busy_timeout_ms:
+    ///   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
+    ///   grow for a long period of time and users will be able to select new data in deterministic manner.
     ///
     /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached
     /// (async_insert_max_data_size setting). If so, then again we dump the data.
 
     std::atomic<bool> shutdown{false};
 
-    ThreadPool pool;  /// dump the data only inside this pool.
-    ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
+    /// Dump the data only inside this pool.
+    ThreadPool pool;
+
+    /// Uses async_insert_busy_timeout_ms and busyCheck().
+    std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
-    void busyCheck();
+    void busyCheck(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
@@ -115,10 +125,11 @@ private:
     bool waitForShutdown(const Milliseconds & timeout);
 
 public:
-    auto getQueueLocked() const
+    auto getQueueLocked(size_t shard_num) const
     {
-        std::unique_lock lock(queue_mutex);
-        return std::make_pair(std::ref(queue), std::move(lock));
+        auto & shard = queue_shards[shard_num];
+        std::unique_lock lock(shard.mutex);
+        return std::make_pair(std::ref(shard.queue), std::move(lock));
     }
 };
 
