@@ -44,17 +44,6 @@ d3	1	0
 d4	3	0
 d5	1	0
 d6	2	1
-=== Replicated case ===
-== Replica 1 ==
-d1	2	1
-d2	1	0
-d3	2	1
-d4	1	0
-== Replica 2 ==
-d1	2	1
-d2	1	0
-d3	2	1
-d4	1	0
 == OPTIMIZE on replicas ==
 == Replica 1 ==
 d2	1	0

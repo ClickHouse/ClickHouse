@@ -52,8 +52,6 @@ OPTIMIZE TABLE test FINAL;
 -- d6 has NOT to be removed since we set clean_deleted_rows as 'Never'
 select * from test;
 
-SELECT '=== Replicated case ===';
-
 DROP TABLE IF EXISTS testReplica1;
 DROP TABLE IF EXISTS testReplica2;
 
@@ -72,11 +70,6 @@ SYSTEM SYNC REPLICA testReplica2;
 
 INSERT INTO testReplica1 (*) VALUES ('d3', 2, 1);
 INSERT INTO testReplica1 (*) VALUES ('d1', 2, 1);
-
-SELECT '== Replica 1 ==';
-SELECT * FROM testReplica1 FINAL;
-SELECT '== Replica 2 ==';
-SELECT * FROM testReplica2 FINAL;
 
 SELECT '== OPTIMIZE on replicas ==';
 OPTIMIZE TABLE testReplica2 FINAL;
