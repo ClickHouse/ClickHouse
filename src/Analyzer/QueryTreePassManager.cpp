@@ -14,6 +14,7 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -71,7 +72,6 @@ public:
   * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
-  * TODO: Support GROUP BY functions of other keys elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
@@ -179,6 +179,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_injective_functions_inside_uniq)
         manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
+
+    if (settings.optimize_group_by_function_keys)
+        manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
 
     if (settings.optimize_multiif_to_if)
         manager.addPass(std::make_unique<MultiIfToIfPass>());
