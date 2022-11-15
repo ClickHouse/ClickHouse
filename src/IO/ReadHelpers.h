@@ -840,46 +840,18 @@ inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 {
-    char s[16];
-    size_t size = buf.read(s, sizeof(s));
+    const char * end = parseIPv4(buf.position(), buf.position() + buf.available(), reinterpret_cast<unsigned char *>(&ip.toUnderType()));
 
-    auto ret_false = [&]()
+    if (end)
     {
-        if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(std::string("Cannot parse IPv4 ") + s, ErrorCodes::CANNOT_PARSE_IPV4);
-        else
-            return ReturnType(false);
-    };
-
-    if (size < 7 || size > 15)
-        return ret_false();
-
-    int byte = 0;
-    int byte_n = 0;
-    for (size_t i = 0, n = 0; i <= size; ++i, ++n)
-    {
-        if (i == size || s[i] == '.')
-        {
-            if (i == size && byte_n < 3)
-                return ret_false();
-            if (i != size && byte_n == 3)
-                return ret_false();
-            if (n == 0 || byte > 255)
-                return ret_false();
-
-            (ip <<= 8) |= byte;
-            n = 0;
-            byte = 0;
-            ++byte_n;
-            continue;
-        }
-
-        if (n >= 3 || s[i] < '0' || s[i] > '9')
-            return ret_false();
-        (byte *= 10) += s[i] - '0';
+        buf.position() += end - buf.position();
+        return ReturnType(true);
     }
 
-    return ReturnType(true);
+    if constexpr (std::is_same_v<ReturnType, void>)
+        throw ParsingException(std::string("Cannot parse IPv4 ").append(buf.position(), buf.available()), ErrorCodes::CANNOT_PARSE_IPV4);
+    else
+        return ReturnType(false);
 }
 
 inline void readIPv4Text(IPv4 & ip, ReadBuffer & buf)
@@ -895,24 +867,18 @@ inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 {
-    char s[40] {};
-    size_t size = buf.read(s, sizeof(s));
+    const char * end = parseIPv6(buf.position(), buf.position() + buf.available(), reinterpret_cast<unsigned char *>(ip.toUnderType().items));
 
-    auto ret_false = [&]()
+    if (end)
     {
-        if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(std::string("Cannot parse IPv6 ") + s, ErrorCodes::CANNOT_PARSE_IPV6);
-        else
-            return ReturnType(false);
-    };
-
-    if (size < 2 || size > 39)
-        return ret_false();
-
-    if (parseIPv6(s, reinterpret_cast<unsigned char *>(ip.toUnderType().items)))
+        buf.position() += end - buf.position();
         return ReturnType(true);
+    }
 
-    return ret_false();
+    if constexpr (std::is_same_v<ReturnType, void>)
+        throw ParsingException(std::string("Cannot parse IPv6 ").append(buf.position(), buf.available()), ErrorCodes::CANNOT_PARSE_IPV6);
+    else
+        return ReturnType(false);
 }
 
 inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)

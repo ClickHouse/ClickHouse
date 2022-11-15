@@ -30,14 +30,18 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * which should be long enough.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
- * In case of failure returns false and doesn't modify buffer pointed by `dst`.
+ * In case of failure returns nullptr and doesn't modify buffer pointed by `dst`.
  *
- * @param src - input string, expected to be non-null and null-terminated right after the IPv4 string value.
- * @param dst - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
- * @return false if parsing failed, true otherwise.
+ * @param src     - beginning of the input string.
+ * @param src_end - optional, end of the input string, if nullptr string will be parsed until not valid symbol is met.
+ * @param dst     - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
+ * @return if success pointer to the address immediately after parsed sequence, nullptr otherwise.
  */
-inline bool parseIPv4(const char * src, unsigned char * dst)
+inline const char * parseIPv4(const char * src, const char * src_end, unsigned char * dst)
 {
+    if (src == nullptr || (src_end && src_end - src < 7))
+        return nullptr;
+
     UInt32 result = 0;
     for (int offset = 24; offset >= 0; offset -= 8)
     {
@@ -48,20 +52,26 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
             value = value * 10 + (*src - '0');
             ++len;
             ++src;
+            if (src_end && src == src_end)
+                break;
         }
         if (len == 0 || value > 255 || (offset > 0 && *src != '.'))
-            return false;
+            return nullptr;
         result |= value << offset;
         ++src;
     }
-    if (*(src - 1) != '\0')
-        return false;
+
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     reverseMemcpy(dst, &result, sizeof(result));
 #else
     memcpy(dst, &result, sizeof(result));
 #endif
-    return true;
+    return src - 1;
+}
+
+inline bool parseIPv4(const char * src, unsigned char * dst)
+{
+    return parseIPv4(src, nullptr, dst);
 }
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
@@ -71,17 +81,21 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 * which should be long enough. In case of failure zeroes
 * IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
-* @param src - input string, expected to be non-null and null-terminated right after the IPv6 string value.
-* @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
-* @return false if parsing failed, true otherwise.
+* @param src     - beginning of the input string.
+* @param src_end - optional, end of the input string, if nullptr string will be parsed until not valid symbol is met.
+* @param dst     - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
+* @return if success pointer to the address immediately after parsed sequence, nullptr otherwise.
 */
-inline bool parseIPv6(const char * src, unsigned char * dst)
+inline const char * parseIPv6(const char * src, const char * src_end, unsigned char * dst)
 {
     const auto clear_dst = [dst]()
     {
         memset(dst, '\0', IPV6_BINARY_LENGTH);
-        return false;
+        return nullptr;
     };
+
+    if (src == nullptr || (src_end && src_end - src < 2))
+        return clear_dst();
 
     /// Leading :: requires some special handling.
     if (*src == ':')
@@ -96,10 +110,13 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
     UInt32 val{};
     unsigned char * colonp = nullptr;
 
-    /// Assuming zero-terminated string.
-    while (char ch = *src++)
+    /// Assuming zero-terminated string if src_size==0 or otherwise max src_size symbols
+    for (; true; ++src)
     {
-        UInt8 num = unhex(ch);
+        if (src_end && src == src_end)
+            break;
+
+        UInt8 num = unhex(*src);
 
         if (num != 0xFF)
         {
@@ -112,9 +129,9 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             continue;
         }
 
-        if (ch == ':')
+        if (*src == ':')
         {
-            curtok = src;
+            curtok = src + 1;
             if (!saw_xdigit)
             {
                 if (colonp)
@@ -134,9 +151,10 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             continue;
         }
 
-        if (ch == '.' && (tp + IPV4_BINARY_LENGTH) <= endp)
+        if (*src == '.' && (tp + IPV4_BINARY_LENGTH) <= endp)
         {
-            if (!parseIPv4(curtok, tp))
+            src = parseIPv4(curtok, src_end, tp);
+            if (src == nullptr)
                 return clear_dst();
             std::reverse(tp, tp + IPV4_BINARY_LENGTH);
 
@@ -145,7 +163,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             break;    /* '\0' was seen by ipv4_scan(). */
         }
 
-        return clear_dst();
+        break;
     }
 
     if (saw_xdigit)
@@ -177,7 +195,12 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
         return clear_dst();
 
     memcpy(dst, tmp, sizeof(tmp));
-    return true;
+    return src;
+}
+
+inline bool parseIPv6(const char * src, unsigned char * dst)
+{
+    return parseIPv6(src, nullptr, dst);
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
