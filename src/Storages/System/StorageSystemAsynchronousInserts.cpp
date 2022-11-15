@@ -27,7 +27,6 @@ NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
         {"total_bytes", std::make_shared<DataTypeUInt64>()},
         {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"entries.finished", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())},
     };
 }
 
@@ -79,19 +78,15 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
             Array arr_query_id;
             Array arr_bytes;
-            Array arr_finished;
-            Array arr_exception;
 
             for (const auto & entry : data->entries)
             {
                 arr_query_id.push_back(entry->query_id);
                 arr_bytes.push_back(entry->bytes.size());
-                arr_finished.push_back(entry->isFinished());
             }
 
             res_columns[i++]->insert(arr_query_id);
             res_columns[i++]->insert(arr_bytes);
-            res_columns[i++]->insert(arr_finished);
         }
     }
 }
