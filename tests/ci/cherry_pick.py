@@ -92,7 +92,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         if branch_updated:
             self._backported = True
 
-    def pop_prs(self, prs: PullRequests):
+    def pop_prs(self, prs: PullRequests) -> None:
+        """the method processes all prs and pops the ReleaseBranch related prs"""
         to_pop = []  # type: List[int]
         for i, pr in enumerate(prs):
             if self.name not in pr.head.ref:
@@ -105,14 +106,14 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
                 to_pop.append(i)
             else:
                 logging.error(
-                    "PR #%s doesn't head ref starting with known suffix",
+                    "head ref of PR #%s isn't starting with known suffix",
                     pr.number,
                 )
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
 
-    def process(self, dry_run: bool):
+    def process(self, dry_run: bool) -> None:
         if self.backported:
             return
         if not self.cherrypick_pr:
@@ -209,6 +210,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self._assign_new_pr(self.cherrypick_pr)
 
     def create_backport(self):
+        assert self.cherrypick_pr is not None
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
         git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
@@ -239,7 +241,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self.backport_pr.add_to_labels(Labels.BACKPORT)
         self._assign_new_pr(self.backport_pr)
 
-    def _assign_new_pr(self, new_pr: PullRequest):
+    def _assign_new_pr(self, new_pr: PullRequest) -> None:
         """Assign `new_pr` to author, merger and assignees of an original PR"""
         # It looks there some race when multiple .add_to_assignees are executed,
         # so we'll add all at once
@@ -340,7 +342,7 @@ class Backport:
                 )
                 self.error = e
 
-    def process_pr(self, pr: PullRequest):
+    def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
         if Labels.MUST_BACKPORT in pr_labels:
             branches = [
@@ -403,7 +405,7 @@ class Backport:
             # And check it after the running
             self.mark_pr_backported(pr)
 
-    def mark_pr_backported(self, pr: PullRequest):
+    def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
@@ -488,7 +490,8 @@ def main():
 
     gh = GitHub(token, per_page=100)
     bp = Backport(gh, args.repo, args.dry_run)
-    bp.gh.cache_path = str(f"{TEMP_PATH}/gh_cache")
+    # https://github.com/python/mypy/issues/3004
+    bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
     bp.receive_release_prs()
     bp.receive_prs_for_backport()
     bp.process_backports()
