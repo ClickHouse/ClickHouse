@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
@@ -26,16 +27,17 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */false);
+        index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        /* rewrite_primary_key = */ false);
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
@@ -75,20 +77,15 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
-    auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
     {
-        auto file_path = new_part->getFullRelativePath() + removed_file;
-        /// Can be called multiple times, don't need to remove file twice
-        if (disk->exists(file_path))
-            disk->removeFile(file_path);
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
 
-        if (all_checksums.files.count(removed_file))
+        if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns);
-    new_part->setSerializationInfos(serialization_infos);
+    new_part->setColumns(columns, serialization_infos);
 
     return checksums;
 }

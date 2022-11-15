@@ -1,6 +1,7 @@
 ---
-toc_priority: 22
-toc_title: "JDBC-драйвер"
+slug: /ru/interfaces/jdbc
+sidebar_position: 22
+sidebar_label: "JDBC-драйвер"
 ---
 
 # JDBC-драйвер {#jdbc-draiver}

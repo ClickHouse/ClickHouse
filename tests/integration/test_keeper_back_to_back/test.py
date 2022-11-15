@@ -7,16 +7,26 @@ import time
 from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml'], with_zookeeper=True, use_keeper=False)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/enable_keeper.xml"],
+    with_zookeeper=True,
+    use_keeper=False,
+)
 from kazoo.client import KazooClient, KazooState, KeeperState
+
 
 def get_genuine_zk():
     print("Zoo1", cluster.get_instance_ip("zoo1"))
-    return cluster.get_kazoo_client('zoo1')
+    return cluster.get_kazoo_client("zoo1")
+
 
 def get_fake_zk():
     print("node", cluster.get_instance_ip("node"))
-    _fake_zk_instance =  KazooClient(hosts=cluster.get_instance_ip("node") + ":9181", timeout=30.0)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip("node") + ":9181", timeout=30.0
+    )
+
     def reset_last_zxid_listener(state):
         print("Fake zk callback called for state", state)
         nonlocal _fake_zk_instance
@@ -27,13 +37,16 @@ def get_fake_zk():
     _fake_zk_instance.start()
     return _fake_zk_instance
 
+
 def random_string(length):
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
 
 def create_random_path(prefix="", depth=1):
     if depth == 0:
         return prefix
     return create_random_path(os.path.join(prefix, random_string(3)), depth - 1)
+
 
 def stop_zk(zk):
     try:
@@ -82,7 +95,9 @@ def test_sequential_nodes(started_cluster):
         genuine_zk.create("/test_sequential_nodes")
         fake_zk.create("/test_sequential_nodes")
         for i in range(1, 11):
-            genuine_zk.create("/test_sequential_nodes/" + ("a" * i) + "-", sequence=True)
+            genuine_zk.create(
+                "/test_sequential_nodes/" + ("a" * i) + "-", sequence=True
+            )
             genuine_zk.create("/test_sequential_nodes/" + ("b" * i))
             fake_zk.create("/test_sequential_nodes/" + ("a" * i) + "-", sequence=True)
             fake_zk.create("/test_sequential_nodes/" + ("b" * i))
@@ -115,7 +130,9 @@ def test_sequential_nodes(started_cluster):
         assert genuine_throw == True
         assert fake_throw == True
 
-        genuine_childs_1 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_1")))
+        genuine_childs_1 = list(
+            sorted(genuine_zk.get_children("/test_sequential_nodes_1"))
+        )
         fake_childs_1 = list(sorted(fake_zk.get_children("/test_sequential_nodes_1")))
         assert genuine_childs_1 == fake_childs_1
 
@@ -127,7 +144,9 @@ def test_sequential_nodes(started_cluster):
         genuine_zk.create("/test_sequential_nodes_2/node", sequence=True)
         fake_zk.create("/test_sequential_nodes_2/node", sequence=True)
 
-        genuine_childs_2 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_2")))
+        genuine_childs_2 = list(
+            sorted(genuine_zk.get_children("/test_sequential_nodes_2"))
+        )
         fake_childs_2 = list(sorted(fake_zk.get_children("/test_sequential_nodes_2")))
         assert genuine_childs_2 == fake_childs_2
     finally:
@@ -139,9 +158,10 @@ def assert_eq_stats(stat1, stat2):
     assert stat1.version == stat2.version
     assert stat1.cversion == stat2.cversion
     assert stat1.aversion == stat2.aversion
-    assert stat1.aversion == stat2.aversion
+    assert stat1.ephemeralOwner == stat2.ephemeralOwner
     assert stat1.dataLength == stat2.dataLength
     assert stat1.numChildren == stat2.numChildren
+
 
 def test_stats(started_cluster):
     try:
@@ -162,10 +182,16 @@ def test_stats(started_cluster):
         fake_stats = fake_zk.exists("/test_stats_nodes")
         assert_eq_stats(genuine_stats, fake_stats)
         for i in range(1, 11):
-            print("/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2))
-            genuine_zk.delete("/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2))
+            print(
+                "/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2)
+            )
+            genuine_zk.delete(
+                "/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2)
+            )
             genuine_zk.delete("/test_stats_nodes/" + ("b" * i))
-            fake_zk.delete("/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2))
+            fake_zk.delete(
+                "/test_stats_nodes/" + ("a" * i) + "-" + "{:010d}".format((i - 1) * 2)
+            )
             fake_zk.delete("/test_stats_nodes/" + ("b" * i))
 
         genuine_stats = genuine_zk.exists("/test_stats_nodes")
@@ -186,6 +212,7 @@ def test_stats(started_cluster):
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)
 
+
 def test_watchers(started_cluster):
     try:
         genuine_zk = get_genuine_zk()
@@ -200,6 +227,7 @@ def test_watchers(started_cluster):
             genuine_data_watch_data = event
 
         fake_data_watch_data = None
+
         def fake_callback(event):
             print("Fake data watch called")
             nonlocal fake_data_watch_data
@@ -218,17 +246,18 @@ def test_watchers(started_cluster):
         print("Fake data", fake_data_watch_data)
         assert genuine_data_watch_data == fake_data_watch_data
 
-
         genuine_zk.create("/test_data_watches/child", b"a")
         fake_zk.create("/test_data_watches/child", b"a")
 
         genuine_children = None
+
         def genuine_child_callback(event):
             print("Genuine child watch called")
             nonlocal genuine_children
             genuine_children = event
 
         fake_children = None
+
         def fake_child_callback(event):
             print("Fake child watch called")
             nonlocal fake_children
@@ -262,32 +291,40 @@ def test_watchers(started_cluster):
         assert genuine_children == fake_children
 
         genuine_children_delete = None
+
         def genuine_child_delete_callback(event):
             print("Genuine child watch called")
             nonlocal genuine_children_delete
             genuine_children_delete = event
 
         fake_children_delete = None
+
         def fake_child_delete_callback(event):
             print("Fake child watch called")
             nonlocal fake_children_delete
             fake_children_delete = event
 
         genuine_child_delete = None
+
         def genuine_own_delete_callback(event):
             print("Genuine child watch called")
             nonlocal genuine_child_delete
             genuine_child_delete = event
 
         fake_child_delete = None
+
         def fake_own_delete_callback(event):
             print("Fake child watch called")
             nonlocal fake_child_delete
             fake_child_delete = event
 
-        genuine_zk.get_children("/test_data_watches", watch=genuine_child_delete_callback)
+        genuine_zk.get_children(
+            "/test_data_watches", watch=genuine_child_delete_callback
+        )
         fake_zk.get_children("/test_data_watches", watch=fake_child_delete_callback)
-        genuine_zk.get_children("/test_data_watches/child", watch=genuine_own_delete_callback)
+        genuine_zk.get_children(
+            "/test_data_watches/child", watch=genuine_own_delete_callback
+        )
         fake_zk.get_children("/test_data_watches/child", watch=fake_own_delete_callback)
 
         print("Calling genuine child delete")
@@ -309,49 +346,59 @@ def test_watchers(started_cluster):
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)
 
+
 def test_multitransactions(started_cluster):
     try:
         genuine_zk = get_genuine_zk()
         fake_zk = get_fake_zk()
         for zk in [genuine_zk, fake_zk]:
-            zk.create('/test_multitransactions')
+            zk.create("/test_multitransactions")
             t = zk.transaction()
-            t.create('/test_multitransactions/freddy')
-            t.create('/test_multitransactions/fred', ephemeral=True)
-            t.create('/test_multitransactions/smith', sequence=True)
+            t.create("/test_multitransactions/freddy")
+            t.create("/test_multitransactions/fred", ephemeral=True)
+            t.create("/test_multitransactions/smith", sequence=True)
             results = t.commit()
             assert len(results) == 3
-            assert results[0] == '/test_multitransactions/freddy'
-            assert results[2].startswith('/test_multitransactions/smith0') is True
+            assert results[0] == "/test_multitransactions/freddy"
+            assert results[2].startswith("/test_multitransactions/smith0") is True
 
         from kazoo.exceptions import RolledBackError, NoNodeError
+
         for i, zk in enumerate([genuine_zk, fake_zk]):
             print("Processing ZK", i)
             t = zk.transaction()
-            t.create('/test_multitransactions/q')
-            t.delete('/test_multitransactions/a')
-            t.create('/test_multitransactions/x')
+            t.create("/test_multitransactions/q")
+            t.delete("/test_multitransactions/a")
+            t.create("/test_multitransactions/x")
             results = t.commit()
             print("Results", results)
             assert results[0].__class__ == RolledBackError
             assert results[1].__class__ == NoNodeError
-            assert zk.exists('/test_multitransactions/q') is None
-            assert zk.exists('/test_multitransactions/a') is None
-            assert zk.exists('/test_multitransactions/x') is None
+            assert zk.exists("/test_multitransactions/q") is None
+            assert zk.exists("/test_multitransactions/a") is None
+            assert zk.exists("/test_multitransactions/x") is None
     finally:
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)
+
 
 def exists(zk, path):
     result = zk.exists(path)
     return result is not None
 
+
 def get(zk, path):
     result = zk.get(path)
     return result[0]
 
+
 def get_children(zk, path):
-    return [elem for elem in list(sorted(zk.get_children(path))) if elem not in ('clickhouse', 'zookeeper')]
+    return [
+        elem
+        for elem in list(sorted(zk.get_children(path)))
+        if elem not in ("clickhouse", "zookeeper")
+    ]
+
 
 READ_REQUESTS = [
     ("exists", exists),
@@ -377,9 +424,8 @@ WRITE_REQUESTS = [
 def delete(zk, path):
     zk.delete(path)
 
-DELETE_REQUESTS = [
-    ("delete", delete)
-]
+
+DELETE_REQUESTS = [("delete", delete)]
 
 
 class Request(object):
@@ -390,8 +436,9 @@ class Request(object):
         self.is_return = is_return
 
     def __str__(self):
-        arg_str = ', '.join([str(k) + "=" + str(v) for k, v in self.arguments.items()])
+        arg_str = ", ".join([str(k) + "=" + str(v) for k, v in self.arguments.items()])
         return "ZKRequest name {} with arguments {}".format(self.name, arg_str)
+
 
 def generate_requests(prefix="/", iters=1):
     requests = []
@@ -404,18 +451,29 @@ def generate_requests(prefix="/", iters=1):
                 path = create_random_path(path, 1)
                 existing_paths.append(path)
                 value = random_string(1000)
-                request = Request("create", {"path" : path, "value": value[0:10]}, lambda zk, path=path, value=value: create(zk, path, value), False)
+                request = Request(
+                    "create",
+                    {"path": path, "value": value[0:10]},
+                    lambda zk, path=path, value=value: create(zk, path, value),
+                    False,
+                )
                 requests.append(request)
 
         for _ in range(100):
             path = random.choice(existing_paths)
             value = random_string(100)
-            request = Request("set", {"path": path, "value": value[0:10]}, lambda zk, path=path, value=value: set_data(zk, path, value), False)
+            request = Request(
+                "set",
+                {"path": path, "value": value[0:10]},
+                lambda zk, path=path, value=value: set_data(zk, path, value),
+                False,
+            )
             requests.append(request)
 
         for _ in range(100):
             path = random.choice(existing_paths)
             callback = random.choice(READ_REQUESTS)
+
             def read_func1(zk, path=path, callback=callback):
                 return callback[1](zk, path)
 
@@ -424,13 +482,17 @@ def generate_requests(prefix="/", iters=1):
 
         for _ in range(30):
             path = random.choice(existing_paths)
-            request = Request("delete", {"path": path}, lambda zk, path=path: delete(zk, path), False)
+            request = Request(
+                "delete", {"path": path}, lambda zk, path=path: delete(zk, path), False
+            )
 
         for _ in range(100):
             path = random.choice(existing_paths)
             callback = random.choice(READ_REQUESTS)
+
             def read_func2(zk, path=path, callback=callback):
                 return callback[1](zk, path)
+
             request = Request(callback[0], {"path": path}, read_func2, True)
             requests.append(request)
     return requests
@@ -463,14 +525,25 @@ def test_random_requests(started_cluster):
                 print("Fake exception", str(ex))
                 fake_throw = True
 
-            assert fake_throw == genuine_throw, "Fake throw genuine not or vise versa request {}"
+            assert (
+                fake_throw == genuine_throw
+            ), "Fake throw genuine not or vise versa request {}"
             assert fake_result == genuine_result, "Zookeeper results differ"
-        root_children_genuine = [elem for elem in list(sorted(genuine_zk.get_children("/test_random_requests"))) if elem not in ('clickhouse', 'zookeeper')]
-        root_children_fake = [elem for elem in list(sorted(fake_zk.get_children("/test_random_requests"))) if elem not in ('clickhouse', 'zookeeper')]
+        root_children_genuine = [
+            elem
+            for elem in list(sorted(genuine_zk.get_children("/test_random_requests")))
+            if elem not in ("clickhouse", "zookeeper")
+        ]
+        root_children_fake = [
+            elem
+            for elem in list(sorted(fake_zk.get_children("/test_random_requests")))
+            if elem not in ("clickhouse", "zookeeper")
+        ]
         assert root_children_fake == root_children_genuine
     finally:
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)
+
 
 def test_end_of_session(started_cluster):
 
@@ -484,20 +557,22 @@ def test_end_of_session(started_cluster):
         fake_zk1.start()
         fake_zk2 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
         fake_zk2.start()
-        genuine_zk1 = cluster.get_kazoo_client('zoo1')
+        genuine_zk1 = cluster.get_kazoo_client("zoo1")
         genuine_zk1.start()
-        genuine_zk2 = cluster.get_kazoo_client('zoo1')
+        genuine_zk2 = cluster.get_kazoo_client("zoo1")
         genuine_zk2.start()
 
         fake_zk1.create("/test_end_of_session")
         genuine_zk1.create("/test_end_of_session")
         fake_ephemeral_event = None
+
         def fake_ephemeral_callback(event):
             print("Fake watch triggered")
             nonlocal fake_ephemeral_event
             fake_ephemeral_event = event
 
         genuine_ephemeral_event = None
+
         def genuine_ephemeral_callback(event):
             print("Genuine watch triggered")
             nonlocal genuine_ephemeral_event
@@ -509,8 +584,18 @@ def test_end_of_session(started_cluster):
         fake_zk1.create("/test_end_of_session/ephemeral_node", ephemeral=True)
         genuine_zk1.create("/test_end_of_session/ephemeral_node", ephemeral=True)
 
-        assert fake_zk2.exists("/test_end_of_session/ephemeral_node", watch=fake_ephemeral_callback) is not None
-        assert genuine_zk2.exists("/test_end_of_session/ephemeral_node", watch=genuine_ephemeral_callback) is not None
+        assert (
+            fake_zk2.exists(
+                "/test_end_of_session/ephemeral_node", watch=fake_ephemeral_callback
+            )
+            is not None
+        )
+        assert (
+            genuine_zk2.exists(
+                "/test_end_of_session/ephemeral_node", watch=genuine_ephemeral_callback
+            )
+            is not None
+        )
 
         print("Stopping genuine zk")
         genuine_zk1.stop()
@@ -531,6 +616,7 @@ def test_end_of_session(started_cluster):
         for zk in [fake_zk1, fake_zk2, genuine_zk1, genuine_zk2]:
             stop_zk(zk)
 
+
 def test_end_of_watches_session(started_cluster):
     fake_zk1 = None
     fake_zk2 = None
@@ -544,6 +630,7 @@ def test_end_of_watches_session(started_cluster):
         fake_zk1.create("/test_end_of_watches_session")
 
         dummy_set = 0
+
         def dummy_callback(event):
             nonlocal dummy_set
             dummy_set += 1
@@ -551,21 +638,34 @@ def test_end_of_watches_session(started_cluster):
 
         for child_node in range(100):
             fake_zk1.create("/test_end_of_watches_session/" + str(child_node))
-            fake_zk1.get_children("/test_end_of_watches_session/" + str(child_node), watch=dummy_callback)
+            fake_zk1.get_children(
+                "/test_end_of_watches_session/" + str(child_node), watch=dummy_callback
+            )
 
-        fake_zk2.get_children("/test_end_of_watches_session/" + str(0), watch=dummy_callback)
-        fake_zk2.get_children("/test_end_of_watches_session/" + str(1), watch=dummy_callback)
+        fake_zk2.get_children(
+            "/test_end_of_watches_session/" + str(0), watch=dummy_callback
+        )
+        fake_zk2.get_children(
+            "/test_end_of_watches_session/" + str(1), watch=dummy_callback
+        )
 
         fake_zk1.stop()
         fake_zk1.close()
 
         for child_node in range(100):
-            fake_zk2.create("/test_end_of_watches_session/" + str(child_node) + "/" + str(child_node), b"somebytes")
+            fake_zk2.create(
+                "/test_end_of_watches_session/"
+                + str(child_node)
+                + "/"
+                + str(child_node),
+                b"somebytes",
+            )
 
         assert dummy_set == 2
     finally:
         for zk in [fake_zk1, fake_zk2]:
             stop_zk(zk)
+
 
 def test_concurrent_watches(started_cluster):
     try:
@@ -580,6 +680,7 @@ def test_concurrent_watches(started_cluster):
         existing_path = []
         all_paths_created = []
         watches_created = 0
+
         def create_path_and_watch(i):
             nonlocal watches_created
             nonlocal all_paths_created
@@ -597,6 +698,7 @@ def test_concurrent_watches(started_cluster):
             existing_path.append(i)
 
         trigger_called = 0
+
         def trigger_watch(i):
             nonlocal trigger_called
             trigger_called += 1

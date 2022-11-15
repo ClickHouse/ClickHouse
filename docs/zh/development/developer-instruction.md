@@ -1,4 +1,7 @@
-ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
+---
+slug: /zh/development/developer-instruction
+---
+# ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引 {#windowsshi-yong-zhi-yin}
 
@@ -259,8 +262,14 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/
 
 即使工作尚未完成，也可以创建拉取请求。在这种情况下，请在标题的开头加上«WIP»（正在进行中），以便后续更改。这对于协同审查和讨论更改以及运行所有可用测试用例很有用。提供有关变更的简短描述很重要，这将在后续用于生成重新发布变更日志。
 
-Yandex成员一旦在您的拉取请求上贴上«可以测试»标签，就会开始测试。一些初始检查项（例如，代码类型）的结果会在几分钟内反馈。构建的检查结果将在半小时内完成。而主要的测试用例集结果将在一小时内报告给您。
+ClickHouse成员一旦在您的拉取请求上贴上«可以测试»标签，就会开始测试。一些初始检查项（例如，代码类型）的结果会在几分钟内反馈。构建的检查结果将在半小时内完成。而主要的测试用例集结果将在一小时内报告给您。
 
 系统将分别为您的拉取请求准备ClickHouse二进制版本。若要检索这些构建信息，请在检查列表中单击« ClickHouse构建检查»旁边的«详细信息»链接。在这里，您会找到指向ClickHouse的.deb软件包的直接链接，此外，甚至可以将其部署在生产服务器上（如果您不担心）。
 
 某些构建项很可能会在首次构建时失败。这是因为我们同时检查了基于gcc和clang的构建，几乎所有现有的被clang启用的警告（总是带有`-Werror`标志）。在同一页面上，您可以找到所有构建的日志，因此不必以所有可能的方式构建ClickHouse。
+
+## 浏览ClickHouse源代码 {#browse-clickhouse-source-code}
+
+您可以使用 **Woboq** 在线代码浏览器 [点击这里](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). 它提供了代码导航和语义突出显示、搜索和索引。 代码快照每天更新。
+
+此外，您还可以像往常一样浏览源代码 [GitHub](https://github.com/ClickHouse/ClickHouse)

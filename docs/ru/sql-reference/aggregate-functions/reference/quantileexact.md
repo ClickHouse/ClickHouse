@@ -1,5 +1,6 @@
 ---
-toc_priority: 202
+slug: /ru/sql-reference/aggregate-functions/reference/quantileexact
+sidebar_position: 202
 ---
 
 # Функции quantileExact {#quantileexact-functions}

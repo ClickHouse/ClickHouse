@@ -1,6 +1,7 @@
 ---
-toc_priority: 32
-toc_title: SQLite
+slug: /ru/engines/database-engines/sqlite
+sidebar_position: 32
+sidebar_label: SQLite
 ---
 
 # SQLite {#sqlite}

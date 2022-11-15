@@ -49,7 +49,7 @@ private:
     IRegionsHierarchyDataSourcePtr data_source;
 
 public:
-    RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_);
+    explicit RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_);
 
     /// Reloads, if necessary, the hierarchy of regions. Not threadsafe.
     void reload();

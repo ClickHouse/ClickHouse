@@ -1,5 +1,6 @@
 ---
-toc_title: LIMIT BY
+slug: /zh/sql-reference/statements/select/limit-by
+sidebar_label: LIMIT BY
 ---
 
 # LIMIT BY子句 {#limit-by-clause}

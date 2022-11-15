@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 #if USE_CAPNP
 
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -15,7 +15,7 @@ namespace DB
 class CapnProtoOutputStream : public kj::OutputStream
 {
 public:
-    CapnProtoOutputStream(WriteBuffer & out_);
+    explicit CapnProtoOutputStream(WriteBuffer & out_);
 
     void write(const void * buffer, size_t size) override;
 

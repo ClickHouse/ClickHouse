@@ -1,6 +1,7 @@
 ---
-toc_priority: 36
-toc_title: "Функции сравнения"
+slug: /ru/sql-reference/functions/comparison-functions
+sidebar_position: 36
+sidebar_label: "Функции сравнения"
 ---
 
 # Функции сравнения {#funktsii-sravneniia}

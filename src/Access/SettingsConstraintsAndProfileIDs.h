@@ -15,7 +15,7 @@ struct SettingsConstraintsAndProfileIDs
     std::vector<UUID> current_profiles;
     std::vector<UUID> enabled_profiles;
 
-    SettingsConstraintsAndProfileIDs(const AccessControl & access_control_) : constraints(access_control_) {}
+    explicit SettingsConstraintsAndProfileIDs(const AccessControl & access_control_) : constraints(access_control_) {}
 };
 
 }

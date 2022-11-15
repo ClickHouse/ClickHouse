@@ -1,6 +1,7 @@
 ---
-toc_priority: 42
-toc_title: View
+slug: /ru/engines/table-engines/special/view
+sidebar_position: 42
+sidebar_label: View
 ---
 
 # View {#table_engines-view}

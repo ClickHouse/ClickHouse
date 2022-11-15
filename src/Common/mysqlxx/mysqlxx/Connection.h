@@ -83,7 +83,7 @@ public:
 
     /// Creates connection. Can be used if Poco::Util::Application is using.
     /// All settings will be got from config_name section of configuration.
-    Connection(const std::string & config_name);
+    explicit Connection(const std::string & config_name);
 
     ~Connection();
 

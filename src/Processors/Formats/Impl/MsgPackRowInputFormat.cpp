@@ -2,6 +2,15 @@
 
 #if USE_MSGPACK
 
+/// FIXME: there is some issue with clang-15, that incorrectly detect a
+/// "Attempt to free released memory" in msgpack::unpack(), because of delete
+/// operator for zone (from msgpack/v1/detail/cpp11_zone.hpp), hence NOLINT
+///
+/// NOTE: that I was not able to suppress it locally, only with
+/// NOLINTBEGIN/NOLINTEND
+//
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete)
+
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -119,7 +128,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         }
         case TypeIndex::UInt64:
@@ -139,7 +148,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         }
         case TypeIndex::Int32:
         {
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         }
         case TypeIndex::Int64:
@@ -235,8 +244,10 @@ static void insertNull(IColumn & column, DataTypePtr type)
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
 
-static void insertUUID(IColumn & column, DataTypePtr /*type*/, const char * value, size_t size)
+static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    if (!isUUID(type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
     readBinaryBigEndian(uuid.toUnderType().items[0], buf);
@@ -353,13 +364,13 @@ bool MsgPackVisitor::visit_nil()
 bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
 {
     int8_t type = *value;
-    if (*value == int8_t(MsgPackExtensionTypes::UUID))
+    if (*value == int8_t(MsgPackExtensionTypes::UUIDType))
     {
         insertUUID(info_stack.top().column, info_stack.top().type, value + 1, size - 1);
         return true;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {%x}", type);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported MsgPack extension type: {:x}", type);
 }
 
 void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
@@ -414,7 +425,7 @@ void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
+    : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
@@ -496,11 +507,12 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
         case msgpack::type::object_type::EXT:
         {
             msgpack::object_ext object_ext = object.via.ext;
-            if (object_ext.type() == int8_t(MsgPackExtensionTypes::UUID))
+            if (object_ext.type() == int8_t(MsgPackExtensionTypes::UUIDType))
                 return std::make_shared<DataTypeUUID>();
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {%x} is not supported", object_ext.type());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
+    UNREACHABLE();
 }
 
 DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
@@ -534,13 +546,23 @@ void registerInputFormatMsgPack(FormatFactory & factory)
 
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
+    factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
+    {
+            return fmt::format(
+                "number_of_columns={}, schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
+                settings.msgpack.number_of_columns,
+                settings.schema_inference_hints,
+                settings.max_rows_to_read_for_schema_inference);
+        });
 }
 
 }
+
+// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 
 #else
 

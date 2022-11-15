@@ -1,18 +1,19 @@
 #pragma once
-#include <Core/Types.h>
-#include <Core/QualifiedTableName.h>
-#include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
-#include <mutex>
+#include <Core/QualifiedTableName.h>
+#include <Core/Types.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 
 namespace Poco
 {
-    class Logger;
+    class Logger; // NOLINT(cppcoreguidelines-virtual-class-destructor)
 }
 
 class AtomicStopwatch;
@@ -78,7 +79,7 @@ class TablesLoader
 public:
     using Databases = std::map<String, DatabasePtr>;
 
-    TablesLoader(ContextMutablePtr global_context_, Databases databases_, bool force_restore_ = false, bool force_attach_ = false);
+    TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_);
     TablesLoader() = delete;
 
     void loadTables();
@@ -87,8 +88,7 @@ public:
 private:
     ContextMutablePtr global_context;
     Databases databases;
-    bool force_restore;
-    bool force_attach;
+    LoadingStrictnessLevel strictness_mode;
 
     Strings databases_to_load;
     ParsedTablesMetadata metadata;
@@ -104,7 +104,7 @@ private:
 
     DependenciesInfosIter removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_database_objects);
 
-    void startLoadingIndependentTables(ThreadPool & pool, size_t level);
+    void startLoadingIndependentTables(ThreadPool & pool, size_t level, ContextMutablePtr load_context);
 
     void checkCyclicDependencies() const;
 

@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <log>/var/log/clickhouse-server/log.log</log>
@@ -12,6 +11,5 @@
 
     <path>/var/lib/clickhouse/</path>
 
-    <mark_cache_size>5368709120</mark_cache_size>
     <users_config>users.xml</users_config>
 </clickhouse>

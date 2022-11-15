@@ -54,13 +54,12 @@ private:
         Mean mean;
         Weight weight;
 
-        WeightedValue operator+ (const WeightedValue & other)
+        WeightedValue operator+(const WeightedValue & other) const
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
     };
 
-private:
     // quantity of stored weighted-values
     UInt32 size;
 
@@ -71,7 +70,6 @@ private:
     // Weighted values representation of histogram.
     WeightedValue points[0];
 
-private:
     void sort()
     {
         ::sort(points, points + size,
@@ -87,18 +85,18 @@ private:
         size_t size = 0;
         T * data_ptr;
 
-        PriorityQueueStorage(T * value)
+        explicit PriorityQueueStorage(T * value)
             : data_ptr(value)
         {
         }
 
-        void push_back(T val)
+        void push_back(T val) /// NOLINT
         {
             data_ptr[size] = std::move(val);
             ++size;
         }
 
-        void pop_back() { --size; }
+        void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
         T * end() const { return data_ptr + size; }
         bool empty() const { return size == 0; }
@@ -138,8 +136,8 @@ private:
 
         for (size_t i = 0; i <= size; ++i)
         {
-            previous[i] = i - 1;
-            next[i] = i + 1;
+            previous[i] = static_cast<UInt32>(i - 1);
+            next[i] = static_cast<UInt32>(i + 1);
         }
 
         next[size] = 0;
@@ -159,7 +157,7 @@ private:
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 
         for (size_t i = 0; i + 1 < size; ++i)
-            queue.push({quality(i), i});
+            queue.push({quality(static_cast<UInt32>(i)), i});
 
         while (new_size > max_bins && !queue.empty())
         {
@@ -219,7 +217,7 @@ private:
                 points[left] = points[right];
             }
         }
-        size = left + 1;
+        size = static_cast<UInt32>(left + 1);
     }
 
 public:

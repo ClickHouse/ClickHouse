@@ -32,11 +32,12 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 

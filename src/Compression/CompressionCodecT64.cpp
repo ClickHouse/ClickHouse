@@ -8,6 +8,7 @@
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
+#include <bit>
 
 
 namespace DB
@@ -112,7 +113,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
             break;
     }
 
-    throw Exception("Type is not supported by T64 codec: " + toString(UInt32(type_id)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Type is not supported by T64 codec: " + toString(static_cast<UInt32>(type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 TypeIndex deserializeTypeId(uint8_t serialized_type_id)
@@ -137,7 +138,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
     }
 
-    throw Exception("Bad magic number in T64 codec: " + toString(UInt32(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Bad magic number in T64 codec: " + toString(static_cast<UInt32>(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -284,29 +285,41 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 
     if constexpr (sizeof(T) > 4)
     {
-        value |= UInt64(matrix8[64 * 7 + col]) << (8 * 7);
-        value |= UInt64(matrix8[64 * 6 + col]) << (8 * 6);
-        value |= UInt64(matrix8[64 * 5 + col]) << (8 * 5);
-        value |= UInt64(matrix8[64 * 4 + col]) << (8 * 4);
+        value |= static_cast<UInt64>(matrix8[64 * 7 + col]) << (8 * 7);
+        value |= static_cast<UInt64>(matrix8[64 * 6 + col]) << (8 * 6);
+        value |= static_cast<UInt64>(matrix8[64 * 5 + col]) << (8 * 5);
+        value |= static_cast<UInt64>(matrix8[64 * 4 + col]) << (8 * 4);
     }
 
     if constexpr (sizeof(T) > 2)
     {
-        value |= UInt32(matrix8[64 * 3 + col]) << (8 * 3);
-        value |= UInt32(matrix8[64 * 2 + col]) << (8 * 2);
+        value |= static_cast<UInt32>(matrix8[64 * 3 + col]) << (8 * 3);
+        value |= static_cast<UInt32>(matrix8[64 * 2 + col]) << (8 * 2);
     }
 
     if constexpr (sizeof(T) > 1)
-        value |= UInt32(matrix8[64 * 1 + col]) << (8 * 1);
+        value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
 
-    value |= UInt32(matrix8[col]);
+    value |= static_cast<UInt32>(matrix8[col]);
 }
 
 
 template <typename T>
 void load(const char * src, T * buf, UInt32 tail = 64)
 {
-    memcpy(buf, src, tail * sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        memcpy(buf, src, tail * sizeof(T));
+    }
+    else
+    {
+        /// Since the algorithm uses little-endian integers, data is loaded
+        /// as little-endian types on big-endian machine (s390x, etc).
+        for (UInt32 i = 0; i < tail; ++i)
+        {
+            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
+        }
+    }
 }
 
 template <typename T>
@@ -413,7 +426,7 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 {
     UInt64 diff_bits = min ^ max;
     if (diff_bits)
-        return 64 - __builtin_clzll(diff_bits);
+        return 64 - std::countl_zero(diff_bits);
     return 0;
 }
 
@@ -422,12 +435,12 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     if (min < 0 && max >= 0)
     {
         if (min + max >= 0)
-            return getValuableBitsNumber(0ull, UInt64(max)) + 1;
+            return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
         else
-            return getValuableBitsNumber(0ull, UInt64(~min)) + 1;
+            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
     else
-        return getValuableBitsNumber(UInt64(min), UInt64(max));
+        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -537,7 +550,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 num_bits = getValuableBitsNumber(min, max);
     if (!num_bits)
     {
-        T min_value = min;
+        T min_value = static_cast<T>(min);
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
         return;
@@ -559,14 +572,14 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     T upper_max [[maybe_unused]] = 0;
     T sign_bit [[maybe_unused]] = 0;
     if (num_bits < 64)
-        upper_min = UInt64(min) >> num_bits << num_bits;
+        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
-            sign_bit = 1ull << (num_bits - 1);
-            upper_max = UInt64(max) >> num_bits << num_bits;
+            sign_bit = static_cast<T>(1ull << (num_bits - 1));
+            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
         }
     }
 

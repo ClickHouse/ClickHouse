@@ -18,7 +18,7 @@ template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
 {
 public:
-    AggregateFunctionBitmap(const DataTypePtr & type)
+    explicit AggregateFunctionBitmap(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {})
     {
     }
@@ -45,7 +45,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 
@@ -55,9 +56,9 @@ template <typename T, typename Data, typename Policy>
 class AggregateFunctionBitmapL2 final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>
 {
 private:
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54455;
+    static constexpr size_t STATE_VERSION_1_MIN_REVISION = 54455;
 public:
-    AggregateFunctionBitmapL2(const DataTypePtr & type)
+    explicit AggregateFunctionBitmapL2(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
     {
     }
@@ -142,7 +143,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 

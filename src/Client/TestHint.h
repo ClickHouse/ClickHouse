@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Checks expected server and client error codes in --testmode.
+/// Checks expected server and client error codes.
 ///
 /// The following comment hints are supported:
 ///
@@ -25,12 +25,12 @@ namespace DB
 ///
 /// Examples:
 ///
-/// - echo 'select / -- { clientError 62 }' | clickhouse-client --testmode -nm
+/// - echo 'select / -- { clientError 62 }' | clickhouse-client -nm
 ///
 //    Here the client parses the query but it is incorrect, so it expects
 ///   SYNTAX_ERROR (62).
 ///
-/// - echo 'select foo -- { serverError 47 }' | clickhouse-client --testmode -nm
+/// - echo 'select foo -- { serverError 47 }' | clickhouse-client -nm
 ///
 ///   But here the query is correct, but there is no such column "foo", so it
 ///   is UNKNOWN_IDENTIFIER server error.
@@ -43,7 +43,7 @@ namespace DB
 class TestHint
 {
 public:
-    TestHint(bool enabled_, const String & query_);
+    TestHint(const String & query_);
 
     int serverError() const { return server_error; }
     int clientError() const { return client_error; }

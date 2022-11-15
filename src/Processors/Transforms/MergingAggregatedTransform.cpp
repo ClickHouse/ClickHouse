@@ -49,7 +49,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
         bucket_to_blocks[agg_info->bucket_num].emplace_back(std::move(block));
     }
-    else if (const auto * in_order_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = false;

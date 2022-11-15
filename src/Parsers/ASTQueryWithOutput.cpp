@@ -1,4 +1,5 @@
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSetQuery.h>
 
 namespace DB
 {
@@ -40,7 +41,7 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
         format->formatImpl(s, state, frame);
     }
 
-    if (settings_ast)
+    if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings_ast->formatImpl(s, state, frame);

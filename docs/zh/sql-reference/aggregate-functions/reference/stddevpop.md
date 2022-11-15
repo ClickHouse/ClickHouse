@@ -1,5 +1,6 @@
 ---
-toc_priority: 30
+slug: /zh/sql-reference/aggregate-functions/reference/stddevpop
+sidebar_position: 30
 ---
 
 # stddevPop {#stddevpop}

@@ -101,6 +101,30 @@ public:
 
     struct SubstreamData
     {
+        SubstreamData() = default;
+        SubstreamData(SerializationPtr serialization_)
+            : serialization(std::move(serialization_))
+        {
+        }
+
+        SubstreamData & withType(DataTypePtr type_)
+        {
+            type = std::move(type_);
+            return *this;
+        }
+
+        SubstreamData & withColumn(ColumnPtr column_)
+        {
+            column = std::move(column_);
+            return *this;
+        }
+
+        SubstreamData & withSerializationInfo(SerializationInfoPtr serialization_info_)
+        {
+            serialization_info = std::move(serialization_info_);
+            return *this;
+        }
+
         SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
@@ -125,6 +149,9 @@ public:
             SparseElements,
             SparseOffsets,
 
+            ObjectStructure,
+            ObjectData,
+
             Regular,
         };
 
@@ -145,7 +172,7 @@ public:
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
-        Substream(Type type_) : type(type_) {}
+        Substream(Type type_) : type(type_) {} /// NOLINT
 
         String toString() const;
     };
@@ -161,16 +188,22 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
+    struct EnumerateStreamsSettings
+    {
+        SubstreamPath path;
+        bool position_independent_encoding = true;
+    };
+
     virtual void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const;
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
-
-    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
+    /// Enumerate streams with default settings.
+    void enumerateStreams(
+        const StreamCallback & callback,
+        const DataTypePtr & type = nullptr,
+        const ColumnPtr & column = nullptr) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -216,7 +249,9 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
+        const IColumn & /*column*/,
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
@@ -371,5 +406,7 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
 
     return state_concrete;
 }
+
+bool isOffsetsOfNested(const ISerialization::SubstreamPath & path);
 
 }

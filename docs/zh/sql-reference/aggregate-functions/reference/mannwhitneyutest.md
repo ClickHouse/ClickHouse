@@ -1,6 +1,7 @@
 ---
-toc_priority: 310
-toc_title: mannWhitneyUTest
+slug: /zh/sql-reference/aggregate-functions/reference/mannwhitneyutest
+sidebar_position: 310
+sidebar_label: mannWhitneyUTest
 ---
 
 # mannWhitneyUTest {#mannwhitneyutest}

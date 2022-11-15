@@ -13,7 +13,7 @@ bool RequiredSourceColumnsData::addColumnAliasIfAny(const IAST & ast)
     if (alias.empty())
         return false;
 
-    if (required_names.count(alias))
+    if (required_names.contains(alias))
         masked_columns.insert(alias);
 
     complex_aliases.insert(alias);
@@ -62,10 +62,10 @@ NameSet RequiredSourceColumnsData::requiredColumns() const
         String table_name = Nested::extractTableName(name);
 
         /// Tech debt. There's its own logic for ARRAY JOIN columns.
-        if (array_join_columns.count(name) || array_join_columns.count(table_name))
+        if (array_join_columns.contains(name) || array_join_columns.contains(table_name))
             continue;
 
-        if (!complex_aliases.count(name) || masked_columns.count(name))
+        if (!complex_aliases.contains(name) || masked_columns.contains(name))
             required.insert(name);
     }
     return required;

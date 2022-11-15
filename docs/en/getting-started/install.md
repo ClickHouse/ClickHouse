@@ -1,11 +1,34 @@
 ---
-toc_priority: 11
-toc_title: Installation
+sidebar_label: Install
+keywords: [clickhouse, install, getting started, quick start]
+slug: /en/install
 ---
 
-# Installation {#installation}
+# Installing ClickHouse
 
-## System Requirements {#system-requirements}
+You have two options for getting up and running with ClickHouse:
+
+- **[ClickHouse Cloud](https://clickhouse.cloud/):** the official ClickHouse as a service, - built by, maintained, and supported by the creators of ClickHouse
+- **Self-managed ClickHouse:** ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture
+
+## ClickHouse Cloud
+
+The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/):
+
+<div class="eighty-percent">
+
+![Create a ClickHouse Cloud service](@site/docs/en/_snippets/images/createservice1.png)
+</div>
+
+Once your Cloud service is provisioned, you will be able to [connect to it](/docs/en/integrations/connect-a-client.md) and start [inserting data](/docs/en/integrations/data-ingestion.md).
+
+:::note
+The [Quick Start](/docs/en/quick-start.mdx) walks through the steps to get a ClickHouse Cloud service up and running, connecting to it, and inserting data.
+:::
+
+## Self-Managed Requirements
+
+### CPU Architecture
 
 ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, AArch64, or PowerPC64LE CPU architecture.
 
@@ -17,6 +40,55 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should [build ClickHouse from sources](#from-sources) with proper configuration adjustments.
 
+ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
+
+It is recommended to use **Turbo Boost** and **hyper-threading** technologies. It significantly improves performance with a typical workload.
+
+### RAM {#ram}
+
+We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
+
+The required volume of RAM depends on:
+
+-   The complexity of queries.
+-   The amount of data that is processed in queries.
+
+To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
+
+ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+
+### Swap File {#swap-file}
+
+Disable the swap file for production environments.
+
+### Storage Subsystem {#storage-subsystem}
+
+You need to have 2GB of free disk space to install ClickHouse.
+
+The volume of storage required for your data should be calculated separately. Assessment should include:
+
+-   Estimation of the data volume.
+
+    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
+
+-   The data compression coefficient.
+
+    To estimate the data compression coefficient, load a sample of your data into ClickHouse, and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
+
+To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
+
+### Network {#network}
+
+If possible, use networks of 10G or higher class.
+
+The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. Besides, network speed affects replication processes.
+
+### Software {#software}
+
+ClickHouse is developed primarily for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
+
+## Self-Managed Install
+
 ## Available Installation Options {#available-installation-options}
 
 ### From DEB Packages {#install-from-deb-packages}
@@ -24,20 +96,59 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
 ``` bash
-{% include 'install/deb.sh' %}
+sudo apt-get install -y apt-transport-https ca-certificates dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
 
-<details markdown="1">
-
+<details>
 <summary>Deprecated Method for installing deb-packages</summary>
+
 ``` bash
-{% include 'install/deb_repo.sh' %}
+sudo apt-get install apt-transport-https ca-certificates dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
+
+echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
+
 </details>
 
-You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
+<details>
+<summary>Migration Method for installing the deb-packages</summary>
 
-You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/stable).
+```bash
+sudo apt-key del E0C56BD4
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+    /etc/apt/sources.list.d/clickhouse.list
+sudo apt-get update
+
+sudo apt-get install -y clickhouse-server clickhouse-client
+
+sudo service clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
+```
+
+</details>
+
+You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+
+You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
 #### Packages {#packages}
 
@@ -46,9 +157,10 @@ You can also download and install packages manually from [here](https://packages
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-!!! attention "Attention"
-    If you need to install specific version of ClickHouse you have to install all packages with the same version:
-    `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+:::info
+If you need to install specific version of ClickHouse you have to install all packages with the same version:
+`sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+:::
 
 ### From RPM Packages {#from-rpm-packages}
 
@@ -57,18 +169,31 @@ It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat
 First, you need to add the official repository:
 
 ``` bash
-{% include 'install/rpm.sh' %}
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
+sudo yum install -y clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing rpm-packages</summary>
+
 ``` bash
-{% include 'install/rpm_repo.sh' %}
+sudo yum install yum-utils
+sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.repo
+sudo yum install clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
+
 </details>
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). `prestable` is sometimes also available.
+You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
 
 Then run these commands to install packages:
 
@@ -86,14 +211,64 @@ The required version can be downloaded with `curl` or `wget` from repository htt
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
 ``` bash
-{% include 'install/tgz.sh' %}
+LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
+    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+export LATEST_VERSION
+
+case $(uname -m) in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+  *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
+esac
+
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+do
+  curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+    || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+done
+
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
+
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
+
+tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing tgz archives</summary>
+
 ``` bash
-{% include 'install/tgz_repo.sh' %}
+export LATEST_VERSION=$(curl -s https://repo.clickhouse.com/tgz/stable/ | \
+    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 </details>
 
@@ -114,22 +289,32 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
--   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
+     ```bash
+     curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
+     ```
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
+    ```
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse)
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
+    ```
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse)
+    ```bash
+    curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
+    ```
 
-After downloading, you can use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
+Run `sudo ./clickhouse install` to install ClickHouse system-wide (also with needed configuration files, configuring users etc.). Then run `sudo clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
 
-Run `sudo ./clickhouse install` if you want to install clickhouse system-wide (also with needed configuration files, configuring users etc.). After that run `clickhouse start` commands to start the clickhouse-server and `clickhouse-client` to connect to it.
-
-These builds are not recommended for use in production environments because they are less thoroughly tested, but you can do so on your own risk. They also have only a subset of ClickHouse features available.
+Use the `clickhouse client` to connect to the server, or `clickhouse local` to process local data.
 
 ### From Sources {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](../development/build.md) or [Mac OS X](../development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [Mac OS X](/docs/en/development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
@@ -151,7 +336,7 @@ To start the server as a daemon, run:
 $ sudo clickhouse start
 ```
 
-There are also another ways to run ClickHouse:
+There are also other ways to run ClickHouse:
 
 ``` bash
 $ sudo service clickhouse-server start
@@ -184,7 +369,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section [“Configuration Files”](../operations/configuration-files.md).
+For more information, see the section [“Configuration Files”](/docs/en/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -195,7 +380,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section [“Command-line client”](../interfaces/cli.md).
+For more information, see the section [“Command-line client”](/docs/en/interfaces/cli.md).
 
 Example:
 
@@ -220,6 +405,5 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](./tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
 
-[Original article](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

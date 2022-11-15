@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Движки таблиц"
-toc_priority: 26
-toc_title: "Введение"
+slug: /ru/engines/table-engines/
+sidebar_label: "Движки таблиц"
+sidebar_position: 26
 ---
 
 

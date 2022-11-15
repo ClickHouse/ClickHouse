@@ -13,15 +13,15 @@ namespace ErrorCodes
 }
 
 MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
-    const size_t thread_,
+    size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
-    const size_t min_marks_to_read_,
-    const UInt64 max_block_size_rows_,
+    size_t min_marks_to_read_,
+    UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const bool use_uncompressed_cache_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     const MergeTreeReaderSettings & reader_settings_,
@@ -29,7 +29,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     std::optional<ParallelReadingExtension> extension_)
     :
     MergeTreeBaseSelectProcessor{
-        pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     thread{thread_},
@@ -103,37 +103,26 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
+    const auto & metadata_snapshot = storage_snapshot->metadata;
+
+    IMergeTreeReader::ValueSizeMap value_size_map;
 
     if (!reader)
     {
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
-
-        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-            IMergeTreeReader::ValueSizeMap{}, profile_callback);
-
-        if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
-    else
+    else if (part_name != last_readed_part_name)
     {
-        /// in other case we can reuse readers, anyway they will be "seeked" to required mark
-        if (part_name != last_readed_part_name)
-        {
-            /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
+        value_size_map = reader->getAvgValueSizeHints();
+    }
 
-            if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
-        }
+    const bool init_new_readers = !reader || part_name != last_readed_part_name;
+    if (init_new_readers)
+    {
+        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
+            task->mark_ranges, value_size_map, profile_callback);
     }
 
     last_readed_part_name = part_name;
@@ -143,7 +132,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 void MergeTreeThreadSelectProcessor::finish()
 {
     reader.reset();
-    pre_reader.reset();
+    pre_reader_for_step.clear();
 }
 
 

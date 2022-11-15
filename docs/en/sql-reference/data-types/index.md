@@ -1,10 +1,10 @@
 ---
-toc_folder_title: Data Types
-toc_priority: 37
-toc_title: Introduction
+slug: /en/sql-reference/data-types/
+sidebar_label: Data Types
+sidebar_position: 37
 ---
 
-# Data Types {#data_types}
+# Data Types 
 
 ClickHouse can store various kinds of data in table cells.
 

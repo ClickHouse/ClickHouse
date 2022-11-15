@@ -1,5 +1,6 @@
 ---
-toc_priority: 131
+slug: /zh/sql-reference/aggregate-functions/reference/groupbitmapxor
+sidebar_position: 131
 ---
 
 # groupBitmapXor {#groupbitmapxor}

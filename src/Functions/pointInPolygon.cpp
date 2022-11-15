@@ -167,7 +167,7 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName poly = arguments[1];
+        const ColumnWithTypeAndName & poly = arguments[1];
         const IColumn * poly_col = poly.column.get();
         const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
@@ -574,7 +574,7 @@ private:
 
 }
 
-void registerFunctionPointInPolygon(FunctionFactory & factory)
+REGISTER_FUNCTION(PointInPolygon)
 {
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>>>();
 }

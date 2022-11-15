@@ -38,7 +38,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & map = get<const Map &>(field);
+    const auto & map = field.get<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
@@ -142,23 +142,30 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
                 break;
 
             reader(istr, key, key_column);
+            ++size;
+
             skipWhitespaceIfAny(istr);
             assertChar(':', istr);
-
-            ++size;
             skipWhitespaceIfAny(istr);
+
             reader(istr, value, value_column);
 
             skipWhitespaceIfAny(istr);
         }
 
-        offsets.push_back(offsets.back() + size);
         assertChar('}', istr);
     }
     catch (...)
     {
+        if (size)
+        {
+            nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
+            nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
+        }
         throw;
     }
+
+    offsets.push_back(offsets.back() + size);
 }
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -250,26 +257,24 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 }
 
 void SerializationMap::enumerateStreams(
-    SubstreamPath & path,
+    EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    SubstreamData next_data =
-    {
-        nested,
-        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr,
-        data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr,
-        data.serialization_info,
-    };
+    auto next_data = SubstreamData(nested)
+        .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
+        .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-    nested->enumerateStreams(path, callback, next_data);
+    nested->enumerateStreams(settings, callback, next_data);
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkStatePrefix(settings, state);
+    nested->serializeBinaryBulkStatePrefix(extractNestedColumn(column), settings, state);
 }
 
 void SerializationMap::serializeBinaryBulkStateSuffix(

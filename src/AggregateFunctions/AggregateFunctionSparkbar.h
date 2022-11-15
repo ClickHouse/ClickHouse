@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -161,11 +161,11 @@ private:
             Y max_y = data.max_y;
             Float64 diff_y = max_y - min_y;
 
-            if (diff_y)
+            if (diff_y != 0.0)
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
                     value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
@@ -173,7 +173,7 @@ private:
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
+                    value += getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
             }
         }
         else
@@ -185,24 +185,24 @@ private:
             std::optional<Float64> max_y;
 
             std::optional<Float64> new_y;
-            std::vector<std::optional<Float64>> newPoints;
-            newPoints.reserve(width);
+            std::vector<std::optional<Float64>> new_points;
+            new_points.reserve(width);
 
             std::pair<size_t, Float64> bound{0, 0.0};
             size_t cur_bucket_num = 0;
             // upper bound for bucket
-            auto upperBound = [&](size_t bucket_num)
+            auto upper_bound = [&](size_t bucket_num)
             {
                 bound.second = (bucket_num + 1) * multiple_d;
-                bound.first = std::floor(bound.second);
+                bound.first = static_cast<size_t>(std::floor(bound.second));
             };
-            upperBound(cur_bucket_num);
+            upper_bound(cur_bucket_num);
             for (size_t i = 0; i <= (diff_x + 1); ++i)
             {
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(min_x_local + static_cast<X>(i));
                     bool found = (it != data.points.end());
                     if (found && proportion > 0)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
@@ -211,7 +211,7 @@ private:
                     {
                         Float64 avg_y = new_y.value() / multiple_d;
 
-                        newPoints.emplace_back(avg_y);
+                        new_points.emplace_back(avg_y);
                         // If min_y has no value, or if the avg_y of the current bucket is less than min_y, update it.
                         if (!min_y || avg_y < min_y)
                             min_y = avg_y;
@@ -220,16 +220,16 @@ private:
                     }
                     else
                     {
-                        newPoints.emplace_back();
+                        new_points.emplace_back();
                     }
 
                     // next bucket
                     new_y = found ? ((1 - proportion) * it->getMapped()) : std::optional<Float64>();
-                    upperBound(++cur_bucket_num);
+                    upper_bound(++cur_bucket_num);
                 }
                 else
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(min_x_local + static_cast<X>(i));
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -240,19 +240,19 @@ private:
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto getBars = [&] (const std::optional<Float64> & point_y)
+            auto get_bars = [&] (const std::optional<Float64> & point_y)
             {
                 value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto getBarsForConstant = [&] (const std::optional<Float64> & point_y)
+            auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
             {
                 value += getBar(point_y ? 1 : 0);
             };
 
-            if (diff_y)
-                std::for_each(newPoints.begin(), newPoints.end(), getBars);
+            if (diff_y != 0.0)
+                std::for_each(new_points.begin(), new_points.end(), get_bars);
             else
-                std::for_each(newPoints.begin(), newPoints.end(), getBarsForConstant);
+                std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
         }
         return value;
     }
@@ -267,8 +267,8 @@ public:
         if (params.size() == 3)
         {
             specified_min_max_x = true;
-            min_x = params.at(1).safeGet<X>();
-            max_x = params.at(2).safeGet<X>();
+            min_x = static_cast<X>(params.at(1).safeGet<X>());
+            max_x = static_cast<X>(params.at(2).safeGet<X>());
         }
         else
         {
@@ -298,7 +298,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /*arena*/) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs, Arena * /*arena*/) const override
     {
         this->data(place).merge(this->data(rhs));
     }

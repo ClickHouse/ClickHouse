@@ -1,5 +1,6 @@
 ---
-toc_priority: 209
+slug: /ru/sql-reference/aggregate-functions/reference/quantilebfloat16
+sidebar_position: 209
 ---
 
 # quantileBFloat16 {#quantilebfloat16}

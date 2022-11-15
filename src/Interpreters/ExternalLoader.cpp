@@ -10,7 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -714,7 +714,10 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    else
+                    {
+                        LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    }
                 }
             }
         }
@@ -1299,6 +1302,7 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }

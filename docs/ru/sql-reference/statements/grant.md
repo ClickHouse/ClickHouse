@@ -1,6 +1,7 @@
 ---
-toc_priority: 38
-toc_title: GRANT
+slug: /ru/sql-reference/statements/grant
+sidebar_position: 38
+sidebar_label: GRANT
 ---
 
 # GRANT
@@ -220,7 +221,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 Отсутствие привилегий у пользователя или роли отображается как привилегия [NONE](#grant-none).
 
-Выполнение некоторых запросов требует определенного набора привилегий. Например, чтобы выполнить запрос [RENAME](misc.md#misc_operations-rename), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
+Выполнение некоторых запросов требует определенного набора привилегий. Например, чтобы выполнить запрос [RENAME](rename.md#rename-table), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
 
 
 ### SELECT {#grant-select}
@@ -308,7 +309,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### CREATE {#grant-create}
 
-Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](attach.md) в соответствии со следующей иерархией привилегий:
 
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
@@ -323,7 +324,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### DROP {#grant-drop}
 
-Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [DROP](drop.md) и [DETACH](detach.md) в соответствии со следующей иерархией привилегий:
 
 - `DROP`. Уровень: `GROUP`
     - `DROP DATABASE`. Уровень: `DATABASE`
@@ -339,7 +340,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### OPTIMIZE {#grant-optimize}
 
-Разрешает выполнять запросы [OPTIMIZE TABLE](misc.md#misc_operations-optimize).
+Разрешает выполнять запросы [OPTIMIZE TABLE](optimize.md).
 
 Уровень: `TABLE`.
 

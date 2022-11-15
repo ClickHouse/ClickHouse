@@ -1,8 +1,9 @@
 ---
-toc_priority: 126
+slug: /en/sql-reference/aggregate-functions/reference/groupbitor
+sidebar_position: 126
 ---
 
-# groupBitOr {#groupbitor}
+# groupBitOr
 
 Applies bitwise `OR` for series of numbers.
 

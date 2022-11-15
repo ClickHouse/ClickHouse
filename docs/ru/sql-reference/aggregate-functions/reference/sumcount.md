@@ -1,5 +1,6 @@
 ---
-toc_priority: 144
+slug: /ru/sql-reference/aggregate-functions/reference/sumcount
+sidebar_position: 144
 ---
 
 # sumCount {#agg_function-sumCount}

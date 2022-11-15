@@ -28,7 +28,7 @@ inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 }
 #endif
 
-inline bool cpuid(UInt32 op, UInt32 sub_op, UInt32 * res) noexcept
+inline bool cpuid(UInt32 op, UInt32 sub_op, UInt32 * res) noexcept /// NOLINT
 {
 #if defined(__x86_64__) || defined(__i386__)
     __cpuid_count(op, sub_op, res[0], res[1], res[2], res[3]);
@@ -43,7 +43,7 @@ inline bool cpuid(UInt32 op, UInt32 sub_op, UInt32 * res) noexcept
 #endif
 }
 
-inline bool cpuid(UInt32 op, UInt32 * res) noexcept
+inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
 {
 #if defined(__x86_64__) || defined(__i386__)
     __cpuid(op, res[0], res[1], res[2], res[3]);
@@ -82,6 +82,7 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept
     OP(AVX512BW)             \
     OP(AVX512VL)             \
     OP(AVX512VBMI)           \
+    OP(AVX512VBMI2)          \
     OP(PREFETCHWT1)          \
     OP(SHA)                  \
     OP(ADX)                  \
@@ -106,7 +107,7 @@ union CpuInfo
         UInt32 edx;
     } registers;
 
-    inline CpuInfo(UInt32 op) noexcept { cpuid(op, info); }
+    inline explicit CpuInfo(UInt32 op) noexcept { cpuid(op, info); }
 
     inline CpuInfo(UInt32 op, UInt32 sub_op) noexcept { cpuid(op, sub_op, info); }
 };
@@ -221,7 +222,7 @@ bool haveAVX512F() noexcept
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
            && ((our_xgetbv(0) >> 5) & 7u) == 7u       // ZMM state is enabled by OS
            && CpuInfo(0x0).registers.eax >= 0x7          // leaf 7 is present
-           && ((CpuInfo(0x7).registers.ebx >> 16) & 1u); // AVX512F bit
+           && ((CpuInfo(0x7, 0).registers.ebx >> 16) & 1u); // AVX512F bit
 #else
     return false;
 #endif
@@ -300,6 +301,11 @@ bool havePREFETCHWT1() noexcept
 bool haveAVX512VBMI() noexcept
 {
     return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ecx >> 1) & 1u);
+}
+
+bool haveAVX512VBMI2() noexcept
+{
+    return haveAVX512F() && ((CpuInfo(0x7, 0).registers.ecx >> 6) & 1u);
 }
 
 bool haveRDRAND() noexcept

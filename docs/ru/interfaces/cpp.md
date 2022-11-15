@@ -1,6 +1,7 @@
 ---
-toc_priority: 24
-toc_title: "C++ клиентская библиотека"
+slug: /ru/interfaces/cpp
+sidebar_position: 24
+sidebar_label: "C++ клиентская библиотека"
 ---
 
 # C++ клиентская библиотека {#c-klientskaia-biblioteka}

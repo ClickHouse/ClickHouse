@@ -1,6 +1,7 @@
 ---
-toc_priority: 11
-toc_title: PostgreSQL
+slug: /zh/engines/table-engines/integrations/postgresql
+sidebar_position: 11
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}
@@ -18,7 +19,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
-<!-- 详情请见 [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) 查询. -->
+<!-- 详情请见 [CREATE TABLE](../../../sql-reference/statements/create/table.mdx#create-table-query) 查询. -->
 
 表结构可以与 PostgreSQL 源表结构不同:
 

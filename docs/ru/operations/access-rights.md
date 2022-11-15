@@ -1,6 +1,7 @@
 ---
-toc_priority: 48
-toc_title: "Управление доступом"
+slug: /ru/operations/access-rights
+sidebar_position: 48
+sidebar_label: "Управление доступом"
 ---
 
 # Управление доступом {#access-control}
@@ -25,9 +26,9 @@ ClickHouse поддерживает управление доступом на �
 
 Рекомендуется использовать SQL-воркфлоу. Оба метода конфигурации работают одновременно, поэтому, если для управления доступом вы используете конфигурационные файлы, вы можете плавно перейти на SQL-воркфлоу.
 
-!!! note "Внимание"
+    :::note "Внимание"
     Нельзя одновременно использовать оба метода для управления одним и тем же объектом системы доступа.
-
+    :::
 Чтобы посмотреть список всех пользователей, ролей, профилей и пр., а также все привилегии, используйте запрос [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement).
 
 ## Использование {#access-control-usage}
@@ -63,7 +64,7 @@ ClickHouse поддерживает управление доступом на �
 
 - [CREATE USER](../sql-reference/statements/create/user.md#create-user-statement)
 - [ALTER USER](../sql-reference/statements/alter/user.md)
-- [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+- [DROP USER](../sql-reference/statements/drop.md#drop-user)
 - [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
 ### Применение настроек {#access-control-settings-applying}
@@ -90,9 +91,9 @@ ClickHouse поддерживает управление доступом на �
 
 - [CREATE ROLE](../sql-reference/statements/create/index.md#create-role-statement)
 - [ALTER ROLE](../sql-reference/statements/alter/role.md)
-- [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
-- [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
-- [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+- [DROP ROLE](../sql-reference/statements/drop.md#drop-role)
+- [SET ROLE](../sql-reference/statements/set-role.md)
+- [SET DEFAULT ROLE](../sql-reference/statements/set-role.md#set-default-role)
 - [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
 
 Привилегии можно присвоить роли с помощью запроса [GRANT](../sql-reference/statements/grant.md). Для отзыва привилегий у роли ClickHouse предоставляет запрос [REVOKE](../sql-reference/statements/revoke.md).
@@ -105,7 +106,7 @@ ClickHouse поддерживает управление доступом на �
 
 - [CREATE ROW POLICY](../sql-reference/statements/create/index.md#create-row-policy-statement)
 - [ALTER ROW POLICY](../sql-reference/statements/alter/row-policy.md)
-- [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+- [DROP ROW POLICY](../sql-reference/statements/drop.md#drop-row-policy)
 - [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
 
 
@@ -117,7 +118,7 @@ ClickHouse поддерживает управление доступом на �
 
 - [CREATE SETTINGS PROFILE](../sql-reference/statements/create/index.md#create-settings-profile-statement)
 - [ALTER SETTINGS PROFILE](../sql-reference/statements/alter/settings-profile.md)
-- [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+- [DROP SETTINGS PROFILE](../sql-reference/statements/drop.md#drop-settings-profile)
 - [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
 
 
@@ -131,7 +132,7 @@ ClickHouse поддерживает управление доступом на �
 
 - [CREATE QUOTA](../sql-reference/statements/create/index.md#create-quota-statement)
 - [ALTER QUOTA](../sql-reference/statements/alter/quota.md)
-- [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+- [DROP QUOTA](../sql-reference/statements/drop.md#drop-quota)
 - [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
 
 

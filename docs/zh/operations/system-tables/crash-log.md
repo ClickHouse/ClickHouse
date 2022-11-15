@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/crash-log
+---
 # system.crash_log {#system-tables_crash_log}
 
 包含有关致命错误堆栈跟踪的信息.该表默认不存在于数据库中, 仅在发生致命错误时才创建.

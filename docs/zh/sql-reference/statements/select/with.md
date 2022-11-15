@@ -1,5 +1,6 @@
 ---
-toc_title: WITH
+slug: /zh/sql-reference/statements/select/with
+sidebar_label: WITH
 ---
 
 # WITH子句 {#with-clause}

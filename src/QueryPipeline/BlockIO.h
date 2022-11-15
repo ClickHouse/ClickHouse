@@ -34,9 +34,8 @@ struct BlockIO
     void onFinish()
     {
         if (finish_callback)
-        {
             finish_callback(pipeline);
-        }
+
         pipeline.reset();
     }
 
@@ -47,6 +46,9 @@ struct BlockIO
 
         pipeline.reset();
     }
+
+    /// Set is_all_data_sent in system.processes for this query.
+    void setAllDataSent() const;
 
 private:
     void reset();

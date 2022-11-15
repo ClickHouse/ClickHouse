@@ -21,9 +21,8 @@ std::string ReadBufferFromFileDecorator::getFileName() const
 {
     if (!file_name.empty())
         return file_name;
-    if (ReadBufferFromFileBase * buffer = dynamic_cast<ReadBufferFromFileBase *>(impl.get()))
-        return buffer->getFileName();
-    return std::string();
+
+    return getFileNameFromReadBuffer(*impl);
 }
 
 
@@ -51,6 +50,11 @@ bool ReadBufferFromFileDecorator::nextImpl()
     auto result = impl->next();
     swap(*impl);
     return result;
+}
+
+size_t ReadBufferFromFileDecorator::getFileSize()
+{
+    return getFileSizeFromReadBuffer(*impl);
 }
 
 }

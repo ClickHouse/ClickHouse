@@ -13,10 +13,17 @@ namespace ErrorCodes
 
 
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
-    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_) : impl(std::move(impl_))
+    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, const ReadSettings & settings)
+    : ReadBufferFromFileBase(settings.remote_fs_buffer_size, nullptr, 0)
+    , impl(impl_)
+    , read_settings(settings)
 {
 }
 
+size_t ReadIndirectBufferFromRemoteFS::getFileSize()
+{
+    return impl->getFileSize();
+}
 
 off_t ReadIndirectBufferFromRemoteFS::getPosition()
 {
@@ -27,6 +34,18 @@ off_t ReadIndirectBufferFromRemoteFS::getPosition()
 String ReadIndirectBufferFromRemoteFS::getFileName() const
 {
     return impl->getFileName();
+}
+
+
+void ReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
+{
+    impl->setReadUntilPosition(position);
+}
+
+
+void ReadIndirectBufferFromRemoteFS::setReadUntilEnd()
+{
+    impl->setReadUntilPosition(impl->getFileSize());
 }
 
 
@@ -66,20 +85,34 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
     impl->reset();
     resetWorkingBuffer();
 
+    file_offset_of_buffer_end = impl->file_offset_of_buffer_end;
     return impl->file_offset_of_buffer_end;
 }
 
 
 bool ReadIndirectBufferFromRemoteFS::nextImpl()
 {
-    /// Transfer current position and working_buffer to actual ReadBuffer
-    swap(*impl);
-    /// Position and working_buffer will be updated in next() call
-    auto result = impl->next();
-    /// and assigned to current buffer.
-    swap(*impl);
+    chassert(internal_buffer.size() == read_settings.remote_fs_buffer_size);
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
-    return result;
+    auto [size, offset] = impl->readInto(internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end, /* ignore */0);
+
+    chassert(offset <= size);
+    chassert(size <= internal_buffer.size());
+
+    size_t bytes_read = size - offset;
+    if (bytes_read)
+        working_buffer = Buffer(internal_buffer.begin() + offset, internal_buffer.begin() + size);
+
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+
+    /// In case of multiple files for the same file in clickhouse (i.e. log family)
+    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
+    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
+    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+
+    return bytes_read;
 }
 
 }

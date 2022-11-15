@@ -1,4 +1,7 @@
-# system.numbers_mt {#system-numbers-mt}
+---
+slug: /en/operations/system-tables/numbers_mt
+---
+# numbers_mt
 
 The same as [system.numbers](../../operations/system-tables/numbers.md) but reads are parallelized. The numbers can be returned in any order.
 

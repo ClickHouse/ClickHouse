@@ -1,6 +1,7 @@
 ---
-toc_priority: 45
-toc_title: USER
+slug: /ru/sql-reference/statements/alter/user
+sidebar_position: 45
+sidebar_label: USER
 ---
 
 # ALTER USER {#alter-user-statement}

@@ -18,12 +18,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-struct FunctionPort : public IFunction
+template<bool conform_rfc>
+struct FunctionPortImpl : public IFunction
 {
-    static constexpr auto name = "port";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
-
-    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -91,16 +88,21 @@ private:
 
     static UInt16 extractPort(UInt16 default_port, const ColumnString::Chars & buf, size_t offset, size_t size)
     {
-        const char * p = reinterpret_cast<const char *>(&buf[0]) + offset;
+        const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
         const char * end = p + size;
 
-        StringRef host = getURLHost(p, size);
-        if (!host.size)
+        std::string_view host;
+        if constexpr (conform_rfc)
+            host = getURLHostRFC(p, size);
+        else
+            host = getURLHost(p, size);
+
+        if (host.empty())
             return default_port;
-        if (host.size == size)
+        if (host.size() == size)
             return default_port;
 
-        p = host.data + host.size;
+        p = host.data() + host.size();
         if (*p++ != ':')
             return default_port;
 
@@ -113,7 +115,7 @@ private:
                 return default_port;
 
             port = (port * 10) + (*p - '0');
-            if (port < 0 || port > UInt16(-1))
+            if (port < 0 || port > static_cast<UInt16>(-1))
                 return default_port;
             ++p;
         }
@@ -121,10 +123,34 @@ private:
     }
 };
 
-void registerFunctionPort(FunctionFactory & factory)
+struct FunctionPort : public FunctionPortImpl<false>
 {
-    factory.registerFunction<FunctionPort>();
+    static constexpr auto name = "port";
+    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
+};
+
+struct FunctionPortRFC : public FunctionPortImpl<true>
+{
+    static constexpr auto name = "portRFC";
+    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPortRFC>(); }
+};
+
+REGISTER_FUNCTION(Port)
+{
+    factory.registerFunction<FunctionPort>(
+    {
+        R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
+    });
+    factory.registerFunction<FunctionPortRFC>(
+    {
+        R"(Similar to `port`, but conforms to RFC 3986.)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
+    });
 }
 
 }
-

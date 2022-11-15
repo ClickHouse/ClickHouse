@@ -11,7 +11,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -152,13 +152,6 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     MutableColumnPtr result_holder = result_type->createColumn();
     IColumn & res_col = *result_holder;
 
-    /// AggregateFunction's states should be inserted into column using specific way
-    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
-
-    if (!res_col_aggregate_function && agg_func.isState())
-        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
-
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
     {
@@ -186,19 +179,18 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
-        that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
+        that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
-        if (!res_col_aggregate_function)
-            agg_func.insertResultInto(places[i], res_col, arena.get());
-        else
-            res_col_aggregate_function->insertFrom(places[i]);
+        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+        /// correctly if result contains AggregateFunction's states
+        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
     return result_holder;
 }
 
 
-void registerFunctionArrayReduce(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayReduce)
 {
     factory.registerFunction<FunctionArrayReduce>();
 }

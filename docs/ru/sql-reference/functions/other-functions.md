@@ -1,6 +1,7 @@
 ---
-toc_priority: 66
-toc_title: "Прочие функции"
+slug: /ru/sql-reference/functions/other-functions
+sidebar_position: 66
+sidebar_label: "Прочие функции"
 ---
 
 # Прочие функции {#other-functions}
@@ -567,7 +568,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -676,7 +677,7 @@ neighbor(column, offset[, default_value])
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Функция может получить доступ к значению в столбце соседней строки только внутри обрабатываемого в данный момент блока данных.
 
 Порядок строк, используемый при вычислении функции `neighbor`, может отличаться от порядка строк, возвращаемых пользователю.
@@ -785,7 +786,7 @@ FROM numbers(16)
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Функция может взять значение предыдущей строки только внутри текущего обработанного блока данных.
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
@@ -865,7 +866,7 @@ WHERE diff != 1
 У каждого события есть время начала и время окончания. Считается, что время начала включено в событие, а время окончания исключено из него. Столбцы со временем начала и окончания событий должны иметь одинаковый тип данных.
 Функция подсчитывает количество событий, происходящих одновременно на момент начала каждого из событий в выборке.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     События должны быть отсортированы по возрастанию времени начала. Если это требование нарушено, то функция вызывает исключение.
     Каждый блок данных обрабатывается независимо. Если события из разных блоков данных накладываются по времени, они не могут быть корректно обработаны.
 
@@ -1557,7 +1558,7 @@ FROM numbers(10);
 
 Накапливает состояния агрегатной функции для каждой строки блока данных.
 
-!!! warning "Warning"
+:::danger "Warning"
     Функция обнуляет состояние для каждого нового блока.
 
 **Синтаксис**
@@ -1721,16 +1722,13 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
-
-Оценивает внешнюю модель.
-
-Принимает на вход имя и аргументы модели. Возвращает Float64.
-
-## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
+## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+`custom_message` - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+`error_code` - необязательный параметр, константное число, задает код ошибки.
+
+Чтобы использовать аргумент `error_code`, должен быть включен параметр конфигурации `allow_custom_error_code_in_throwif`.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -2017,9 +2015,10 @@ countDigits(x)
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
- !!! note "Примечание"
+:::note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
-
+:::
+ 
 **Пример**
 
 Запрос:
@@ -2158,7 +2157,7 @@ currentRoles()
 
 **Возвращаемое значение**
 
--   Список текущих ролей для текущего пользователя. 
+-   Список текущих ролей для текущего пользователя.
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2174,13 +2173,13 @@ enabledRoles()
 
 **Возвращаемое значение**
 
--   Список доступных ролей для текущего пользователя. 
+-   Список доступных ролей для текущего пользователя.
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
 
 **Синтаксис**
 
@@ -2190,7 +2189,7 @@ defaultRoles()
 
 **Возвращаемое значение**
 
--   Список ролей по умолчанию. 
+-   Список ролей по умолчанию.
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2337,7 +2336,7 @@ shardNum()
 Запрос:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8) 
+CREATE TABLE shard_num_example (dummy UInt8)
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```

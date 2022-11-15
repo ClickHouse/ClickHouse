@@ -1,5 +1,6 @@
 ---
-toc_priority: 222
+slug: /ru/sql-reference/aggregate-functions/reference/stochasticlogisticregression
+sidebar_position: 222
 ---
 
 # stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}

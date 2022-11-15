@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <set>
@@ -16,9 +16,18 @@ namespace ErrorCodes
 {
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
+    extern const int LOGICAL_ERROR;
 }
 
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+
+void DiskSelector::assertInitialized() const
+{
+    if (!is_initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskSelector not initialized");
+}
+
+
+void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -46,12 +55,16 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
             std::make_shared<DiskLocal>(
                 default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
     }
+
+    is_initialized = true;
 }
 
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
 {
+    assertInitialized();
+
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -68,7 +81,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
-        if (result->getDisksMap().count(disk_name) == 0)
+        if (!result->getDisksMap().contains(disk_name))
         {
             result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
         }
@@ -110,10 +123,33 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
 DiskPtr DiskSelector::get(const String & name) const
 {
+    assertInitialized();
     auto it = disks.find(name);
     if (it == disks.end())
         throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_DISK);
     return it->second;
+}
+
+
+const DisksMap & DiskSelector::getDisksMap() const
+{
+    assertInitialized();
+    return disks;
+}
+
+
+void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
+{
+    assertInitialized();
+    disks.emplace(name, disk);
+}
+
+
+void DiskSelector::shutdown()
+{
+    assertInitialized();
+    for (auto & e : disks)
+        e.second->shutdown();
 }
 
 }

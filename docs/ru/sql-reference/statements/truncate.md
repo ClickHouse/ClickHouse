@@ -1,6 +1,7 @@
 ---
-toc_priority: 51
-toc_title: TRUNCATE
+slug: /ru/sql-reference/statements/truncate
+sidebar_position: 51
+sidebar_label: TRUNCATE
 ---
 
 # TRUNCATE {#truncate-statement}
@@ -17,5 +18,6 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Вы можете указать время ожидания (в секундах) выполнения запросов `TRUNCATE` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
 
-!!! info "Примечание"
+:::info "Примечание"
     Если значение настройки `replication_alter_partitions_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
+:::

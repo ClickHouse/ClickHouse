@@ -1,4 +1,7 @@
-# system.settings_profile_elements {#system_tables-settings_profile_elements}
+---
+slug: /en/operations/system-tables/settings_profile_elements
+---
+# settings_profile_elements
 
 Describes the content of the settings profile:
 

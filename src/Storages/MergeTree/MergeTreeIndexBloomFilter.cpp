@@ -3,7 +3,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <base/types.h>
-#include <base/bit_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Columns/ColumnConst.h>
@@ -103,7 +102,7 @@ MergeTreeIndexPtr bloomFilterIndexCreatorNew(
     if (!index.arguments.empty())
     {
         const auto & argument = index.arguments[0];
-        max_conflict_probability = std::min(Float64(1), std::max(argument.safeGet<Float64>(), Float64(0)));
+        max_conflict_probability = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);

@@ -1,5 +1,6 @@
 ---
-toc_title: INTERSECT
+slug: /ru/sql-reference/statements/select/intersect
+sidebar_label: INTERSECT
 ---
 
 # Секция INTERSECT {#intersect-clause}

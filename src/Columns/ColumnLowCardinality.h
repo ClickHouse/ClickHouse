@@ -59,18 +59,14 @@ public:
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
-    {
-        return getDictionary().getDataAtWithTerminatingZero(getIndexes().getUInt(n));
-    }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
     UInt64 getUInt(size_t n) const override { return getDictionary().getUInt(getIndexes().getUInt(n)); }
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
-    Float64 getFloat64(size_t n) const override { return getDictionary().getInt(getIndexes().getFloat64(n)); }
-    Float32 getFloat32(size_t n) const override { return getDictionary().getInt(getIndexes().getFloat32(n)); }
-    bool getBool(size_t n) const override { return getDictionary().getInt(getIndexes().getBool(n)); }
+    Float64 getFloat64(size_t n) const override { return getDictionary().getFloat64(getIndexes().getUInt(n)); }
+    Float32 getFloat32(size_t n) const override { return getDictionary().getFloat32(getIndexes().getUInt(n)); }
+    bool getBool(size_t n) const override { return getDictionary().getBool(getIndexes().getUInt(n)); }
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
@@ -136,13 +132,17 @@ public:
 
     bool hasEqualValues() const override;
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
 
-    void updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
+    void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -173,9 +173,22 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    {
+        callback(idx.getPositionsPtr());
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
+
+        /// Column doesn't own dictionary if it's shared.
+        if (!dictionary.isShared())
+        {
+            callback(dictionary.getColumnUniquePtr());
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
+        }
+    }
+
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+        if (const auto * rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
             return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
                 && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
         return false;
@@ -343,7 +356,7 @@ private:
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
-    void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+    void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
 };
 
 

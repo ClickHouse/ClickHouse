@@ -1,6 +1,7 @@
 ---
-toc_priority: 46
-toc_title: Cловари полигонов
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-polygon
+sidebar_position: 46
+sidebar_label: Cловари полигонов
 ---
 
 # Cловари полигонов {#polygon-dictionaries}

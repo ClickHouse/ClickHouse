@@ -17,7 +17,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -216,7 +216,7 @@ public:
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
                 auto value = value_column[values_vec_offset + i];
-                auto key = key_column[keys_vec_offset + i].get<T>();
+                T key = static_cast<T>(key_column[keys_vec_offset + i].get<T>());
 
                 if (!keepKey(key))
                     continue;
@@ -489,15 +489,15 @@ public:
                 "Aggregate function '{}' requires exactly one parameter "
                 "of Array type", getName());
 
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
+        Array keys_to_keep_values;
+        if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_.size());
+        keys_to_keep.reserve(keys_to_keep_values.size());
 
-        for (const Field & f : keys_to_keep_)
+        for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
     }
 
@@ -519,7 +519,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -554,7 +554,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;

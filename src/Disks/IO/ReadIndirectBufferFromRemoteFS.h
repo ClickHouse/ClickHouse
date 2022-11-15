@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 #include <IO/ReadBufferFromFile.h>
-#include <Disks/IDiskRemote.h>
+#include <IO/ReadSettings.h>
 #include <utility>
 
 
@@ -19,7 +19,7 @@ class ReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 
 public:
-    explicit ReadIndirectBufferFromRemoteFS(std::shared_ptr<ReadBufferFromRemoteFSGather> impl_);
+    explicit ReadIndirectBufferFromRemoteFS(std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, const ReadSettings & settings);
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -27,10 +27,22 @@ public:
 
     String getFileName() const override;
 
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
+
+    bool isIntegratedWithFilesystemCache() const override { return true; }
+
+    size_t getFileSize() override;
+
 private:
     bool nextImpl() override;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
+
+    ReadSettings read_settings;
+
+    size_t file_offset_of_buffer_end = 0;
 };
 
 }

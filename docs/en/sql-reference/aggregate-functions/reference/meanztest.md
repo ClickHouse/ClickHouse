@@ -1,9 +1,10 @@
 ---
-toc_priority: 303
-toc_title: meanZTest
+slug: /en/sql-reference/aggregate-functions/reference/meanztest
+sidebar_position: 303
+sidebar_label: meanZTest
 ---
 
-# meanZTest {#meanztest}
+# meanZTest
 
 Applies mean z-test to samples from two populations.
 
@@ -66,5 +67,3 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/meanZTest/) <!--hide-->

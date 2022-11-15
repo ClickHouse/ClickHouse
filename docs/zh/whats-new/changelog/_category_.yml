@@ -1,0 +1,7 @@
+position: 100
+label: '变更日志'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: 变更日志

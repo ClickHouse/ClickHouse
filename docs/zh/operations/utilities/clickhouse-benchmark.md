@@ -1,6 +1,7 @@
 ---
-toc_priority: 61
-toc_title: "性能测试"
+slug: /zh/operations/utilities/clickhouse-benchmark
+sidebar_position: 61
+sidebar_label: "性能测试"
 ---
 
 # 性能测试 {#clickhouse-benchmark}

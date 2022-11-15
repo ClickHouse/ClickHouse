@@ -1,6 +1,7 @@
 ---
-toc_priority: 52
-toc_title: TRUNCATE
+slug: /zh/sql-reference/statements/truncate
+sidebar_position: 52
+sidebar_label: TRUNCATE
 ---
 
 # TRUNCATE 语句 {#truncate-statement}

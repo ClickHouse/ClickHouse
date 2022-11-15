@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -8,6 +10,8 @@ namespace DB
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
+
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -89,8 +93,7 @@ public:
         Names virt_column_names_,
         const MergeTreeData & data_,
         const SelectQueryInfo & query_info_,
-        StorageMetadataPtr metadata_snapshot_,
-        StorageMetadataPtr metadata_snapshot_base_,
+        StorageSnapshotPtr storage_snapshot,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_,
@@ -101,7 +104,8 @@ public:
         bool enable_parallel_reading
     );
 
-    String getName() const override { return "ReadFromMergeTree"; }
+    static constexpr auto name = "ReadFromMergeTree";
+    String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -111,26 +115,56 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const StorageID getStorageID() const { return data.getStorageID(); }
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
+    }
+
+    void addFilterNodes(const ActionDAGNodes & filter_nodes)
+    {
+        for (const auto & node : filter_nodes.nodes)
+            added_filter_nodes.nodes.push_back(node);
+    }
+
+    StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
+        const PrewhereInfoPtr & prewhere_info,
+        const ActionDAGNodes & added_filter_nodes,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
-        unsigned num_streams,
+        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
 
+    ContextPtr getContext() const { return context; }
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
+
+    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+
 private:
-    const MergeTreeReaderSettings reader_settings;
+    int getSortDirection() const
+    {
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
+
+        return 1;
+    }
+
+    MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;
@@ -141,8 +175,11 @@ private:
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
 
-    StorageMetadataPtr metadata_snapshot;
-    StorageMetadataPtr metadata_snapshot_base;
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
+
+    StorageSnapshotPtr storage_snapshot;
+    StorageMetadataPtr metadata_for_reading;
 
     ContextPtr context;
 

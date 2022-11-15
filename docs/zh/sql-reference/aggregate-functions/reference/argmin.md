@@ -1,5 +1,6 @@
 ---
-toc_priority: 105
+slug: /zh/sql-reference/aggregate-functions/reference/argmin
+sidebar_position: 105
 ---
 
 # argMin {#agg-function-argmin}

@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Backups/BackupEntryFromMemory.h>
 
 
 namespace DB
@@ -76,6 +77,26 @@ ReplicatedMergeTreeMutationEntry ReplicatedMergeTreeMutationEntry::parse(const S
     assertEOF(in);
 
     return res;
+}
+
+
+std::shared_ptr<const IBackupEntry> ReplicatedMergeTreeMutationEntry::backup() const
+{
+    WriteBufferFromOwnString out;
+    out << "block numbers count: " << block_numbers.size() << "\n";
+
+    for (const auto & kv : block_numbers)
+    {
+        const String & partition_id = kv.first;
+        Int64 number = kv.second;
+        out << partition_id << "\t" << number << "\n";
+    }
+
+    out << "commands: ";
+    commands.writeText(out);
+    out << "\n";
+
+    return std::make_shared<BackupEntryFromMemory>(out.str());
 }
 
 }

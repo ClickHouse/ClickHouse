@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>
@@ -98,7 +98,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const uint8_t byte_code) const
+CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
 {
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
@@ -165,25 +165,44 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+void registerCodecMultiple(CompressionCodecFactory & factory);
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+
+/// Keeper use only general-purpose codecs, so we don't need these special codecs
+/// in standalone build
+#ifndef KEEPER_STANDALONE_BUILD
+
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
+#if USE_BORINGSSL
 void registerCodecEncrypted(CompressionCodecFactory & factory);
-void registerCodecMultiple(CompressionCodecFactory & factory);
+#endif
+void registerCodecFPC(CompressionCodecFactory & factory);
+
+#endif
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
-    registerCodecLZ4(*this);
     registerCodecNone(*this);
+    registerCodecLZ4(*this);
     registerCodecZSTD(*this);
     registerCodecLZ4HC(*this);
+    registerCodecMultiple(*this);
+#ifndef KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
+#if USE_BORINGSSL
     registerCodecEncrypted(*this);
-    registerCodecMultiple(*this);
+#endif
+    registerCodecFPC(*this);
+    #ifdef ENABLE_QPL_COMPRESSION
+        registerCodecDeflateQpl(*this);
+    #endif
+#endif
 
     default_codec = get("LZ4", {});
 }

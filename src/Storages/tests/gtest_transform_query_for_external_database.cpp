@@ -5,6 +5,7 @@
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -64,6 +65,9 @@ private:
                 {"create_time", std::make_shared<DataTypeDateTime>()},
                 {"field", std::make_shared<DataTypeString>()},
                 {"value", std::make_shared<DataTypeString>()},
+                {"a", std::make_shared<DataTypeUInt8>()},
+                {"b", std::make_shared<DataTypeDate>()},
+                {"foo", std::make_shared<DataTypeString>()},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -86,7 +90,7 @@ private:
             database->attachTable(
                 context,
                 table_name,
-                StorageMemory::create(
+                std::make_shared<StorageMemory>(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
@@ -268,4 +272,13 @@ TEST(TransformQueryForExternalDatabase, Null)
     check(state, 1,
           "SELECT field FROM table WHERE isNotNull(field)",
           R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
+}
+
+TEST(TransformQueryForExternalDatabase, ToDate)
+{
+    const State & state = State::instance();
+
+    check(state, 1,
+        "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05')",
+        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = '2019-10-05'))");
 }

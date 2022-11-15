@@ -4,12 +4,8 @@
 namespace DB
 {
 
-IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(
-    size_t num_inputs,
-    SortDescription description_)
-    : description(std::move(description_))
-    , current_inputs(num_inputs)
-    , cursors(num_inputs)
+IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_)
+    : description(std::move(description_)), header(std::move(header_)), current_inputs(num_inputs), cursors(num_inputs)
 {
 }
 
@@ -22,10 +18,11 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
         if (!current_inputs[source_num].chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(current_inputs[source_num].chunk.getColumns(), description, source_num, current_inputs[source_num].permutation);
+        cursors[source_num] = SortCursorImpl(
+            header, current_inputs[source_num].chunk.getColumns(), description, source_num, current_inputs[source_num].permutation);
     }
 
-    queue = SortingHeap<SortCursor>(cursors);
+    queue = SortingQueue<SortCursor>(cursors);
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)
@@ -37,7 +34,7 @@ void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t sourc
     last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
     current_input.swap(input);
-    cursors[source_num].reset(current_input.chunk.getColumns(), {}, current_input.permutation);
+    cursors[source_num].reset(current_input.chunk.getColumns(), header, current_input.permutation);
 
     queue.push(cursors[source_num]);
 }

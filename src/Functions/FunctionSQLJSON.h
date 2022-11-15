@@ -8,13 +8,13 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
@@ -22,7 +22,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
 
-#include "config_functions.h"
+#include "config.h"
 
 namespace DB
 {
@@ -164,7 +164,7 @@ public:
         /// 2. Create ASTPtr
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
-        uint32_t parse_depth = getContext()->getSettingsRef().max_parser_depth;
+        unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
@@ -242,7 +242,7 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        Element res;
+
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)

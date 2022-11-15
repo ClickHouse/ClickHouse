@@ -1,6 +1,7 @@
 ---
-toc_priority: 47
-toc_title: Date
+slug: /ru/sql-reference/data-types/date
+sidebar_position: 47
+sidebar_label: Date
 ---
 
 # Date {#data-type-date}

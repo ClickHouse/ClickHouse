@@ -56,7 +56,7 @@ static constexpr const char * getNameByTrait()
         return "groupArraySample";
     // else if (Trait::sampler == Sampler::DETERMINATOR) // TODO
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename T>
@@ -144,7 +144,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
@@ -447,7 +447,7 @@ public:
         }
     }
 
-    void create(AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)

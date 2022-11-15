@@ -1,7 +1,7 @@
 ---
-toc_folder_title: CREATE
-toc_priority: 34
-toc_title: "Обзор"
+slug: /ru/sql-reference/statements/create/
+sidebar_label: CREATE
+sidebar_position: 34
 ---
 
 # Запросы CREATE {#create-queries}
