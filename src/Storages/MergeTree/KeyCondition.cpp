@@ -438,8 +438,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         [] (RPNElement & out, const Field &)
         {
             out.function = RPNElement::FUNCTION_IS_NOT_NULL;
-            // isNotNull means (-Inf, +Inf), which is the default Range
-            out.range = Range();
+            // isNotNull means (-Inf, +Inf)
+            out.range = Range::createWholeUniverseWithoutNull();
             return true;
         }
     },
@@ -448,9 +448,10 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         [] (RPNElement & out, const Field &)
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
-            // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST),
-            // which is equivalent to not in Range (-Inf, +Inf)
-            out.range = Range();
+            // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST), We don't support discrete
+            // ranges, instead will use the inverse of (-Inf, +Inf). The inversion happens in
+            // checkInHyperrectangle.
+            out.range = Range::createWholeUniverseWithoutNull();
             return true;
         }
     }
@@ -783,7 +784,7 @@ KeyCondition::KeyCondition(
         context,
         key_column_names,
         key_expr_,
-        query_info.syntax_analyzer_result->getArrayJoinSourceNameSet(),
+        query_info.syntax_analyzer_result ? query_info.syntax_analyzer_result->getArrayJoinSourceNameSet() : NameSet{},
         single_point_,
         strict_)
 {
@@ -1938,6 +1939,7 @@ static BoolMask forAnyHyperrectangle(
     bool left_bounded,
     bool right_bounded,
     std::vector<Range> & hyperrectangle,
+    const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
     F && callback)
@@ -1981,12 +1983,17 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false);
+        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, data_types[prefix_size]->isNullable());
     else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false);
+        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, data_types[prefix_size]->isNullable());
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-        hyperrectangle[i] = Range();
+    {
+        if (data_types[i]->isNullable())
+            hyperrectangle[i] = Range::createWholeUniverse();
+        else
+            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
+    }
 
 
     BoolMask result = initial_mask;
@@ -2004,7 +2011,9 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded)
     {
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
-        result = result | forAnyHyperrectangle(key_size, left_keys, right_keys, true, false, hyperrectangle, prefix_size + 1, initial_mask, callback);
+        result = result
+            | forAnyHyperrectangle(
+                     key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
         if (result.isComplete())
             return result;
     }
@@ -2014,7 +2023,9 @@ static BoolMask forAnyHyperrectangle(
     if (right_bounded)
     {
         hyperrectangle[prefix_size] = Range(right_keys[prefix_size]);
-        result = result | forAnyHyperrectangle(key_size, left_keys, right_keys, false, true, hyperrectangle, prefix_size + 1, initial_mask, callback);
+        result = result
+            | forAnyHyperrectangle(
+                     key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback);
         if (result.isComplete())
             return result;
     }
@@ -2030,7 +2041,16 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<Range> key_ranges(used_key_size, Range());
+    std::vector<Range> key_ranges;
+
+    key_ranges.reserve(used_key_size);
+    for (size_t i = 0; i < used_key_size; ++i)
+    {
+        if (data_types[i]->isNullable())
+            key_ranges.push_back(Range::createWholeUniverse());
+        else
+            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
+    }
 
     // std::cerr << "Checking for: [";
     // for (size_t i = 0; i != used_key_size; ++i)
@@ -2041,7 +2061,7 @@ BoolMask KeyCondition::checkInRange(
     //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
     // std::cerr << "]\n";
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, 0, initial_mask,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const std::vector<Range> & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -2193,7 +2213,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            Range transformed_range;
+            Range transformed_range = Range::createWholeUniverse();
             if (!element.monotonic_functions_chain.empty())
             {
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
