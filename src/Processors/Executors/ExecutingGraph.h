@@ -157,6 +157,7 @@ private:
     UpgradableMutex nodes_mutex;
 
     const bool profile_processors;
+    bool cancelled = false;
 };
 
 }
