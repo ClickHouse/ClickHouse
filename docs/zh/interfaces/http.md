@@ -1,6 +1,7 @@
 ---
-toc_priority: 19
-toc_title: HTTP客户端
+slug: /zh/interfaces/http
+sidebar_position: 19
+sidebar_label: HTTP客户端
 ---
 
 # HTTP客户端 {#http-interface}

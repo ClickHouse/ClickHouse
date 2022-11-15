@@ -1,0 +1,8 @@
+['{ArraySizes}','{ArrayElements, Regular}']
+['{ArraySizes}','{ArrayElements, TupleElement(keys, escape_tuple_delimiter = true), Regular}','{ArrayElements, TupleElement(values, escape_tuple_delimiter = true), Regular}']
+['{TupleElement(1, escape_tuple_delimiter = true), Regular}','{TupleElement(2, escape_tuple_delimiter = true), Regular}','{TupleElement(3, escape_tuple_delimiter = true), Regular}']
+['{DictionaryKeys, Regular}','{DictionaryIndexes}']
+['{NullMap}','{NullableElements, Regular}']
+['{ArraySizes}','{ArrayElements, Regular}']
+['{ArraySizes}','{ArrayElements, TupleElement(keys, escape_tuple_delimiter = true), Regular}','{ArrayElements, TupleElement(values, escape_tuple_delimiter = true), Regular}']
+['{TupleElement(1, escape_tuple_delimiter = true), Regular}','{TupleElement(2, escape_tuple_delimiter = true), Regular}','{TupleElement(3, escape_tuple_delimiter = true), Regular}','{TupleElement(4, escape_tuple_delimiter = true), Regular}']

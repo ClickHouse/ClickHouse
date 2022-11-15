@@ -1,5 +1,6 @@
 ---
-toc_priority: 111
+slug: /ru/sql-reference/aggregate-functions/reference/groupuniqarray
+sidebar_position: 111
 ---
 
 # groupUniqArray {#groupuniqarray}

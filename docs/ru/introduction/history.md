@@ -1,6 +1,7 @@
 ---
-toc_priority: 7
-toc_title: "История ClickHouse"
+slug: /ru/introduction/history
+sidebar_position: 7
+sidebar_label: "История ClickHouse"
 ---
 
 

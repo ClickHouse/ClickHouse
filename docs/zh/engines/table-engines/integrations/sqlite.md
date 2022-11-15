@@ -1,6 +1,7 @@
 ---
-toc_priority: 7
-toc_title: SQLite
+slug: /zh/engines/table-engines/integrations/sqlite
+sidebar_position: 7
+sidebar_label: SQLite
 ---
 
 # SQLite {#sqlite}
@@ -56,4 +57,4 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 **详见**
 
 -   [SQLite](../../../engines/database-engines/sqlite.md) 引擎
--   [sqlite](../../../sql-reference/table-functions/sqlite.md) 表方法函数
+-   [sqlite](../../../sql-reference/table-functions/sqlite.mdx) 表方法函数

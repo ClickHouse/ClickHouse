@@ -158,8 +158,8 @@ class SequenceNextNodeImpl final
     using Self = SequenceNextNodeImpl<T, Node>;
 
     using Data = SequenceNextNodeGeneralData<Node>;
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     static constexpr size_t base_cond_column_idx = 2;
     static constexpr size_t event_column_idx = 1;
@@ -194,20 +194,9 @@ public:
 
     DataTypePtr getReturnType() const override { return data_type; }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
-    }
-
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
-        const AggregateFunctionProperties &) const override
-    {
-        /// Even though some values are mapped to aggregating key, it could return nulls for the below case.
-        ///   aggregated events: [A -> B -> C]
-        ///   events to find: [C -> D]
-        ///   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
@@ -216,7 +205,7 @@ public:
         a.value.push_back(v->clone(arena), arena);
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         new (place) Data;
     }
@@ -237,7 +226,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[min_required_args + i])->getData()[row_num])
                 node->events_bitset.set(i);
-        node->event_time = timestamp;
+        node->event_time = static_cast<DataTypeDateTime::FieldType>(timestamp);
 
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
@@ -376,7 +365,7 @@ public:
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
-        const UInt32 unmatched_idx = data.value.size();
+        const UInt32 unmatched_idx = static_cast<UInt32>(data.value.size());
 
         if (data.value.size() <= events_size)
             return unmatched_idx;
@@ -406,7 +395,7 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

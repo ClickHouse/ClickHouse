@@ -35,7 +35,7 @@ namespace DB
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
         size_t max_block_size_)
-        : SourceWithProgress(sample_block)
+        : ISource(sample_block)
         , connection(std::move(connection_))
         , keys(keys_)
         , storage_type(storage_type_)
@@ -109,7 +109,7 @@ namespace DB
                     readDateTimeText(time, in);
                     if (time < 0)
                         time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                     break;
                 }
                 case ValueType::vtUUID:

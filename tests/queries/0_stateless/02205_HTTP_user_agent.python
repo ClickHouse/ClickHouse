@@ -124,7 +124,8 @@ def test_select():
     check_answers(query, EXPECTED_ANSWER)
 
 def main():
-    t = start_server(1)
+    # HEAD + GET
+    t = start_server(2)
     t.start()
     test_select()
     t.join()

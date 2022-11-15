@@ -26,7 +26,7 @@ struct MergeTreeDataPartChecksum
     UInt64 uncompressed_size {};
     uint128 uncompressed_hash {};
 
-    MergeTreeDataPartChecksum() {}
+    MergeTreeDataPartChecksum() = default;
     MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
     MergeTreeDataPartChecksum(UInt64 file_size_, uint128 file_hash_, UInt64 uncompressed_size_, uint128 uncompressed_hash_)
         : file_size(file_size_), file_hash(file_hash_), is_compressed(true),

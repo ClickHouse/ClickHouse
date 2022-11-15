@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 #include <IO/PeekableReadBuffer.h>
@@ -11,7 +11,6 @@ namespace DB
 {
 
 /// A stream for input data in Hive Text format.
-/// Parallel parsing is disabled currently.
 class HiveTextRowInputFormat final : public CSVRowInputFormat
 {
 public:

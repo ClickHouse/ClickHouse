@@ -1,4 +1,7 @@
-# system.grants {#system_tables-grants}
+---
+slug: /en/operations/system-tables/grants
+---
+# grants
 
 Privileges granted to ClickHouse user accounts.
 

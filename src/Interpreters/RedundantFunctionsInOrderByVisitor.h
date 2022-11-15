@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {

@@ -124,14 +124,16 @@ MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & se
     return res;
 }
 
-void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
     res.resize(s);
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 }
 
-void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
+                                size_t, int, Permutation &, EqualRanges &) const
 {
 }
 
@@ -146,7 +148,7 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
     size_t data_hash = element_hash.getData()[0];
 
     for (auto & value : hash.getData())
-        value = intHashCRC32(data_hash, value);
+        value = static_cast<UInt32>(intHashCRC32(data_hash, value));
 }
 
 void ColumnConst::compareColumn(

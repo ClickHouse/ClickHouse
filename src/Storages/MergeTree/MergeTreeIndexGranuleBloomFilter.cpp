@@ -5,7 +5,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -22,7 +21,7 @@ static void assertGranuleBlocksStructure(const Blocks & granule_index_blocks)
     Block prev_block;
     for (size_t index = 0; index < granule_index_blocks.size(); ++index)
     {
-        Block granule_index_block = granule_index_blocks[index];
+        const Block & granule_index_block = granule_index_blocks[index];
 
         if (index != 0)
             assertBlocksHaveEqualStructure(prev_block, granule_index_block, "Granule blocks of bloom filter has difference structure.");

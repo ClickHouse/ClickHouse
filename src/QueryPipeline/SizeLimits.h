@@ -26,7 +26,7 @@ struct SizeLimits
     UInt64 max_bytes = 0;
     OverflowMode overflow_mode = OverflowMode::THROW;
 
-    SizeLimits() {}
+    SizeLimits() = default;
     SizeLimits(UInt64 max_rows_, UInt64 max_bytes_, OverflowMode overflow_mode_)
         : max_rows(max_rows_), max_bytes(max_bytes_), overflow_mode(overflow_mode_) {}
 

@@ -296,11 +296,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 
-    try_results.erase(
-            std::remove_if(
-                    try_results.begin(), try_results.end(),
-                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
-            try_results.end());
+    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
@@ -343,7 +339,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {
@@ -357,7 +353,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     }
 
 private:
-    std::minstd_rand rng = std::minstd_rand(randomSeed());
+    std::minstd_rand rng = std::minstd_rand(static_cast<uint_fast32_t>(randomSeed()));
 };
 
 template <typename TNestedPool>
@@ -395,8 +391,8 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 
         if (delta >= 0)
         {
-            const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-            size_t shift_amount = MAX_BITS;
+            const UInt64 max_bits = sizeof(UInt64) * CHAR_BIT;
+            size_t shift_amount = max_bits;
             /// Divide error counts by 2 every decrease_error_period seconds.
             if (decrease_error_period)
                 shift_amount = delta / decrease_error_period;
@@ -405,7 +401,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
             if (shift_amount)
                 last_decrease_time = current_time;
 
-            if (shift_amount >= MAX_BITS)
+            if (shift_amount >= max_bits)
             {
                 for (auto & state : states)
                 {

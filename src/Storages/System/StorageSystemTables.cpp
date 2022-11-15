@@ -16,18 +16,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_DROPPED;
-}
 
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
@@ -124,7 +119,7 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public SourceWithProgress
+class TablesBlockSource : public ISource
 {
 public:
     TablesBlockSource(
@@ -134,7 +129,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         ContextPtr context_)
-        : SourceWithProgress(std::move(header))
+        : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
@@ -244,10 +239,30 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        /// Fill the rest columns with defaults
+                        const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
-                            if (columns_mask[src_index++])
+                        {
+                            // total_rows
+                            if (src_index == 18 && columns_mask[src_index])
+                            {
+                                if (auto total_rows = table.second->totalRows(settings))
+                                    res_columns[res_index++]->insert(*total_rows);
+                                else
+                                    res_columns[res_index++]->insertDefault();
+                            }
+                            // total_bytes
+                            else if (src_index == 19 && columns_mask[src_index])
+                            {
+                                if (auto total_bytes = table.second->totalBytes(settings))
+                                    res_columns[res_index++]->insert(*total_bytes);
+                                else
+                                    res_columns[res_index++]->insertDefault();
+                            }
+                            /// Fill the rest columns with defaults
+                            else if (columns_mask[src_index])
                                 res_columns[res_index++]->insertDefault();
+                            src_index++;
+                        }
                     }
                 }
 
@@ -283,15 +298,13 @@ protected:
                         // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
                     }
-                    try
+
+                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+                    if (lock == nullptr)
                     {
-                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                            continue;
-                        throw;
+                        // Table was dropped while acquiring the lock, skipping table
+                        continue;
                     }
                 }
 
@@ -556,26 +569,26 @@ private:
 
 Pipe StorageSystemTables::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     /// Create a mask of what columns are needed in the result.
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = metadata_snapshot->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
     Block res_block;
 
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.count(sample_block.getByPosition(i).name))
+        if (names_set.contains(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             res_block.insert(sample_block.getByPosition(i));

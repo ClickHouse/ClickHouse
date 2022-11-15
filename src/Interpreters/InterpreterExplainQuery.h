@@ -17,6 +17,8 @@ public:
 
     static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
 
+    bool supportsTransactions() const override { return true; }
+
 private:
     ASTPtr query;
 

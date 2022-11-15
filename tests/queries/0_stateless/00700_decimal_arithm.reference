@@ -35,3 +35,14 @@
 0	\N	\N
 0	\N	\N
 0	\N	\N
+-- { echoOn }
+SELECT toDecimal128(1, 38) / toDecimal128(1, 0) SETTINGS decimal_check_overflow=1;
+1
+SELECT toDecimal128(1, 38) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=1; -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal128(1, 38) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=0;
+-0.02084710076281539039012382229530463436
+SELECT toDecimal128(1, 37) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=1;
+1
+SELECT toDecimal128(1, 19) / toDecimal128(1, 19) SETTINGS decimal_check_overflow=1;
+1
+SELECT toDecimal128(1, 20) / toDecimal128(1, 19) SETTINGS decimal_check_overflow=1; -- { serverError DECIMAL_OVERFLOW }

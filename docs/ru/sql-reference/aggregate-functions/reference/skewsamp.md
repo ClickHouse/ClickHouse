@@ -1,5 +1,6 @@
 ---
-toc_priority: 151
+slug: /ru/sql-reference/aggregate-functions/reference/skewsamp
+sidebar_position: 151
 ---
 
 # skewSamp {#skewsamp}

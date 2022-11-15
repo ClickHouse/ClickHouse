@@ -1,6 +1,7 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+slug: /zh/engines/table-engines/integrations/mongodb
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
 # MongoDB {#mongodb}

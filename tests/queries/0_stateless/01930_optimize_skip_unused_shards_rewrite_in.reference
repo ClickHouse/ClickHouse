@@ -38,8 +38,16 @@ select _shard_num, * from remote('127.{1..4}', view(select toUInt8(id) id from d
 1	0
 1	0
 1	0
+1	128
 2	1
 4	127
+4	255
+4	255
+4	255
+4	255
+4	255
+4	255
+4	255
 -- Int16, Int16
 select _shard_num, * from remote('127.{1..4}', view(select toInt16(id) id from data), toInt16(id)) where id in (0, 1, 0x7fff) order by _shard_num, id;
 1	0
@@ -72,8 +80,14 @@ select _shard_num, * from remote('127.{1..4}', view(select toUInt16(id) id from 
 1	0
 1	0
 1	0
+1	32768
 2	1
 4	32767
+4	65535
+4	65535
+4	65535
+4	65535
+4	65535
 -- Int32, Int32
 select _shard_num, * from remote('127.{1..4}', view(select toInt32(id) id from data), toInt32(id)) where id in (0, 1, 0x7fffffff) order by _shard_num, id;
 1	0
@@ -100,8 +114,12 @@ select _shard_num, * from remote('127.{1..4}', view(select toUInt32(id) id from 
 select _shard_num, * from remote('127.{1..4}', view(select toUInt32(id) id from data), toInt32(id)) where id in (0, 1, 0x7fffffff, 0x80000000, 0xffffffff) order by _shard_num, id;
 1	0
 1	0
+1	2147483648
 2	1
 4	2147483647
+4	4294967295
+4	4294967295
+4	4294967295
 -- Int64, Int64
 select _shard_num, * from remote('127.{1..4}', view(select toInt64(id) id from data), toInt64(id)) where id in (0, 1, 0x7fffffffffffffff) order by _shard_num, id;
 1	0
@@ -122,8 +140,10 @@ select _shard_num, * from remote('127.{1..4}', view(select toUInt64(id) id from 
 -- UInt64, Int64
 select _shard_num, * from remote('127.{1..4}', view(select toUInt64(id) id from data), toInt64(id)) where id in (0, 1, 0x7fffffffffffffff, 0x8000000000000000, 0xffffffffffffffff) order by _shard_num, id;
 1	0
+1	9223372036854775808
 2	1
 4	9223372036854775807
+4	18446744073709551615
 -- modulo(Int8)
 select distinct _shard_num, * from remote('127.{1..4}', view(select toInt16(id) id from data), toInt8(id)%255) where id in (-1) order by _shard_num, id;
 4	-1

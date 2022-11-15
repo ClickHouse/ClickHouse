@@ -1,5 +1,6 @@
 ---
-toc_priority: 128
+slug: /zh/sql-reference/aggregate-functions/reference/groupbitmap
+sidebar_position: 128
 ---
 
 # groupBitmap {#groupbitmap}

@@ -48,7 +48,7 @@ public:
     class Entry
     {
     public:
-        Entry() {}
+        Entry() {} /// NOLINT
 
         Entry(const Entry & src)
             : data(src.data), pool(src.pool)
@@ -61,7 +61,7 @@ public:
             decrementRefCount();
         }
 
-        Entry & operator= (const Entry & src)
+        Entry & operator= (const Entry & src) /// NOLINT
         {
             pool = src.pool;
             if (data)
@@ -77,13 +77,13 @@ public:
             return data == nullptr;
         }
 
-        operator mysqlxx::Connection & () &
+        operator mysqlxx::Connection & () & /// NOLINT
         {
             forceConnected();
             return data->conn;
         }
 
-        operator const mysqlxx::Connection & () const &
+        operator const mysqlxx::Connection & () const & /// NOLINT
         {
             forceConnected();
             return data->conn;
@@ -136,7 +136,7 @@ public:
     };
 
 
-    Pool(const std::string & config_name,
+    explicit Pool(const std::string & config_name,
         unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
         unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
         const char * parent_config_name_ = nullptr)
@@ -169,10 +169,24 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
-    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
-    max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
-    opt_reconnect(opt_reconnect_) {}
+    : logger(Poco::Logger::get("mysqlxx::Pool"))
+    , default_connections(default_connections_)
+    , max_connections(max_connections_)
+    , db(db_)
+    , server(server_)
+    , user(user_)
+    , password(password_)
+    , port(port_)
+    , socket(socket_)
+    , connect_timeout(connect_timeout_)
+    , rw_timeout(rw_timeout_)
+    , enable_local_infile(enable_local_infile_)
+    , opt_reconnect(opt_reconnect_)
+    {
+        logger.debug(
+            "Created MySQL Pool with settings: connect_timeout=%u, read_write_timeout=%u, default_connections_number=%u, max_connections_number=%u",
+            connect_timeout, rw_timeout, default_connections, max_connections);
+    }
 
     Pool(const Pool & other)
         : logger(other.logger), default_connections{other.default_connections},

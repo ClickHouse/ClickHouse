@@ -5,6 +5,7 @@ SELECT * FROM defaults;
 DROP TABLE defaults;
 
 DROP TABLE IF EXISTS elog_cut;
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE elog_cut
 (
     date Date DEFAULT toDate(uts),

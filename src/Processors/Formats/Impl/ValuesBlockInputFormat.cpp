@@ -1,11 +1,10 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -15,8 +14,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
 
-#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -50,11 +49,8 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
 {
-    serializations.resize(types.size());
-    for (size_t i = 0; i < types.size(); ++i)
-        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -104,6 +100,9 @@ Chunk ValuesBlockInputFormat::generate()
         readSuffix();
         return {};
     }
+
+    for (const auto & column : columns)
+        column->finalize();
 
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
@@ -353,7 +352,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf->position(), buf->buffer().end());
-    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
+    IParser::Pos token_iterator(tokens, static_cast<unsigned>(settings.max_parser_depth));
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -516,7 +515,7 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
@@ -569,8 +568,8 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(*buf);
 }
 
-ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
-    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), context(context_)
+ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 
@@ -583,45 +582,38 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     skipWhitespaceIfAny(buf);
-    if (buf.eof())
+    if (buf.eof() || end_of_data)
         return {};
 
     assertChar('(', buf);
-    PeekableReadBufferCheckpoint checkpoint(buf);
-    skipToNextRow(&buf, 0, 1);
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    buf.rollbackToCheckpoint();
-
-    Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
-
+    skipWhitespaceIfAny(buf);
     DataTypes data_types;
-    bool finish = false;
-    while (!finish)
+    String value;
+    while (!buf.eof() && *buf.position() != ')')
     {
-        Expected expected;
-        ASTPtr ast;
+        if (!data_types.empty())
+        {
+            skipWhitespaceIfAny(buf);
+            assertChar(',', buf);
+            skipWhitespaceIfAny(buf);
+        }
 
-        bool parsed = parser.parse(token_iterator, ast, expected);
-        /// Consider delimiter after value (',' or ')') as part of expression
-        parsed &= token_iterator->type == TokenType::Comma || token_iterator->type == TokenType::ClosingRoundBracket;
-
-        if (!parsed)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse expression here: {}, token: {}",
-                            String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())), String(token_iterator.get().begin, token_iterator.get().end));
-
-        std::pair<Field, DataTypePtr> result = evaluateConstantExpression(ast, context);
-        data_types.push_back(generalizeDataType(result.second));
-
-        if (token_iterator->type == TokenType::ClosingRoundBracket)
-            finish = true;
-        ++token_iterator;
-        buf.position() = const_cast<char *>(token_iterator->begin);
+        readQuotedField(value, buf);
+        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        data_types.push_back(std::move(type));
     }
+
+    assertChar(')', buf);
 
     skipWhitespaceIfAny(buf);
     if (!buf.eof() && *buf.position() == ',')
         ++buf.position();
+
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        end_of_data = true;
+    }
 
     return data_types;
 }
@@ -640,9 +632,13 @@ void registerInputFormatValues(FormatFactory & factory)
 
 void registerValuesSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
     {
-        return std::make_shared<ValuesSchemaReader>(buf, settings, context);
+        return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

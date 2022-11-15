@@ -1,6 +1,7 @@
 ---
-toc_priority: 15
-toc_title: "Анонимизированные данные Яндекс.Метрики"
+slug: /ru/getting-started/example-datasets/metrica
+sidebar_position: 15
+sidebar_label: "Анонимизированные данные Яндекс.Метрики"
 ---
 
 # Анонимизированные данные Яндекс.Метрики {#anonimizirovannye-dannye-iandeks-metriki}

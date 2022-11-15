@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 
@@ -18,17 +17,17 @@ public:
     WriteIndirectBufferFromRemoteFS(
         std::unique_ptr<WriteBuffer> impl_,
         CreateMetadataCallback && create_callback_,
-        const String & metadata_file_path_);
+        const String & remote_path_);
 
     ~WriteIndirectBufferFromRemoteFS() override;
 
-    String getFileName() const override { return metadata_file_path; }
+    String getFileName() const override { return remote_path; }
 
 private:
     void finalizeImpl() override;
 
     CreateMetadataCallback create_metadata_callback;
-    String metadata_file_path;
+    String remote_path;
 };
 
 }

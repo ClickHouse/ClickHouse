@@ -1,8 +1,10 @@
 #include <IO/Archives/ZipArchiveReader.h>
 
 #if USE_MINIZIP
+#include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
+#include <base/errnoToString.h>
 #include <unzip.h>
 
 
@@ -16,6 +18,20 @@ namespace ErrorCodes
 }
 
 using RawHandle = unzFile;
+
+
+namespace
+{
+    void checkCompressionMethodIsEnabled(int compression_method_)
+    {
+        ZipArchiveWriter::checkCompressionMethodIsEnabled(compression_method_);
+    }
+
+    void checkEncryptionIsEnabled()
+    {
+        ZipArchiveWriter::checkEncryptionIsEnabled();
+    }
+}
 
 
 /// Holds a raw handle, calls acquireRawHandle() in the constructor and releaseRawHandle() in the destructor.
@@ -108,7 +124,7 @@ public:
         return *file_name;
     }
 
-    const FileInfo & getFileInfo() const
+    const FileInfoImpl & getFileInfo() const
     {
         if (!file_info)
             retrieveFileInfo();
@@ -161,7 +177,7 @@ private:
     std::shared_ptr<ZipArchiveReader> reader;
     RawHandle raw_handle = nullptr;
     mutable std::optional<String> file_name;
-    mutable std::optional<FileInfo> file_info;
+    mutable std::optional<FileInfoImpl> file_info;
 };
 
 
@@ -174,7 +190,7 @@ public:
         , handle(std::move(handle_))
     {
         const auto & file_info = handle.getFileInfo();
-        checkCompressionMethodIsEnabled(static_cast<CompressionMethod>(file_info.compression_method));
+        checkCompressionMethodIsEnabled(file_info.compression_method);
 
         const char * password_cstr = nullptr;
         if (file_info.is_encrypted)
@@ -227,7 +243,7 @@ public:
         if (new_pos > static_cast<off_t>(file_info.uncompressed_size))
             throw Exception("Seek position is out of bound", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
-        if (file_info.compression_method == static_cast<int>(CompressionMethod::kStore))
+        if (file_info.compression_method == MZ_COMPRESS_METHOD_STORE)
         {
             /// unzSeek64() works only for non-compressed files.
             checkResult(unzSeek64(raw_handle, off, whence));
@@ -265,7 +281,7 @@ private:
     bool nextImpl() override
     {
         RawHandle raw_handle = handle.getRawHandle();
-        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), internal_buffer.size());
+        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
 
         if (bytes_read < 0)
             checkResult(bytes_read);
@@ -538,11 +554,11 @@ void ZipArchiveReader::checkResult(int code) const
     if (code >= UNZ_OK)
         return;
 
-    String message = "Code= ";
+    String message = "Code = ";
     switch (code)
     {
         case UNZ_OK: return;
-        case UNZ_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
+        case UNZ_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
         case UNZ_PARAMERROR: message += "PARAMERROR"; break;
         case UNZ_BADZIPFILE: message += "BADZIPFILE"; break;
         case UNZ_INTERNALERROR: message += "INTERNALERROR"; break;

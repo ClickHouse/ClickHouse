@@ -1,1 +1,0 @@
-../../../en/faq/general/who-is-using-clickhouse.md

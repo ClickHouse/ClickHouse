@@ -3,7 +3,7 @@
 import sys
 import os
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     fd3 = os.fdopen(3)
     fd4 = os.fdopen(4)
 
@@ -36,10 +36,10 @@ if __name__ == '__main__':
                 break
             break
 
-        print(str(len(lines)), end='\n')
+        print(str(len(lines)), end="\n")
 
         for line in lines:
-            print(line, end='')
+            print(line, end="")
         lines.clear()
 
         sys.stdout.flush()

@@ -1,5 +1,5 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 #if USE_AVRO
 #include <unordered_map>
 
@@ -9,9 +9,9 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB

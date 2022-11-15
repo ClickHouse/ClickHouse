@@ -79,8 +79,6 @@ private:
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
 
-    void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
-
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;

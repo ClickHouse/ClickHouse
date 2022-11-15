@@ -1,4 +1,4 @@
-# These files are located in separate library, because they are used by Yandex.Metrika code
+# These files are located in separate library, because they are used by separate products
 #  in places when no dependency on whole "dbms" library is possible.
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")

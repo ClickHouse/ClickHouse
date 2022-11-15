@@ -14,7 +14,7 @@ class RowInputMissingColumnsFiller
 {
 public:
     /// Makes a column filler which checks nested structures while adding default values to columns.
-    RowInputMissingColumnsFiller(const NamesAndTypesList & names_and_types);
+    explicit RowInputMissingColumnsFiller(const NamesAndTypesList & names_and_types);
     RowInputMissingColumnsFiller(const Names & names, const DataTypes & types);
     RowInputMissingColumnsFiller(size_t count, const std::string_view * names, const DataTypePtr * types);
 

@@ -31,6 +31,8 @@ select * from test_wide_nested;
 
 alter table test_wide_nested update `info.id` = [100,200], `info.age` = [10,20,30], `info.name` = ['a','b','c']  where id = 0; -- { serverError 341 }
 
+kill mutation where table = 'test_wide_nested' and database = currentDatabase() format Null;
+
 -- Recreate table, because KILL MUTATION is not suitable for parallel tests execution.
 SELECT '********* test 2 **********';
 DROP TABLE test_wide_nested;
@@ -53,6 +55,8 @@ ALTER table test_wide_nested update `info2.id` = `info.id`, `info2.name` = `info
 select * from test_wide_nested;
 
 alter table test_wide_nested update `info.id` = [100,200,300], `info.age` = [10,20,30] where id = 1; -- { serverError 341 }
+
+kill mutation where table = 'test_wide_nested' and database = currentDatabase() format Null;
 
 DROP TABLE test_wide_nested;
 

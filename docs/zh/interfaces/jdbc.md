@@ -1,6 +1,7 @@
 ---
-toc_priority: 22
-toc_title: JDBC驱动
+slug: /zh/interfaces/jdbc
+sidebar_position: 22
+sidebar_label: JDBC驱动
 ---
 
 # JDBC驱动 {#jdbc-driver}

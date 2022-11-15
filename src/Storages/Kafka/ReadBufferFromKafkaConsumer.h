@@ -5,6 +5,12 @@
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaConsumers;
+}
 
 namespace Poco
 {
@@ -67,6 +73,7 @@ public:
 
 private:
     using Messages = std::vector<cppkafka::Message>;
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
     {

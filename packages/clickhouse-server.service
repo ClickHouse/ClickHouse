@@ -1,0 +1,27 @@
+[Unit]
+Description=ClickHouse Server (analytic DBMS for big data)
+Requires=network-online.target
+# NOTE: that After/Wants=time-sync.target is not enough, you need to ensure
+# that the time was adjusted already, if you use systemd-timesyncd you are
+# safe, but if you use ntp or some other daemon, you should configure it
+# additionaly.
+After=time-sync.target network-online.target
+Wants=time-sync.target
+
+[Service]
+Type=simple
+User=clickhouse
+Group=clickhouse
+Restart=always
+RestartSec=30
+RuntimeDirectory=clickhouse-server
+ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
+# Minus means that this file is optional.
+EnvironmentFile=-/etc/default/clickhouse
+LimitCORE=infinity
+LimitNOFILE=500000
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE CAP_NET_BIND_SERVICE
+
+[Install]
+# ClickHouse should not start from the rescue shell (rescue.target).
+WantedBy=multi-user.target

@@ -121,8 +121,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Simple tool for uploading datasets to clickhouse S3",
         usage='%(prog)s [options] {}'.format(USAGE_EXAMPLES))
-    parser.add_argument('--s3-api-url', default='s3.mds.yandex.net')
-    parser.add_argument('--s3-common-url', default='s3.yandex.net')
+    parser.add_argument('--s3-api-url', default='s3.amazonaws.com')
+    parser.add_argument('--s3-common-url', default='s3.amazonaws.com')
     parser.add_argument('--bucket-name', default='clickhouse-datasets')
     parser.add_argument('--dataset-name', required=True,
                         help='Name of dataset, will be used in uploaded path')

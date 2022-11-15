@@ -63,7 +63,7 @@ public:
     }
 
     /// Get codec by method byte (no params available)
-    CompressionCodecPtr get(const uint8_t byte_code) const;
+    CompressionCodecPtr get(uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;

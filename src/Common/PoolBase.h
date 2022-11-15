@@ -5,7 +5,7 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 
@@ -55,7 +55,7 @@ private:
         explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
-            std::unique_lock lock(data.pool.mutex);
+            std::lock_guard lock(data.pool.mutex);
             data.in_use = false;
             data.pool.available.notify_one();
         }
@@ -163,7 +163,7 @@ public:
 
     inline size_t size()
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         return items.size();
     }
 

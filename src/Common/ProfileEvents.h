@@ -4,7 +4,7 @@
 #include "base/types.h"
 #include <atomic>
 #include <memory>
-#include <stddef.h>
+#include <cstddef>
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -35,10 +35,10 @@ namespace ProfileEvents
         VariableContext level = VariableContext::Thread;
 
         /// By default, any instance have to increment global counters
-        Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
+        explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
         /// Global level static initializer
-        Counters(Counter * allocated_counters) noexcept
+        explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         Counter & operator[] (Event event)

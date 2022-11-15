@@ -115,8 +115,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<is_decimal<T> && is_decimal<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
+    requires is_decimal<T> && is_decimal<U>
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
@@ -137,8 +137,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<is_decimal<T> && !is_decimal<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr &)
+    requires is_decimal<T> && (!is_decimal<U>)
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
@@ -148,8 +148,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<!is_decimal<T> && is_decimal<U>, Shift>
-    getScales(const DataTypePtr &, const DataTypePtr & right_type)
+    requires (!is_decimal<T>) && is_decimal<U>
+    static Shift getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
@@ -230,7 +230,7 @@ private:
         if constexpr (is_decimal<B>)
             y = b.value;
         else
-            y = b;
+            y = static_cast<CompareInt>(b);
 
         if constexpr (_check_overflow)
         {

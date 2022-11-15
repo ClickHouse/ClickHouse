@@ -1,6 +1,7 @@
 ---
-toc_priority: 36
-toc_title: HDFS
+slug: /zh/engines/table-engines/integrations/hdfs
+sidebar_position: 36
+sidebar_label: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}

@@ -1,6 +1,7 @@
 ---
-toc_priority: 44
-toc_title: DROP
+slug: /ru/sql-reference/statements/drop
+sidebar_position: 44
+sidebar_label: DROP
 ---
 
 # DROP {#drop}

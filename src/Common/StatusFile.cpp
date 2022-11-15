@@ -2,9 +2,9 @@
 
 #include <sys/file.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <cerrno>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
@@ -98,10 +97,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
 }
 
 }

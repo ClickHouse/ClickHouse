@@ -1,6 +1,7 @@
 ---
-toc_priority: 49
-toc_title: "Функции для битмапов"
+slug: /ru/sql-reference/functions/bitmap-functions
+sidebar_position: 49
+sidebar_label: "Функции для битмапов"
 ---
 
 # Функции для битовых масок {#bitmap-functions}

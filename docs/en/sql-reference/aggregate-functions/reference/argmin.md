@@ -1,8 +1,9 @@
 ---
-toc_priority: 105
+slug: /en/sql-reference/aggregate-functions/reference/argmin
+sidebar_position: 105
 ---
 
-# argMin {#agg-function-argmin}
+# argMin
 
 Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PROTOBUF
 #   include <Common/PODArray.h>
@@ -16,7 +16,7 @@ class ReadBuffer;
 class ProtobufReader
 {
 public:
-    ProtobufReader(ReadBuffer & in_);
+    explicit ProtobufReader(ReadBuffer & in_);
 
     void startMessage(bool with_length_delimiter_);
     void endMessage(bool ignore_errors);

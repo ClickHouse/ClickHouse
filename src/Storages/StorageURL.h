@@ -2,13 +2,13 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/Cache/SchemaCache.h>
 
 
 namespace DB
@@ -30,12 +30,12 @@ class IStorageURLBase : public IStorage
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
@@ -44,10 +44,12 @@ public:
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
-        const String & compression_method,
+        CompressionMethod compression_method,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
+
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
 
 protected:
     IStorageURLBase(
@@ -65,7 +67,7 @@ protected:
         ASTPtr partition_by = nullptr);
 
     String uri;
-    String compression_method;
+    CompressionMethod compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
     // clause of the `CREATE` query. In this case, format_settings is set.
@@ -80,7 +82,7 @@ protected:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -94,10 +96,31 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool isColumnOriented() const override;
+    bool supportsSubsetOfColumns() const override;
 
 private:
-    virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
+    virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & urls,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static void addColumnsToCache(
+        const Strings & urls,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static std::optional<time_t> getLastModificationTime(
+        const String & url,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const ContextPtr & context);
 };
 
 class StorageURLSink : public SinkToStorage
@@ -115,16 +138,20 @@ public:
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
+    void onCancel() override;
+    void onException() override;
     void onFinish() override;
 
 private:
+    void finalize();
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
-class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public IStorageURLBase
 {
-    friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const String & uri_,
@@ -145,14 +172,16 @@ public:
         return "URL";
     }
 
-    Block getHeaderBlock(const Names & /*column_names*/, const StorageMetadataPtr & metadata_snapshot) const override
+    Block getHeaderBlock(const Names & /*column_names*/, const StorageSnapshotPtr & storage_snapshot) const override
     {
-        return metadata_snapshot->getSampleBlock();
+        return storage_snapshot->metadata->getSampleBlock();
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context);
 };
 
 
@@ -172,12 +201,12 @@ public:
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     struct Configuration
     {

@@ -5,8 +5,14 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="skipping_indices")
-node = cluster.add_instance('node', image='yandex/clickhouse-server', tag='21.6', stay_alive=True, with_installed_binary=True)
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance(
+    "node",
+    image="yandex/clickhouse-server",
+    tag="21.6",
+    stay_alive=True,
+    with_installed_binary=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +29,8 @@ def start_cluster():
 # restart_with_tagged_version(), since right now it is not possible to
 # switch to old tagged clickhouse version.
 def test_index(start_cluster):
-    node.query("""
+    node.query(
+        """
     CREATE TABLE data
     (
         key Int,
@@ -36,9 +43,12 @@ def test_index(start_cluster):
     INSERT INTO data SELECT number, number FROM numbers(10000);
 
     SELECT * FROM data WHERE value = 20000 SETTINGS force_data_skipping_indices = 'value_index' SETTINGS force_data_skipping_indices = 'value_index', max_rows_to_read=1;
-    """)
+    """
+    )
     node.restart_with_latest_version()
-    node.query("""
+    node.query(
+        """
     SELECT * FROM data WHERE value = 20000 SETTINGS force_data_skipping_indices = 'value_index' SETTINGS force_data_skipping_indices = 'value_index', max_rows_to_read=1;
     DROP TABLE data;
-    """)
+    """
+    )

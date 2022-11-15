@@ -11,7 +11,7 @@ for format in "${FORMATS[@]}"
 do
     echo $format
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 00163_column_oriented SYNC"
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE 00163_column_oriented(ClientEventTime DateTime('Europe/Moscow'), MobilePhoneModel String, ClientIP6 FixedString(16)) ENGINE=File($format)"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE 00163_column_oriented(ClientEventTime DateTime('Asia/Dubai'), MobilePhoneModel String, ClientIP6 FixedString(16)) ENGINE=File($format)"
     $CLICKHOUSE_CLIENT -q "INSERT INTO 00163_column_oriented SELECT ClientEventTime, MobilePhoneModel, ClientIP6 FROM test.hits ORDER BY ClientEventTime, MobilePhoneModel, ClientIP6 LIMIT 100"
     $CLICKHOUSE_CLIENT -q "SELECT ClientEventTime from 00163_column_oriented" | md5sum
     $CLICKHOUSE_CLIENT -q "SELECT MobilePhoneModel from 00163_column_oriented" | md5sum

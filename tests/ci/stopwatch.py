@@ -2,7 +2,8 @@
 
 import datetime
 
-class Stopwatch():
+
+class Stopwatch:
     def __init__(self):
         self.start_time = datetime.datetime.utcnow()
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")

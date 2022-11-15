@@ -1,7 +1,7 @@
 ---
-toc_folder_title: SQL 语句
-toc_hidden: true
-toc_priority: 31
+slug: /zh/sql-reference/statements/
+sidebar_label: SQL 语句
+sidebar_position: 31
 ---
 
 # ClickHouse SQL 语句 {#clickhouse-sql-statements}
@@ -16,17 +16,17 @@ toc_priority: 31
 -   [SHOW](../../sql-reference/statements/show.md)
 -   [GRANT](../../sql-reference/statements/grant.md)
 -   [REVOKE](../../sql-reference/statements/revoke.md)
--   [ATTACH](../../sql-reference/statements/attach.md)
--   [CHECK TABLE](../../sql-reference/statements/check-table.md)
--   [DESCRIBE TABLE](../../sql-reference/statements/describe-table.md)
--   [DETACH](../../sql-reference/statements/detach.md)
--   [DROP](../../sql-reference/statements/drop.md)
+-   [ATTACH](../../sql-reference/statements/attach.mdx)
+-   [CHECK TABLE](../../sql-reference/statements/check-table.mdx)
+-   [DESCRIBE TABLE](../../sql-reference/statements/describe-table.mdx)
+-   [DETACH](../../sql-reference/statements/detach.mdx)
+-   [DROP](../../sql-reference/statements/drop)
 -   [EXISTS](../../sql-reference/statements/exists.md)
--   [KILL](../../sql-reference/statements/kill.md)
--   [OPTIMIZE](../../sql-reference/statements/optimize.md)
+-   [KILL](../../sql-reference/statements/kill.mdx)
+-   [OPTIMIZE](../../sql-reference/statements/optimize.mdx)
 -   [RENAME](../../sql-reference/statements/rename.md)
 -   [SET](../../sql-reference/statements/set.md)
--   [SET ROLE](../../sql-reference/statements/set-role.md)
+-   [SET ROLE](../../sql-reference/statements/set-role.mdx)
 -   [TRUNCATE](../../sql-reference/statements/truncate.md)
 -   [USE](../../sql-reference/statements/use.md)
--   [EXPLAIN](../../sql-reference/statements/explain.md)
+-   [EXPLAIN](../../sql-reference/statements/explain.mdx)

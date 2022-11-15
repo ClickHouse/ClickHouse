@@ -15,21 +15,40 @@ Both ssl_conf.xml and no_ssl_conf.xml have the same port
 def _fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
-            '''
+            """
                 CREATE DATABASE test;
     
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
-            '''.format(shard=shard, replica=node.name))
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
+            """.format(
+                shard=shard, replica=node.name
+            )
+        )
 
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1',
-                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
-                                           "configs/server.key", "configs/dhparam.pem"], with_zookeeper=True)
-node2 = cluster.add_instance('node2',
-                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
-                                           "configs/server.key", "configs/dhparam.pem"], with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
+    with_zookeeper=True,
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -48,13 +67,13 @@ def both_https_cluster():
 def test_both_https(both_https_cluster):
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
 
-    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '111')
-    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", "111")
+    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", "111")
 
     node2.query("insert into test_table values ('2017-06-17', 222, 1)")
 
-    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '111\n222')
-    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '111\n222')
+    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", "111\n222")
+    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", "111\n222")
 
 
 def test_replication_after_partition(both_https_cluster):
@@ -80,12 +99,20 @@ def test_replication_after_partition(both_https_cluster):
     cres.wait()
     ires.wait()
 
-    assert_eq_with_retry(node1, "SELECT count() FROM test_table", '100')
-    assert_eq_with_retry(node2, "SELECT count() FROM test_table", '100')
+    assert_eq_with_retry(node1, "SELECT count() FROM test_table", "100")
+    assert_eq_with_retry(node2, "SELECT count() FROM test_table", "100")
 
 
-node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/remote_servers.xml", "configs/no_ssl_conf.xml"],
+    with_zookeeper=True,
+)
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/remote_servers.xml", "configs/no_ssl_conf.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -104,22 +131,31 @@ def both_http_cluster():
 def test_both_http(both_http_cluster):
     node3.query("insert into test_table values ('2017-06-16', 111, 0)")
 
-    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111')
-    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", "111")
+    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", "111")
 
     node4.query("insert into test_table values ('2017-06-17', 222, 1)")
 
-    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111\n222')
-    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111\n222')
+    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", "111\n222")
+    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", "111\n222")
 
 
-node5 = cluster.add_instance('node5',
-                             main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml', "configs/server.crt",
-                                           "configs/server.key", "configs/dhparam.pem"],
-                             with_zookeeper=True)
-node6 = cluster.add_instance('node6',
-                             main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'],
-                             with_zookeeper=True)
+node5 = cluster.add_instance(
+    "node5",
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
+    with_zookeeper=True,
+)
+node6 = cluster.add_instance(
+    "node6",
+    main_configs=["configs/remote_servers.xml", "configs/no_ssl_conf.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -138,10 +174,10 @@ def mixed_protocol_cluster():
 def test_mixed_protocol(mixed_protocol_cluster):
     node5.query("insert into test_table values ('2017-06-16', 111, 0)")
 
-    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '111')
-    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '')
+    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", "111")
+    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", "")
 
     node6.query("insert into test_table values ('2017-06-17', 222, 1)")
 
-    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '111')
-    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '222')
+    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", "111")
+    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", "222")

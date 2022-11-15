@@ -1,5 +1,6 @@
 ---
-toc_priority: 33
+slug: /zh/sql-reference/aggregate-functions/reference/varsamp
+sidebar_position: 33
 ---
 
 # varSamp {#varsamp}

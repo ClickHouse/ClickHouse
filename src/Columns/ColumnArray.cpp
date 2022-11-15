@@ -50,13 +50,15 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && data)
+    if (!offsets_concrete->empty() && data && !data->empty())
     {
         Offset last_offset = offsets_concrete->getData().back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
-            throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
+                data->size(), last_offset);
     }
 
     /** NOTE
@@ -139,7 +141,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = DB::get<Array &>(res);
+    Array & res_arr = res.get<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -149,23 +151,24 @@ void ColumnArray::get(size_t n, Field & res) const
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
+    assert(n < size());
+
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
-      * For arrays of strings and arrays of arrays, the resulting chunk of memory may not be one-to-one correspondence with the elements,
-      *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t offset_of_first_elem = offsetAt(n);
-    StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+    /// We are using pointer arithmetic on the addresses of the array elements.
+    if (!data->isFixedAndContiguous())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 
     size_t array_size = sizeAt(n);
     if (array_size == 0)
-        return StringRef(first.data, 0);
+        return StringRef(nullptr, 0);
 
-    size_t offset_of_last_elem = getOffsets()[n] - 1;
-    StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
+    size_t offset_of_first_elem = offsetAt(n);
+    StringRef first = getData().getDataAt(offset_of_first_elem);
 
-    return StringRef(first.data, last.data + last.size - first.data);
+    return StringRef(first.data, first.size * array_size);
 }
 
 
@@ -181,7 +184,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     if (!data->isFixedAndContiguous())
-        throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
 
@@ -274,13 +277,13 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     {
         /// This row improves hash a little bit according to integration tests.
         /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = intHashCRC32(hash_data[i]);
+        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
 
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
             /// It is probably not the best way to combine hashes.
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
             /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
+            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
 
         prev_offset = offsets_data[i];
     }
@@ -294,7 +297,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = DB::get<const Array &>(x);
+    const Array & array = x.get<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -380,28 +383,40 @@ bool ColumnArray::hasEqualValues() const
     return hasEqualValuesImpl<ColumnArray>();
 }
 
-template <bool positive>
-struct ColumnArray::Cmp
+struct ColumnArray::ComparatorBase
+{
+    const ColumnArray & parent;
+    int nan_direction_hint;
+
+    ComparatorBase(const ColumnArray & parent_, int nan_direction_hint_)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+
+        return res;
+    }
+};
+
+struct ColumnArray::ComparatorCollationBase
 {
     const ColumnArray & parent;
     int nan_direction_hint;
     const Collator * collator;
 
-    Cmp(const ColumnArray & parent_, int nan_direction_hint_, const Collator * collator_=nullptr)
-        : parent(parent_), nan_direction_hint(nan_direction_hint_), collator(collator_) {}
-
-    int operator()(size_t lhs, size_t rhs) const
+    ComparatorCollationBase(const ColumnArray & parent_, int nan_direction_hint_, const Collator * collator_)
+        : parent(parent_), nan_direction_hint(nan_direction_hint_), collator(collator_)
     {
-        int res;
-        if (collator)
-            res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
-        else
-            res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
+    }
 
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    {
+        int res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
+
+        return res;
     }
 };
 
@@ -411,6 +426,10 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
+void ColumnArray::ensureOwnership()
+{
+    getData().ensureOwnership();
+}
 
 size_t ColumnArray::byteSize() const
 {
@@ -550,8 +569,8 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -592,7 +611,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
 {
     size_t col_size = getOffsets().size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     if (0 == col_size)
         return ColumnArray::create(data);
@@ -660,7 +679,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
 {
     size_t size = getOffsets().size();
     if (size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     if (size == 0)
         return ColumnArray::create(data);
@@ -797,56 +816,88 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-template <typename Comparator>
-void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const
+void ColumnArray::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    size_t s = size();
-    if (limit >= s)
-        limit = 0;
-
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
-
-    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
-
-    if (limit)
-        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-    else
-        ::sort(res.begin(), res.end(), less);
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (reverse)
-        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint));
-    else
-        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint));
+    auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
 
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
+void ColumnArray::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                            size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint));
-    else
-        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint));
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorCollationAscendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorCollationDescendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnArray::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                            size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (reverse)
-        getPermutationImpl(limit, res, Cmp<false>(*this, nan_direction_hint, &collator));
-    else
-        getPermutationImpl(limit, res, Cmp<true>(*this, nan_direction_hint, &collator));
-}
+    auto comparator_equal = ComparatorCollationEqual(*this, nan_direction_hint, &collator);
 
-void ColumnArray::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const
-{
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_range, Cmp<false>(*this, nan_direction_hint, &collator));
-    else
-        updatePermutationImpl(limit, res, equal_range, Cmp<true>(*this, nan_direction_hint, &collator));
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingUnstable(*this, nan_direction_hint, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationAscendingStable(*this, nan_direction_hint, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingUnstable(*this, nan_direction_hint, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(
+            limit,
+            res,
+            equal_ranges,
+            ComparatorCollationDescendingStable(*this, nan_direction_hint, &collator),
+            comparator_equal,
+            DefaultSort(),
+            DefaultPartialSort());
 }
 
 ColumnPtr ColumnArray::compress() const
@@ -1139,6 +1190,14 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
+}
+
+size_t ColumnArray::getNumberOfDimensions() const
+{
+    const auto * nested_array = checkAndGetColumn<ColumnArray>(*data);
+    if (!nested_array)
+        return 1;
+    return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
 }

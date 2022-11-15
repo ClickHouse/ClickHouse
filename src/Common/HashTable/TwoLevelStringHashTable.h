@@ -13,8 +13,8 @@ public:
     using Key = StringRef;
     using Impl = ImplTable;
 
-    static constexpr size_t NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
-    static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
+    static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
+    static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
     // TODO: currently hashing contains redundant computations when doing distributed or external aggregations
     size_t hash(const Key & x) const
@@ -27,7 +27,6 @@ public:
     /// NOTE Bad for hash tables with more than 2^32 cells.
     static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
-public:
     using key_type = typename Impl::key_type;
     using mapped_type = typename Impl::mapped_type;
     using value_type = typename Impl::value_type;
@@ -38,10 +37,10 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    TwoLevelStringHashTable() {}
+    TwoLevelStringHashTable() = default;
 
     template <typename Source>
-    TwoLevelStringHashTable(const Source & src)
+    explicit TwoLevelStringHashTable(const Source & src)
     {
         if (src.m0.hasZero())
             impls[0].m0.setHasZero(*src.m0.zeroValue());
@@ -176,13 +175,13 @@ public:
 
     void write(DB::WriteBuffer & wb) const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::writeChar(',', wb);
@@ -192,13 +191,13 @@ public:
 
     void read(DB::ReadBuffer & rb)
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
     }
 
     void readText(DB::ReadBuffer & rb)
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::assertChar(',', rb);
@@ -209,7 +208,7 @@ public:
     size_t size() const
     {
         size_t res = 0;
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].size();
 
         return res;
@@ -217,7 +216,7 @@ public:
 
     bool empty() const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
                 return false;
 
@@ -227,7 +226,7 @@ public:
     size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].getBufferSizeInBytes();
 
         return res;

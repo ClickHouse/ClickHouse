@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import MutableMapping
 
 import jinja2
+from pandas import describe_option
 import requests
 import sqlparse
 import tenacity
@@ -498,10 +499,11 @@ class ClickhouseClient:
     ClickHouse client.
     """
 
-    def __init__(self, *, host, port=8123, user=None):
+    def __init__(self, *, host="localhost", port=8123, user="default", password):
         self._session = requests.Session()
         if user:
             self._session.headers['X-ClickHouse-User'] = user
+            self._session.headers['X-ClickHouse-Key'] = password
         self._url = f'http://{host}:{port}'
         self._timeout = 60
         self._ch_version = None
@@ -598,9 +600,9 @@ class DiagnosticsData:
     Diagnostics data.
     """
 
-    def __init__(self, args, host):
+    def __init__(self, args):
         self.args = args
-        self.host = host
+        self.host = args.host
         self._sections = [{'section': None, 'data': {}}]
 
     def add_string(self, name, value, section=None):
@@ -663,7 +665,7 @@ class DiagnosticsData:
 
     def _dump_wiki(self):
         """
-        Dump diagnostic data in Yandex wiki format.
+        Dump diagnostic data in Wiki format.
         """
 
         def _write_title(buffer, value):
@@ -758,15 +760,13 @@ def main():
     Program entry point.
     """
     args = parse_args()
-
-    host = socket.getfqdn()
     timestamp = datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S')
-    client = ClickhouseClient(host=host)
+    client = ClickhouseClient(host=args.host, port=args.port, user=args.user, password=args.password)
     ch_config = ClickhouseConfig.load()
     version = client.clickhouse_version
     system_tables = [row[0] for row in execute_query(client, SELECT_SYSTEM_TABLES, format='JSONCompact')['data']]
 
-    diagnostics = DiagnosticsData(args, host)
+    diagnostics = DiagnosticsData(args)
     diagnostics.add_string('Version', version)
     diagnostics.add_string('Timestamp', timestamp)
     diagnostics.add_string('Uptime', execute_query(client, SELECT_UPTIME))
@@ -895,6 +895,10 @@ def parse_args():
     parser.add_argument('--normalize-queries',
                         action='store_true',
                         default=False)
+    parser.add_argument('--host', dest="host", help="clickhouse host")
+    parser.add_argument('--port', dest="port", default=8123, help="clickhouse http port")
+    parser.add_argument('--user', dest="user", default="default", help="clickhouse user")
+    parser.add_argument('--password', dest="password", help="clickhouse password")
     return parser.parse_args()
 
 

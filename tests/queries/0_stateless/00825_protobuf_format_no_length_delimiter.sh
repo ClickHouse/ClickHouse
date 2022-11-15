@@ -38,12 +38,12 @@ echo
 echo
 echo "Roundtrip:"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE roundtrip_no_length_delimiter_protobuf_00825 AS no_length_delimiter_protobuf_00825"
-$CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_no_length_delimiter_protobuf_00825 FORMAT ProtobufSingle SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_no_length_delimiter:Message'" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "INSERT INTO roundtrip_no_length_delimiter_protobuf_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_no_length_delimiter:Message' FORMAT ProtobufSingle" < "$BINARY_FILE_PATH"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM roundtrip_no_length_delimiter_protobuf_00825"
 rm "$BINARY_FILE_PATH"
 
 # The ProtobufSingle format can't be used to write multiple rows because this format doesn't have any row delimiter.
-$CLICKHOUSE_CLIENT --multiquery --testmode > /dev/null <<EOF
+$CLICKHOUSE_CLIENT --multiquery > /dev/null <<EOF
 SELECT * FROM no_length_delimiter_protobuf_00825 FORMAT ProtobufSingle SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_no_length_delimiter:Message'; -- { clientError 546 }
 EOF
 

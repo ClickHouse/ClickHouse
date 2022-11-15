@@ -80,7 +80,7 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
+    explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
         , src_scale(0)
     {}
@@ -114,7 +114,7 @@ public:
             return "covarSamp";
         if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
             return "corr";
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     DataTypePtr getReturnType() const override
@@ -225,7 +225,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -234,7 +234,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -243,7 +243,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -252,7 +252,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }

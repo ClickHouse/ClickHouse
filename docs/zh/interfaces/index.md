@@ -1,7 +1,7 @@
 ---
-toc_folder_title: 接口
-toc_priority: 14
-toc_title: 客户端
+slug: /zh/interfaces/
+sidebar_label: 接口
+sidebar_position: 14
 ---
 
 # 客户端 {#interfaces}

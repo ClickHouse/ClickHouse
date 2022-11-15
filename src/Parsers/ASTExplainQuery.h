@@ -15,10 +15,12 @@ public:
     {
         ParsedAST, /// 'EXPLAIN AST SELECT ...'
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
+        QueryTree, /// 'EXPLAIN QUERY TREE SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
+        CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
     };
 
     explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
@@ -29,7 +31,8 @@ public:
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-        res->children.push_back(children[0]->clone());
+        if (!children.empty())
+            res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }
@@ -107,13 +110,15 @@ private:
         {
             case ParsedAST: return "EXPLAIN AST";
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
+            case QueryTree: return "EXPLAIN QUERY TREE";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
+            case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 };
 

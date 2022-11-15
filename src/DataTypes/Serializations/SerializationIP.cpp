@@ -6,6 +6,8 @@
 #include <Common/formatIPv6.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
@@ -47,9 +49,11 @@ void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, con
     char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
     istr.read(buffer, sizeof(buffer) - 1);
     UInt32 ipv4_value = 0;
-    if (!parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value)))
+
+    bool parse_result = parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value));
+    if (!parse_result && !settings.input_format_ipv4_default_on_conversion_error)
     {
-        throw Exception("Invalid IPv4 value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        throw Exception("Invalid IPv4 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
     }
 
     col->insert(ipv4_value);
@@ -89,9 +93,11 @@ void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, con
     istr.read(buffer, sizeof(buffer) - 1);
 
     std::string ipv6_value(IPV6_BINARY_LENGTH, '\0');
-    if (!parseIPv6(buffer, reinterpret_cast<unsigned char *>(ipv6_value.data())))
+
+    bool parse_result = parseIPv6(buffer, reinterpret_cast<unsigned char *>(ipv6_value.data()));
+    if (!parse_result && !settings.input_format_ipv6_default_on_conversion_error)
     {
-        throw Exception("Invalid IPv6 value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        throw Exception("Invalid IPv6 value", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
     }
 
     col->insertString(ipv6_value);

@@ -5,7 +5,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
@@ -94,6 +94,8 @@ private:
 
     void syncTables();
 
+    void updateLsn();
+
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     void processReplicationMessage(const char * replication_message, size_t size);
@@ -122,17 +124,21 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
-    /// lsn - log sequnce nuumber, like wal offset (64 bit).
+    static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
+
+    /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
-        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
+        std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 
     Poco::Logger * log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
+
+    bool committed = false;
 
     std::shared_ptr<postgres::Connection> connection;
 

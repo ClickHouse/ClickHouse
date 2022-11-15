@@ -1,9 +1,13 @@
 ---
-toc_priority: 45
-toc_title: Secured communication with Zookeeper
+slug: /en/operations/ssl-zookeeper
+sidebar_position: 45
+sidebar_label: Secured Communication with Zookeeper
 ---
 
-# Optional secured communication between ClickHouse and Zookeeper {#secured-communication-with-zookeeper}
+# Optional secured communication between ClickHouse and Zookeeper
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
+
+<SelfManaged />
 
 You should specify `ssl.keyStore.location`, `ssl.keyStore.password` and `ssl.trustStore.location`, `ssl.trustStore.password` for communication with ClickHouse client over SSL. These options are available from Zookeeper version 3.5.2.
 
@@ -33,7 +37,7 @@ Client section in `config.xml` will look like:
 Add Zookeeper to ClickHouse config with some cluster and macros:
 
 ``` xml
-<yandex>
+<clickhouse>
     <zookeeper>
         <node>
             <host>localhost</host>
@@ -41,7 +45,7 @@ Add Zookeeper to ClickHouse config with some cluster and macros:
             <secure>1</secure>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>
 ```
 
 Start `clickhouse-server`. In logs you should see:
@@ -67,8 +71,7 @@ SELECT * FROM system.zookeeper WHERE path = '/';
 On unencrypted connection you will see in `tcpdump` output something like this:
 
 ```text
-..../zookeeper/q
-uota.
+..../zookeeper/quota.
 ```
 
 On encrypted connection you should not see this.

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
@@ -34,7 +34,6 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
 }
@@ -156,13 +155,11 @@ MongoDBSource::MongoDBSource(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    UInt64 max_block_size_,
-    bool strict_check_names_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    UInt64 max_block_size_)
+    : ISource(sample_block.cloneEmpty())
     , connection(connection_)
     , cursor{std::move(cursor_)}
     , max_block_size{max_block_size_}
-    , strict_check_names{strict_check_names_}
 {
     description.init(sample_block);
 }
@@ -187,11 +184,11 @@ namespace
                 break;
             case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
+                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
                 break;
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
                 assert_cast<ColumnVector<T> &>(column).getData().push_back(
@@ -253,13 +250,13 @@ namespace
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
                 {
                     std::string string_id = value.toString();
-                    assert_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
+                    assert_cast<ColumnString &>(column).insertData(string_id.data(), string_id.size());
                     break;
                 }
                 else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                    assert_cast<ColumnString &>(column).insertData(string.data(), string.size());
                     break;
                 }
 
@@ -285,7 +282,7 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
 
                 assert_cast<ColumnUInt32 &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
+                    static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
                 break;
             }
             case ValueType::vtUUID:
@@ -342,16 +339,23 @@ Chunk MongoDBSource::generate()
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
 
-                if (strict_check_names && !document->exists(name))
-                    throw Exception(fmt::format("Column {} is absent in MongoDB collection", backQuote(name)), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                bool exists_in_current_document = document->exists(name);
+                if (!exists_in_current_document)
+                {
+                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                    continue;
+                }
 
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+                {
                     insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                }
                 else
                 {
-                    if (description.types[idx].second)
+                    bool is_nullable = description.types[idx].second;
+                    if (is_nullable)
                     {
                         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                         insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name);

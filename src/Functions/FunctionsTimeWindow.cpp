@@ -1,6 +1,7 @@
 #include <numeric>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -156,7 +158,7 @@ struct TimeWindowImpl<TUMBLE>
         const auto & interval_column = arguments[1];
         const auto & from_datatype = *time_column.type.get();
         const auto which_type = WhichDataType(from_datatype);
-        const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+        const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         if (!which_type.isDateTime() || !time_column_vec)
             throw Exception(
@@ -167,6 +169,13 @@ struct TimeWindowImpl<TUMBLE>
 
         switch (std::get<0>(interval))
         {
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeTumble<UInt32, IntervalKind::Nanosecond>(*time_column_vec, std::get<1>(interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeTumble<UInt32, IntervalKind::Microsecond>(*time_column_vec, std::get<1>(interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeTumble<UInt32, IntervalKind::Millisecond>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Second:
                 return executeTumble<UInt32, IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Minute:
@@ -183,12 +192,14 @@ struct TimeWindowImpl<TUMBLE>
                 return executeTumble<UInt16, IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Year:
                 return executeTumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
+            default:
+                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
-    static ColumnPtr executeTumble(const ColumnUInt32 & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+    static ColumnPtr executeTumble(const ColumnDateTime & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -332,7 +343,7 @@ struct TimeWindowImpl<HOP>
         const auto & hop_interval_column = arguments[1];
         const auto & window_interval_column = arguments[2];
         const auto & from_datatype = *time_column.type.get();
-        const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+        const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
         if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
             throw Exception(
@@ -350,6 +361,16 @@ struct TimeWindowImpl<HOP>
 
         switch (std::get<0>(window_interval))
         {
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeHop<UInt32, IntervalKind::Nanosecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeHop<UInt32, IntervalKind::Microsecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeHop<UInt32, IntervalKind::Millisecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Second:
                 return executeHop<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
@@ -374,13 +395,15 @@ struct TimeWindowImpl<HOP>
             case IntervalKind::Year:
                 return executeHop<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+            default:
+                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    executeHop(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
+    executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -395,17 +418,17 @@ struct TimeWindowImpl<HOP>
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
-            wstart = AddTime<kind>::execute(wend, -1 * window_num_units, time_zone);
+            wstart = AddTime<kind>::execute(wend, -window_num_units, time_zone);
             ToType wend_latest;
 
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -1 * hop_num_units, time_zone);
+                wend = AddTime<kind>::execute(wend, -hop_num_units, time_zone);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = AddTime<kind>::execute(wend_latest, -1 * window_num_units, time_zone);
+            start_data[i] = AddTime<kind>::execute(wend_latest, -window_num_units, time_zone);
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -469,7 +492,7 @@ struct TimeWindowImpl<WINDOW_ID>
         const auto & hop_interval_column = arguments[1];
         const auto & window_interval_column = arguments[2];
         const auto & from_datatype = *time_column.type.get();
-        const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
+        const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column.column.get());
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 3, 0);
         if (!WhichDataType(from_datatype).isDateTime() || !time_column_vec)
             throw Exception(
@@ -487,6 +510,16 @@ struct TimeWindowImpl<WINDOW_ID>
 
         switch (std::get<0>(window_interval))
         {
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeHopSlice<UInt32, IntervalKind::Nanosecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeHopSlice<UInt32, IntervalKind::Microsecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeHopSlice<UInt32, IntervalKind::Millisecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Second:
                 return executeHopSlice<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
@@ -511,13 +544,15 @@ struct TimeWindowImpl<WINDOW_ID>
             case IntervalKind::Year:
                 return executeHopSlice<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+            default:
+                throw Exception("Fraction seconds are unsupported by windows yet", ErrorCodes::SYNTAX_ERROR);
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    executeHopSlice(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
+    executeHopSlice(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         Int64 gcd_num_units = std::gcd(hop_num_units, window_num_units);
 
@@ -536,7 +571,7 @@ struct TimeWindowImpl<WINDOW_ID>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -1 * gcd_num_units, time_zone);
+                wend = AddTime<kind>::execute(wend, -gcd_num_units, time_zone);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
@@ -650,7 +685,7 @@ ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & a
     return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
 }
 
-void registerFunctionsTimeWindow(FunctionFactory& factory)
+REGISTER_FUNCTION(TimeWindow)
 {
     factory.registerFunction<FunctionTumble>();
     factory.registerFunction<FunctionHop>();

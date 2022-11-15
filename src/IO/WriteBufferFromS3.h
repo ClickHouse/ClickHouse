@@ -1,20 +1,24 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
-#    include <memory>
-#    include <vector>
-#    include <base/logger_useful.h>
-#    include <base/types.h>
+#include <memory>
+#include <vector>
+#include <list>
 
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
+#include <base/types.h>
+#include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteSettings.h>
+#include <Storages/StorageS3Settings.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
-#    include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
 
-#    include <Common/ThreadPool.h>
 
 namespace Aws::S3
 {
@@ -30,7 +34,7 @@ namespace Aws::S3::Model
 namespace DB
 {
 
-using ScheduleFunc = std::function<void(std::function<void()>)>;
+class WriteBufferFromFile;
 
 /**
  * Buffer to write a data to a S3 object with specified bucket and key.
@@ -42,17 +46,15 @@ using ScheduleFunc = std::function<void(std::function<void()>)>;
 class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit WriteBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    WriteBufferFromS3(
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        size_t minimum_upload_part_size_,
-        size_t upload_part_size_multiply_factor_,
-        size_t upload_part_size_multiply_threshold_,
-        size_t max_single_part_upload_size_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {});
+        ThreadPoolCallbackRunner<void> schedule_ = {},
+        const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
 
@@ -78,42 +80,45 @@ private:
 
     struct PutObjectTask;
     void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
-    void processPutRequest(PutObjectTask & task);
+    void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
-    String bucket;
-    String key;
-    std::optional<std::map<String, String>> object_metadata;
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
-    size_t upload_part_size;
-    const size_t upload_part_size_multiply_factor;
-    const size_t upload_part_size_multiply_threshold;
-    const size_t max_single_part_upload_size;
-    /// Buffer to accumulate data.
-    std::shared_ptr<Aws::StringStream> temporary_buffer;
+    const String bucket;
+    const String key;
+    const S3Settings::ReadWriteSettings s3_settings;
+    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const std::optional<std::map<String, String>> object_metadata;
+
+    size_t upload_part_size = 0;
+    std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
     std::atomic<size_t> total_parts_uploaded = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    std::vector<String> part_tags;
+    std::vector<String> TSA_GUARDED_BY(bg_tasks_mutex) part_tags;
 
     bool is_prefinalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters
-    ScheduleFunc schedule;
-    std::unique_ptr<PutObjectTask> put_object_task;
-    std::list<UploadPartTask> upload_object_tasks;
-    size_t num_added_bg_tasks = 0;
-    size_t num_finished_bg_tasks = 0;
+    const ThreadPoolCallbackRunner<void> schedule;
+
+    std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
+    std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
+
+    WriteSettings write_settings;
 };
 
 }

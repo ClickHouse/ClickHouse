@@ -14,4 +14,8 @@
         <table>part_log</table>
         <flush_interval_milliseconds>500</flush_interval_milliseconds>
     </part_log>
+    <merge_tree_metadata_cache>
+        <lru_cache_size>268435456</lru_cache_size>
+        <continue_if_corrupted>true</continue_if_corrupted>
+    </merge_tree_metadata_cache>
 </clickhouse>

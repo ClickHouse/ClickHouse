@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/ext-dict-functions
+---
 # 字典函数 {#zi-dian-han-shu}
 
 有关连接和配置外部词典的信息，请参阅[外部词典](../../sql-reference/functions/ext-dict-functions.md)。
@@ -31,7 +34,7 @@
 
 -   对于’dict_name’分层字典，查找’child_id’键是否位于’ancestor_id’内（或匹配’ancestor_id’）。返回UInt8。
 
-## 独裁主义 {#dictgethierarchy}
+## dictGetHierarchy {#dictgethierarchy}
 
 `dictGetHierarchy('dict_name', id)`
 

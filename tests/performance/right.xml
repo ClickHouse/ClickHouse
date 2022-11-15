@@ -1,11 +1,4 @@
 <test>
-
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
-
-
     <substitutions>
         <substitution>
            <name>func</name>

@@ -36,7 +36,7 @@ struct ThreadsQueue
     void push(size_t thread)
     {
         if (unlikely(has(thread)))
-            throw Exception("Can't push thread because it is already in threads queue.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Can't push thread because it is already in threads queue", ErrorCodes::LOGICAL_ERROR);
 
         swapThreads(thread, stack[stack_size]);
         ++stack_size;
@@ -45,7 +45,7 @@ struct ThreadsQueue
     void pop(size_t thread)
     {
         if (unlikely(!has(thread)))
-            throw Exception("Can't pop thread because it is not in threads queue.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Can't pop thread because it is not in threads queue", ErrorCodes::LOGICAL_ERROR);
 
         --stack_size;
         swapThreads(thread, stack[stack_size]);
@@ -54,7 +54,7 @@ struct ThreadsQueue
     size_t popAny()
     {
         if (unlikely(stack_size == 0))
-            throw Exception("Can't pop from empty queue.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Can't pop from empty queue", ErrorCodes::LOGICAL_ERROR);
 
         --stack_size;
         return stack[stack_size];

@@ -1,8 +1,9 @@
 ---
-toc_priority: 113
+slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingsum
+sidebar_position: 113
 ---
 
-# groupArrayMovingSum {#agg_function-grouparraymovingsum}
+# groupArrayMovingSum
 
 Calculates the moving sum of input values.
 

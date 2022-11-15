@@ -27,7 +27,11 @@ target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRAR
 
 # asio
 
-target_compile_definitions (_boost_headers_only INTERFACE BOOST_ASIO_STANDALONE=1)
+target_compile_definitions (_boost_headers_only INTERFACE
+  BOOST_ASIO_STANDALONE=1
+  # Avoid using of deprecated in c++ > 17 std::result_of
+  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1
+)
 
 # iostreams
 
@@ -110,7 +114,7 @@ if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
             "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
     )
 endif()
-if (ARCH_ARM)
+if (ARCH_AARCH64)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"

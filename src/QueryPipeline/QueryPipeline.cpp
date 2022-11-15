@@ -3,6 +3,9 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/LimitTransform.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -10,11 +13,15 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+
+
 namespace DB
 {
 
@@ -23,7 +30,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-QueryPipeline::QueryPipeline() = default;
+QueryPipeline::QueryPipeline()
+    : processors(std::make_shared<Processors>())
+{
+}
+
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
 QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
 QueryPipeline::~QueryPipeline() = default;
@@ -33,7 +44,7 @@ static void checkInput(const InputPort & input, const ProcessorPtr & processor)
     if (!input.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has not connected input",
+            "Cannot create QueryPipeline because {} has disconnected input",
             processor->getName());
 }
 
@@ -42,7 +53,7 @@ static void checkOutput(const OutputPort & output, const ProcessorPtr & processo
     if (!output.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has not connected output",
+            "Cannot create QueryPipeline because {} has disconnected output",
             processor->getName());
 }
 
@@ -203,17 +214,17 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
-    Processors processors_)
+    QueryPlanResourceHolder resources_,
+    std::shared_ptr<Processors> processors_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
 {
-    checkCompleted(processors);
+    checkCompleted(*processors);
 }
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
-    Processors processors_,
+    QueryPlanResourceHolder resources_,
+    std::shared_ptr<Processors> processors_,
     InputPort * input_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
@@ -225,7 +236,7 @@ QueryPipeline::QueryPipeline(
             "Cannot create pushing QueryPipeline because its input port is connected or null");
 
     bool found_input = false;
-    for (const auto & processor : processors)
+    for (const auto & processor : *processors)
     {
         for (const auto & in : processor->getInputs())
         {
@@ -248,8 +259,8 @@ QueryPipeline::QueryPipeline(
 QueryPipeline::QueryPipeline(std::shared_ptr<ISource> source) : QueryPipeline(Pipe(std::move(source))) {}
 
 QueryPipeline::QueryPipeline(
-    PipelineResourcesHolder resources_,
-    Processors processors_,
+    QueryPlanResourceHolder resources_,
+    std::shared_ptr<Processors> processors_,
     OutputPort * output_,
     OutputPort * totals_,
     OutputPort * extremes_)
@@ -259,13 +270,11 @@ QueryPipeline::QueryPipeline(
     , totals(totals_)
     , extremes(extremes_)
 {
-    checkPulling(processors, output, totals, extremes);
+    checkPulling(*processors, output, totals, extremes);
 }
 
 QueryPipeline::QueryPipeline(Pipe pipe)
 {
-    resources = std::move(pipe.holder);
-
     if (pipe.numOutputPorts() > 0)
     {
         pipe.resize(1);
@@ -274,32 +283,34 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         extremes = pipe.getExtremesPort();
 
         processors = std::move(pipe.processors);
-        checkPulling(processors, output, totals, extremes);
+        checkPulling(*processors, output, totals, extremes);
     }
     else
     {
         processors = std::move(pipe.processors);
-        checkCompleted(processors);
+        checkCompleted(*processors);
     }
 }
 
 QueryPipeline::QueryPipeline(Chain chain)
     : resources(chain.detachResources())
+    , processors(std::make_shared<Processors>())
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    processors.reserve(chain.getProcessors().size() + 1);
+    processors->reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
-        processors.emplace_back(std::move(processor));
+        processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(chain.getOutputPort(), sink->getPort());
-    processors.emplace_back(std::move(sink));
+    processors->emplace_back(std::move(sink));
 
     input = &chain.getInputPort();
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
+    : processors(std::make_shared<Processors>())
 {
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
     auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
@@ -309,14 +320,14 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     {
         auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
-        processors.emplace_back(std::move(source));
+        processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
-        processors.emplace_back(std::move(source));
+        processors->emplace_back(std::move(source));
     }
 
     connect(*totals, format_totals);
@@ -328,7 +339,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
 
     output_format = format.get();
 
-    processors.emplace_back(std::move(format));
+    processors->emplace_back(std::move(format));
 }
 
 static void drop(OutputPort *& port, Processors & processors)
@@ -348,13 +359,13 @@ QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipelin
 void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 {
     if (!pulling())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
-    drop(totals, processors);
-    drop(extremes, processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
     connect(*output, sink->getPort());
-    processors.emplace_back(std::move(sink));
+    processors->emplace_back(std::move(sink));
     output = nullptr;
 }
 
@@ -365,17 +376,17 @@ void QueryPipeline::complete(Chain chain)
 
     resources = chain.detachResources();
 
-    drop(totals, processors);
-    drop(extremes, processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
-    processors.reserve(processors.size() + chain.getProcessors().size() + 1);
+    processors->reserve(processors->size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
-        processors.emplace_back(std::move(processor));
+        processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(*output, chain.getInputPort());
     connect(chain.getOutputPort(), sink->getPort());
-    processors.emplace_back(std::move(sink));
+    processors->emplace_back(std::move(sink));
     output = nullptr;
 }
 
@@ -390,14 +401,13 @@ void QueryPipeline::complete(Pipe pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
     pipe.resize(1);
-    resources = pipe.detachResources();
     pipe.dropExtremes();
     pipe.dropTotals();
     connect(*pipe.getOutputPort(0), *input);
     input = nullptr;
 
     auto pipe_processors = Pipe::detachProcessors(std::move(pipe));
-    processors.insert(processors.end(), pipe_processors.begin(), pipe_processors.end());
+    processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
 }
 
 static void addMaterializing(OutputPort *& output, Processors & processors)
@@ -418,9 +428,9 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (format->expectMaterializedColumns())
     {
-        addMaterializing(output, processors);
-        addMaterializing(totals, processors);
-        addMaterializing(extremes, processors);
+        addMaterializing(output, *processors);
+        addMaterializing(totals, *processors);
+        addMaterializing(extremes, *processors);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
@@ -431,14 +441,14 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     {
         auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
-        processors.emplace_back(std::move(source));
+        processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
-        processors.emplace_back(std::move(source));
+        processors->emplace_back(std::move(source));
     }
 
     connect(*output, format_main);
@@ -452,7 +462,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     output_format = format.get();
 
-    processors.emplace_back(std::move(format));
+    processors->emplace_back(std::move(format));
 }
 
 Block QueryPipeline::getHeader() const
@@ -469,26 +479,14 @@ Block QueryPipeline::getHeader() const
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
-    for (auto & processor : processors)
-    {
-        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-            source->setProgressCallback(callback);
-    }
+    progress_callback = callback;
 }
 
-void QueryPipeline::setProcessListElement(QueryStatus * elem)
+void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
 
-    if (pulling() || completed())
-    {
-        for (auto & processor : processors)
-        {
-            if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
-                source->setProcessListElement(elem);
-        }
-    }
-    else if (pushing())
+    if (pushing())
     {
         if (auto * counting = dynamic_cast<CountingTransform *>(&input->getProcessor()))
         {
@@ -497,8 +495,12 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
     }
 }
 
+void QueryPipeline::setQuota(std::shared_ptr<const EnabledQuota> quota_)
+{
+    quota = std::move(quota_);
+}
 
-void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota)
+void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_)
 {
     if (!pulling())
         throw Exception(
@@ -506,10 +508,10 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
             "It is possible to set limits and quota only to pulling QueryPipeline");
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
-    transform->setQuota(quota);
+    transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
-    processors.emplace_back(std::move(transform));
+    processors->emplace_back(std::move(transform));
 }
 
 
@@ -528,10 +530,60 @@ void QueryPipeline::addStorageHolder(StoragePtr storage)
     resources.storage_holders.emplace_back(std::move(storage));
 }
 
+void QueryPipeline::addCompletedPipeline(QueryPipeline other)
+{
+    if (!other.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
+
+    resources = std::move(other.resources);
+    processors->insert(processors->end(), other.processors->begin(), other.processors->end());
+}
+
 void QueryPipeline::reset()
 {
     QueryPipeline to_remove = std::move(*this);
     *this = QueryPipeline();
+}
+
+static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
+{
+    if (port)
+    {
+        auto transform = std::make_shared<ExpressionTransform>(port->getHeader(), actions);
+        connect(*port, transform->getInputPort());
+        port = &transform->getOutputPort();
+        processors.emplace_back(std::move(transform));
+    }
+}
+
+void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
+{
+    if (!pulling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
+
+    auto converting = ActionsDAG::makeConvertingActions(
+        output->getHeader().getColumnsWithTypeAndName(),
+        columns,
+        ActionsDAG::MatchColumnsMode::Position);
+
+    auto actions = std::make_shared<ExpressionActions>(std::move(converting));
+    addExpression(output, actions, *processors);
+    addExpression(totals, actions, *processors);
+    addExpression(extremes, actions, *processors);
+}
+
+std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
+{
+    auto callback = std::make_unique<ReadProgressCallback>();
+
+    callback->setProgressCallback(progress_callback);
+    callback->setQuota(quota);
+    callback->setProcessListElement(process_list_element);
+
+    if (!update_profile_events)
+        callback->disableProfileEventUpdate();
+
+    return callback;
 }
 
 }

@@ -2,11 +2,11 @@ if (NOT ENABLE_ODBC)
     return ()
 endif ()
 
-set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/nanodbc")
-
 if (NOT TARGET ch_contrib::unixodbc)
     message(FATAL_ERROR "Configuration error: unixodbc is not a target")
 endif()
+
+set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/nanodbc")
 
 set (SRCS
     "${LIBRARY_DIR}/nanodbc/nanodbc.cpp"

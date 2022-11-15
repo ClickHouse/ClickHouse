@@ -1,20 +1,37 @@
 ---
-toc_priority: 20
-toc_title: MySQL Interface
+slug: /en/interfaces/mysql
+sidebar_position: 20
+sidebar_label: MySQL Interface
 ---
 
-# MySQL Interface {#mysql-interface}
+# MySQL Interface
 
-ClickHouse supports MySQL wire protocol. It can be enabled by [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting in configuration file:
+ClickHouse supports MySQL wire protocol. To enable the MySQL wire protocol, add the [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d` folder:
 
 ``` xml
-<mysql_port>9004</mysql_port>
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
 ```
 
-Example of connecting using command-line tool `mysql`:
+Startup your ClickHouse server and look for a log message similar to the following that mentions Listening for MySQL compatibility protocol:
+
+```
+{} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
+```
+
+## Connect mysql to ClickHouse
+
+The following command demonstrates how to connect the MySQL client `mysql` to ClickHouse:
+
+```bash
+mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name]
+```
+
+For example:
 
 ``` bash
-$ mysql --protocol tcp -u default -P 9004
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
 ```
 
 Output if a connection succeeded:

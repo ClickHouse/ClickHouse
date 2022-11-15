@@ -24,6 +24,8 @@ public:
 
     ~PeekableReadBuffer() override;
 
+    void prefetch() override { sub_buf.prefetch(); }
+
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
     {
@@ -66,7 +68,7 @@ public:
     bool hasUnreadData() const;
 
     // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // w/o recreating the buffer.
+    // without recreating the buffer.
     void reset();
 
 private:
@@ -97,7 +99,7 @@ private:
     /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
     /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
     /// larger buffer only if reserved memory is not enough.
-    char stack_memory[16];
+    char stack_memory[PADDING_FOR_SIMD];
     bool use_stack_memory = true;
 };
 

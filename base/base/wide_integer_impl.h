@@ -15,6 +15,8 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 #include <boost/math/special_functions/fpclassify.hpp>
 
+// NOLINTBEGIN(*)
+
 /// Use same extended double for all platforms
 #if (LDBL_MANT_DIG == 64)
 #define CONSTEXPR_FROM_DOUBLE constexpr
@@ -225,6 +227,8 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
+        /// NOTE: this can be called with DB::Decimal, and in this case, result
+        /// will be wrong
         if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
@@ -451,7 +455,7 @@ private:
             if constexpr (sizeof(T) <= sizeof(base_type))
             {
                 if (0 == idx)
-                    return x;
+                    return static_cast<base_type>(x);
             }
             else if (idx * sizeof(base_type) < sizeof(T))
                 return x >> (idx * base_bits); // & std::numeric_limits<base_type>::max()
@@ -576,8 +580,8 @@ private:
         else if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
-            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0];
-            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0];
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
             res.items[0] = c;
@@ -841,8 +845,8 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
-            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
+            CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+            CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
@@ -1204,7 +1208,7 @@ constexpr integer<Bits, Signed>::operator T() const noexcept
 
     UnsignedT res{};
     for (unsigned i = 0; i < _impl::item_count && i < (sizeof(T) + sizeof(base_type) - 1) / sizeof(base_type); ++i)
-        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i);
+        res += UnsignedT(items[i]) << (sizeof(base_type) * 8 * i); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
 
     return res;
 }
@@ -1237,13 +1241,13 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator double() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<double>(static_cast<long double>(*this));
 }
 
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
-    return static_cast<long double>(*this);
+    return static_cast<float>(static_cast<long double>(*this));
 }
 
 // Unary operators
@@ -1478,3 +1482,5 @@ struct hash<wide::integer<Bits, Signed>>
 };
 
 }
+
+// NOLINTEND(*)

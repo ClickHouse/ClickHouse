@@ -19,11 +19,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
 
-
     def do_GET(self):
         self.do_HEAD()
         if self.path.startswith("/get-my-path/"):
-            self.wfile.write(b'/' + self.path.split('/', maxsplit=2)[2].encode())
+            self.wfile.write(b"/" + self.path.split("/", maxsplit=2)[2].encode())
 
         elif self.path == "/":
             self.wfile.write(b"OK")

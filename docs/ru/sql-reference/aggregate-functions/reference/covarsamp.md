@@ -1,5 +1,6 @@
 ---
-toc_priority: 37
+slug: /ru/sql-reference/aggregate-functions/reference/covarsamp
+sidebar_position: 37
 ---
 
 # covarSamp {#covarsamp}
@@ -10,6 +11,6 @@ toc_priority: 37
 
 Возвращает Float64. В случае, когда `n <= 1`, возвращается +∞.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Функция использует вычислительно неустойчивый алгоритм. Если для ваших расчётов необходима [вычислительная устойчивость](https://ru.wikipedia.org/wiki/Вычислительная_устойчивость), используйте функцию `covarSampStable`. Она работает медленнее, но обеспечивает меньшую вычислительную ошибку.
-
+    :::

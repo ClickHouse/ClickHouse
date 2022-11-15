@@ -175,8 +175,9 @@ struct OneAdder
         {
             if constexpr (!std::is_same_v<T, String>)
             {
+                using ValueType = typename decltype(data.set)::value_type;
                 const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
-                data.set.insert(AggregateFunctionUniqTraits<T>::hash(value));
+                data.set.insert(static_cast<ValueType>(AggregateFunctionUniqTraits<T>::hash(value)));
             }
             else
             {
@@ -235,6 +236,15 @@ public:
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
+    }
+
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        size_t /*length*/,
+        Arena * /*arena*/) const override
+    {
+        detail::OneAdder<T, Data>::add(this->data(place), *columns[0], 0);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -112,7 +112,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     {
         ssize_t src_index = src_array_offsets[i] - 1;
 
-        while (src_index >= ssize_t(src_prev_offset))
+        while (src_index >= static_cast<ssize_t>(src_prev_offset))
         {
             res_data.insertFrom(src_data, src_index);
             --src_index;
@@ -247,7 +247,7 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
 }
 
 
-void registerFunctionArrayReverse(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayReverse)
 {
     factory.registerFunction<FunctionArrayReverse>();
 }

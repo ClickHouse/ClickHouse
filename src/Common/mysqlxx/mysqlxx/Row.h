@@ -27,11 +27,11 @@ private:
       * @see http://www.artima.com/cppsource/safebool.html
       * Взято из mysql++.
       */
-    typedef MYSQL_ROW Row::*private_bool_type;
+    typedef MYSQL_ROW Row::*private_bool_type; /// NOLINT
 
 public:
     /** Для возможности отложенной инициализации. */
-    Row()
+    Row() /// NOLINT
     {
     }
 
@@ -44,9 +44,9 @@ public:
     /** Получить значение по индексу.
       * Здесь используется int, а не unsigned, чтобы не было неоднозначности с тем же методом, принимающим const char *.
       */
-    Value operator[] (int n) const
+    Value operator[] (size_t n) const
     {
-        if (unlikely(static_cast<size_t>(n) >= res->getNumFields()))
+        if (unlikely(n >= res->getNumFields()))
             throw Exception("Index of column is out of range.");
         return Value(row[n], lengths[n], res);
     }
@@ -77,7 +77,7 @@ public:
     /** Преобразование в bool.
       * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
       */
-    operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
+    operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; } /// NOLINT
 
     enum enum_field_types getFieldType(size_t i);
 

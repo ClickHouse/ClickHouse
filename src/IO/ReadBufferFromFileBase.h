@@ -2,6 +2,7 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileName.h>
 #include <base/time.h>
 
 #include <functional>
@@ -19,7 +20,8 @@
 
 namespace DB
 {
-class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
+
+class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     ReadBufferFromFileBase();
@@ -29,7 +31,6 @@ public:
         size_t alignment,
         std::optional<size_t> file_size_ = std::nullopt);
     ~ReadBufferFromFileBase() override;
-    virtual std::string getFileName() const = 0;
 
     /// It is possible to get information about the time of each reading.
     struct ProfileInfo
@@ -47,6 +48,8 @@ public:
         profile_callback = profile_callback_;
         clock_type = clock_type_;
     }
+
+    size_t getFileSize() override;
 
 protected:
     std::optional<size_t> file_size;

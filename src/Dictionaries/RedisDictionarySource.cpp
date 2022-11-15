@@ -8,6 +8,8 @@
 #include <Poco/Redis/Command.h>
 #include <Poco/Redis/Type.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -40,15 +42,20 @@ namespace DB
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,
-                                    ContextPtr /* global_context */,
+                                    ContextPtr global_context,
                                     const std::string & /* default_database */,
                                     bool /* created_from_ddl */) -> DictionarySourcePtr {
 
             auto redis_config_prefix = config_prefix + ".redis";
+
+            auto host = config.getString(redis_config_prefix + ".host");
+            auto port = config.getUInt(redis_config_prefix + ".port");
+            global_context->getRemoteHostFilter().checkHostAndPort(host, toString(port));
+
             RedisDictionarySource::Configuration configuration =
             {
-                .host = config.getString(redis_config_prefix + ".host"),
-                .port = static_cast<UInt16>(config.getUInt(redis_config_prefix + ".port")),
+                .host = host,
+                .port = static_cast<UInt16>(port),
                 .db_index = config.getUInt(redis_config_prefix + ".db_index", 0),
                 .password = config.getString(redis_config_prefix + ".password", ""),
                 .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),
@@ -117,10 +124,10 @@ namespace DB
                 return "none";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
-    Pipe RedisDictionarySource::loadAll()
+    QueryPipeline RedisDictionarySource::loadAll()
     {
         auto connection = getConnection();
 
@@ -130,7 +137,7 @@ namespace DB
         /// Get only keys for specified storage type.
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
         if (all_keys.isNull())
-            return Pipe(std::make_shared<RedisSource>(
+            return QueryPipeline(std::make_shared<RedisSource>(
                 std::move(connection), RedisArray{},
                 configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
 
@@ -171,12 +178,12 @@ namespace DB
             keys = hkeys;
         }
 
-        return Pipe(std::make_shared<RedisSource>(
+        return QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }
 
-    Pipe RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
+    QueryPipeline RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         auto connection = getConnection();
 
@@ -191,12 +198,12 @@ namespace DB
         for (UInt64 id : ids)
             keys << DB::toString(id);
 
-        return Pipe(std::make_shared<RedisSource>(
+        return QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }
 
-    Pipe RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+    QueryPipeline RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
     {
         auto connection = getConnection();
 
@@ -213,7 +220,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << get<const String &>((*key_columns[i])[row]);
+                    key << (*key_columns[i])[row].get<const String &>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }
@@ -221,7 +228,7 @@ namespace DB
             keys.add(key);
         }
 
-        return Pipe(std::make_shared<RedisSource>(
+        return QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
     }

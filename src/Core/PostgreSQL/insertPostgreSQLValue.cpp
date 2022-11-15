@@ -78,9 +78,9 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
-        case ExternalResultDescription::ValueType::vtEnum8:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtEnum16:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtFixedString:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtEnum8:
+        case ExternalResultDescription::ValueType::vtEnum16:
+        case ExternalResultDescription::ValueType::vtFixedString:
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
@@ -100,7 +100,7 @@ void insertPostgreSQLValue(
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
         }
         case ExternalResultDescription::ValueType::vtDateTime64:

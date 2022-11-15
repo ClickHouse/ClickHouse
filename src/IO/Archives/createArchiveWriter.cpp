@@ -26,7 +26,7 @@ std::shared_ptr<IArchiveWriter> createArchiveWriter(
     if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
     {
 #if USE_MINIZIP
-        return ZipArchiveWriter::create(path_to_archive, std::move(archive_write_buffer));
+        return std::make_shared<ZipArchiveWriter>(path_to_archive, std::move(archive_write_buffer));
 #else
         throw Exception("minizip library is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif

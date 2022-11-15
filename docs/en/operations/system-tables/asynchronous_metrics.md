@@ -1,4 +1,7 @@
-# system.asynchronous_metrics {#system_tables-asynchronous_metrics}
+---
+slug: /en/operations/system-tables/asynchronous_metrics
+---
+# asynchronous_metrics
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 

@@ -8,7 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -20,6 +20,7 @@ class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
+class Chunk;
 
 /** Data structure for implementation of IN expression.
   */
@@ -45,11 +46,14 @@ public:
     void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
+    bool insertFromBlock(const Columns & columns);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
+
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
-    bool isCreated() const { return is_created; }
+    /// finishInsert and isCreated are thread-safe
+    bool isCreated() const { return is_created.load(); }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -111,7 +115,7 @@ private:
     bool transform_null_in;
 
     /// Check if set contains all the data.
-    bool is_created = false;
+    std::atomic<bool> is_created = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
@@ -214,7 +218,7 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

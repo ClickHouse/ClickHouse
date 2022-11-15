@@ -91,13 +91,13 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     const auto settings = storage.getSettings();
-    auto threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
-    auto threshold_init = 0;
+    time_t threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
+    time_t threshold_init = 0;
     if (settings->allow_remote_fs_zero_copy_replication)
         threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)
-        /// we can reset the settings w/o lock (it's atomic)
+        /// we can reset the settings without lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_init == 0)
         remote_fs_execute_merges_on_single_replica_time_threshold = threshold_init;
@@ -111,6 +111,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         || (threshold_init != 0 && remote_fs_execute_merges_on_single_replica_time_threshold != 0))
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
+
+    LOG_DEBUG(storage.log, "Updating strategy picker state");
 
     auto zookeeper = storage.getZooKeeper();
     auto all_replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
@@ -127,7 +129,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
             active_replicas_tmp.push_back(replica);
             if (replica == storage.replica_name)
             {
-                current_replica_index_tmp = active_replicas_tmp.size() - 1;
+                current_replica_index_tmp = static_cast<int>(active_replicas_tmp.size() - 1);
             }
         }
     }
@@ -137,7 +139,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         if (execute_merges_on_single_replica_time_threshold > 0)
         {
             LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use 'execute_merges_on_single_replica_time_threshold'");
-            /// we can reset the settings w/o lock (it's atomic)
+            /// we can reset the settings without lock (it's atomic)
             execute_merges_on_single_replica_time_threshold = 0;
         }
         /// default value of remote_fs_execute_merges_on_single_replica_time_threshold is not 0
@@ -154,6 +156,8 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;
+
+    LOG_DEBUG(storage.log, "Strategy picker state updated, current replica: {}, active replicas: [{}]", current_replica_index, fmt::join(active_replicas, ", "));
 }
 
 

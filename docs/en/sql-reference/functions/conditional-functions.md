@@ -1,11 +1,12 @@
 ---
-toc_priority: 43
-toc_title: 'Conditional '
+slug: /en/sql-reference/functions/conditional-functions
+sidebar_position: 43
+sidebar_label: 'Conditional '
 ---
 
-# Conditional Functions {#conditional-functions}
+# Conditional Functions
 
-## if {#if}
+## if
 
 Controls conditional branching. Unlike most systems, ClickHouse always evaluate both expressions `then` and `else`.
 
@@ -97,7 +98,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
-## Ternary Operator {#ternary-operator}
+## Ternary Operator
 
 It works same as `if` function.
 
@@ -113,7 +114,7 @@ Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise
 
 -   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
 
-## multiIf {#multiif}
+## multiIf
 
 Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
 
@@ -157,7 +158,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly {#using-conditional-results-directly}
+## Using Conditional Results Directly
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -174,7 +175,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals {#null-values-in-conditionals}
+## NULL Values in Conditionals
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
