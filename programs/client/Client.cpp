@@ -869,6 +869,7 @@ void Client::addOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
+        ("format,f", po::value<std::string>(), "default output format")
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")

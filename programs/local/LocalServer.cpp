@@ -13,7 +13,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
@@ -23,9 +22,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/IOThreadPool.h>
@@ -259,7 +256,7 @@ static bool checkIfStdinIsRegularFile()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && !config().has("format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -724,6 +721,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
+        ("format,f", po::value<std::string>(), "default input and output format")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
 
