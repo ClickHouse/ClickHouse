@@ -9,7 +9,7 @@ from pyhdfs import HdfsClient
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/macro.xml", "configs/schema_cache.xml"],
+    main_configs=["configs/macro.xml", "configs/schema_cache.xml", "configs/cluster.xml"],
     with_hdfs=True,
 )
 
@@ -781,6 +781,37 @@ def test_schema_inference_cache(started_cluster):
 
     run_describe_query(node1, files)
     check_cache_misses(node1, files, 4)
+
+
+def test_test_hdfsCluster_skip_unavailable_shards(started_cluster):
+    node = started_cluster.instances["node1"]
+    result = node.query(
+        """
+        SELECT count(*) FROM hdfsCluster(
+            'cluster_non_existent_port', 
+            'hdfs://hdfs1:9000/test_hdfsCluster/file*', 
+            'TSV', 
+            'id UInt32') 
+            SETTINGS skip_unavailable_shards = 1
+        """
+    )
+
+    assert result == "3\n"
+
+
+def test_test_hdfsCluster_unskip_unavailable_shards(started_cluster):
+    node = started_cluster.instances["node1"]
+    error = node.query_and_get_error(
+        """
+        SELECT count(*) FROM hdfsCluster(
+            'cluster_non_existent_port', 
+            'hdfs://hdfs1:9000/test_hdfsCluster/file*', 
+            'TSV', 
+            'id UInt32') 
+        """
+    )
+
+    assert "NETWORK_ERROR" in error
 
 
 if __name__ == "__main__":
