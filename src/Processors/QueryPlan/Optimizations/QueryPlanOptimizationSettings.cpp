@@ -12,6 +12,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.max_optimizations_to_apply = from.query_plan_max_optimizations_to_apply;
     settings.filter_push_down = from.query_plan_filter_push_down;
     settings.distinct_in_order = from.optimize_distinct_in_order;
+    settings.read_in_order = from.optimize_read_in_order && from.query_plan_read_in_order;
     return settings;
 }
 

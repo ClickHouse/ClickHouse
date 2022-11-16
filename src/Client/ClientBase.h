@@ -38,10 +38,12 @@ enum MultiQueryProcessingStage
 
 enum ProgressOption
 {
+    DEFAULT,
     OFF,
     TTY,
     ERR,
 };
+ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 void interruptSignalHandler(int signum);
@@ -153,7 +155,6 @@ private:
 
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
-    void initTtyBuffer(bool to_err = false);
 
     String prompt() const;
 
@@ -167,6 +168,8 @@ private:
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
+
+    void initTtyBuffer(ProgressOption progress);
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
