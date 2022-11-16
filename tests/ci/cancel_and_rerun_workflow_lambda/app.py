@@ -308,7 +308,7 @@ def main(event):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
-    elif action == "labeled" and "can be tested" in labels:
+    elif action == "labeled" and event_data["label"]["name"] == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
         workflow_descriptions = (
