@@ -307,6 +307,33 @@ public:
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
+    struct ProcessorDataStats
+    {
+        size_t input_rows = 0;
+        size_t input_bytes = 0;
+        size_t output_rows = 0;
+        size_t output_bytes = 0;
+    };
+
+    ProcessorDataStats getProcessorDataStats() const
+    {
+        ProcessorDataStats stats;
+
+        for (const auto & input : inputs)
+        {
+            stats.input_rows += input.rows;
+            stats.input_bytes += input.bytes;
+        }
+
+        for (const auto & output : outputs)
+        {
+            stats.output_rows += output.rows;
+            stats.output_bytes += output.bytes;
+        }
+
+        return stats;
+    }
+
     struct ReadProgressCounters
     {
         uint64_t read_rows = 0;

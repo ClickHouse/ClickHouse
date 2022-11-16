@@ -75,6 +75,12 @@ namespace
         /// We need to look inside the type of its argument to obtain it.
         const DataTypeAggregateFunction & datatype_aggfunc = dynamic_cast<const DataTypeAggregateFunction &>(*argument_type_ptr);
         AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
+
+        if (aggfunc->getName() != AggregateFunctionGroupBitmapData<UInt8>::name())
+            throw Exception(
+                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         DataTypePtr nested_argument_type_ptr = aggfunc->getArgumentTypes()[0];
 
         AggregateFunctionPtr res(createWithIntegerType<AggregateFunctionTemplate, AggregateFunctionGroupBitmapData>(

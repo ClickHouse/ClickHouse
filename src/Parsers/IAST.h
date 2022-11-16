@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <set>
+#include <list>
 
 
 class SipHash;
@@ -34,7 +35,7 @@ class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAS
 public:
     ASTs children;
 
-    virtual ~IAST() = default;
+    virtual ~IAST();
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
@@ -91,7 +92,7 @@ public:
       */
     size_t checkDepth(size_t max_depth) const
     {
-        return checkDepthImpl(max_depth, 0);
+        return checkDepthImpl(max_depth);
     }
 
     /** Get total number of tree elements
@@ -272,7 +273,13 @@ public:
     static const char * hilite_none;
 
 private:
-    size_t checkDepthImpl(size_t max_depth, size_t level) const;
+    size_t checkDepthImpl(size_t max_depth) const;
+
+    /** Forward linked list of ASTPtr to delete.
+      * Used in IAST destructor to avoid possible stack overflow.
+      */
+    ASTPtr next_to_delete = nullptr;
+    ASTPtr * next_to_delete_list_head = nullptr;
 };
 
 template <typename AstArray>

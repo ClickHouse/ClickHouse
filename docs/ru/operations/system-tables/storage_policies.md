@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/storage_policies
+---
 # system.storage_policies {#system_tables-storage_policies}
 
 Содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).

@@ -113,7 +113,6 @@ def init_jinja2_filters(env):
     env.filters["chunks"] = lambda line: [
         line[i : i + chunk_size] for i in range(0, len(line), chunk_size)
     ]
-    env.filters["adjust_markdown_html"] = website.adjust_markdown_html
     env.filters["to_rfc882"] = lambda d: datetime.datetime.strptime(
         d, "%Y-%m-%d"
     ).strftime("%a, %d %b %Y %H:%M:%S GMT")

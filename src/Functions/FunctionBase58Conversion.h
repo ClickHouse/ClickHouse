@@ -6,7 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/base58.h>
+#include <Common/Base58.h>
 #include <cstring>
 
 
@@ -32,7 +32,7 @@ struct Base58Encode
         /// Base58 has efficiency of 73% (8/11) [https://monerodocs.org/cryptography/base58/],
         /// and we take double scale to avoid any reallocation.
 
-        size_t max_result_size = ceil(2 * src_column.getChars().size() + 1);
+        size_t max_result_size = static_cast<size_t>(ceil(2 * src_column.getChars().size() + 1));
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
@@ -41,29 +41,37 @@ struct Base58Encode
 
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
-        auto * dst_pos = dst;
 
-        size_t src_offset_prev = 0;
+        size_t prev_src_offset = 0;
+        size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev;
-            auto encoded_size = encodeBase58(src, dst_pos);
+            size_t current_src_offset = src_offsets[row];
+            size_t src_length = current_src_offset - prev_src_offset - 1;
+            size_t encoded_size = encodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
+            prev_src_offset = current_src_offset;
+            current_dst_offset += encoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
 
-            src += srclen;
-            dst_pos += encoded_size;
-
-            dst_offsets[row] = dst_pos - dst;
-            src_offset_prev = src_offsets[row];
+            dst_offsets[row] = current_dst_offset;
         }
 
-        dst_data.resize(dst_pos - dst);
+        dst_data.resize(current_dst_offset);
     }
 };
 
+enum class Base58DecodeErrorHandling
+{
+    ThrowException,
+    ReturnEmptyString
+};
+
+template <typename Name, Base58DecodeErrorHandling ErrorHandling>
 struct Base58Decode
 {
-    static constexpr auto name = "base58Decode";
+    static constexpr auto name = Name::name;
 
     static void process(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count)
     {
@@ -82,26 +90,32 @@ struct Base58Decode
 
         const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
-        auto * dst_pos = dst;
 
-        size_t src_offset_prev = 0;
+        size_t prev_src_offset = 0;
+        size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev;
-
-            auto decoded_size = decodeBase58(src, dst_pos);
+            size_t current_src_offset = src_offsets[row];
+            size_t src_length = current_src_offset - prev_src_offset - 1;
+            std::optional<size_t> decoded_size = decodeBase58(&src[prev_src_offset], src_length, &dst[current_dst_offset]);
             if (!decoded_size)
-                throw Exception("Invalid Base58 value, cannot be decoded", ErrorCodes::BAD_ARGUMENTS);
+            {
+                if constexpr (ErrorHandling == Base58DecodeErrorHandling::ThrowException)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Base58 value, cannot be decoded");
+                else
+                    decoded_size = 0;
+            }
 
-            src += srclen;
-            dst_pos += decoded_size;
+            prev_src_offset = current_src_offset;
+            current_dst_offset += *decoded_size;
+            dst[current_dst_offset] = 0;
+            ++current_dst_offset;
 
-            dst_offsets[row] = dst_pos - dst;
-            src_offset_prev = src_offsets[row];
+            dst_offsets[row] = current_dst_offset;
         }
 
-        dst_data.resize(dst_pos - dst);
+        dst_data.resize(current_dst_offset);
     }
 };
 
@@ -111,33 +125,23 @@ class FunctionBase58Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionBase58Conversion>();
-    }
-
-    String getName() const override
-    {
-        return Func::name;
-    }
-
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBase58Conversion>(); }
+    String getName() const override { return Func::name; }
     size_t getNumberOfArguments() const override { return 1; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception("Wrong number of arguments for function " + getName() + ":  1 expected.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}: 1 expected.", getName());
 
         if (!isString(arguments[0].type))
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}. Must be String.",
+                arguments[0].type->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -148,8 +152,9 @@ public:
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be String",
-                ErrorCodes::ILLEGAL_COLUMN);
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}, must be String",
+                arguments[0].column->getName(), getName());
 
         auto dst_column = ColumnString::create();
 

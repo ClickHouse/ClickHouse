@@ -13,7 +13,7 @@ function run()
     command=$1
     expect << EOF
 log_user 0
-set timeout 3
+set timeout 60
 match_max 100000
 
 spawn bash -c "$command"
@@ -26,8 +26,6 @@ EOF
 
 run "$CLICKHOUSE_CLIENT -q 'SELECT 1' 2>$file_name"
 run "$CLICKHOUSE_CLIENT -q 'SELECT 1' --server_logs_file=$file_name"
-
-# This query may fail due to bug in clickhouse-client.
-# run "$CLICKHOUSE_CLIENT -q 'SELECT 1' --server_logs_file=- >$file_name"
+run "$CLICKHOUSE_CLIENT -q 'SELECT 1' --server_logs_file=- >$file_name"
 
 rm -f "$file_name"

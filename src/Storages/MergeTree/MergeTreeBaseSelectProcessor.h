@@ -45,7 +45,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension = {});
+        std::optional<ParallelReadingExtension> extension_ = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
@@ -88,6 +88,20 @@ protected:
     /// Used for filling header with no rows as well as block with data
     static void
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+
+    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings);
+
+    static void initializeRangeReadersImpl(
+         MergeTreeRangeReader & range_reader,
+         std::deque<MergeTreeRangeReader> & pre_range_readers,
+         PrewhereInfoPtr prewhere_info,
+         const PrewhereExprInfo * prewhere_actions,
+         IMergeTreeReader * reader,
+         bool has_lightweight_delete,
+         const MergeTreeReaderSettings & reader_settings,
+         const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
+         const PrewhereExprStep & lightweight_delete_filter_step,
+         const Names & non_const_virtual_column_names);
 
     /// Sets up data readers for each step of prewhere and where
     void initializeMergeTreeReadersForPart(
@@ -175,12 +189,11 @@ private:
     /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
     bool getDelayedTasks();
 
-    /// It will form a request a request to coordinator and
+    /// It will form a request to coordinator and
     /// then reinitialize the mark ranges of this->task object
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
     void splitCurrentTaskRangesAndFillBuffer();
-
 };
 
 }

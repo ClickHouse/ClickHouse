@@ -28,10 +28,11 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
 
 void FunctionFactory::registerFunction(
     const std::string & name,
-    Value creator,
+    FunctionCreator creator,
+    Documentation doc,
     CaseSensitiveness case_sensitiveness)
 {
-    if (!functions.emplace(name, creator).second)
+    if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -42,7 +43,7 @@ void FunctionFactory::registerFunction(
 
     if (case_sensitiveness == CaseInsensitive)
     {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, creator).second)
+        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
             throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
                 ErrorCodes::LOGICAL_ERROR);
         case_insensitive_name_mapping[function_name_lowercase] = name;
@@ -105,13 +106,13 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     auto it = functions.find(name);
     if (functions.end() != it)
-        res = it->second(context);
+        res = it->second.first(context);
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
-            res = it->second(context);
+            res = it->second.first(context);
     }
 
     if (!res)
@@ -139,6 +140,15 @@ FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
+}
+
+Documentation FunctionFactory::getDocumentation(const std::string & name) const
+{
+    auto it = functions.find(name);
+    if (it == functions.end())
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
+
+    return it->second.second;
 }
 
 }

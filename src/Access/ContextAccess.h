@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
@@ -69,6 +69,9 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
+    ContextAccess() { } /// NOLINT
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
+
     /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
     /// Same as above, but can return nullptr.
@@ -84,7 +87,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter = {}) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -167,8 +170,6 @@ public:
 
 private:
     friend class AccessControl;
-    ContextAccess() {} /// NOLINT
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void initialize();
     void setUser(const UserPtr & user_) const;

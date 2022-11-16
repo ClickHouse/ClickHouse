@@ -1,4 +1,6 @@
 #include <Functions/FunctionConstantBase.h>
+#include <base/getFQDNOrHostName.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -8,11 +10,9 @@
 #include <Common/DateLUT.h>
 #include <Common/ClickHouseRevision.h>
 
-#if defined(OS_LINUX)
-#    include <Poco/Environment.h>
-#endif
+#include <Poco/Environment.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 
 namespace DB
@@ -109,7 +109,6 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-#if defined(OS_LINUX)
     class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
@@ -117,8 +116,14 @@ namespace
         explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
-#endif
 
+    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "displayName";
+        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
+    };
 }
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -157,12 +162,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -171,13 +176,26 @@ REGISTER_FUNCTION(ZooKeeperSessionUptime)
 }
 
 
-#if defined(OS_LINUX)
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
     factory.registerFunction<FunctionGetOSKernelVersion>();
 }
-#endif
+
+
+REGISTER_FUNCTION(DisplayName)
+{
+    factory.registerFunction<FunctionDisplayName>(
+        {
+            R"(
+Returns the value of `display_name` from config or server FQDN if not set.
+
+[example:displayName]
+)",
+            Documentation::Examples{{"displayName", "SELECT displayName();"}},
+            Documentation::Categories{"Constant", "Miscellaneous"}
+        },
+        FunctionFactory::CaseSensitive);
+}
 
 
 }
-

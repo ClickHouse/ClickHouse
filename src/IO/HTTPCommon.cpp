@@ -9,7 +9,7 @@
 
 #include <Poco/Version.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -49,11 +49,7 @@ namespace
 {
     void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-#else
-        session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
-#endif
         session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
@@ -93,12 +89,7 @@ namespace
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
         /// doesn't work properly without patch
-#if defined(POCO_CLICKHOUSE_PATCH)
         session->setKeepAlive(keep_alive);
-#else
-        (void)keep_alive; // Avoid warning: unused parameter
-#endif
-
         return session;
     }
 
@@ -122,12 +113,10 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
                 session->setProxyTunnel(!proxy_https && https);
-#endif
             }
             return session;
         }
@@ -142,7 +131,7 @@ namespace
                 bool proxy_https_,
                 size_t max_pool_size_,
                 bool resolve_host_ = true)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool"))
+            : Base(static_cast<unsigned>(max_pool_size_), &Poco::Logger::get("HTTPSessionPool"))
             , host(host_)
             , port(port_)
             , https(https_)
@@ -255,10 +244,13 @@ namespace
                         {
                             session->reset();
                             session->setHost(ip);
-                            session->attachSessionData({});
                         }
                     }
                 }
+                /// Reset the message, once it has been printed,
+                /// otherwise you will get report for failed parts on and on,
+                /// even for different tables (since they uses the same session).
+                session->attachSessionData({});
             }
 
             setTimeouts(*session, timeouts);
@@ -268,7 +260,7 @@ namespace
     };
 }
 
-void setResponseDefaultHeaders(HTTPServerResponse & response, unsigned keep_alive_timeout)
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;

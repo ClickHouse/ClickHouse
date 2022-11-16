@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 import sys
+import atexit
 
 
 from clickhouse_helper import (
@@ -12,7 +13,7 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import fail_simple_check, post_commit_status
+from commit_status_helper import post_commit_status, update_mergeable_check
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
@@ -150,6 +151,8 @@ if __name__ == "__main__":
 
     gh = GitHub(get_best_robot_token())
 
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
@@ -163,7 +166,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
@@ -202,5 +205,4 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state in ["error", "failure"]:
-        fail_simple_check(gh, pr_info, f"{NAME} failed")
         sys.exit(1)

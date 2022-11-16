@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/role-grants
+---
 #system.role_grants {#system_tables-role_grants}
 
 包含用户和角色的角色授予. 向该表添加项, 请使用`GRANT role TO user`.

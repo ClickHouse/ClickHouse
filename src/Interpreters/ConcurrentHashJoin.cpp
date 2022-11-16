@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Parsers/DumpASTNode.h>
@@ -33,13 +32,13 @@ static UInt32 toPowerOfTwo(UInt32 x)
 {
     if (x <= 1)
         return 1;
-    return static_cast<UInt32>(1) << (32 - __builtin_clz(x - 1));
+    return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
 }
 
 ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
-    , slots(toPowerOfTwo(std::min<size_t>(slots_, 256)))
+    , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
 {
     for (size_t i = 0; i < slots; ++i)
     {

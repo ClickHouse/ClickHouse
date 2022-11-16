@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 namespace DB
 {
@@ -441,6 +443,13 @@ void DiskMemory::truncateFile(const String & path, size_t size)
         throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
 
     file_it->second.data.resize(size);
+}
+
+MetadataStoragePtr DiskMemory::getMetadataStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    return std::make_shared<FakeMetadataStorageFromDisk>(
+        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
 

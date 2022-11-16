@@ -136,11 +136,7 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    void waitForTerminationRequest()
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
-    override
-#endif
-    ;
+    void waitForTerminationRequest() override;
     /// thread safe
     virtual void onInterruptSignals(int signal_id);
 
@@ -172,7 +168,8 @@ protected:
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
-    String build_id_info;
+    String build_id;
+    String git_hash;
     String stored_binary_hash;
 
     std::vector<int> handled_signals;

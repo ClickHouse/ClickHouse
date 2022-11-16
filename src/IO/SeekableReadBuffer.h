@@ -44,6 +44,8 @@ public:
     {
         size_t left;
         std::optional<size_t> right;
+
+        String toString() const { return fmt::format("[{}:{}]", left, right ? std::to_string(*right) : "None"); }
     };
 
     /**
@@ -59,6 +61,10 @@ public:
     virtual String getInfoForLog() { return ""; }
 
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
+
+    virtual bool supportsRightBoundedReads() const { return false; }
+
+    virtual bool isIntegratedWithFilesystemCache() const { return false; }
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;

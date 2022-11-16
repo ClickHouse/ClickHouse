@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/general/
 title: ClickHouse 有关常见问题
 toc_hidden_folder: true
 sidebar_position: 1

@@ -138,7 +138,7 @@ static String getCapnProtoFullTypeName(const capnp::Type & type)
             auto enum_schema = type.asEnum();
             String enum_name = "Enum(";
             auto enumerants = enum_schema.getEnumerants();
-            for (size_t i = 0; i != enumerants.size(); ++i)
+            for (unsigned i = 0; i != enumerants.size(); ++i)
             {
                 enum_name += String(enumerants[i].getProto().getName()) + " = " + std::to_string(enumerants[i].getOrdinal());
                 if (i + 1 != enumerants.size())

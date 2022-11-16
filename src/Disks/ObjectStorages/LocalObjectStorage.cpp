@@ -1,8 +1,6 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Common/IFileCache.h>
-#include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -28,6 +26,14 @@ namespace ErrorCodes
 LocalObjectStorage::LocalObjectStorage()
     : log(&Poco::Logger::get("LocalObjectStorage"))
 {
+    data_source_description.type = DataSourceType::Local;
+    if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
+        data_source_description.description = *block_device_id;
+    else
+        data_source_description.description = "/";
+
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
@@ -98,15 +104,12 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
 }
 
-void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    fs::directory_iterator end_it;
-    for (auto it = fs::directory_iterator(path); it != end_it; ++it)
-        children.emplace_back(it->path().filename(), it->file_size());
-}
-
 void LocalObjectStorage::removeObject(const StoredObject & object)
 {
+    /// For local object storage files are actually removed when "metadata" is removed.
+    if (!exists(object))
+        return;
+
     if (0 != unlink(object.absolute_path.data()))
         throwFromErrnoWithPath("Cannot unlink file " + object.absolute_path, object.absolute_path, ErrorCodes::CANNOT_UNLINK);
 }
