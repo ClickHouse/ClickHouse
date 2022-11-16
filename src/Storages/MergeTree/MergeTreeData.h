@@ -1301,6 +1301,7 @@ protected:
 
         using NodePtr = std::shared_ptr<Node>;
         using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
+        using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
         static PartLoadingTree build(std::vector<PartLoadingInfo> nodes);
 
@@ -1413,7 +1414,6 @@ private:
         const MergeTreeSettingsPtr & settings);
 
     void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
-
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
@@ -1423,7 +1423,7 @@ private:
     /// Otherwise, in non-parallel case will break and return.
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
-    static MutableDataPartPtr preparePartForRemoval(const DataPartPtr & part);
+    static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
     TemporaryParts temporary_parts;
 };
