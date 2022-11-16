@@ -18,7 +18,7 @@
 * `JSONExtract` family of functions will now attempt to coerce to the requested type. [#41502](https://github.com/ClickHouse/ClickHouse/pull/41502) ([Márcio Martins](https://github.com/marcioapm)).
 
 #### New Feature
-* Adds support for retries during INSERTs into ReplicatedMergeTree when a session with ClickHouse Keeper is lost. Apart from fault tolerance, it aims to provide better user experience, - avoid returning a user an error during insert if keeper is restarted (for example, due to upgrade). [#42607](https://github.com/ClickHouse/ClickHouse/pull/42607) ([Igor Nikonov](https://github.com/devcrafter)).
+* Adds support for retries during INSERTs into ReplicatedMergeTree when a session with ClickHouse Keeper is lost. Apart from fault tolerance, it aims to provide better user experience, - avoid returning a user an error during insert if Keeper is restarted (for example, due to upgrade). [#42607](https://github.com/ClickHouse/ClickHouse/pull/42607) ([Igor Nikonov](https://github.com/devcrafter)).
 * Add `Hudi` and `DeltaLake` table engines, read-only, only for tables on S3. [#41054](https://github.com/ClickHouse/ClickHouse/pull/41054) ([Daniil Rubin](https://github.com/rubin-do), [Kseniia Sumarokova](https://github.com/kssenii)).
 * Add table function `hudi` and `deltaLake`. [#43080](https://github.com/ClickHouse/ClickHouse/pull/43080) ([flynn](https://github.com/ucasfl)).
 * Support for composite time intervals. 1. Add, subtract and negate operations are now available on Intervals. In the case where the types of Intervals are different, they will be transformed into the Tuple of those types. 2. A tuple of intervals can be added to or subtracted from a Date/DateTime field. 3. Added parsing of Intervals with different types, for example: `INTERVAL '1 HOUR 1 MINUTE 1 SECOND'`. [#42195](https://github.com/ClickHouse/ClickHouse/pull/42195) ([Nikolay Degterinsky](https://github.com/evillique)).
@@ -191,7 +191,7 @@
 * Allow to use `Date32` arguments for `dateName` function. [#42554](https://github.com/ClickHouse/ClickHouse/pull/42554) ([Roman Vasin](https://github.com/rvasin)).
 * Now filters with NULL literals will be used during index analysis. [#34063](https://github.com/ClickHouse/ClickHouse/issues/34063). [#41842](https://github.com/ClickHouse/ClickHouse/pull/41842) ([Amos Bird](https://github.com/amosbird)).
 * Merge parts if every part in the range is older than a certain threshold. The threshold can be set by using `min_age_to_force_merge_seconds`. This closes [#35836](https://github.com/ClickHouse/ClickHouse/issues/35836). [#42423](https://github.com/ClickHouse/ClickHouse/pull/42423) ([Antonio Andelic](https://github.com/antonio2368)). This is continuation of [#39550i](https://github.com/ClickHouse/ClickHouse/pull/39550) by [@fastio](https://github.com/fastio) who implemented most of the logic.
-* Improve the time to recover lost keeper connections. [#42541](https://github.com/ClickHouse/ClickHouse/pull/42541) ([Raúl Marín](https://github.com/Algunenano)).
+* Improve the time to recover lost Keeper connections. [#42541](https://github.com/ClickHouse/ClickHouse/pull/42541) ([Raúl Marín](https://github.com/Algunenano)).
 
 #### Build/Testing/Packaging Improvement
 * Add fuzzer for table definitions [#40096](https://github.com/ClickHouse/ClickHouse/pull/40096) ([Anton Popov](https://github.com/CurtizJ)). This represents the biggest advancement for ClickHouse testing in this year so far.
@@ -402,7 +402,7 @@
 * Removed skipping of mutations in unaffected partitions of `MergeTree` tables, because this feature never worked correctly and might cause resurrection of finished mutations. [#40589](https://github.com/ClickHouse/ClickHouse/pull/40589) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * The clickhouse server will crash if we add a grpc port which has been occupied to the configuration in runtime. [#40597](https://github.com/ClickHouse/ClickHouse/pull/40597) ([何李夫](https://github.com/helifu)).
 * Fix `base58Encode / base58Decode` handling leading 0 / '1'. [#40620](https://github.com/ClickHouse/ClickHouse/pull/40620) ([Andrey Zvonov](https://github.com/zvonand)).
-* keeper-fix: fix race in accessing logs while snapshot is being installed. [#40627](https://github.com/ClickHouse/ClickHouse/pull/40627) ([Antonio Andelic](https://github.com/antonio2368)).
+* Keeper-fix: fix race in accessing logs while snapshot is being installed. [#40627](https://github.com/ClickHouse/ClickHouse/pull/40627) ([Antonio Andelic](https://github.com/antonio2368)).
 * Fix short circuit execution of toFixedString function. Solves (partially) [#40622](https://github.com/ClickHouse/ClickHouse/issues/40622). [#40628](https://github.com/ClickHouse/ClickHouse/pull/40628) ([Kruglov Pavel](https://github.com/Avogar)).
 * Fixes SQLite int8 column conversion to int64 column in ClickHouse. Fixes [#40639](https://github.com/ClickHouse/ClickHouse/issues/40639). [#40642](https://github.com/ClickHouse/ClickHouse/pull/40642) ([Barum Rho](https://github.com/barumrho)).
 * Fix stack overflow in recursive `Buffer` tables. This closes [#40637](https://github.com/ClickHouse/ClickHouse/issues/40637). [#40643](https://github.com/ClickHouse/ClickHouse/pull/40643) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
