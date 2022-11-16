@@ -213,7 +213,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             {
                 /// And for simple MergeTree we can stop merges before acquiring the lock
                 auto merges_blocker = table->getActionLock(ActionLocks::PartsMerge);
-                auto table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
             }
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -232,6 +232,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             }
             else
                 table->checkTableCanBeDropped();
+
+            /// Check dependencies before shutting table down
+            if (context_->getSettingsRef().check_table_dependencies)
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
 
             table->flushAndShutdown();
 

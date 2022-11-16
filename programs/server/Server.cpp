@@ -53,7 +53,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -61,7 +60,9 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Storages/NamedCollections.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -82,13 +83,17 @@
 #if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
 #endif
+#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProxyV1HandlerFactory.h>
+#include <Server/TLSHandlerFactory.h>
 #include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
+#include <unordered_set>
 
 #include "config.h"
 #include "config_version.h"
@@ -224,12 +229,12 @@ catch (...)
             path));
 }
 
-int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    const int sleep_max_ms = 1000 * seconds_to_wait;
-    const int sleep_one_ms = 100;
-    int sleep_current_ms = 0;
-    int current_connections = 0;
+    const size_t sleep_max_ms = 1000 * seconds_to_wait;
+    const size_t sleep_one_ms = 100;
+    size_t sleep_current_ms = 0;
+    size_t current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -387,7 +392,16 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config)
 {
     bool listen_try = config.getBool("listen_try", false);
     if (!listen_try)
-        listen_try = DB::getMultipleValuesFromConfig(config, "", "listen_host").empty();
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        listen_try =
+            DB::getMultipleValuesFromConfig(config, "", "listen_host").empty() &&
+            std::none_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+            {
+                return config.has("protocols." + protocol + ".host") && config.has("protocols." + protocol + ".port");
+            });
+    }
     return listen_try;
 }
 
@@ -719,6 +733,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
+    NamedCollectionFactory::instance().initialize(config());
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -792,41 +808,43 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
         /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
-
-        String calculated_binary_hash = getHashOfLoadedBinaryHex();
-
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
-                " (calculated checksum: {})", calculated_binary_hash);
-        }
-        else if (calculated_binary_hash == stored_binary_hash)
-        {
-            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
         }
         else
         {
-            /// If program is run under debugger, ptrace will fail.
-            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            String calculated_binary_hash = getHashOfLoadedBinaryHex();
+            if (calculated_binary_hash == stored_binary_hash)
             {
-                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
             }
             else
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable {2} was changed just after startup;"
-                    " - the executable {2} was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file {2} was intentionally modified;"
-                    " - a logical error in the code."
-                    , calculated_binary_hash, stored_binary_hash, executable_path);
+                /// If program is run under debugger, ptrace will fail.
+                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                {
+                    /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                    global_context->addWarningMessage(fmt::format(
+                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                        calculated_binary_hash));
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Calculated checksum of the executable ({0}) does not correspond"
+                        " to the reference checksum stored in the executable ({1})."
+                        " This may indicate one of the following:"
+                        " - the executable {2} was changed just after startup;"
+                        " - the executable {2} was corrupted on disk due to faulty hardware;"
+                        " - the loaded executable was corrupted in memory due to faulty hardware;"
+                        " - the file {2} was intentionally modified;"
+                        " - a logical error in the code.",
+                        calculated_binary_hash,
+                        stored_binary_hash,
+                        executable_path);
+                }
             }
         }
     }
@@ -920,7 +938,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         else
         {
             rlim_t old = rlim.rlim_cur;
-            rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
@@ -971,10 +989,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        size_t tmp_max_size = config().getUInt64("tmp_max_size", 0);
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy, tmp_max_size);
+        std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        std::string temporary_policy = config().getString("tmp_policy", "");
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        const VolumePtr & volume = global_context->setTemporaryStorage(temporary_path, temporary_policy, max_size);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -1008,12 +1026,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
         fs::create_directories(user_scripts_path);
-    }
-
-    {
-        std::string user_defined_path = config().getString("user_defined_path", path / "user_defined/");
-        global_context->setUserDefinedPath(user_defined_path);
-        fs::create_directories(user_defined_path);
     }
 
     /// top_level_domains_lists
@@ -1272,6 +1284,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
+            NamedCollectionFactory::instance().reload(*config);
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1479,11 +1492,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     SCOPE_EXIT({
-        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
-        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
-        main_config_reloader.reset();
-        access_control.stopPeriodicReloading();
-
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1500,7 +1508,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            int current_connections = 0;
+            size_t current_connections = 0;
             for (auto & server : servers_to_start_before_tables)
             {
                 server.stop();
@@ -1559,18 +1567,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
@@ -1598,6 +1594,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
+        /// Load user-defined SQL functions.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {
@@ -1792,11 +1790,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            /// Stop reloading of the main config. This must be done before everything else because it
+            /// can try to access/modify already deleted objects.
+            /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            main_config_reloader.reset();
+            access_control.stopPeriodicReloading();
 
             is_cancelled = true;
 
-            int current_connections = 0;
+            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers)
@@ -1853,6 +1858,82 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 
+std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & protocol,
+    Poco::Net::HTTPServerParams::Ptr http_params,
+    AsynchronousMetrics & async_metrics,
+    bool & is_secure)
+{
+    auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
+    {
+        if (type == "tcp")
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+
+        if (type == "tls")
+#if USE_SSL
+            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
+#else
+            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+
+        if (type == "proxy1")
+            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
+        if (type == "mysql")
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+        if (type == "postgres")
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+        if (type == "http")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+            );
+        if (type == "prometheus")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+            );
+        if (type == "interserver")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(context(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+            );
+
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
+    };
+
+    std::string conf_name = "protocols." + protocol;
+    std::string prefix = conf_name + ".";
+    std::unordered_set<std::string> pset {conf_name};
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
+    while (true)
+    {
+        // if there is no "type" - it's a reference to another protocol and this is just an endpoint
+        if (config.has(prefix + "type"))
+        {
+            std::string type = config.getString(prefix + "type");
+            if (type == "tls")
+            {
+                if (is_secure)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
+                is_secure = true;
+            }
+
+            stack->append(create_factory(type, conf_name));
+        }
+
+        if (!config.has(prefix + "impl"))
+            break;
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        if (!pset.insert(conf_name).second)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+    }
+
+    return stack;
+}
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
@@ -1870,6 +1951,55 @@ void Server::createServers(
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::vector<std::string> hosts;
+        if (config.has("protocols." + protocol + ".host"))
+            hosts.push_back(config.getString("protocols." + protocol + ".host"));
+        else
+            hosts = listen_hosts;
+
+        for (const auto & host : hosts)
+        {
+            std::string conf_name = "protocols." + protocol;
+            std::string prefix = conf_name + ".";
+
+            if (!config.has(prefix + "port"))
+                continue;
+
+            std::string description {"<undefined> protocol"};
+            if (config.has(prefix + "description"))
+                description = config.getString(prefix + "description");
+            std::string port_name = prefix + "port";
+            bool is_secure = false;
+            auto stack = buildProtocolStackFromConfig(config, protocol, http_params, async_metrics, is_secure);
+
+            if (stack->empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
+
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, host, port, is_secure);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+
+                return ProtocolServerAdapter(
+                    host,
+                    port_name.c_str(),
+                    description + ": " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        stack.release(),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+            });
+        }
+    }
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -2118,13 +2248,50 @@ void Server::updateServers(
     {
         if (!server.isStopping())
         {
-            bool has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
-            bool has_port = !config.getString(server.getPortName(), "").empty();
+            std::string port_name = server.getPortName();
+            bool has_host = false;
+            bool is_http = false;
+            if (port_name.starts_with("protocols."))
+            {
+                std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
+                has_host = config.has(protocol + ".host");
 
-            /// NOTE: better to compare using getPortName() over using
-            /// dynamic_cast<> since HTTPServer is also used for prometheus and
-            /// internal replication communications.
-            bool is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+                std::string conf_name = protocol;
+                std::string prefix = protocol + ".";
+                std::unordered_set<std::string> pset {conf_name};
+                while (true)
+                {
+                    if (config.has(prefix + "type"))
+                    {
+                        std::string type = config.getString(prefix + "type");
+                        if (type == "http")
+                        {
+                            is_http = true;
+                            break;
+                        }
+                    }
+
+                    if (!config.has(prefix + "impl"))
+                        break;
+
+                    conf_name = "protocols." + config.getString(prefix + "impl");
+                    prefix = conf_name + ".";
+
+                    if (!pset.insert(conf_name).second)
+                        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+                }
+            }
+            else
+            {
+                /// NOTE: better to compare using getPortName() over using
+                /// dynamic_cast<> since HTTPServer is also used for prometheus and
+                /// internal replication communications.
+                is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            }
+
+            if (!has_host)
+                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+            bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
             if (force_restart)
                 LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());

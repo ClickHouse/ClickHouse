@@ -14,6 +14,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 
 namespace DB
 {
@@ -75,6 +76,8 @@ private:
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
+
+    KeeperSnapshotManagerS3 snapshot_s3;
 
     /// Thread put requests to raft
     void requestThread();
@@ -199,6 +202,18 @@ public:
     void resetConnectionStats()
     {
         keeper_stats.reset();
+    }
+
+    /// Create snapshot manually, return the last committed log index in the snapshot
+    uint64_t createSnapshot()
+    {
+        return server->createSnapshot();
+    }
+
+    /// Get Raft information
+    KeeperLogInfo getKeeperLogInfo()
+    {
+        return server->getKeeperLogInfo();
     }
 };
 

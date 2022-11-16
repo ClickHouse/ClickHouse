@@ -5,7 +5,7 @@ sidebar_label: Input and Output Formats
 title: Formats for Input and Output Data
 ---
 
-ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
+ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 
 The supported formats are:
@@ -1018,6 +1018,62 @@ Example:
   "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
   "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
 }
+```
+
+To use object name as column value you can use special setting [format_json_object_each_row_column_for_object_name](../operations/settings/settings.md#format_json_object_each_row_column_for_object_name). Value of this setting is set to the name of a column, that is used as JSON key for a row in resulting object.
+Examples:
+
+For output:
+
+Let's say we have table `test` with two columns:
+```
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+Let's output it in `JSONObjectEachRow` format and use `format_json_object_each_row_column_for_object_name` setting:
+
+```sql
+select * from test settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+The output:
+```json
+{
+	"first_obj": {"number": 1},
+	"second_obj": {"number": 2},
+	"third_obj": {"number": 3}
+}
+```
+
+For input:
+
+Let's say we stored output from previous example in a file with name `data.json`:
+```sql
+select * from file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+It also works in schema inference:
+
+```sql
+desc file('data.json', JSONObjectEachRow) settings format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
 ```
 
 

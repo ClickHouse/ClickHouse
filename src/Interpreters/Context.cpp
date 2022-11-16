@@ -57,7 +57,9 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/createUserDefinedSQLObjectsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
@@ -77,6 +79,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -186,7 +190,6 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
-    String user_defined_path;                               /// Path to the directory with user defined objects.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -194,15 +197,17 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
-    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
 
     scope_guard models_repository_guard;
 
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository = nullptr;
     scope_guard dictionaries_xmls;
 
+    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
     scope_guard user_defined_executable_functions_xmls;
+
+    mutable std::unique_ptr<IUserDefinedSQLObjectsLoader> user_defined_sql_objects_loader;
 
 #if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
@@ -420,6 +425,8 @@ struct ContextSharedPart : boost::noncopyable
             external_dictionaries_loader->enablePeriodicUpdates(false);
         if (external_user_defined_executable_functions_loader)
             external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
+        if (user_defined_sql_objects_loader)
+            user_defined_sql_objects_loader->stopWatching();
 
         Session::shutdownNamedSessions();
 
@@ -450,12 +457,25 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
+        std::unique_ptr<IUserDefinedSQLObjectsLoader> delete_user_defined_sql_objects_loader;
         std::unique_ptr<BackgroundSchedulePool> delete_buffer_flush_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_distributed_schedule_pool;
         std::unique_ptr<BackgroundSchedulePool> delete_message_broker_schedule_pool;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
+
+        /// Delete DDLWorker before zookeeper.
+        /// Cause it can call Context::getZooKeeper and resurrect it.
+
+        {
+            auto lock = std::lock_guard(mutex);
+            delete_ddl_worker = std::move(ddl_worker);
+        }
+
+        /// DDLWorker should be deleted without lock, cause its internal thread can
+        /// take it as well, which will cause deadlock.
+        delete_ddl_worker.reset();
 
         {
             auto lock = std::lock_guard(mutex);
@@ -488,11 +508,11 @@ struct ContextSharedPart : boost::noncopyable
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
+            delete_user_defined_sql_objects_loader = std::move(user_defined_sql_objects_loader);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_ddl_worker = std::move(ddl_worker);
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -515,12 +535,12 @@ struct ContextSharedPart : boost::noncopyable
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
         delete_external_user_defined_executable_functions_loader.reset();
+        delete_user_defined_sql_objects_loader.reset();
         delete_ddl_worker.reset();
         delete_buffer_flush_schedule_pool.reset();
         delete_schedule_pool.reset();
         delete_distributed_schedule_pool.reset();
         delete_message_broker_schedule_pool.reset();
-        delete_ddl_worker.reset();
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
@@ -658,12 +678,6 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-String Context::getUserDefinedPath() const
-{
-    auto lock = getLock();
-    return shared->user_defined_path;
-}
-
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -726,9 +740,6 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
-
-    if (shared->user_defined_path.empty())
-        shared->user_defined_path = shared->path + "user_defined/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name, size_t max_size)
@@ -802,12 +813,6 @@ void Context::setUserScriptsPath(const String & path)
 {
     auto lock = getLock();
     shared->user_scripts_path = path;
-}
-
-void Context::setUserDefinedPath(const String & path)
-{
-    auto lock = getLock();
-    shared->user_defined_path = path;
 }
 
 void Context::addWarningMessage(const String & msg) const
@@ -984,10 +989,12 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     return access ? access : ContextAccess::getFullAccess();
 }
 
-ASTPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
+RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     auto lock = getLock();
-    auto row_filter_of_initial_user = row_policies_of_initial_user ? row_policies_of_initial_user->getFilter(database, table_name, filter_type) : nullptr;
+    RowPolicyFilterPtr row_filter_of_initial_user;
+    if (row_policies_of_initial_user)
+        row_filter_of_initial_user = row_policies_of_initial_user->getFilter(database, table_name, filter_type);
     return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
 }
 
@@ -1224,7 +1231,7 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 }
 
 
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
+StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);
@@ -1234,15 +1241,61 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insertion_table = getInsertionTable();
-            if (!insertion_table.empty())
+            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            bool use_columns_from_insert_query = true;
+
+            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
+            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
             {
-                const auto & structure_hint
-                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                table_function_ptr->setStructureHint(structure_hint);
+                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
+                Names columns_names;
+                bool have_asterisk = false;
+                /// First, check if we have only identifiers, asterisk and literals in select expression,
+                /// and if no, we cannot use the structure from insertion table.
+                for (const auto & expression : expression_list->children)
+                {
+                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    {
+                        columns_names.push_back(identifier->name());
+                    }
+                    else if (expression->as<ASTAsterisk>())
+                    {
+                        have_asterisk = true;
+                    }
+                    else if (!expression->as<ASTLiteral>())
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// Check that all identifiers are column names from insertion table.
+                for (const auto & column_name : columns_names)
+                {
+                    if (!structure_hint.has(column_name))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                }
+
+                /// If we don't have asterisk but only subset of columns, we should use
+                /// structure from insertion table only in case when table function
+                /// supports reading subset of columns from data.
+                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
+                {
+                    /// For input function we should check if input format supports reading subset of columns.
+                    if (table_function_ptr->getName() == "input")
+                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                    else
+                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                }
             }
+
+            if (use_columns_from_insert_query)
+                table_function_ptr->setStructureHint(structure_hint);
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
@@ -1374,6 +1427,15 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
     getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
+void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
+{
+    auto lock = getLock();
+    for (const String & name: names)
+    {
+        settings.setDefaultValue(name);
+    }
+}
+
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfiles() const
 {
     auto lock = getLock();
@@ -1461,10 +1523,8 @@ void Context::setCurrentQueryId(const String & query_id)
 
 void Context::killCurrentQuery()
 {
-    if (process_list_elem)
-    {
-        process_list_elem->cancelQuery(true);
-    }
+    if (auto elem = process_list_elem.lock())
+        elem->cancelQuery(true);
 }
 
 String Context::getDefaultFormat() const
@@ -1472,10 +1532,19 @@ String Context::getDefaultFormat() const
     return default_format.empty() ? "TabSeparated" : default_format;
 }
 
-
 void Context::setDefaultFormat(const String & name)
 {
     default_format = name;
+}
+
+String Context::getInsertFormat() const
+{
+    return insert_format;
+}
+
+void Context::setInsertFormat(const String & name)
+{
+    insert_format = name;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const
@@ -1643,6 +1712,22 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
     shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
 }
 
+const IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader() const
+{
+    auto lock = getLock();
+    if (!shared->user_defined_sql_objects_loader)
+        shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
+    return *shared->user_defined_sql_objects_loader;
+}
+
+IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader()
+{
+    auto lock = getLock();
+    if (!shared->user_defined_sql_objects_loader)
+        shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
+    return *shared->user_defined_sql_objects_loader;
+}
+
 #if USE_NLP
 
 SynonymsExtensions & Context::getSynonymsExtensions() const
@@ -1689,15 +1774,15 @@ ProgressCallback Context::getProgressCallback() const
 }
 
 
-void Context::setProcessListElement(ProcessList::Element * elem)
+void Context::setProcessListElement(QueryStatusPtr elem)
 {
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
 }
 
-ProcessList::Element * Context::getProcessListElement() const
+QueryStatusPtr Context::getProcessListElement() const
 {
-    return process_list_elem;
+    return process_list_elem.lock();
 }
 
 
@@ -2045,7 +2130,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
     else if (shared->zookeeper->expired())
+    {
+        Stopwatch watch;
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
         shared->zookeeper = shared->zookeeper->startNewSession();
+        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+    }
 
     return shared->zookeeper;
 }
@@ -3401,7 +3491,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     size_t background_merges_mutations_concurrency_ratio = 2;
     if (config.has("background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_pool_size"))
+    else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
     size_t background_move_pool_size = 8;
@@ -3616,6 +3706,7 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
 

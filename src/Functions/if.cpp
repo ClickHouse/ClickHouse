@@ -904,6 +904,7 @@ private:
 
             if (cond_col)
             {
+                arg_else_column = arg_else_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_else_column));
                 if (else_is_short)
                     result_column->expand(cond_col->getData(), true);
@@ -941,6 +942,7 @@ private:
 
             if (cond_col)
             {
+                arg_then_column = arg_then_column->convertToFullColumnIfConst();
                 auto result_column = IColumn::mutate(std::move(arg_then_column));
                 if (then_is_short)
                     result_column->expand(cond_col->getData(), false);
