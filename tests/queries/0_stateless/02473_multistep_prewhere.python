@@ -8,7 +8,7 @@ class Tester:
     - Creates test table
     - Deletes the specified range of rows
     - Masks another range using row-level policy
-    - Runs some read queries     
+    - Runs some read queries
     '''
     def __init__(self, session, url, index_granularity, total_rows):
         self.session = session
@@ -22,7 +22,7 @@ class Tester:
         self.repro_queries.append(query_text)
         resp = self.session.post(self.url, data=query_text)
         if resp.status_code != 200:
-            # Group similar errors 
+            # Group similar errors
             error = resp.text[0:40]
             if error not in self.reported_errors:
                 print('Code:', resp.status_code)
@@ -36,19 +36,20 @@ class Tester:
 
         return resp.text
 
-    
-    def check_data(self, delete_range_start, delete_range_end, row_level_policy_range_start, row_level_policy_range_end):
-        result = self.query('SELECT count() FROM tab_02473;', False)
 
-        delta = 10
-        for query_range_start in [0, delta]:
-            for query_range_end in [self.total_rows - delta]: #, self.total_rows]:
-                result = self.query('SELECT count() from tab_02473 PREWHERE b > {} AND b <= {} WHERE a == 0;'.format(
-                    query_range_start, query_range_end), False)
-                result = self.query('SELECT count() from tab_02473 PREWHERE c > {} AND c <= {} WHERE a == 0;'.format(
-                    query_range_start, query_range_end), False)
-                result = self.query('SELECT count() from tab_02473 PREWHERE c <= {} OR c > {} WHERE a == 0;'.format(
-                    query_range_start, query_range_end), False)
+    def check_data(self, delete_range_start, delete_range_end, row_level_policy_range_start, row_level_policy_range_end):
+        for to_select in ['count()', 'sum(d)']: # Test reading with and without column with default value
+            result = self.query('SELECT {} FROM tab_02473;'.format(to_select), False)
+
+            delta = 10
+            for query_range_start in [0, delta]:
+                for query_range_end in [self.total_rows - delta]: #, self.total_rows]:
+                    result = self.query('SELECT {} from tab_02473 PREWHERE b > {} AND b <= {} WHERE a == 0;'.format(
+                        to_select, query_range_start, query_range_end), False)
+                    result = self.query('SELECT {} from tab_02473 PREWHERE c > {} AND c <= {} WHERE a == 0;'.format(
+                        to_select, query_range_start, query_range_end), False)
+                    result = self.query('SELECT {} from tab_02473 PREWHERE c <= {} OR c > {} WHERE a == 0;'.format(
+                        to_select, query_range_start, query_range_end), False)
 
 
     def run_test(self, delete_range_start, delete_range_end, row_level_policy_range_start, row_level_policy_range_end):
@@ -62,6 +63,9 @@ class Tester:
         self.query('INSERT INTO tab_02473 select 0, number+1, number+1 FROM numbers({});'.format(self.total_rows))
 
         self.query('OPTIMIZE TABLE tab_02473 FINAL SETTINGS mutations_sync=2;')
+
+        # After all data has been written add a column with default value
+        self.query('ALTER TABLE tab_02473 ADD COLUMN d Int64 DEFAULT 1;')
 
         self.check_data(-100, -100, -100, -100)
 
