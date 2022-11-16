@@ -37,15 +37,13 @@ void setThreadName(const char * name)
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), name);
-    if ((false))
 #elif defined(OS_DARWIN)
-    if (0 != pthread_setname_np(name))
+    pthread_setname_np(name);
 #elif defined(OS_SUNOS)
-    if (0 != pthread_setname_np(pthread_self(), name))
+    pthread_setname_np(pthread_self(), name);
 #else
-    if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
+    prctl(PR_SET_NAME, name, 0, 0, 0);
 #endif
-        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 
     memcpy(thread_name, name, 1 + strlen(name));
 }

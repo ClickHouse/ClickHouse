@@ -322,10 +322,8 @@ def main():
     start = time.time()
     log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
     elapsed = int(time.time() - start)
-    subprocess.check_call(
-        f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
-    )
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
+    subprocess.check_call(f"sudo chmod -R 777 {build_output_path}", shell=True)
+    subprocess.check_call(f"sudo chmod -R 777 {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
 
     # Upload the ccache first to have the least build time in case of problems
