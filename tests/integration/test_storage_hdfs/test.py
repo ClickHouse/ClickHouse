@@ -9,7 +9,10 @@ from pyhdfs import HdfsClient
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/macro.xml", "configs/schema_cache.xml", "configs/cluster.xml"],
+    main_configs=[
+        "configs/macro.xml", 
+        "configs/schema_cache.xml", 
+        "configs/cluster.xml"],
     with_hdfs=True,
 )
 
