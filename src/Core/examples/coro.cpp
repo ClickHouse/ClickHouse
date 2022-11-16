@@ -79,13 +79,10 @@ struct Task
             r->exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
         }
 
-        explicit promise_type(std::string tag_) : tag(tag_) {}
-        ~promise_type() { std::cout << "~promise_type " << tag << std::endl; }
         //coro_handle self;
         void * addr;
         void * addr_tag;
         coro_handle next;
-        std::string tag;
         Task * r = nullptr;
     };
 
@@ -94,28 +91,28 @@ struct Task
     bool await_ready() const noexcept { return false; } // NOLINT(readability-identifier-naming)
     void await_suspend(coro_handle g) noexcept // NOLINT(readability-identifier-naming)
     {
-        std::cout << "  await_suspend " << my.promise().tag << std::endl;
-        std::cout << "  g tag " << g.promise().tag << std::endl;
+        std::cout << "  await_suspend " << std::endl;
         g.promise().next = my;
         //g.promise().self = g;
     }
-    T await_resume() noexcept // NOLINT(readability-identifier-naming)
+    T await_resume() // NOLINT(readability-identifier-naming)
     {
-        std::cout << "  await_res " << my.promise().tag << std::endl;
+        std::cout << "  await_res " << std::endl;
+        if (exception)
+            std::rethrow_exception(exception);
         return *value;
     }
 
-    Task(coro_handle handle) : my(handle), tag(handle.promise().tag) // NOLINT(google-explicit-constructor)
+    Task(coro_handle handle) : my(handle) // NOLINT(google-explicit-constructor)
     {
+        std::cout << "Task " << std::endl;
         assert(handle);
         my.promise().r = this;
-        std::cout << "    Task " << tag << std::endl;
     }
     Task(Task &) = delete;
-    Task(Task &&rhs) noexcept : my(rhs.my), tag(rhs.tag)
+    Task(Task &&rhs) noexcept : my(rhs.my)
     {
         rhs.my = {};
-        std::cout << "    Task&& " << tag << std::endl;
     }
     static bool resumeImpl(Task *r)
     {
@@ -128,16 +125,18 @@ struct Task
         {
             if (resumeImpl(next.promise().r))
                 return true;
+            if (next.promise().r->exception)
+                r->exception = next.promise().r->exception;
             next = {};
         }
 
-        if (!r->value)
+        if (!r->value || r->exception)
         {
             r->my.resume();
-            if (r->exception)
-                std::rethrow_exception(r->exception);
+            // if (r->exception)
+            //     std::rethrow_exception(r->exception);
         }
-        return !r->value;
+        return !(r->value || r->exception);
     }
 
     static void tmp() {}
@@ -154,12 +153,10 @@ struct Task
 
     ~Task()
     {
-        std::cout << "    ~Task " << tag << std::endl;
     }
 
-    coro_handle my;
 private:
-    std::string tag;
+    coro_handle my;
     std::optional<T> value;
     std::exception_ptr exception;
 };
@@ -266,6 +263,44 @@ Task<int> foo([[maybe_unused]] std::string tag)
     co_return res1 * res2; // 2 * 2 = 4
 }
 
+Task<int> throwing(int val)
+{
+    co_await std::suspend_always();
+
+    if (val == 42)
+        throw DB::Exception(1, "hello");
+
+
+    co_return val;
+}
+
+Task<int> calling(int val)
+{
+    int val1 = co_await throwing(val);
+    int val2 = co_await throwing(val + 1);
+
+    co_return val1 + val2;
+}
+
+Task<int> catching()
+{
+    int sum = 0;
+    for (int i = 40; i < 42; ++i)
+    {
+        try
+        {
+            sum += co_await calling(i);
+        }
+        catch (DB::Exception & e)
+        {
+            std::cout << e.getStackTraceString() << std::endl;
+        }
+    }
+
+    co_return sum;
+}
+
+
 int main()
 {
     //__builtin_coro_resume(reinterpret_cast<void *>(0xABCABCABC));
@@ -274,6 +309,13 @@ int main()
     Poco::Logger::root().setLevel("trace");
 
     LOG_INFO(&Poco::Logger::get(""), "Starting");
+
+    {
+        auto t = catching();
+        while (t.resume())
+            std::cout << ".. yielded" << std::endl;
+        std::cout << ".. done: " << t.res() << std::endl;
+    }
 
     try
     {
