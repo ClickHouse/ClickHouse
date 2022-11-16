@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -31,11 +32,11 @@ BlockIO InterpreterRenameQuery::execute()
     if (!rename.cluster.empty())
     {
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
+        params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
+    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String path = getContext()->getPath();
     String current_database = getContext()->getCurrentDatabase();
@@ -106,7 +107,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && !getContext()->getClientInfo().is_replicated_database_internal)
+        if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
                 throw Exception(
@@ -119,7 +120,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
         else
         {
@@ -165,18 +166,30 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     return {};
 }
 
-AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
+AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRenameQuery::RenameType type) const
 {
     AccessRightsElements required_access;
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
     for (const auto & elem : rename.elements)
     {
-        required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
-        required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
-        if (rename.exchange)
+        if (type == RenameType::RenameTable)
         {
-            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.database, elem.from.table);
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.database, elem.to.table);
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
+            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
+            if (rename.exchange)
+            {
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.database, elem.from.table);
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.database, elem.to.table);
+            }
+        }
+        else if (type == RenameType::RenameDatabase)
+        {
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.database);
+            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.database);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of rename query");
         }
     }
     return required_access;

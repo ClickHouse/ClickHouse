@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/odbc
 sidebar_position: 23
 sidebar_label: ODBC驱动
 ---

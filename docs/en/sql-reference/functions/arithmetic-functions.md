@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/arithmetic-functions
 sidebar_position: 34
 sidebar_label: Arithmetic
 ---
@@ -55,14 +56,19 @@ Differs from ‘intDiv’ in that it returns zero when dividing by zero or when 
 
 ## modulo(a, b), a % b operator
 
-Calculates the remainder after division.
-If arguments are floating-point numbers, they are pre-converted to integers by dropping the decimal portion.
-The remainder is taken in the same sense as in C++. Truncated division is used for negative numbers.
+Calculates the remainder when dividing `a` by `b`.
+The result type is an integer if both inputs are integers. If one of the inputs is a floating-point number, the result is a floating-point number.
+The remainder is computed like in C++. Truncated division is used for negative numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
 ## moduloOrZero(a, b)
 
 Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
+
+## positive_modulo(a, b)
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
+
+Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get positive result and don't care about performance too much.
 
 ## negate(a), -a operator
 

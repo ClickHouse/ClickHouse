@@ -12,6 +12,7 @@
 
 #include <fmt/format.h>
 
+
 namespace Poco { class Logger; }
 
 
@@ -121,13 +122,9 @@ public:
     }
 
 
-    std::string displayText() const
-#if defined(POCO_CLICKHOUSE_PATCH)
-    override
-#endif
-    ;
+    std::string displayText() const override;
 
-    int getLineNumber() const { return line_number; }
+    ssize_t getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
     String getFileName() const { return file_name; }

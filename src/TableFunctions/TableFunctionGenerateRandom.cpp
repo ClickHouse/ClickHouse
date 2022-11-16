@@ -12,7 +12,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionGenerateRandom.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include "registerTableFunctions.h"
 
@@ -91,7 +91,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateRandom>();
+    factory.registerFunction<TableFunctionGenerateRandom>({.documentation = {}, .allow_readonly = true});
 }
 
 }

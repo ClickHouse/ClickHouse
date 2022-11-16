@@ -1,8 +1,15 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
-set -eux
+set -x
+
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
+
+set -e
+set -u
 set -o pipefail
+
 trap "exit" INT TERM
 # The watchdog is in the separate process group, so we have to kill it separately
 # if the script terminates earlier.
@@ -12,7 +19,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-14_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-15_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
@@ -69,6 +76,8 @@ function download
     wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
+    # clickhouse may be compressed - run once to decompress
+    ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
 
@@ -85,6 +94,20 @@ function configure
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
+    cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
+
+    cat > db/config.d/core.xml <<EOL
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+         since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+EOL
 }
 
 function watchdog
@@ -155,7 +178,7 @@ function fuzz
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > >(tail -100000 > server.log) 2>&1 &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
     server_pid=$!
 
     kill -0 $server_pid
@@ -178,7 +201,6 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
-gcore
 backtrace full
 thread apply all backtrace full
 info registers
@@ -219,6 +241,7 @@ quit
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
+        --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
@@ -274,7 +297,7 @@ quit
         # The server has died.
         task_exit_code=210
         echo "failure" > status.txt
-        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -368,8 +391,9 @@ th { cursor: pointer; }
 
 <h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
 <p class="links">
+<a href="runlog.log">runlog.log</a>
 <a href="fuzzer.log">fuzzer.log</a>
-<a href="server.log">server.log</a>
+<a href="server.log.gz">server.log.gz</a>
 <a href="main.log">main.log</a>
 ${CORE_LINK}
 </p>

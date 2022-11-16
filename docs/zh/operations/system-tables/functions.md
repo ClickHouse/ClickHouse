@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/functions
+---
 # system.functions {#system-functions}
 
 包含有关常规函数和聚合函数的信息。

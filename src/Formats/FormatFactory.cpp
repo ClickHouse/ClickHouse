@@ -63,10 +63,10 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
-    format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
+    format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
-    format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
-    format_settings.csv.input_format_use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
+    format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
+    format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
@@ -92,8 +92,16 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
+    format_settings.json.quote_64bit_floats = settings.output_format_json_quote_64bit_floats;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
+    format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
+    format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
+    format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
+    format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
+    format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
+    format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
+    format_settings.json.try_infer_objects = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -123,9 +131,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
-    format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
+    format_settings.tsv.enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.tsv.null_representation = settings.format_tsv_null_representation;
-    format_settings.tsv.input_format_use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
+    format_settings.tsv.use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
     format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
@@ -158,6 +166,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
+    format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
@@ -165,6 +174,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
     format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
     format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
+    format_settings.try_infer_integers = settings.input_format_try_infer_integers;
+    format_settings.try_infer_dates = settings.input_format_try_infer_dates;
+    format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -236,13 +248,22 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
-               context->getApplicationType() == Context::ApplicationType::SERVER};
-        return std::make_shared<ParallelParsingInputFormat>(params);
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
+            settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
+        auto format = std::make_shared<ParallelParsingInputFormat>(params);
+        if (!settings.input_format_record_errors_file_path.toString().empty())
+        {
+            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+        }
+        return format;
     }
 
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+    if (!settings.input_format_record_errors_file_path.toString().empty())
+    {
+        format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+    }
     return format;
 }
 
@@ -282,7 +303,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto * element_id = context->getProcessListElement();
+    auto element_id = context->getProcessListElement();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
@@ -398,7 +419,10 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    return schema_reader_creator(buf, format_settings);
+    auto schema_reader = schema_reader_creator(buf, format_settings);
+    if (schema_reader->needContext())
+        schema_reader->setContext(context);
+    return schema_reader;
 }
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
@@ -513,6 +537,7 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
         return getFormatFromFileName(file_path, false);
     return "";
 #else
+    (void)fd;
     return "";
 #endif
 }
@@ -563,6 +588,25 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) co
 {
     const auto & target = getCreators(name);
     return target.supports_subset_of_columns;
+}
+
+void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
+    const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
+{
+    auto & target = dict[name].additional_info_for_schema_cache_getter;
+    if (target)
+        throw Exception("FormatFactory: additional info for schema cache getter " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(additional_info_for_schema_cache_getter);
+}
+
+String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    const auto & additional_info_getter = getCreators(name).additional_info_for_schema_cache_getter;
+    if (!additional_info_getter)
+        return "";
+
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return additional_info_getter(format_settings);
 }
 
 bool FormatFactory::isInputFormat(const String & name) const

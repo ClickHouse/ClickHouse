@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_changed_files=True)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(

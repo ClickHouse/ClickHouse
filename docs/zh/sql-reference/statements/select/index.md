@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/select/
 sidebar_label: SELECT
 sidebar_position: 33
 ---

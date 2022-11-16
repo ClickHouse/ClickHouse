@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 #include <concepts>
+#include <bit>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -138,21 +139,21 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    int result = 0;
+    Int64 result = 0;
 
     if constexpr (std::is_same_v<T, double>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).is_integer_in_representable_range())
+        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).is_integer_in_representable_range())
+        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -371,7 +372,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite);
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
 
     if (need_quote)
         writeChar('"', ostr);
@@ -623,9 +624,6 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
-void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
@@ -1110,13 +1108,15 @@ template <typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
-    if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
-
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
     writePODBinary(x, buf);
 }
 

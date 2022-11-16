@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-ordinary-database
+# Tags: no-replicated-database, no-parallel
 # Tag no-replicated-database: Unsupported type of ALTER query
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

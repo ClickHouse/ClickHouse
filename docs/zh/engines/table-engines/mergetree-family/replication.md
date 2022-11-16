@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/replication
+---
 # 数据副本 {#table_engines-replication}
 
 只有 MergeTree 系列里的表可支持副本：
@@ -282,7 +285,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 -   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
--   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
--   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
+-   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_sends_network_bandwidth)
 
 [原始文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

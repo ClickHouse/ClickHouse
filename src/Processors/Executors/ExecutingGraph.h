@@ -1,10 +1,12 @@
 #pragma once
+
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/UpgradableLock.h>
 #include <mutex>
 #include <queue>
 #include <stack>
+
 
 namespace DB
 {
@@ -123,9 +125,9 @@ public:
     using ProcessorsMap = std::unordered_map<const IProcessor *, uint64_t>;
     ProcessorsMap processors_map;
 
-    explicit ExecutingGraph(Processors & processors_, bool profile_processors_);
+    explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return *processors; }
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue);
@@ -149,12 +151,13 @@ private:
     /// All new nodes and nodes with updated ports are pushed into stack.
     bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
-    Processors & processors;
+    std::shared_ptr<Processors> processors;
     std::mutex processors_mutex;
 
     UpgradableMutex nodes_mutex;
 
     const bool profile_processors;
+    bool cancelled = false;
 };
 
 }

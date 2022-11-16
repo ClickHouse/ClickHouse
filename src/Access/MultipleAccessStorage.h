@@ -2,7 +2,7 @@
 
 #include <Access/IAccessStorage.h>
 #include <base/defines.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <mutex>
 
 
@@ -25,9 +25,9 @@ public:
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
 
-    void reload() override;
     void startPeriodicReloading() override;
     void stopPeriodicReloading() override;
+    void reload(ReloadMode reload_mode) override;
 
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);
@@ -63,7 +63,7 @@ private:
     std::shared_ptr<const Storages> getStoragesInternal() const;
 
     std::shared_ptr<const Storages> nested_storages TSA_GUARDED_BY(mutex);
-    mutable LRUCache<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
+    mutable CacheBase<UUID, Storage> ids_cache TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 

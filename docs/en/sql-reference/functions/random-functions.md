@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/random-functions
 sidebar_position: 51
 sidebar_label: Pseudo-Random Numbers
 ---
@@ -22,6 +23,11 @@ Uses a linear congruential generator.
 Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 
 Uses a linear congruential generator.
+
+## canonicalRand
+The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1).
+
+Non-deterministic. Return type is Float64.
 
 ## randConstant
 

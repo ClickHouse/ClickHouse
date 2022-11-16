@@ -1,5 +1,6 @@
 #include "CompressedReadBufferBase.h"
 
+#include <bit>
 #include <cstring>
 #include <cassert>
 #include <city.h>
@@ -93,8 +94,8 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
-    size_t difference = __builtin_popcountll(expected_checksum.first ^ calculated_checksum.first)
-        + __builtin_popcountll(expected_checksum.second ^ calculated_checksum.second);
+    size_t difference = std::popcount(expected_checksum.first ^ calculated_checksum.first)
+        + std::popcount(expected_checksum.second ^ calculated_checksum.second);
 
     if (difference == 1)
     {
@@ -278,7 +279,7 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
-    codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
+    codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
 void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
@@ -299,7 +300,7 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else
-        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
+        codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
 }
 
 void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const

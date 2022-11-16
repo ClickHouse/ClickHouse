@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/quotas
+---
 # system.quotas {#system_tables-quotas}
 
 Содержит информацию о [квотах](quotas.md).

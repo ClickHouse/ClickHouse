@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/third-party/gui
 sidebar_position: 28
 sidebar_label: "Визуальные интерфейсы от сторонних разработчиков"
 ---

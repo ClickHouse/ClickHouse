@@ -84,6 +84,26 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
 
 public:
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
         if (types.empty())
@@ -187,6 +207,37 @@ public:
         }
     }
 
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
+    {
+        AggregateFunctionMapCombinatorData<KeyType> & state = Base::data(place);
+
+        for (const auto & [key, nested_place] : state.merged_maps)
+        {
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_place);
+            else
+                nested_func->destroy(nested_place);
+        }
+
+        state.~Data();
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    bool hasTrivialDestructor() const override
+    {
+        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
@@ -218,7 +269,8 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
         auto & nested_column = map_column.getNestedColumn();
@@ -242,11 +294,24 @@ public:
         for (auto & key : keys)
         {
             key_column.insert(key);
-            nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            if constexpr (merge)
+                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
+            else
+                nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
         res_offsets.push_back(val_column.size());
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/row-policy
 sidebar_position: 47
 sidebar_label: ROW POLICY
 ---

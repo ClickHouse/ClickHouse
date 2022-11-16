@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_NLP
 
@@ -120,7 +120,7 @@ public:
 
 REGISTER_FUNCTION(Synonyms)
 {
-    factory.registerFunction<FunctionSynonyms>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

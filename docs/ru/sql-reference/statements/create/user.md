@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/user
 sidebar_position: 39
 sidebar_label: "Пользователь"
 ---
@@ -56,6 +57,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 
 :::info "Внимание"
     ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
+:::
 
 ## Секция GRANTEES {#grantees}
 

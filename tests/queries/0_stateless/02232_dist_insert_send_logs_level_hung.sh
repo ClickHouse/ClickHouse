@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: disabled
+# Tags: long, no-parallel
 # Tag: no-parallel - to heavy
 # Tag: long        - to heavy
 
@@ -33,11 +33,14 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -nm -q "
     create materialized view mv_02232 to out_02232 as select * from in_02232;
 "
 
+# 600 is the default timeout of clickhouse-test, and 30 is just a safe padding,
+# to avoid hung query check triggering
+insert_timeout=$((600-30))
+# Increase timeouts to avoid timeout during trying to send Log packet to
+# the remote side, when the socket is full.
 insert_client_opts=(
-    # Increase timeouts to avoid timeout during trying to send Log packet to
-    # the remote side, when the socket is full.
-    --send_timeout 86400
-    --receive_timeout 86400
+    --send_timeout "$insert_timeout"
+    --receive_timeout "$insert_timeout"
 )
 # 250 seconds is enough to trigger the query hung (even in debug build)
 #

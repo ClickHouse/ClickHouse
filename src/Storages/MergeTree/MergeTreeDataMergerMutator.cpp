@@ -1,6 +1,5 @@
 #include "MergeTreeDataMergerMutator.h"
 
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
@@ -99,10 +98,10 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
     if (scheduled_tasks_count <= 1 || free_entries >= data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data_settings->max_bytes_to_merge_at_max_space_in_pool;
     else
-        max_size = interpolateExponential(
+        max_size = static_cast<UInt64>(interpolateExponential(
             data_settings->max_bytes_to_merge_at_min_space_in_pool,
             data_settings->max_bytes_to_merge_at_max_space_in_pool,
-            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge);
+            static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge));
 
     return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
@@ -215,6 +214,14 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+    /// collect min_age for each partition while iterating parts
+    struct PartitionInfo
+    {
+        time_t min_age{std::numeric_limits<time_t>::max()};
+    };
+
+    std::unordered_map<std::string, PartitionInfo> partitions_info;
+
     size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
@@ -278,6 +285,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
         part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
+        auto & partition_info = partitions_info[partition_id];
+        partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+
         ++parts_selected_precondition;
 
         parts_ranges.back().emplace_back(part_info);
@@ -334,6 +344,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         SimpleMergeSelector::Settings merge_settings;
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
+        if (!data_settings->min_age_to_force_merge_on_partition_only)
+            merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
 
         if (aggressive)
             merge_settings.base = 1;
@@ -347,6 +359,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         if (parts_to_merge.empty())
         {
+            if (data_settings->min_age_to_force_merge_on_partition_only && data_settings->min_age_to_force_merge_seconds)
+            {
+                auto best_partition_it = std::max_element(
+                    partitions_info.begin(),
+                    partitions_info.end(),
+                    [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+
+                assert(best_partition_it != partitions_info.end());
+
+                if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
+                    return selectAllPartsToMergeWithinPartition(
+                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
+            }
+
             if (out_disable_reason)
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
@@ -483,8 +509,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
-    const IMergeTreeDataPart * parent_part,
-    const IDataPartStorageBuilder * parent_path_storage_builder,
+    IMergeTreeDataPart * parent_part,
     const String & suffix)
 {
     return std::make_shared<MergeTask>(
@@ -499,7 +524,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        parent_path_storage_builder,
         suffix,
         txn,
         &data,
@@ -541,8 +565,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
     const MergeTreeTransactionPtr & txn,
-    MergeTreeData::Transaction & out_transaction,
-    DataPartStorageBuilderPtr builder)
+    MergeTreeData::Transaction & out_transaction)
 {
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
@@ -550,7 +573,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, builder);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
