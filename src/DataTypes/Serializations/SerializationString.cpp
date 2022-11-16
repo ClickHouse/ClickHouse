@@ -84,8 +84,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 
 void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    const auto & full_column = column.convertToFullColumnIfLowCardinality();
-    const ColumnString & column_string = typeid_cast<const ColumnString &>(*full_column);
+    const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
     const ColumnString::Chars & data = column_string.getChars();
     const ColumnString::Offsets & offsets = column_string.getOffsets();
 
