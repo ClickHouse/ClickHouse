@@ -34,8 +34,8 @@ public:
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
     /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+    size_t readRows(size_t from_mark, size_t current_task_last_mark,
+                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns);
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -62,6 +62,9 @@ public:
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
 protected:
+    virtual size_t readPhysicalRows(size_t from_mark, size_t current_task_last_mark,
+        bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
 
@@ -105,6 +108,11 @@ private:
 
     /// Actual columns description in part.
     ColumnsDescription part_columns;
+
+    /// Rows offset where the previous read ended
+    size_t last_read_end_offset;
+
+    ssize_t part_offset_column_index;
 };
 
 }

@@ -30,7 +30,8 @@ namespace ErrorCodes
 }
 
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+//static
+void filterColumns(Columns & columns, const IColumn::Filter & filter)
 {
     for (auto & column : columns)
     {
@@ -49,7 +50,8 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
     }
 }
 
-static void filterColumns(Columns & columns, const ColumnPtr & filter)
+//static
+void filterColumns(Columns & columns, const ColumnPtr & filter)
 {
     ConstantFilterDescription const_descr(*filter);
     if (const_descr.always_true)
@@ -87,6 +89,7 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
         , continue_reading(false), is_finished(false)
+//        , last_read_end(0) // track the offset where the last read from merge tree ended
 {
 }
 
@@ -102,7 +105,13 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Columns & columns, size_t n
     {
         size_t rows_read = merge_tree_reader->readRows(
             current_mark, current_task_last_mark, continue_reading, num_rows, columns);
+
+//const size_t start_row = continue_reading ? last_read_end : index_granularity->getMarkStartingRow(current_mark);
+//const size_t end_row = start_row + rows_read;
+//std::cerr << "READ from " << start_row << " to " << end_row << "\n\n\n";
+
         continue_reading = true;
+//        last_read_end = end_row;
 
         /// Zero rows_read maybe either because reading has finished
         ///  or because there is no columns we can read in current part (for example, all columns are default).
@@ -322,13 +331,15 @@ void MergeTreeRangeReader::ReadResult::clear()
     num_rows_to_skip_in_last_granule += rows_per_granule.back();
     rows_per_granule.assign(rows_per_granule.size(), 0);
     total_rows_per_granule = 0;
-    filter = FilterWithCachedCount();
+    final_filter = FilterWithCachedCount();
+    num_rows = 0;
+    columns.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::clearFilter()
 {
     // TODO: old version didn't clear filter_holder. WTF??????
-    filter = FilterWithCachedCount();
+    final_filter = FilterWithCachedCount();
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
@@ -360,8 +371,10 @@ void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRo
 
 void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
 {
-    assert(!filter.present() || filter.size() == total_rows_per_granule);
-    assert(!filter.present() || filter.countBytesInFilter() == num_rows);
+    assert(!final_filter.present() || final_filter.size() == total_rows_per_granule);
+    assert(!final_filter.present() || final_filter.countBytesInFilter() == num_rows
+     || total_rows_per_granule == num_rows /*if filter has not been applied*/);
+//    assert(!block_before_prewhere || block_before_prewhere.rows() == total_rows_per_granule);
 
     for (const auto & column : columns)
     {
@@ -370,28 +383,146 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     }
 }
 
-void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
+std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
-    clearFilter();
+    WriteBufferFromOwnString out;
+    out << "num_rows: " << num_rows
+        << ", columns: " << columns.size()
+        << ", total_rows_per_granule: " << total_rows_per_granule
+        << ", need_filter: " << need_filter;
+    if (final_filter.present())
+    {
+        out << ", filter_size: " << final_filter.size()
+        << ", filter_1s: " << final_filter.countBytesInFilter();
+    }
+    else
+    {
+        out << ", no filter";
+    }
+    for (size_t ci = 0; ci < columns.size(); ++ci)
+    {
+        out << ", column[" << ci << "]: ";
+        if (!columns[ci])
+            out << " nullptr";
+        else
+        {
+            out << " " << columns[ci]->dumpStructure();
+        }
+    }
+    if (block_before_prewhere)
+    {
+        out << ", block_before_prewhere: " << block_before_prewhere.dumpStructure();
+    }
+    return out.str();
 }
 
-void MergeTreeRangeReader::ReadResult::setFilterConstFalse()
+#if 0
+static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
 {
-    clearFilter();
-    columns.clear();
-    num_rows = 0;
+    if (bytes_in_first_filter != second_filter_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot combine filters because number of bytes in a first filter ({}) "
+            "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granules)
+/// Second filter size must be equal to number of 1s in the first filter.
+/// The result size is equal to first filter size.
+static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 {
+    ConstantFilterDescription first_const_descr(*first);
+
+    if (first_const_descr.always_true)
+    {
+        checkCombinedFiltersSize(first->size(), second->size());
+        return second;
+    }
+
+    if (first_const_descr.always_false)
+    {
+        checkCombinedFiltersSize(0, second->size());
+        return first;
+    }
+
+    FilterDescription first_descr(*first);
+
+    size_t bytes_in_first_filter = countBytesInFilter(*first_descr.data);
+    checkCombinedFiltersSize(bytes_in_first_filter, second->size());
+
+    ConstantFilterDescription second_const_descr(*second);
+
+    if (second_const_descr.always_true)
+        return first;
+
+    if (second_const_descr.always_false)
+        return second->cloneResized(first->size());
+
+    FilterDescription second_descr(*second);
+
+    MutableColumnPtr mut_first;
+    if (first_descr.data_holder)
+        mut_first = IColumn::mutate(std::move(first_descr.data_holder));
+    else
+        mut_first = IColumn::mutate(std::move(first));
+
+    auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
+    const auto * second_data = second_descr.data->data();
+
+    for (auto & val : first_data)
+    {
+        if (val)
+        {
+            val = *second_data;
+            ++second_data;
+        }
+    }
+
+    return mut_first;
+}
+#endif
+
+ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
+{
+    // TODO: use proper vectorized implementation of AND?
+
+    auto res = ColumnUInt8::create(c1->size());
+    auto & res_data = res->getData();
+    const auto & c1_data = dynamic_cast<const ColumnUInt8*>(c1.get())->getData();
+    const auto & c2_data = dynamic_cast<const ColumnUInt8*>(c2.get())->getData();
+    const size_t size = c1->size();
+    const size_t step = 16;
+    size_t i = 0;
+    for (; i + step < size; i += step)
+        for (size_t j = 0; j < step; ++j)
+            res_data[i+j] = c1_data[i+j] & c2_data[i+j];
+    for (; i < size; ++i)
+        res_data[i] = c1_data[i] & c2_data[i];
+    return res;
+}
+
+void MergeTreeRangeReader::ReadResult::optimize(ColumnPtr current_filter, bool can_read_incomplete_granules)
+{
+    /// Combine new filter with the previous one if it is present
+
+    if (final_filter.present())
+        current_filter = andFilters(current_filter, final_filter.getColumn());
+
+    FilterWithCachedCount filter(current_filter);
+
     if (total_rows_per_granule == 0 || !filter.present())
         return;
 
     NumRows zero_tails;
     auto total_zero_rows_in_tails = countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules);
 
-    LOG_TEST(log, "ReadResult::optimize() num_rows: {} total_zero_rows_in_tails: {} filter size: {} filter 1s: {}",
-        num_rows, total_zero_rows_in_tails, filter.size(), filter.countBytesInFilter());
+    LOG_TEST(log, "ReadResult::optimize() before: {}", dumpInfo());
+
+//    checkInternalConsistency();
+
+//    SCOPE_EXIT(checkInternalConsistency());
+
+    SCOPE_EXIT({
+        LOG_TEST(log, "ReadResult::optimize() after: {}", dumpInfo());
+    });
 
     if (total_zero_rows_in_tails == filter.size())
     {
@@ -415,6 +546,14 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
         }
         num_rows_to_skip_in_last_granule += rows_per_granule_previous.back() - rows_per_granule.back();
 
+        {
+            shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
+
+            auto c = block_before_prewhere.getColumns();
+            shrink(c, rows_per_granule_previous); /// shrink acts as filtering in such case
+            block_before_prewhere.setColumns(c);
+        }
+
         /// Check if const 1 after shrink
         if (
             num_rows == total_rows_per_granule_previous &&   /// We can apply shrink only if after the previous step the number of rows in the result
@@ -425,10 +564,111 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
             num_rows = total_rows_per_granule;
             setFilterConstTrue();
 
-            LOG_TEST(log, "ReadResult::optimize() before shrink num_rows: {} total_zero_rows_in_tails: {}",
-                num_rows, total_zero_rows_in_tails);
 
+            LOG_TEST(log, "ReadResult::optimize() after shrink {}", dumpInfo());
+        }
+        else
+        {
+            auto new_filter = ColumnUInt8::create(filter.size() - total_zero_rows_in_tails);
+            IColumn::Filter & new_data = new_filter->getData();
+
+            collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
+            total_rows_per_granule = new_filter->size();
+            num_rows = total_rows_per_granule;
+            final_filter = FilterWithCachedCount(new_filter->getPtr());
+
+            LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
+        }
+        need_filter = true;
+    }
+    /// Another guess, if it's worth filtering at PREWHERE
+    else
+    {
+        if (filter.countBytesInFilter() < 0.6 * filter.size())
+        {
+            need_filter = true;
+        }
+
+        final_filter = std::move(filter);
+    }
+}
+
+
+#if 1
+void MergeTreeRangeReader::ReadResult::setFilterConstTrue()
+{
+    clearFilter();
+}
+
+void MergeTreeRangeReader::ReadResult::setFilterConstFalse()
+{
+    clearFilter();
+    columns.clear();
+    num_rows = 0;
+}
+#endif
+
+#if 0
+void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granules)
+{
+    if (total_rows_per_granule == 0 || !filter.present())
+        return;
+
+    NumRows zero_tails;
+    auto total_zero_rows_in_tails = countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules);
+
+    LOG_TEST(log, "ReadResult::optimize() before: {}", dumpInfo());
+
+//    checkInternalConsistency();
+
+//    SCOPE_EXIT(checkInternalConsistency());
+
+    SCOPE_EXIT({
+        LOG_TEST(log, "ReadResult::optimize() after: {}", dumpInfo());
+    });
+
+    if (total_zero_rows_in_tails == filter.size())
+    {
+        clear();
+        return;
+    }
+    else if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
+    {
+        setFilterConstTrue();
+        return;
+    }
+    /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
+    else if (2 * total_zero_rows_in_tails > filter.size())
+    {
+        const NumRows rows_per_granule_previous = rows_per_granule;
+        const size_t total_rows_per_granule_previous = total_rows_per_granule;
+
+        for (auto i : collections::range(0, rows_per_granule.size()))
+        {
+            rows_per_granule[i] -= zero_tails[i];
+        }
+        num_rows_to_skip_in_last_granule += rows_per_granule_previous.back() - rows_per_granule.back();
+
+        {
             shrink(columns, rows_per_granule_previous); /// shrink acts as filtering in such case
+
+            auto c = block_before_prewhere.getColumns();
+            shrink(c, rows_per_granule_previous); /// shrink acts as filtering in such case
+            block_before_prewhere.setColumns(c);
+        }
+
+        /// Check if const 1 after shrink
+        if (
+            num_rows == total_rows_per_granule_previous &&   /// We can apply shrink only if after the previous step the number of rows in the result
+                                                    /// matches the rows_per_granule info. Otherwise we will not be able to match newly added zeros in granule tails.
+            filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule)  /// All zeros are in tails?
+        {
+            total_rows_per_granule = total_rows_per_granule_previous - total_zero_rows_in_tails;
+            num_rows = total_rows_per_granule;
+            setFilterConstTrue();
+
+
+            LOG_TEST(log, "ReadResult::optimize() after shrink {}", dumpInfo());
         }
         else
         {
@@ -439,6 +679,8 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
             total_rows_per_granule = new_filter->size();
             num_rows = total_rows_per_granule;
             filter = FilterWithCachedCount(new_filter->getPtr());
+
+            LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
         }
         need_filter = true;
     }
@@ -446,6 +688,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
     else if (filter.countBytesInFilter() < 0.6 * filter.size())
         need_filter = true;
 }
+#endif
 
 size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter_vec, NumRows & zero_tails, bool can_read_incomplete_granules) const
 {
@@ -625,7 +868,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     }
     return count;
 }
-
+#if 0
 /// Filter size must match total_rows_per_granule
 void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 {
@@ -658,6 +901,7 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
             throw Exception("setFilter function expected ColumnUInt8.", ErrorCodes::LOGICAL_ERROR);
     }
 }
+#endif
 
 MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
@@ -685,8 +929,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
         non_const_virtual_column_names.push_back(column_name);
 
-        if (column_name == "_part_offset")
-            sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
+//        if (column_name == "_part_offset")
+//            sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
 
     if (prewhere_info)
@@ -774,6 +1018,7 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished();
 }
 
+#if 0
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
     if (max_rows == 0)
@@ -784,6 +1029,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     if (prev_reader)
     {
         read_result = prev_reader->read(max_rows, ranges);
+
+        LOG_TEST(log, "Previous reader returned {}", read_result.dumpInfo());
 
         size_t num_read_rows;
         Columns columns = continueReadingChain(read_result, num_read_rows);
@@ -802,6 +1049,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 has_columns = true;
             }
         }
+
+        assert((!has_columns && num_read_rows == 0) ||
+            num_read_rows == read_result.total_rows_per_granule);
 
         read_result.addNumBytesRead(total_bytes);
 
@@ -843,12 +1093,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
                 if (block_before_prewhere)
                 {
-                    if (read_result.need_filter)
-                    {
-                        auto old_columns = block_before_prewhere.getColumns();
-                        filterColumns(old_columns, read_result.filter./*getFilterOriginal()->*/getData());
-                        block_before_prewhere.setColumns(old_columns);
-                    }
+//                    if (read_result.need_filter)
+//                    {
+//                        auto old_columns = block_before_prewhere.getColumns();
+//                        if (read_result.filter.present()) // TODO: fix this properly: need_filter shouldn't be set(?)
+//                            filterColumns(old_columns, read_result.filter./*getFilterOriginal()->*/getData());
+//                        block_before_prewhere.setColumns(old_columns);
+//                    }
 
                     for (auto & column : block_before_prewhere)
                         block.insert(std::move(column));
@@ -912,6 +1163,191 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     return read_result;
 }
+#endif
+
+MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
+{
+    if (max_rows == 0)
+        throw Exception("Expected at least 1 row to read, got 0.", ErrorCodes::LOGICAL_ERROR);
+
+    ReadResult read_result(log);
+
+    if (prev_reader)
+    {
+        read_result = prev_reader->read(max_rows, ranges);
+
+        LOG_TEST(log, "Previous reader returned {}", read_result.dumpInfo());
+
+        size_t num_read_rows;
+        Columns columns = continueReadingChain(read_result, num_read_rows);
+
+        fillMissingColumns(columns, read_result);
+
+        read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
+    }
+    else
+    {
+        read_result = startReadingChain(max_rows, ranges);
+        read_result.num_rows = read_result.numReadRows();
+
+        LOG_TEST(log, "First reader returned {}", read_result.dumpInfo());
+
+        fillMissingColumns(read_result.columns, read_result); // TODO: can we move it outside if-else??
+
+        size_t total_bytes = 0;
+        for (auto & column : read_result.columns)
+            total_bytes += column->byteSize();
+
+        read_result.addNumBytesRead(total_bytes);
+    }
+
+    if (read_result.num_rows == 0)
+        return read_result;
+
+    executePrewhereActionsAndFilterColumns(read_result);
+
+    read_result.checkInternalConsistency();
+
+    assert(read_result.num_rows == 0 || read_result.columns.size() == getSampleBlock().columns());
+
+    if (last_reader_in_chain && read_result.final_filter.present())
+    {
+        filterColumns(read_result.columns, read_result.final_filter.getData());
+        read_result.num_rows = read_result.final_filter.countBytesInFilter();
+    }
+
+    return read_result;
+}
+
+void MergeTreeRangeReader::fillMissingColumns(Columns & physical_columns, const ReadResult & read_result)
+{
+    if (read_result.num_rows)
+    {
+        /// Physical columns go first and then some virtual columns follow
+        /// TODO: is there a better way to account for virtual columns that were filled by previous readers?
+//        size_t physical_columns_count = read_result.columns.size() - read_result.extra_columns_filled.size();
+//        Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
+
+        bool should_evaluate_missing_defaults;
+        merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults,
+                                                read_result.num_rows);
+
+        /// If some columns absent in part, then evaluate default values
+        if (should_evaluate_missing_defaults)
+            // TODO: must pass proper block here, not block_before_prewhere!
+            merge_tree_reader->evaluateMissingDefaults(read_result.block_before_prewhere, physical_columns);
+
+        /// If result not empty, then apply on-fly alter conversions if any required
+        merge_tree_reader->performRequiredConversions(physical_columns);
+
+/*
+        for (const auto & column_name : non_const_virtual_column_names)
+        {
+            if (column_name == "_part_offset")
+            {
+                // TODO: properly fill _part_offset!
+                physical_columns.emplace_back(ColumnUInt64::create(read_result.num_rows));
+            }
+        }
+//*/
+//        for (size_t i = 0; i < physical_columns.size(); ++i)
+//            read_result.columns[i] = std::move(physical_columns[i]);
+
+//        read_result.checkInternalConsistency();
+    }
+}
+
+
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result) const
+{
+    result.checkInternalConsistency();
+
+    if (!prewhere_info)
+        return;
+
+    const auto & header = merge_tree_reader->getColumns();
+    size_t num_columns = header.size();
+
+    /// Check that we have columns from previous steps and newly read required columns
+    if (result.columns.size() < num_columns + result.extra_columns_filled.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
+                        num_columns, result.columns.size());
+
+    /// This filter has the size of total_rows_per granule. It is applied after reading contiguous chunks from
+    /// the start of each granule.
+//    ColumnPtr combined_filter;
+    /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
+    ColumnPtr current_step_filter;
+    size_t prewhere_column_pos;
+
+    {
+        /// Restore block from columns list.
+        Block block;
+        size_t pos = 0;
+
+        if (prev_reader)
+        {
+            for (const auto & col : prev_reader->getSampleBlock())
+            {
+                block.insert({result.columns[pos], col.type, col.name});
+                ++pos;
+            }
+        }
+
+        for (auto name_and_type = header.begin(); name_and_type != header.end() && pos < result.columns.size(); ++pos, ++name_and_type)
+            block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
+
+
+    /*// HACK!! fix it
+        if (getSampleBlock().has("_part_offset"))
+        {
+            const auto & col = getSampleBlock().getByName("_part_offset");
+            block.insert({result.columns.back(), col.type, col.name});
+        }
+/////////////*/
+
+        /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
+        result.block_before_prewhere = block;
+
+        if (prewhere_info->actions)
+           prewhere_info->actions->execute(block);
+
+        prewhere_column_pos = block.getPositionByName(prewhere_info->column_name);
+
+        result.columns.clear();
+        result.columns.reserve(block.columns());
+        for (auto & col : block)
+            result.columns.emplace_back(std::move(col.column));
+
+        current_step_filter = result.columns[prewhere_column_pos];
+//        combined_filter = current_step_filter;
+    }
+
+    if (prewhere_info->remove_column)
+        result.columns.erase(result.columns.begin() + prewhere_column_pos);
+
+    result.optimize(current_step_filter, merge_tree_reader->canReadIncompleteGranules());
+
+    LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
+}
+
+/*
+void MergeTreeRangeReader::optimize(ReadResult & result, ColumnPtr current_step_filter) const
+{
+    NumRows zero_tails;
+    auto total_zero_rows_in_tails = countZeroTails(filter.getData(), zero_tails, can_read_incomplete_granules);
+
+    FilterWithCachedCount filter(current_step_filter);
+
+    filterColumns(result.columns, filter.getColumn());
+    auto before_columns = result.block_before_prewhere.getColumns();
+    filterColumns(before_columns, filter.getColumn());
+    result.block_before_prewhere.setColumns(before_columns);
+
+    result.num_rows = filter.countBytesInFilter();
+}
+*/
 
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
@@ -924,13 +1360,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// The stream could be unfinished by the previous read request because of max_rows limit.
     /// In this case it will have some rows from the previously started range. We need to save their begin and
     /// end offsets to properly fill _part_offset column.
-    UInt64 leading_begin_part_offset = 0;
-    UInt64 leading_end_part_offset = 0;
-    if (!stream.isFinished())
-    {
-        leading_begin_part_offset = stream.currentPartOffset();
-        leading_end_part_offset = stream.lastPartOffset();
-    }
+//    UInt64 leading_begin_part_offset = 0;
+//    UInt64 leading_end_part_offset = 0;
+//    if (!stream.isFinished())
+//    {
+//        leading_begin_part_offset = stream.currentPartOffset();
+//        leading_end_part_offset = stream.lastPartOffset();
+//    }
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
@@ -969,15 +1405,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    for (const auto & column_name : non_const_virtual_column_names)
-    {
-        if (column_name == "_part_offset")
-            fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
-    }
+//    for (const auto & column_name : non_const_virtual_column_names)
+//    {
+//        if (column_name == "_part_offset")
+//            fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+//    }
 
     return result;
 }
-
+#if 0
 void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     size_t num_rows = result.numReadRows();
@@ -1005,6 +1441,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     result.columns.emplace_back(std::move(column));
     result.extra_columns_filled.push_back("_part_offset");
 }
+#endif
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)
 {
@@ -1058,68 +1495,7 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
     return columns;
 }
 
-static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
-{
-    if (bytes_in_first_filter != second_filter_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot combine filters because number of bytes in a first filter ({}) "
-            "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
-}
-
-/// Second filter size must be equal to number of 1s in the first filter.
-/// The result size is equal to first filter size.
-static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
-{
-    ConstantFilterDescription first_const_descr(*first);
-
-    if (first_const_descr.always_true)
-    {
-        checkCombinedFiltersSize(first->size(), second->size());
-        return second;
-    }
-
-    if (first_const_descr.always_false)
-    {
-        checkCombinedFiltersSize(0, second->size());
-        return first;
-    }
-
-    FilterDescription first_descr(*first);
-
-    size_t bytes_in_first_filter = countBytesInFilter(*first_descr.data);
-    checkCombinedFiltersSize(bytes_in_first_filter, second->size());
-
-    ConstantFilterDescription second_const_descr(*second);
-
-    if (second_const_descr.always_true)
-        return first;
-
-    if (second_const_descr.always_false)
-        return second->cloneResized(first->size());
-
-    FilterDescription second_descr(*second);
-
-    MutableColumnPtr mut_first;
-    if (first_descr.data_holder)
-        mut_first = IColumn::mutate(std::move(first_descr.data_holder));
-    else
-        mut_first = IColumn::mutate(std::move(first));
-
-    auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
-    const auto * second_data = second_descr.data->data();
-
-    for (auto & val : first_data)
-    {
-        if (val)
-        {
-            val = *second_data;
-            ++second_data;
-        }
-    }
-
-    return mut_first;
-}
-
+#if 0
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result)
 {
     result.checkInternalConsistency();
@@ -1232,7 +1608,17 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is still a filter, do the filtering now
         if (result.filter.present())
         {
-            filterColumns(result.columns, current_step_filter);
+            LOG_TEST(log, "filterColumns before: {}", result.dumpInfo());
+
+            filterColumns(result.columns, result.filter.getColumn());//current_step_filter);
+            //////
+            if (result.block_before_prewhere)
+            {
+                auto c = result.block_before_prewhere.getColumns();
+                filterColumns(c, result.filter.getColumn());//current_step_filter);
+                result.block_before_prewhere.setColumns(c);
+            }
+            //////
 
             result.need_filter = true;
 
@@ -1284,7 +1670,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.clearFilter(); // TODO: is this still relevant? : Acting as a flag to not filter in PREWHERE
         }
     }
+
+    LOG_TEST(log, "After execute prewhere {}", result.dumpInfo());
 }
+#endif
 
 std::string PrewhereExprInfo::dump() const
 {
