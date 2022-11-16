@@ -108,7 +108,7 @@ struct AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.read(data_ptr, count * sizeof(T));
+            rb.readStrict(data_ptr, count * sizeof(T));
     }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function

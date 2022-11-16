@@ -227,7 +227,11 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
 
-    auto join_constant = tryExtractConstantFromJoinNode(join_tree_node);
+    std::optional<bool> join_constant;
+
+    if (join_node.getStrictness() == JoinStrictness::All)
+        join_constant = tryExtractConstantFromJoinNode(join_tree_node);
+
     if (join_constant)
     {
         /** If there is JOIN with always true constant, we transform it to cross.
@@ -529,17 +533,13 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             for (const auto & key_name : key_names)
                 sort_description.emplace_back(key_name);
 
+            SortingStep::Settings sort_settings(*query_context);
+
             auto sorting_step = std::make_unique<SortingStep>(
                 plan.getCurrentDataStream(),
                 std::move(sort_description),
-                settings.max_block_size,
                 0 /*limit*/,
-                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                settings.max_bytes_before_remerge_sort,
-                settings.remerge_sort_lowered_memory_bytes_ratio,
-                settings.max_bytes_before_external_sort,
-                query_context->getTempDataOnDisk(),
-                settings.min_free_disk_space_for_temporary_data,
+                sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
             plan.addStep(std::move(sorting_step));
