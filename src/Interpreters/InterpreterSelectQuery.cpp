@@ -1,3 +1,5 @@
+#include <Access/AccessControl.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
@@ -33,6 +35,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 
@@ -112,7 +115,7 @@ namespace ErrorCodes
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 FilterDAGInfoPtr generateFilterActions(
     const StorageID & table_id,
-    const ASTPtr & row_policy_filter,
+    const ASTPtr & row_policy_filter_expression,
     const ContextPtr & context,
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -133,9 +136,9 @@ FilterDAGInfoPtr generateFilterActions(
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
-    /// the row_policy_filter should be cloned, because it may be changed by TreeRewriter.
+    /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
     /// which make it possible an invalid expression, although it may be valid in whole select.
-    expr_list->children.push_back(row_policy_filter->clone());
+    expr_list->children.push_back(row_policy_filter_expression->clone());
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
@@ -613,13 +616,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter)
+            if (row_policy_filter && !row_policy_filter->empty())
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
-                query_info.filter_asts.push_back(row_policy_filter);
+                query_info.filter_asts.push_back(row_policy_filter->expression);
             }
 
             if (query_info.additional_filter_ast)
@@ -1447,17 +1450,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
+                        SortingStep::Settings sort_settings(*context);
+
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
-                            settings.max_block_size,
-                            0 /* LIMIT */,
-                            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                            settings.max_bytes_before_remerge_sort,
-                            settings.remerge_sort_lowered_memory_bytes_ratio,
-                            settings.max_bytes_before_external_sort,
-                            this->context->getTempDataOnDisk(),
-                            settings.min_free_disk_space_for_temporary_data,
+                            0 /* LIMIT */, sort_settings,
                             settings.optimize_sorting_by_input_stream_properties);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
@@ -1864,6 +1862,22 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().count_participating_replicas = replica_count;
     context->getClientInfo().number_of_current_replica = replica_num;
+}
+
+RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
+{
+    return row_policy_filter;
+}
+
+void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
+{
+    elem.query_kind = "Select";
+
+    for (const auto & row_policy : row_policy_filter->policies)
+    {
+        auto name = row_policy->getFullName().toString();
+        elem.used_row_policies.emplace(std::move(name));
+    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
@@ -2617,17 +2631,13 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // happens in case of `over ()`.
         if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
         {
+            SortingStep::Settings sort_settings(*context);
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
-                settings.max_block_size,
                 0 /* LIMIT */,
-                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-                settings.max_bytes_before_remerge_sort,
-                settings.remerge_sort_lowered_memory_bytes_ratio,
-                settings.max_bytes_before_external_sort,
-                context->getTempDataOnDisk(),
-                settings.min_free_disk_space_for_temporary_data,
+                sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
@@ -2675,18 +2685,14 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 
     const Settings & settings = context->getSettingsRef();
 
+    SortingStep::Settings sort_settings(*context);
+
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,
-        settings.max_block_size,
         limit,
-        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
-        settings.max_bytes_before_remerge_sort,
-        settings.remerge_sort_lowered_memory_bytes_ratio,
-        settings.max_bytes_before_external_sort,
-        context->getTempDataOnDisk(),
-        settings.min_free_disk_space_for_temporary_data,
+        sort_settings,
         settings.optimize_sorting_by_input_stream_properties);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
