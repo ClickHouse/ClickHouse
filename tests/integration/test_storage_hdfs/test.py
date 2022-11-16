@@ -795,7 +795,7 @@ def test_hdfsCluster_skip_unavailable_shards(started_cluster):
 
     assert (
         node1.query(
-            "select * from hdfs('hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
+            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
         )
         == data
     )
@@ -807,7 +807,7 @@ def test_hdfsCluster_unskip_unavailable_shards(started_cluster):
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
     hdfs_api.write_data("/unskip_unavailable_shards", data)
     error = node.query_and_get_error(
-        "select * from hdfs('hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
+        "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
     )
 
     assert "NETWORK_ERROR" in error
