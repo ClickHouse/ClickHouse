@@ -44,3 +44,11 @@ def wait_nodes(cluster, nodes):
 def is_leader(cluster, node, port=9181):
     stat = send_4lw_cmd(cluster, node, "stat", port)
     return "Mode: leader" in stat
+
+
+def get_leader(cluster, nodes):
+    for node in nodes:
+        if is_leader(cluster, node):
+            return node
+    raise Exception("No leader in Keeper cluster.")
+
