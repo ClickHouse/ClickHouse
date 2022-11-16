@@ -29,16 +29,19 @@ DEBUG_INFO = {}  # type: Dict[str, Any]
 
 
 class Worker(Thread):
-    def __init__(self, request_queue: Queue, ignore_exception: bool = False):
+    def __init__(
+        self, request_queue: Queue, token: str, ignore_exception: bool = False
+    ):
         Thread.__init__(self)
         self.queue = request_queue
+        self.token = token
         self.ignore_exception = ignore_exception
         self.response = {}  # type: Dict
 
     def run(self):
         m = self.queue.get()
         try:
-            self.response = _exec_get_with_retry(m)
+            self.response = _exec_get_with_retry(m, self.token)
         except Exception as e:
             if not self.ignore_exception:
                 raise
@@ -98,10 +101,11 @@ def get_token_from_aws():
     return get_access_token(encoded_jwt, installation_id)
 
 
-def _exec_get_with_retry(url):
+def _exec_get_with_retry(url: str, token: str) -> dict:
+    headers = {"Authorization": f"token {token}"}
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
@@ -119,6 +123,7 @@ WorkflowDescription = namedtuple(
 
 def get_workflows_description_for_pull_request(
     pull_request_event,
+    token,
 ) -> List[WorkflowDescription]:
     head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
@@ -129,7 +134,7 @@ def get_workflows_description_for_pull_request(
     # Get all workflows for the current branch
     for i in range(1, 11):
         workflows = _exec_get_with_retry(
-            f"{request_url}&event=pull_request&branch={head_branch}&page={i}"
+            f"{request_url}&event=pull_request&branch={head_branch}&page={i}", token
         )
         if not workflows["workflow_runs"]:
             break
@@ -176,7 +181,9 @@ def get_workflows_description_for_pull_request(
     return workflow_descriptions
 
 
-def get_workflow_description_fallback(pull_request_event) -> List[WorkflowDescription]:
+def get_workflow_description_fallback(
+    pull_request_event, token
+) -> List[WorkflowDescription]:
     head_repo = pull_request_event["head"]["repo"]["full_name"]
     head_branch = pull_request_event["head"]["ref"]
     print("Get last 500 workflows from API to search related there")
@@ -188,7 +195,7 @@ def get_workflow_description_fallback(pull_request_event) -> List[WorkflowDescri
     i = 1
     for i in range(1, 6):
         q.put(f"{request_url}&page={i}")
-        worker = Worker(q, True)
+        worker = Worker(q, token, True)
         worker.start()
         workers.append(worker)
 
@@ -233,8 +240,8 @@ def get_workflow_description_fallback(pull_request_event) -> List[WorkflowDescri
     return workflow_descriptions
 
 
-def get_workflow_description(workflow_id) -> WorkflowDescription:
-    workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}")
+def get_workflow_description(workflow_id, token) -> WorkflowDescription:
+    workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}", token)
     return WorkflowDescription(
         run_id=workflow["id"],
         head_sha=workflow["head_sha"],
@@ -279,9 +286,12 @@ def main(event):
     print("PR has labels", labels)
     if action == "closed" or "do not test" in labels:
         print("PR merged/closed or manually labeled 'do not test' will kill workflows")
-        workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(pull_request)
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
@@ -294,9 +304,12 @@ def main(event):
         exec_workflow_url(urls_to_cancel, token)
     elif action == "synchronize":
         print("PR is synchronized, going to stop old actions")
-        workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(pull_request)
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
         )
         urls_to_cancel = []
         for workflow_description in workflow_descriptions:
@@ -310,9 +323,12 @@ def main(event):
         exec_workflow_url(urls_to_cancel, token)
     elif action == "labeled" and event_data["label"]["name"] == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
-        workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
         workflow_descriptions = (
-            workflow_descriptions or get_workflow_description_fallback(pull_request)
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
         )
         if not workflow_descriptions:
             print("Not found any workflows")
@@ -330,7 +346,9 @@ def main(event):
             print("Cancelled")
 
         for _ in range(45):
-            latest_workflow_desc = get_workflow_description(most_recent_workflow.run_id)
+            latest_workflow_desc = get_workflow_description(
+                most_recent_workflow.run_id, token
+            )
             print("Checking latest workflow", latest_workflow_desc)
             if latest_workflow_desc.status in ("completed", "cancelled"):
                 print("Finally latest workflow done, going to rerun")
