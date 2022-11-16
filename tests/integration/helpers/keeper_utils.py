@@ -51,4 +51,3 @@ def get_leader(cluster, nodes):
         if is_leader(cluster, node):
             return node
     raise Exception("No leader in Keeper cluster.")
-
