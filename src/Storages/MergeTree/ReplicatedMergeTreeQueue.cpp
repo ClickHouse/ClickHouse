@@ -1816,7 +1816,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
 bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper)
 {
-    std::vector<MutationStatus *> candidates;
+    std::vector<ReplicatedMergeTreeMutationEntryPtr> candidates;
     {
         std::lock_guard lock(state_mutex);
 
@@ -1843,7 +1843,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             else if (mutation.parts_to_do.size() == 0)
             {
                 LOG_TRACE(log, "Will check if mutation {} is done", mutation.entry->znode_name);
-                candidates.push_back(&mutation);
+                candidates.emplace_back(mutation.entry);
             }
         }
     }
@@ -1858,8 +1858,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
     for (const auto & candidate : candidates)
     {
-        if (merge_pred.isMutationFinished(candidate))
-            finished.push_back(candidate->entry.get());
+        if (merge_pred.isMutationFinished(candidate->znode_name, candidate->block_numbers))
+            finished.push_back(candidate.get());
     }
 
     if (!finished.empty())
@@ -2380,10 +2380,9 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 }
 
 
-bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMergeTreeQueue::MutationStatus * mutation) const
+bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers) const
 {
-    const auto & entry = *mutation->entry;
-    for (const auto & kv : entry.block_numbers)
+    for (const auto & kv : block_numbers)
     {
         const String & partition_id = kv.first;
         Int64 block_num = kv.second;
@@ -2395,21 +2394,25 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
                 partition_it->second.begin(), partition_it->second.lower_bound(block_num));
             if (blocks_count)
             {
-                LOG_TRACE(queue.log, "Mutation {} is not done yet because in partition ID {} there are still {} uncommitted blocks.", entry.znode_name, partition_id, blocks_count);
+                LOG_TRACE(queue.log, "Mutation {} is not done yet because in partition ID {} there are still {} uncommitted blocks.", znode_name, partition_id, blocks_count);
                 return false;
             }
         }
     }
 
     std::lock_guard lock(queue.state_mutex);
-    if (mutation->parts_to_do.size() == 0)
+    if (auto it = queue.mutations_by_znode.find(znode_name); it != queue.mutations_by_znode.end())
     {
-        return true;
+        if (it->second.parts_to_do.size() == 0)
+            return true;
+
+        LOG_TRACE(queue.log, "Mutation {} is not done because some parts [{}] were just committed", znode_name, fmt::join(it->second.parts_to_do.getParts(), ", "));
+        return false;
     }
     else
     {
-        LOG_TRACE(queue.log, "Mutation {} is not done because some parts [{}] were just committed", entry.znode_name, fmt::join(mutation->parts_to_do.getParts(), ", "));
-        return false;
+        LOG_TRACE(queue.log, "Mutation {} is done because it doesn't exist anymore", znode_name);
+        return true;
     }
 }
 
