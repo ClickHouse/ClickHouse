@@ -2171,11 +2171,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         auto & alias_identifier_node = it->second->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
-        if (lookup_result.isResolved())
-        {
-            it->second = lookup_result.resolved_identifier;
-        }
-        else
+        if (!lookup_result.isResolved())
         {
             std::unordered_set<Identifier> valid_identifiers;
             collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
@@ -2187,6 +2183,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
         }
+        it->second = lookup_result.resolved_identifier;
 
         /** During collection of aliases if node is identifier and has alias, we cannot say if it is
           * column or function node. Check QueryExpressionsAliasVisitor documentation for clarification.
