@@ -41,6 +41,8 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+    void dumpTreeIfNotEmpty(WriteBuffer & buffer, FormatState & format_state, size_t indent, std::string_view kind) const;
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
 

@@ -23,12 +23,12 @@ IdentifierNode::IdentifierNode(Identifier identifier_, TableExpressionModifiers 
 
 void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "IDENTIFIER id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "IDENTIFIER(" << identifier.getFullName();
+
+    buffer << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    buffer << ", identifier: " << identifier.getFullName();
 
     if (table_expression_modifiers)
     {

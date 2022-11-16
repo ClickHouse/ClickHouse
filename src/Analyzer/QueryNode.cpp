@@ -74,11 +74,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", constant_value_type: " << constant_value->getType()->getName();
     }
 
-    if (hasWith())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "WITH\n";
-        getWith().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    getWith().dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "WITH");
 
     if (!projection_columns.empty())
     {
@@ -117,11 +113,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasGroupBy())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "GROUP BY\n";
-        getGroupBy().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    getGroupBy().dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "GROUP BY");
 
     if (hasHaving())
     {
@@ -135,11 +127,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWindow().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasOrderBy())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ORDER BY\n";
-        getOrderBy().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    getOrderBy().dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "ORDER BY");
 
     if (hasInterpolate())
     {
@@ -159,11 +147,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getLimitByOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasLimitBy())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT BY\n";
-        getLimitBy().dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    getLimitBy().dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "LIMIT BY");
 
     if (hasLimit())
     {

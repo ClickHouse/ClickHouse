@@ -28,12 +28,11 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "TABLE(" << storage_id.getFullNameNotQuoted();
+    buffer << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    buffer << ", table_name: " << storage_id.getFullNameNotQuoted();
 
     if (table_expression_modifiers)
     {

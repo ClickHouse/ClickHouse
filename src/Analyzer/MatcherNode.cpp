@@ -20,11 +20,11 @@ const char * toString(MatcherNodeType matcher_node_type)
     switch (matcher_node_type)
     {
         case MatcherNodeType::ASTERISK:
-            return "ASTERISK";
+            return "*";
         case MatcherNodeType::COLUMNS_LIST:
-            return "COLUMNS_LIST";
+            return "COLUMNS_LIST(";
         case MatcherNodeType::COLUMNS_REGEXP:
-            return "COLUMNS_REGEXP";
+            return "COLUMNS_REGEXP(";
     }
 }
 
@@ -122,28 +122,24 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name)
 
 void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "MATCHER id: " << format_state.getNodeId(this);
-
-    buffer << ", matcher_type: " << toString(matcher_type);
-
+    buffer << std::string(indent, ' ') << "MATCHER(";
     if (!qualified_identifier.empty())
-        buffer << ", qualified_identifier: " << qualified_identifier.getFullName();
+        buffer << qualified_identifier.getFullName() << ".";
+
+    buffer << toString(matcher_type);
 
     if (columns_matcher)
     {
-        buffer << ", columns_pattern: " << columns_matcher->pattern();
+        buffer << columns_matcher->pattern();
     }
     else if (matcher_type == MatcherNodeType::COLUMNS_LIST)
     {
-        buffer << ", " << fmt::format("column_identifiers: {}", fmt::join(columns_identifiers, ", "));
+        buffer << fmt::format("{}", fmt::join(columns_identifiers, ", "));
     }
+    buffer << ") id: " << format_state.getNodeId(this) << "\n";
 
     const auto & column_transformers_list = getColumnTransformers();
-    if (!column_transformers_list.getNodes().empty())
-    {
-        buffer << '\n';
-        column_transformers_list.dumpTreeImpl(buffer, format_state, indent + 2);
-    }
+    column_transformers_list.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "COLUMN_TRANSFORMERS");
 }
 
 bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const

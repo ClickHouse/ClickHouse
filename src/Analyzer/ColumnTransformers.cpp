@@ -65,8 +65,8 @@ ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expressi
 
 void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "APPLY COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
-    buffer << ", apply_transformer_type: " << toString(apply_transformer_type);
+    buffer << std::string(indent, ' ') << "APPLY COLUMN TRANSFORMER(" << toString(apply_transformer_type);
+    buffer << ") id: " << format_state.getNodeId(this);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
 

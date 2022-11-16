@@ -52,12 +52,11 @@ const StorageSnapshotPtr & TableFunctionNode::getStorageSnapshot() const
 
 void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "TABLE_FUNCTION id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "TABLE_FUNCTION(" << table_function_name;
+    buffer << ") id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
-
-    buffer << ", table_function_name: " << table_function_name;
 
     if (table_expression_modifiers)
     {
@@ -66,11 +65,7 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
     }
 
     const auto & arguments = getArguments();
-    if (!arguments.getNodes().empty())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
-        arguments.dumpTreeImpl(buffer, format_state, indent + 4);
-    }
+    arguments.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "ARGUMENTS");
 }
 
 bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
