@@ -11,7 +11,7 @@ sidebar_position: 29
 这系列的引擎有：
 
 -   [StripeLog](stripelog.md)
--   [日志](log.md)
+-   [Log](log.md)
 -   [TinyLog](tinylog.md)
 
 ## 共同属性 {#table_engines-log-engine-family-common-properties}
