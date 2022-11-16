@@ -830,8 +830,8 @@ public:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool has_database_name_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), has_database_name(has_database_name_){}
+    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false)
+        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_){}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -972,7 +972,7 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->has_database_name = has_database_name;
+            function_node->is_compound_name = is_compound_name;
 
             if (parameters)
             {
@@ -1027,7 +1027,7 @@ private:
     ASTPtr parameters;
 
     bool allow_function_parameters;
-    bool has_database_name;
+    bool is_compound_name;
 };
 
 /// Layer for priority brackets and tuple function

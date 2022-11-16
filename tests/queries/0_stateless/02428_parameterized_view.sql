@@ -55,6 +55,11 @@ CREATE VIEW system.v1 AS SELECT * FROM system.Catalog WHERE Price={price:UInt64}
 SELECT Price FROM system.v1(price=20);
 SELECT Price FROM `system.v1`(price=20); -- { serverError UNKNOWN_FUNCTION }
 
+INSERT INTO Catalog VALUES ('Book2', 30, 8);
+INSERT INTO Catalog VALUES ('Book3', 30, 8);
+
+CREATE VIEW v5 AS SELECT Price FROM Catalog WHERE {price:UInt64} HAVING Quantity in (SELECT {quantity:UInt64}) LIMIT {limit:UInt64};
+SELECT Price FROM v5(price=30, quantity=8,limit=1);
 
 DROP TABLE v1;
 DROP TABLE v2;

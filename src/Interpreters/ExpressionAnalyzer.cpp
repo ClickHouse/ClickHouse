@@ -72,6 +72,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -1485,6 +1486,10 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
+
+    if (query_options.is_create_parameterized_view && !analyzeReceiveQueryParams(select_query->having()).empty())
+        return true;
+
     step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
@@ -2095,14 +2100,14 @@ void ExpressionAnalysisResult::finalize(
 
     /// For creating parameterized view, query parameters are allowed in select
     /// As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
-    if (where_step_num >= 0 && !is_create_parameterized_view)
+    if (where_step_num >= 0 && !(is_create_parameterized_view && !analyzeReceiveQueryParams(query.where()).empty()))
     {
         where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
         where_step_num = -1;
     }
 
-    if (having_step_num >= 0)
+    if (having_step_num >= 0 && !(is_create_parameterized_view && !analyzeReceiveQueryParams(query.having()).empty()))
     {
         having_column_name = query.having()->getColumnName();
         remove_having_filter = chain.steps.at(having_step_num)->required_output.find(having_column_name)->second;

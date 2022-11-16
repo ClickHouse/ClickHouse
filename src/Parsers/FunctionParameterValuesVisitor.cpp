@@ -64,7 +64,7 @@ private:
     }
 };
 
-NameToNameMap analyzeReceiveFunctionParamValues(const ASTPtr & ast)
+NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast)
 {
     NameToNameMap parameter_values;
     FunctionParameterValuesVisitor(parameter_values).visit(ast);
