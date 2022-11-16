@@ -365,13 +365,13 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->cluster = std::move(cluster);
 
     if (backup_name)
-        query->set(query->backup_name, std::move(backup_name));
+        query->set(query->backup_name, backup_name);
 
     query->settings = std::move(settings);
     query->cluster_host_ids = std::move(cluster_host_ids);
 
     if (base_backup_name)
-        query->set(query->base_backup_name, std::move(base_backup_name));
+        query->set(query->base_backup_name, base_backup_name);
 
     return true;
 }

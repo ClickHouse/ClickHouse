@@ -216,7 +216,7 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
     if (base_backup_name)
-        query.setOrReplace(query.base_backup_name, std::move(base_backup_name));
+        query.setOrReplace(query.base_backup_name, base_backup_name);
     else
         query.reset(query.base_backup_name);
 
