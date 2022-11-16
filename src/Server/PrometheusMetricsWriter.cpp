@@ -108,11 +108,16 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             if (!replaceInvalidChars(key))
                 continue;
+
             auto value = name_value.second;
 
+            std::string metric_doc{value.documentation};
+            convertHelpToSingleLine(metric_doc);
+
             // TODO: add HELP section? asynchronous_metrics contains only key and value
+            writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "gauge");
-            writeOutLine(wb, key, value);
+            writeOutLine(wb, key, value.value);
         }
     }
 

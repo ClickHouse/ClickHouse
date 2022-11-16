@@ -101,7 +101,7 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 
     Field field;
     named_column.column->get(0, field);
-    return field.get<UInt32>();
+    return static_cast<UInt32>(field.get<UInt32>());
 }
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
@@ -302,11 +302,6 @@ struct ConvertImpl
     }
 };
 
-/** Conversion of Date32 to Date: check bounds.
-  */
-template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
-    : DateTimeTransformImpl<DataTypeDate32, DataTypeDate, ToDateImpl> {};
-
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name, ConvertDefaultBehaviorTag>
@@ -325,17 +320,12 @@ struct ToDateTimeImpl
 
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
-        return date_time <= 0xffffffff ? UInt32(date_time) : UInt32(0xffffffff);
+        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
 
-    static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
-        return date_time <= 0xffffffff ? date_time : 0xffffffff;
+        return time_zone.fromDayNum(ExtendedDayNum(d));
     }
 
     static UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
@@ -343,21 +333,10 @@ struct ToDateTimeImpl
         return dt;
     }
 
-    static UInt32 execute(Int64 d, const DateLUTImpl & time_zone)
+    // TODO: return UInt32 ???
+    static Int64 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
     {
-        if (d < 0)
-            return 0;
-
-        auto date_time = time_zone.toDate(d);
-        return date_time <= 0xffffffff ? date_time : 0xffffffff;
-    }
-
-    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & /*time_zone*/)
-    {
-        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
-            return 0;
-
-        return std::min<Int64>(t.whole, Int64(0xFFFFFFFF));
+        return dt64;
     }
 };
 
@@ -377,12 +356,9 @@ struct ToDateTransform32Or64
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
-        if (from < 0)
-            return 0;
-
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
-            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_DAY_NUM));
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -397,14 +373,9 @@ struct ToDateTransform32Or64Signed
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
         if (from < 0)
             return 0;
-
-        auto day_num = time_zone.toDayNum(ExtendedDayNum(static_cast<Int32>(from)));
-        return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
-
         return (from < DATE_LUT_MAX_DAY_NUM)
-            ? from
-            : std::min<Int32>(Int32(time_zone.toDayNum(static_cast<UInt16>(from))), Int32(0xFFFFFFFF));
-
+            ? static_cast<ToType>(from)
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -434,8 +405,8 @@ struct ToDate32Transform32Or64
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? from
-            : std::min<Int32>(Int32(time_zone.toDayNum(from)), Int32(DATE_LUT_MAX_EXTEND_DAY_NUM));
+            ? static_cast<ToType>(from)
+            : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -451,7 +422,7 @@ struct ToDate32Transform32Or64Signed
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? static_cast<ToType>(from)
-            : time_zone.toDayNum(std::min<Int64>(Int64(from), Int64(0xFFFFFFFF)));
+            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -477,49 +448,35 @@ struct ToDate32Transform8Or16Signed
   */
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
 
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate32, ToDate32Transform8Or16Signed<Int8, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate32, ToDate32Transform8Or16Signed<Int16, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32>> {};
-
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32>> {};
 
@@ -531,7 +488,7 @@ struct ToDateTimeTransform64
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
+        return static_cast<ToType>(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -553,12 +510,11 @@ struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & /* time_zone */)
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
             return 0;
-
-        return std::min<Int64>(Int64(from), Int64(0xFFFFFFFF));
+        return static_cast<ToType>(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -618,8 +574,8 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        from = std::max<time_t>(from, LUT_MIN_TIME);
-        from = std::min<time_t>(from, LUT_MAX_TIME);
+        from = static_cast<FromType>(std::max<time_t>(from, LUT_MIN_TIME));
+        from = static_cast<FromType>(std::min<time_t>(from, LUT_MAX_TIME));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -678,6 +634,8 @@ struct FromDateTime64Transform
     }
 };
 
+/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
+ */
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl>> {};
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag>
@@ -701,7 +659,7 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
-        const auto dt = time_zone.fromDayNum(ExtendedDayNum(d));
+        const auto dt = ToDateTimeImpl::execute(d, time_zone);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -979,7 +937,7 @@ inline void convertFromTime<DataTypeDate>(DataTypeDate::FieldType & x, time_t & 
 template <>
 inline void convertFromTime<DataTypeDate32>(DataTypeDate32::FieldType & x, time_t & time)
 {
-    x = time;
+    x = static_cast<UInt32>(time);
 }
 
 template <>
@@ -990,7 +948,7 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
     else if (unlikely(time > 0xFFFFFFFF))
         x = 0xFFFFFFFF;
     else
-        x = time;
+        x = static_cast<UInt32>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -1070,7 +1028,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
     time_t tmp = 0;
     if (!tryReadDateTimeText(tmp, rb, *time_zone))
         return false;
-    x = tmp;
+    x = static_cast<UInt32>(tmp);
     return true;
 }
 
@@ -1855,7 +1813,7 @@ private:
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
-                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DateTime64.",
+                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
                             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
                 }
                 else if (arguments.size() != 2)
@@ -2215,6 +2173,10 @@ struct ToNumberMonotonicity
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
+        /// Do not support 128 bit integers and decimals for now.
+        if (size_of_from > sizeof(Int64))
+            return {};
+
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
             : (left.get<Int64>() >= 0);
@@ -2285,15 +2247,24 @@ struct ToDateMonotonicity
     {
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
+        {
             return { .is_monotonic = true, .is_always_monotonic = true };
+        }
         else if (
-            (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
-            || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
-            || (which.isFloat() && ((left.isNull() || left.get<Float64>() < 0xFFFF) && (right.isNull() || right.get<Float64>() >= 0xFFFF)))
-            || !type.isValueRepresentedByNumber())
+            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+                && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
+            || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
+                && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
+            || (((left.getType() == Field::Types::Float64 || left.isNull()) && (right.getType() == Field::Types::Float64 || right.isNull())
+                && ((left.isNull() || left.get<Float64>() < 0xFFFF) && (right.isNull() || right.get<Float64>() >= 0xFFFF))))
+            || !isNativeNumber(type))
+        {
             return {};
+        }
         else
+        {
             return { .is_monotonic = true, .is_always_monotonic = true };
+        }
     }
 };
 
@@ -2857,6 +2828,31 @@ private:
         };
     }
 
+#define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
+            case IntervalKind::INTERVAL_KIND: \
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
+
+    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
+    {
+        switch (kind)
+        {
+            GENERATE_INTERVAL_CASE(Nanosecond)
+            GENERATE_INTERVAL_CASE(Microsecond)
+            GENERATE_INTERVAL_CASE(Millisecond)
+            GENERATE_INTERVAL_CASE(Second)
+            GENERATE_INTERVAL_CASE(Minute)
+            GENERATE_INTERVAL_CASE(Hour)
+            GENERATE_INTERVAL_CASE(Day)
+            GENERATE_INTERVAL_CASE(Week)
+            GENERATE_INTERVAL_CASE(Month)
+            GENERATE_INTERVAL_CASE(Quarter)
+            GENERATE_INTERVAL_CASE(Year)
+        }
+        throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion to unexpected IntervalKind: {}", kind.toString()};
+    }
+
+#undef GENERATE_INTERVAL_CASE
+
     template <typename ToDataType>
     requires IsDataTypeDecimal<ToDataType>
     WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
@@ -3389,9 +3385,8 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count);
-                auto & res_object = assert_cast<ColumnObject &>(res->assumeMutableRef());
-                res_object.finalize();
+                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
+                res->finalize();
                 return res;
             };
         }
@@ -3883,6 +3878,8 @@ private:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
+            case TypeIndex::Interval:
+                return createIntervalWrapper(from_type, checkAndGetDataType<DataTypeInterval>(to_type.get())->getKind());
             default:
                 break;
         }

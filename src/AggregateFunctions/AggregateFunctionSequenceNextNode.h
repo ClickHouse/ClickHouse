@@ -29,6 +29,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 enum class SequenceDirection
 {
     Forward,
@@ -42,6 +47,9 @@ enum SequenceBase
     FirstMatch,
     LastMatch,
 };
+
+/// This is for security
+static const UInt64 max_node_size_deserialize = 0xFFFFFF;
 
 /// NodeBase used to implement a linked list for storage of SequenceNextNodeImpl
 template <typename Node, size_t MaxEventsSize>
@@ -78,10 +86,12 @@ struct NodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
+        if unlikely (size > max_node_size_deserialize)
+            throw Exception("Too large node state size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
-        buf.read(node->data(), size);
+        buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
         UInt64 ulong_bitset;
@@ -226,7 +236,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[min_required_args + i])->getData()[row_num])
                 node->events_bitset.set(i);
-        node->event_time = timestamp;
+        node->event_time = static_cast<DataTypeDateTime::FieldType>(timestamp);
 
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
@@ -365,7 +375,7 @@ public:
     /// The first matched event is 0x00000001, the second one is 0x00000002, the third one is 0x00000004, and so on.
     UInt32 getNextNodeIndex(Data & data) const
     {
-        const UInt32 unmatched_idx = data.value.size();
+        const UInt32 unmatched_idx = static_cast<UInt32>(data.value.size());
 
         if (data.value.size() <= events_size)
             return unmatched_idx;

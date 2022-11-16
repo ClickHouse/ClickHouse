@@ -164,6 +164,18 @@ public:
     /// window function.
     virtual void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const = 0;
 
+    /// Special method for aggregate functions with -State combinator, it behaves the same way as insertResultInto,
+    /// but if we need to insert AggregateData into ColumnAggregateFunction we use special method
+    /// insertInto that inserts default value and then performs merge with provided AggregateData
+    /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
+    virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    {
+        if (isState())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented");
+
+        insertResultInto(place, to, arena);
+    }
+
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
@@ -673,7 +685,16 @@ public:
     static constexpr bool DateTime64Supported = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_)
+    {
+        /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
+        /// Enforce that either both of them are changed or none are
+        constexpr bool declares_destroy_and_hasTrivialDestructor =
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
+        static_assert(declares_destroy_and_hasTrivialDestructor,
+            "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
+    }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {

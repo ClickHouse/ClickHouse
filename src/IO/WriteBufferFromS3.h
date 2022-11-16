@@ -110,8 +110,8 @@ private:
 
     std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
     std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
-    size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-    size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
 
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;

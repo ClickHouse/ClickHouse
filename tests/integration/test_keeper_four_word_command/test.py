@@ -367,7 +367,7 @@ def test_cmd_stat(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 14
+        assert int(result["Zxid"]) >= 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "13"
 
@@ -594,5 +594,50 @@ def test_cmd_wchp(started_cluster):
         assert len(list_data) == 4
         assert "/test_4lw_normal_node_0" in list_data
         assert "/test_4lw_normal_node_1" in list_data
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_csnp(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+        try:
+            int(data)
+            assert True
+        except ValueError:
+            assert False
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_lgif(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=100)
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgif")
+        print(data)
+        reader = csv.reader(data.split("\n"), delimiter="\t")
+        result = {}
+
+        for row in reader:
+            if len(row) != 0:
+                result[row[0]] = row[1]
+
+        assert int(result["first_log_idx"]) == 1
+        assert int(result["first_log_term"]) == 1
+        assert int(result["last_log_idx"]) >= 1
+        assert int(result["last_log_term"]) == 1
+        assert int(result["last_committed_log_idx"]) >= 1
+        assert int(result["leader_committed_log_idx"]) >= 1
+        assert int(result["target_committed_log_idx"]) >= 1
+        assert int(result["last_snapshot_idx"]) >= 1
     finally:
         destroy_zk_client(zk)
