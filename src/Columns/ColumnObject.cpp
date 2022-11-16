@@ -666,14 +666,14 @@ size_t ColumnObject::allocatedBytes() const
 
 void ColumnObject::forEachSubcolumn(ColumnCallback callback) const
 {
-    for (auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
+    for (const auto & entry : subcolumns)
+        for (const auto & part : entry->data.data)
             callback(part);
 }
 
 void ColumnObject::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    for (auto & entry : subcolumns)
+    for (const auto & entry : subcolumns)
     {
         for (const auto & part : entry->data.data)
         {
