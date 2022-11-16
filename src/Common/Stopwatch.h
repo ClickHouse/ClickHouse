@@ -63,6 +63,8 @@ private:
 using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;
 
 
+/// Allows to obtain the elapsed time concurrently with restarting the stopwatch.
+/// Allows to atomically compare the elapsed time with a threshold and restart the watch if the elapsed time is not less.
 class AtomicStopwatch
 {
 public:

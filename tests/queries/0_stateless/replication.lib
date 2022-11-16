@@ -108,6 +108,7 @@ function check_replication_consistency()
         $CLICKHOUSE_CLIENT -q "select 'mutations', * from system.mutations where database=currentDatabase() and table like '$table_name_prefix%' order by database, table, mutation_id"
         $CLICKHOUSE_CLIENT -q "select 'parts', * from system.parts where database=currentDatabase() and table like '$table_name_prefix%' order by database, table, name"
         echo "Good luck with debugging..."
+        exit 1
     fi
 
 }
