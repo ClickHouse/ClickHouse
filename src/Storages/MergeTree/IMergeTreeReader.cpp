@@ -3,6 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
@@ -43,15 +44,62 @@ IMergeTreeReader::IMergeTreeReader(
     /// to allow to use shared offset column from cache.
     , requested_columns(data_part_info_for_read->isWidePart() ? Nested::convertToSubcolumns(columns_) : columns_)
     , part_columns(data_part_info_for_read->isWidePart() ? Nested::collect(data_part_info_for_read->getColumns()) : data_part_info_for_read->getColumns())
+    , last_read_end_offset(0)
+    , part_offset_column_index(-1)
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
 
+    ssize_t i = 0;
     for (const auto & column : requested_columns)
     {
-        columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
+        if (column.name == "_part_offset")
+        {
+            assert(part_offset_column_index == -1);
+            part_offset_column_index = i;
+        }
+        else
+        {
+            columns_to_read.emplace_back(getColumnInPart(column));
+            serializations.emplace_back(getSerializationInPart(column));
+        }
+        ++i;
     }
+}
+
+
+size_t IMergeTreeReader::readRows(size_t from_mark, size_t current_task_last_mark,
+    bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+{
+    ColumnPtr part_offset_column;
+    if (part_offset_column_index != -1)
+    {
+        part_offset_column = res_columns[part_offset_column_index];
+        res_columns.erase(res_columns.begin() + part_offset_column_index);
+    }
+
+    const size_t rows_read = readPhysicalRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, res_columns);
+    const size_t start_row = continue_reading ? last_read_end_offset : data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+    const size_t end_row = start_row + rows_read;
+    last_read_end_offset = end_row;
+
+    if (part_offset_column_index != -1)
+    {
+        if (!part_offset_column)
+            part_offset_column = ColumnUInt64::create();
+
+        ColumnUInt64 & col = typeid_cast<ColumnUInt64 &>(*part_offset_column->assumeMutable());
+
+        col.reserve(col.size() + rows_read);
+
+        /// Append new offsets to the end of the column.
+        for (size_t row_offset = start_row; row_offset < end_row; ++row_offset)
+            col.insertValue(row_offset);
+
+        res_columns.insert(res_columns.begin() + part_offset_column_index, std::move(part_offset_column));
+    }
+
+    return rows_read;
 }
 
 const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -261,7 +309,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
-    if (num_columns_to_read != requested_columns.size())
+    if (num_columns_to_read != columns_to_read.size())
         throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected " + toString(requested_columns.size()) + ", "
                         "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);

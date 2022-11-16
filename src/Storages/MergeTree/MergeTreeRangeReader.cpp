@@ -670,9 +670,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
             continue;
 
         non_const_virtual_column_names.push_back(column_name);
-
-        if (column_name == "_part_offset")
-            sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
     }
 
     if (prewhere_info)
@@ -901,17 +898,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
     size_t current_task_last_mark = getLastMark(ranges);
 
-    /// The stream could be unfinished by the previous read request because of max_rows limit.
-    /// In this case it will have some rows from the previously started range. We need to save their begin and
-    /// end offsets to properly fill _part_offset column.
-    UInt64 leading_begin_part_offset = 0;
-    UInt64 leading_end_part_offset = 0;
-    if (!stream.isFinished())
-    {
-        leading_begin_part_offset = stream.currentPartOffset();
-        leading_end_part_offset = stream.lastPartOffset();
-    }
-
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
@@ -949,41 +935,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rowsPerGranule().empty())
         result.adjustLastGranule();
 
-    for (const auto & column_name : non_const_virtual_column_names)
-    {
-        if (column_name == "_part_offset")
-            fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
-    }
-
     return result;
-}
-
-void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    size_t num_rows = result.numReadRows();
-
-    auto column = ColumnUInt64::create(num_rows);
-    ColumnUInt64::Container & vec = column->getData();
-
-    UInt64 * pos = vec.data();
-    UInt64 * end = &vec[num_rows];
-
-    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
-        *pos++ = leading_begin_part_offset++;
-
-    const auto start_ranges = result.startedRanges();
-
-    for (const auto & start_range : start_ranges)
-    {
-        UInt64 start_part_offset = index_granularity->getMarkStartingRow(start_range.range.begin);
-        UInt64 end_part_offset = index_granularity->getMarkStartingRow(start_range.range.end);
-
-        while (pos < end && start_part_offset < end_part_offset)
-            *pos++ = start_part_offset++;
-    }
-
-    result.columns.emplace_back(std::move(column));
-    result.extra_columns_filled.push_back("_part_offset");
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)
@@ -1145,12 +1097,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             if (column_name == "_part_offset")
             {
-                if (pos >= result.columns.size())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
-                                    num_columns, result.columns.size());
-
-                block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
+                /// Do nothing, it is filled by the merge tree reader at the appropriate step.
             }
             else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
             {
