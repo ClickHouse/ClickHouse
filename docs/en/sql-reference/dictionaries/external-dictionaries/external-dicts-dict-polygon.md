@@ -4,18 +4,23 @@ sidebar_position: 46
 sidebar_label: Polygon Dictionaries With Grids
 title: "Polygon dictionaries"
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
 
 Example of a polygon dictionary configuration:
 
+<CloudDetails />
+
 ``` xml
 <dictionary>
     <structure>
         <key>
-            <name>key</name>
-            <type>Array(Array(Array(Array(Float64))))</type>
+            <attribute>
+                <name>key</name>
+                <type>Array(Array(Array(Array(Float64))))</type>
+            </attribute>
         </key>
 
         <attribute>
@@ -76,7 +81,7 @@ To respond to the query, there is a corresponding cell, and the index for the po
 
 -   `POLYGON`. Synonym to `POLYGON_INDEX_CELL`.
 
-Dictionary queries are carried out using standard [functions](../../../sql-reference/functions/ext-dict-functions.md) for working with external dictionaries.
+Dictionary queries are carried out using standard [functions](../../../sql-reference/functions/ext-dict-functions.md) for working with dictionaries.
 An important difference is that here the keys will be the points for which you want to find the polygon containing them.
 
 **Example**

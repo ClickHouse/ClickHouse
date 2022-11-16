@@ -5,6 +5,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
 #include <set>
@@ -25,7 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
@@ -212,17 +212,15 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 
 ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
-    LOG_TRACE(log, "Reserving bytes {} from volume index {}, total volumes {}", bytes, min_volume_index, volumes.size());
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
         auto reservation = volume->reserve(bytes);
         if (reservation)
-        {
-            LOG_TRACE(log, "Successfully reserved {} bytes on volume index {}", bytes, i);
             return reservation;
-        }
     }
+    LOG_TRACE(log, "Could not reserve {} from volume index {}, total volumes {}", ReadableSize(bytes), min_volume_index, volumes.size());
+
     return {};
 }
 
@@ -312,22 +310,12 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 }
 
 
-size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
+std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
+    auto it = volume_index_by_disk_name.find(disk_name);
     if (it != volume_index_by_disk_name.end())
         return it->second;
-    else
-        throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
-}
-
-
-VolumePtr StoragePolicy::tryGetVolumeByDisk(const DiskPtr & disk_ptr) const
-{
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
-    if (it == volume_index_by_disk_name.end())
-        return nullptr;
-    return getVolume(it->second);
+    return {};
 }
 
 

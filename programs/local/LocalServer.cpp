@@ -8,12 +8,12 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
@@ -32,10 +32,12 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Storages/NamedCollections.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -117,6 +119,8 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
+
+    NamedCollectionFactory::instance().initialize(config());
 }
 
 
@@ -413,6 +417,8 @@ try
     registerFormats();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
     applyCmdSettings(global_context);
 
     if (is_interactive)
@@ -488,7 +494,6 @@ void LocalServer::processConfig()
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
@@ -546,9 +551,14 @@ void LocalServer::processConfig()
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -586,6 +596,18 @@ void LocalServer::processConfig()
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+#if USE_EMBEDDED_COMPILER
+    /// 128 MB
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size
+        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+#endif
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -602,20 +624,12 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
-    bool enable_objects_loader = false;
-
     if (config().has("path"))
     {
         String path = global_context->getPath();
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
-
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-        enable_objects_loader = true;
-        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         loadMetadataSystem(global_context);
@@ -630,6 +644,9 @@ void LocalServer::processConfig()
             DatabaseCatalog::instance().loadDatabases();
         }
 
+        /// For ClickHouse local if path is not set the loader will be disabled.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
@@ -638,9 +655,6 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
-
-    /// Persist SQL user defined objects only if user_defined folder was created
-    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");

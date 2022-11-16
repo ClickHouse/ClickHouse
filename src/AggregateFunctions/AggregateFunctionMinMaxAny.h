@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -199,11 +199,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-
-        auto * type = toNativeType<T>(builder);
-        auto * ty_aggregate_data_ptr = llvm::cast<llvm::PointerType>(aggregate_data_ptr->getType()->getScalarType())->getElementType();
-        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(ty_aggregate_data_ptr, aggregate_data_ptr, value_offset_from_structure);
-        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
+        auto * value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, value_offset_from_structure);
 
         return value_ptr;
     }
@@ -222,7 +218,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_ptr = aggregate_data_ptr;
         b.CreateStore(b.getInt1(true), has_value_ptr);
 
         auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -240,7 +236,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_ptr = aggregate_data_ptr;
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -265,10 +261,10 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
-        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src_ptr = aggregate_data_src_ptr;
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -298,7 +294,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src_ptr = aggregate_data_src_ptr;
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -324,7 +320,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_ptr = aggregate_data_ptr;
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -371,12 +367,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
         auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
 
-        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
+        auto * has_value_src_ptr = aggregate_data_src_ptr;
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
@@ -519,7 +515,7 @@ public:
                 size = rhs_size;
 
                 if (size > 0)
-                    buf.read(small_data, size);
+                    buf.readStrict(small_data, size);
             }
             else
             {
@@ -531,7 +527,7 @@ public:
                 }
 
                 size = rhs_size;
-                buf.read(large_data, size);
+                buf.readStrict(large_data, size);
             }
         }
         else
@@ -544,7 +540,7 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        Int32 value_size = value.size;
+        Int32 value_size = static_cast<Int32>(value.size);
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
@@ -559,7 +555,7 @@ public:
             if (capacity < value_size)
             {
                 /// Don't free large_data here.
-                capacity = roundUpToPowerOfTwoOrZero(value_size);
+                capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(value_size));
                 large_data = arena->alloc(capacity);
             }
 

@@ -2070,10 +2070,12 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper " + str(ex))
+                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait ZooKeeper container")
+        raise Exception(
+            "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
+        )
 
     def make_hdfs_api(self, timeout=180, kerberized=False):
         if kerberized:
@@ -2678,7 +2680,9 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
+                if instance.contains_in_log(
+                    SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                ):
                     sanitizer_assert_instance = instance.grep_in_log(
                         SANITIZER_SIGN, from_host=True, filename="stderr.log"
                     )
