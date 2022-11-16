@@ -77,8 +77,9 @@ protected:
         size_t num_read_bytes = 0;
     };
 
+    std::optional<Chunk> reportProgress(ChunkWithProgress chunk);
     std::optional<Chunk> tryGenerate() final;
-    std::optional<ChunkWithProgress> read();
+    ChunkWithProgress read();
 
     int schedule() override;
 
