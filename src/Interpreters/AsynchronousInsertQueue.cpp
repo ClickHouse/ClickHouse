@@ -150,7 +150,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
         auto & shard = queue_shards[i];
 
         shard.are_tasks_available.notify_one();
-        assert(dump_by_first_update_thread.joinable());
+        assert(dump_by_first_update_threads[i].joinable());
         dump_by_first_update_threads[i].join();
 
         {
@@ -171,11 +171,14 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     LOG_TRACE(log, "Asynchronous insertion queue finished");
 }
 
-void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
+void AsynchronousInsertQueue::scheduleDataProcessingJob(InsertQuery key, InsertDataPtr data, ContextPtr global_context)
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
-    pool.scheduleOrThrowOnError([key, global_context, data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
+    pool.scheduleOrThrowOnError([
+        key = std::move(key),
+        data = std::make_shared<InsertDataPtr>(std::move(data)),
+        global_context = std::move(global_context)]() mutable
     {
         processData(std::move(key), std::move(*data), std::move(global_context));
     });
@@ -257,7 +260,7 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
     }
 
     if (data_to_process)
-        scheduleDataProcessingJob(key, std::move(data_to_process), getContext());
+        scheduleDataProcessingJob(std::move(key), std::move(data_to_process), getContext());
     else
         shard.are_tasks_available.notify_one();
 
@@ -305,7 +308,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
         }
 
         for (auto & entry : entries_to_flush)
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext());
+            scheduleDataProcessingJob(std::move(entry.key), std::move(entry.data), getContext());
     }
 }
 
