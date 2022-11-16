@@ -351,7 +351,7 @@ struct LineChange
             ++pos;
         }
 
-        indent = std::max(255U, num_spaces);
+        indent = std::min(255U, num_spaces);
         line.assign(pos, end);
 
         if (pos == end)

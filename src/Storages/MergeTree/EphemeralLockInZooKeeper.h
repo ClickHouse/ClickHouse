@@ -12,6 +12,8 @@
 
 namespace DB
 {
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 namespace ErrorCodes
 {
@@ -25,13 +27,14 @@ namespace ErrorCodes
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
     friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
 protected:
-    EphemeralLockInZooKeeper() = delete;
-    EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & path_);
+    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_);
 
 public:
+    EphemeralLockInZooKeeper() = delete;
+
     /// Fake "secondary node" names for blocks with and without "deduplication_path"
     static constexpr const char * LEGACY_LOCK_INSERT = "abandonable_lock-insert";
     static constexpr const char * LEGACY_LOCK_OTHER = "abandonable_lock-other";
@@ -53,7 +56,7 @@ public:
 
     bool isLocked() const
     {
-        return zookeeper;
+        return zookeeper.get();
     }
 
     String getPath() const
@@ -91,13 +94,13 @@ public:
     ~EphemeralLockInZooKeeper();
 
 private:
-    zkutil::ZooKeeper * zookeeper = nullptr;
+    ZooKeeperWithFaultInjectionPtr zookeeper;
     String path_prefix;
     String path;
 };
 
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
 
 /// Acquires block number locks in all partitions.
