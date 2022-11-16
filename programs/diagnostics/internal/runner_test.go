@@ -39,9 +39,19 @@ func TestMain(m *testing.M) {
 		Image:        fmt.Sprintf("clickhouse/clickhouse-server:%s", test.GetClickHouseTestVersion()),
 		ExposedPorts: []string{"9000/tcp"},
 		WaitingFor:   wait.ForLog("Ready for connections"),
-		BindMounts: map[string]string{
-			"/etc/clickhouse-server/config.d/custom.xml": path.Join(cwd, "../testdata/docker/custom.xml"),
-			"/etc/clickhouse-server/users.d/admin.xml":   path.Join(cwd, "../testdata/docker/admin.xml"),
+		Mounts: testcontainers.ContainerMounts{
+			{
+				Source: testcontainers.GenericBindMountSource{
+					HostPath: path.Join(cwd, "../testdata/docker/custom.xml"),
+				},
+				Target: "/etc/clickhouse-server/config.d/custom.xml",
+			},
+			{
+				Source: testcontainers.GenericBindMountSource{
+					HostPath: path.Join(cwd, "../testdata/docker/admin.xml"),
+				},
+				Target: "/etc/clickhouse-server/users.d/admin.xml",
+			},
 		},
 	}
 	clickhouseContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
