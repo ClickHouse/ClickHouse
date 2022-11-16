@@ -788,22 +788,26 @@ def test_schema_inference_cache(started_cluster):
 
 
 def test_hdfsCluster_skip_unavailable_shards(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
     node = started_cluster.instances["node1"]
     data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/simple_table_function", data)
+    hdfs_api.write_data("/skip_unavailable_shards", data)
 
     assert (
         node1.query(
-            "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
+            "select * from hdfs('hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
         )
         == data
     )
 
 
 def test_hdfsCluster_unskip_unavailable_shards(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
     node = started_cluster.instances["node1"]
+    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
+    hdfs_api.write_data("/unskip_unavailable_shards", data)
     error = node.query_and_get_error(
-        "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')"
+        "select * from hdfs('hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
     )
 
     assert "NETWORK_ERROR" in error
