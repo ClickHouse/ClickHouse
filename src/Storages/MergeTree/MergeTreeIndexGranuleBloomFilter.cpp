@@ -5,7 +5,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -97,7 +96,7 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
         static size_t atom_size = 8;
         size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
         filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        istr.read(reinterpret_cast<char *>(filter->getFilter().data()), bytes_size);
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), bytes_size);
     }
 }
 

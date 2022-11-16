@@ -44,7 +44,7 @@ void AnnoyIndex<Dist>::deserialize(ReadBuffer& istr)
     readIntBinary(Base::_seed, istr);
     readVectorBinary(Base::_roots, istr);
     Base::_nodes = realloc(Base::_nodes, Base::_s * Base::_n_nodes);
-    istr.read(reinterpret_cast<char*>(Base::_nodes), Base::_s * Base::_n_nodes);
+    istr.readStrict(reinterpret_cast<char *>(Base::_nodes), Base::_s * Base::_n_nodes);
 
     Base::_fd = 0;
     // set flags

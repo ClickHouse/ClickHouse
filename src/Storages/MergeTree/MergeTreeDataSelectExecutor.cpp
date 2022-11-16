@@ -686,7 +686,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
+                if (!key_condition.addCondition(
+                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -703,7 +704,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
+                if (!key_condition.addCondition(
+                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -781,6 +783,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (settings.allow_experimental_analyzer)
+        return;
+
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
@@ -1294,6 +1301,7 @@ static void selectColumnNames(
 
 MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
+    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1318,7 +1326,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        query_info.prewhere_info,
+        prewhere_info,
         added_filter_nodes,
         metadata_snapshot_base,
         metadata_snapshot,
@@ -1460,6 +1468,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
 
     std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     /// If there are no monotonic functions, there is no need to save block reference.
@@ -1572,7 +1581,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
-        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part->name, steps);
+        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part_name, steps);
     }
     else
     {
@@ -1580,7 +1589,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
         /// The returned value is the minimum range of marks, containing all keys for which KeyCondition holds
 
-        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part->name, marks_count);
+        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
 

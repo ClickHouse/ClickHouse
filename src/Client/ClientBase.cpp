@@ -119,22 +119,27 @@ namespace ProfileEvents
 namespace DB
 {
 
+ProgressOption toProgressOption(std::string progress)
+{
+    boost::to_upper(progress);
+
+    if (progress == "OFF" || progress == "FALSE" || progress == "0" || progress == "NO")
+        return ProgressOption::OFF;
+    if (progress == "TTY" || progress == "ON" || progress == "TRUE" || progress == "1" || progress == "YES")
+        return ProgressOption::TTY;
+    if (progress == "ERR")
+        return ProgressOption::ERR;
+    if (progress == "DEFAULT")
+        return ProgressOption::DEFAULT;
+
+    throw boost::program_options::validation_error(boost::program_options::validation_error::invalid_option_value);
+}
+
 std::istream& operator>> (std::istream & in, ProgressOption & progress)
 {
     std::string token;
     in >> token;
-
-    boost::to_upper(token);
-
-    if (token == "OFF" || token == "FALSE" || token == "0" || token == "NO")
-        progress = ProgressOption::OFF;
-    else if (token == "TTY" || token == "ON" || token == "TRUE" || token == "1" || token == "YES")
-        progress = ProgressOption::TTY;
-    else if (token == "ERR")
-        progress = ProgressOption::ERR;
-    else
-        throw boost::program_options::validation_error(boost::program_options::validation_error::invalid_option_value);
-
+    progress = toProgressOption(token);
     return in;
 }
 
@@ -662,56 +667,62 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
-void ClientBase::initTtyBuffer(bool to_err)
+void ClientBase::initTtyBuffer(ProgressOption progress)
 {
-    if (!tty_buf)
+    if (tty_buf)
+        return;
+
+    if (progress == ProgressOption::OFF || (!is_interactive && progress == ProgressOption::DEFAULT))
     {
-        static constexpr auto tty_file_name = "/dev/tty";
+         need_render_progress = false;
+         return;
+    }
 
-        /// Output all progress bar commands to terminal at once to avoid flicker.
-        /// This size is usually greater than the window size.
-        static constexpr size_t buf_size = 1024;
+    static constexpr auto tty_file_name = "/dev/tty";
 
-        if (!to_err)
+    /// Output all progress bar commands to terminal at once to avoid flicker.
+    /// This size is usually greater than the window size.
+    static constexpr size_t buf_size = 1024;
+
+    if (is_interactive || progress == ProgressOption::TTY)
+    {
+        std::error_code ec;
+        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
+
+        if (!ec && exists(tty) && is_character_file(tty)
+            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
         {
-            std::error_code ec;
-            std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
-
-            if (!ec && exists(tty) && is_character_file(tty)
-                && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
+            try
             {
-                try
-                {
-                    tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
 
-                    /// It is possible that the terminal file has writeable permissions
-                    /// but we cannot write anything there. Check it with invisible character.
-                    tty_buf->write('\0');
-                    tty_buf->next();
+                /// It is possible that the terminal file has writeable permissions
+                /// but we cannot write anything there. Check it with invisible character.
+                tty_buf->write('\0');
+                tty_buf->next();
 
-                    return;
-                }
-                catch (const Exception & e)
-                {
-                    if (tty_buf)
-                        tty_buf.reset();
+                return;
+            }
+            catch (const Exception & e)
+            {
+                if (tty_buf)
+                    tty_buf.reset();
 
-                    if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
-                        throw;
+                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
+                    throw;
 
-                    /// It is normal if file exists, indicated as writeable but still cannot be opened.
-                    /// Fallback to other options.
-                }
+                /// It is normal if file exists, indicated as writeable but still cannot be opened.
+                /// Fallback to other options.
             }
         }
-
-        if (stderr_is_a_tty)
-        {
-            tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
-        }
-        else
-            need_render_progress = false;
     }
+
+    if (stderr_is_a_tty || progress == ProgressOption::ERR)
+    {
+        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+    }
+    else
+        need_render_progress = false;
 }
 
 void ClientBase::updateSuggest(const ASTPtr & ast)
@@ -1247,7 +1258,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
-    if (need_render_progress && have_data_in_stdin)
+    if (need_render_progress)
     {
         /// Set total_bytes_to_read for current fd.
         FileProgress file_progress(0, std_in.getFileSize());
@@ -1617,6 +1628,14 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     global_context->applySettingChange(change);
             }
             global_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+            /// Query parameters inside SET queries should be also saved on the client side
+            ///  to override their previous definitions set with --param_* arguments
+            ///  and for substitutions to work inside INSERT ... VALUES queries
+            for (const auto & [name, value] : set_query->query_parameters)
+                query_parameters.insert_or_assign(name, value);
+
+            global_context->addQueryParameters(set_query->query_parameters);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -2324,7 +2343,7 @@ void ClientBase::init(int argc, char ** argv)
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "query_id")
-        ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::TTY, "tty"), "Print progress of queries execution - to TTY (default): tty|on|1|true|yes; to STDERR: err; OFF: off|0|false|no")
+        ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -2379,11 +2398,6 @@ void ClientBase::init(int argc, char ** argv)
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
-    if (options["progress"].as<ProgressOption>() == ProgressOption::OFF)
-        need_render_progress = false;
-    else
-        initTtyBuffer(options["progress"].as<ProgressOption>() == ProgressOption::ERR);
-
     if (options.count("version") || options.count("V"))
     {
         showClientVersion();
@@ -2437,6 +2451,9 @@ void ClientBase::init(int argc, char ** argv)
     {
         switch (options["progress"].as<ProgressOption>())
         {
+            case DEFAULT:
+                config().setString("progress", "default");
+                break;
             case OFF:
                 config().setString("progress", "off");
                 break;
