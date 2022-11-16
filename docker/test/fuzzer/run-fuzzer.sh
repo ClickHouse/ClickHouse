@@ -130,15 +130,19 @@ function watchdog
     kill -9 -- $fuzzer_pid ||:
 }
 
-function filter_exists_and_template
+function filter_exists_and_tags_and_template
 {
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
-            # SC2001 shellcheck suggests:
-            # echo ${path//.sql.j2/.gen.sql}
-            # but it doesn't allow to use regex
-            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
+            if grep '^-- Tag' "$path" | grep "needs s3" >/dev/null 2>&1; then
+                echo "'$path' filtered out because it requires S3" >&2
+            else
+                # SC2001 shellcheck suggests:
+                # echo ${path//.sql.j2/.gen.sql}
+                # but it doesn't allow to use regex
+                echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
+            fi
         else
             echo "'$path' does not exists" >&2
         fi
@@ -165,7 +169,8 @@ function fuzz
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
     NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
-    NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
+    # Also filter out files that are marked to be run with specific setup based on "Tags" (e.g. tests that require S3)
+    NEW_TESTS="$(filter_exists_and_tags_and_template $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
     then
         NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
