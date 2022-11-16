@@ -28,7 +28,7 @@ public:
 
     /// This field is updated in executeTableFunction if its a parameterized_view
     /// and used in ASTTablesInSelectQuery::FormatImpl for EXPLAIN SYNTAX of SELECT parameterized view
-    bool is_parameterized_view = false;
+    bool prefer_subquery_to_function_formatting = false;
 
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
@@ -60,7 +60,7 @@ public:
     std::string getWindowDescription() const;
 
     /// This is used for parameterized view, to identify if name is 'db.view'
-    bool has_database_name = false;
+    bool is_compound_name = false;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

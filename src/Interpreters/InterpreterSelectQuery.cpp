@@ -506,11 +506,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
+            /// We need to fetch the parameters set for SELECT parameterized view before the query is replaced.
+            /// ad after query is replaced, we use these parameters to substitute in the parameterized view query
             NameToNameMap parameter_values;
-            if (view->isParameterizedView())
-                parameter_values = analyzeReceiveFunctionParamValues(query_ptr);
+            if (query_info.is_parameterized_view )
+                parameter_values = analyzeFunctionParamValues(query_ptr);
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-            if (view->isParameterizedView())
+            if (query_info.is_parameterized_view )
                 view->replaceQueryParametersIfParametrizedView(query_ptr, parameter_values);
         }
 

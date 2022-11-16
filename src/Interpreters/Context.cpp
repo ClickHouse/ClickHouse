@@ -147,6 +147,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -1238,7 +1239,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     String database_name = getCurrentDatabase();
     String table_name = function->name;
 
-    if (function->has_database_name)
+    if (function->is_compound_name)
     {
         std::vector<std::string> parts;
         splitInto<'.'>(parts, function->name);
@@ -1255,7 +1256,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     {
         if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
         {
-            function->is_parameterized_view = true;
+            function->prefer_subquery_to_function_formatting = true;
             return table;
         }
     }
@@ -1271,7 +1272,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
         }
         catch (Exception & e)
         {
-            e.addMessage(" or incorrect parameterized view");
+            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
+            {
+                e.addMessage(" or incorrect parameterized view");
+            }
             throw;
         }
         if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
