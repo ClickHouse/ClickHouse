@@ -1,14 +1,14 @@
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/TokenIterator.h>
 
@@ -269,7 +269,8 @@ String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::Escapin
     return readStringByEscapingRule(buf, escaping_rule, format_settings);
 }
 
-DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypePtr tryInferDataTypeByEscapingRule(
+    const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
 {
     switch (escaping_rule)
     {
@@ -277,8 +278,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             return tryInferDataTypeForSingleField(field, format_settings);
         case FormatSettings::EscapingRule::JSON:
             return tryInferDataTypeForSingleJSONField(field, format_settings, json_info);
-        case FormatSettings::EscapingRule::CSV:
-        {
+        case FormatSettings::EscapingRule::CSV: {
             if (!format_settings.csv.use_best_effort_in_schema_inference)
                 return std::make_shared<DataTypeString>();
 
@@ -319,9 +319,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             return std::make_shared<DataTypeString>();
         }
-        case FormatSettings::EscapingRule::Raw: [[fallthrough]];
-        case FormatSettings::EscapingRule::Escaped:
-        {
+        case FormatSettings::EscapingRule::Raw:
+            [[fallthrough]];
+        case FormatSettings::EscapingRule::Escaped: {
             if (!format_settings.tsv.use_best_effort_in_schema_inference)
                 return std::make_shared<DataTypeString>();
 
@@ -349,12 +349,25 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             return type;
         }
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the type for value with {} escaping rule",
-                            escapingRuleToString(escaping_rule));
+<<<<<<< HEAD
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot determine the type for value with {} escaping rule",
+                escapingRuleToString(escaping_rule));
+=======
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot determine the type for value with {} escaping rule",
+                escapingRuleToString(escaping_rule));
+>>>>>>> First complete working pass
     }
 }
 
-DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypes tryInferDataTypesByEscapingRule(
+    const std::vector<String> & fields,
+    const FormatSettings & format_settings,
+    FormatSettings::EscapingRule escaping_rule,
+    JSONInferenceInfo * json_info)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());
@@ -363,23 +376,39 @@ DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, co
     return data_types;
 }
 
-void transformInferredTypesByEscapingRuleIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+void transformInferredTypesByEscapingRuleIfNeeded(
+    DataTypePtr & first,
+    DataTypePtr & second,
+    const FormatSettings & settings,
+    FormatSettings::EscapingRule escaping_rule,
+    JSONInferenceInfo * json_info)
 {
     switch (escaping_rule)
     {
         case FormatSettings::EscapingRule::JSON:
             transformInferredJSONTypesIfNeeded(first, second, settings, json_info);
             break;
-        case FormatSettings::EscapingRule::Escaped: [[fallthrough]];
-        case FormatSettings::EscapingRule::Raw: [[fallthrough]];
-        case FormatSettings::EscapingRule::Quoted: [[fallthrough]];
+        case FormatSettings::EscapingRule::Escaped:
+            [[fallthrough]];
+        case FormatSettings::EscapingRule::Raw:
+            [[fallthrough]];
+        case FormatSettings::EscapingRule::Quoted:
+            [[fallthrough]];
         case FormatSettings::EscapingRule::CSV:
             transformInferredTypesIfNeeded(first, second, settings);
             break;
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot transform inferred types for value with {} escaping rule",
-                            escapingRuleToString(escaping_rule));
+<<<<<<< HEAD
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot transform inferred types for value with {} escaping rule",
+                escapingRuleToString(escaping_rule));
+=======
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot transform inferred types for value with {} escaping rule",
+                escapingRuleToString(escaping_rule));
+>>>>>>> First complete working pass
     }
 }
 
@@ -430,7 +459,8 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::Escaped:
         case FormatSettings::EscapingRule::Raw:
             result += fmt::format(
-                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={}",
+                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, "
+                "null_representation={}",
                 settings.tsv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
@@ -449,7 +479,8 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_objects_as_strings={}, read_numbers_as_strings={}, try_infer_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_objects_as_strings={}, read_numbers_as_strings={}, "
+                "try_infer_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
                 settings.json.read_objects_as_strings,
@@ -475,7 +506,8 @@ void checkSupportedDelimiterAfterField(FormatSettings::EscapingRule escaping_rul
 
     /// Nullptr means that field is skipped and it's equivalent to String
     if (!type || isString(removeNullable(removeLowCardinality(type))))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after String field to start with '\\t' or '\\n'");
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after String field to start with '\\t' or '\\n'");
 }
 
 }
