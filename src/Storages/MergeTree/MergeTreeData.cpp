@@ -1009,7 +1009,7 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
 }
 
 MergeTreeData::PartLoadingTree
-MergeTreeData::PartLoadingTree::build(std::vector<PartLoadingInfo> nodes)
+MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes)
 {
     std::sort(nodes.begin(), nodes.end(), [](const auto & lhs, const auto & rhs)
     {
@@ -1029,12 +1029,12 @@ static std::optional<size_t> calculatePartSizeSafe(
 {
     try
     {
-        return part->data_part_storage->calculateTotalSizeOnDisk();
+        return part->getDataPartStorage().calculateTotalSizeOnDisk();
     }
     catch (...)
     {
         tryLogCurrentException(log, fmt::format("while calculating part size {} on path {}",
-            part->name, part->data_part_storage->getRelativePath()));
+            part->name, part->getDataPartStorage().getRelativePath()));
         return {};
     }
 }
@@ -1091,7 +1091,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         LOG_WARNING(log,
             "Detaching stale part {} (size: {}), which should have been deleted after a move. "
             "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-            res.part->data_part_storage->getFullPath(), part_size_str);
+            res.part->getDataPartStorage().getFullPath(), part_size_str);
 
         return res;
     }
@@ -1380,9 +1380,6 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
     for (auto & part : parts_from_wal)
     {
         part->modification_time = time(nullptr);
-        /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
-        part->setState(DataPartState::Active);
-
         auto lo = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Active, part->info});
 
         if (lo != data_parts_by_state_and_info.begin() && (*std::prev(lo))->info.contains(part->info))
@@ -1391,6 +1388,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
         if (lo != data_parts_by_state_and_info.end() && (*lo)->info.contains(part->info))
             continue;
 
+        part->setState(DataPartState::Active);
         auto [it, inserted] = data_parts_indexes.insert(part);
 
         if (!inserted)
@@ -1400,8 +1398,10 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
             else
                 throw Exception("Part " + part->name + " already exists but with different checksums", ErrorCodes::DUPLICATE_DATA_PART);
         }
-
-        addPartContributionToDataVolume(part);
+        else
+        {
+            addPartContributionToDataVolume(part);
+        }
     }
 }
 
@@ -1467,12 +1467,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     ThreadPool pool(disks.size());
-    std::vector<PartLoadingTree::PartLoadingInfo> parts_with_disks;
+    std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
 
-    for (const auto & disk_ptr : disks)
+    for (size_t i = 0; i < disks.size(); ++i)
     {
+        const auto & disk_ptr = disks[i];
         if (disk_ptr->isBroken())
             continue;
+
+        auto & disk_parts = parts_to_load_by_disk[i];
 
         pool.scheduleOrThrowOnError([&, disk_ptr]()
         {
@@ -1485,14 +1488,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                    parts_with_disks.emplace_back(*part_info, it->name(), disk_ptr);
+                    disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
             }
         });
     }
 
     pool.wait();
 
-    auto loading_tree = PartLoadingTree::build(std::move(parts_with_disks));
+    PartLoadingTree::PartLoadingInfos parts_to_load;
+    for (auto & disk_parts : parts_to_load_by_disk)
+        std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
+
+    auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
     /// Collect parts by disks' names.
     std::map<String, PartLoadingTreeNodes> disk_part_map;
 
@@ -1558,15 +1565,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (settings->in_memory_parts_enable_wal)
     {
-        std::map<String, MutableDataPartsVector> disk_wal_part_map;
-
+        pool.setMaxThreads(disks.size());
+        std::vector<MutableDataPartsVector> disks_wal_parts(disks.size());
         std::mutex wal_init_lock;
-        for (const auto & disk_ptr : disks)
+
+        for (size_t i = 0; i < disks.size(); ++i)
         {
+            const auto & disk_ptr = disks[i];
             if (disk_ptr->isBroken())
                 continue;
 
-            auto & disk_wal_parts = disk_wal_part_map[disk_ptr->getName()];
+            auto & disk_wal_parts = disks_wal_parts[i];
 
             pool.scheduleOrThrowOnError([&, disk_ptr]()
             {
@@ -1600,9 +1609,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         pool.wait();
 
         MutableDataPartsVector parts_from_wal;
-        for (auto & [_, disk_wal_parts] : disk_wal_part_map)
-            parts_from_wal.insert(
-                parts_from_wal.end(), std::make_move_iterator(disk_wal_parts.begin()), std::make_move_iterator(disk_wal_parts.end()));
+        for (auto & disk_wal_parts : disks_wal_parts)
+            std::move(disk_wal_parts.begin(), disk_wal_parts.end(), std::back_inserter(parts_from_wal));
 
         loadDataPartsFromWAL(parts_from_wal);
         num_parts += parts_from_wal.size();
@@ -1672,19 +1680,11 @@ void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
         auto res = loadDataPart(part->info, part->name, part->disk, MergeTreeDataPartState::Outdated, data_parts_mutex);
 
         if (res.is_broken)
-        {
-            auto builder = res.part->data_part_storage->getBuilder();
-            res.part->renameToDetached("broken-on-start", builder); /// detached parts must not have '_' in prefixes
-            builder->commit();
-        }
+            res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
         else if (res.part->is_duplicate)
-        {
             res.part->remove();
-        }
         else
-        {
             preparePartForRemoval(res.part);
-        }
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts", parts_to_load.size());
@@ -1692,13 +1692,19 @@ void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
 
 void MergeTreeData::scheduleOutdatedDataPartsLoadingJob(BackgroundJobsAssignee & assignee)
 {
-    std::lock_guard lock(unloaded_outdated_parts_mutex);
-    if (unloaded_outdated_parts.empty())
+    PartLoadingTreeNodes parts_to_load;
+
+    {
+        std::lock_guard lock(unloaded_outdated_parts_mutex);
+        parts_to_load = unloaded_outdated_parts;
+    }
+
+    if (parts_to_load.empty())
         return;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-        [this, share_lock, parts_to_load = std::move(unloaded_outdated_parts)]
+        [this, share_lock, parts_to_load = std::move(parts_to_load)]
         {
             loadOutdatedDataParts(std::move(parts_to_load));
             return false;
@@ -1819,12 +1825,12 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::preparePartForRemoval(const DataPartPtr & part)
+MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const DataPartPtr & part)
 {
     auto state = part->getState();
     if (state != DataPartState::Deleting && state != DataPartState::DeleteOnDestroy)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot remove part {}, because it has state: {}", part->name, magic_enum::enum_name(part->getState()));
+            "Cannot remove part {}, because it has state: {}", part->name, magic_enum::enum_name(state));
 
     return std::const_pointer_cast<IMergeTreeDataPart>(part);
 }
@@ -2087,7 +2093,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
-                preparePartForRemoval(part)->remove();
+                asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
@@ -2103,7 +2109,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         LOG_DEBUG(log, "Removing {} parts from filesystem: {}", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
-            preparePartForRemoval(part)->remove();
+            asMutableDeletingPart(part)->remove();
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
         }
@@ -3427,7 +3433,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     }
 
     modifyPartState(it_part, DataPartState::Deleting);
-    preparePartForRemoval(part)->renameToDetached(prefix);
+    asMutableDeletingPart(part)->renameToDetached(prefix);
     data_parts_indexes.erase(it_part);
 
     if (restore_covered && part->info.level == 0)
@@ -3581,7 +3587,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
     try
     {
-        preparePartForRemoval(part_to_delete)->remove();
+        asMutableDeletingPart(part_to_delete)->remove();
     }
     catch (...)
     {
@@ -3813,7 +3819,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             /// All other locks are taken in StorageReplicatedMergeTree
             lockSharedData(*part_copy);
 
-            preparePartForRemoval(original_active_part)->writeDeleteOnDestroyMarker();
+            asMutableDeletingPart(original_active_part)->writeDeleteOnDestroyMarker();
             return;
         }
     }
