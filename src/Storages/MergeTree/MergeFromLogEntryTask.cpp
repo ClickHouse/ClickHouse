@@ -152,9 +152,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t need_total_size = 0;
-    if (entry.merge_type != MergeType::TTLDrop)
-        need_total_size = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -182,7 +180,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
     ReservationSharedPtr reserved_space = storage.balancedReservation(
         metadata_snapshot,
-        need_total_size,
+        estimated_space_for_merge,
         max_volume_index,
         future_merged_part->name,
         future_merged_part->part_info,
@@ -192,7 +190,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     if (!reserved_space)
         reserved_space = storage.reserveSpacePreferringTTLRules(
-            metadata_snapshot, need_total_size, ttl_infos, time(nullptr), max_volume_index);
+            metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());

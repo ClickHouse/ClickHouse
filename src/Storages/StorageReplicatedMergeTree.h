@@ -83,6 +83,9 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
+class ZooKeeperWithFaultInjection;
+using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
+
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
@@ -268,6 +271,11 @@ public:
 
     /// Lock part in zookeeper for use shared data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;
+    void lockSharedData(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files) const;
 
     void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
@@ -275,13 +283,23 @@ public:
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart & part) const override;
+    std::pair<bool, NameSet>
+    unlockSharedData(const IMergeTreeDataPart & part, const ZooKeeperWithFaultInjectionPtr & zookeeper) const;
 
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
-        const std::string & disk_type, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version);
+    static std::pair<bool, NameSet> unlockSharedDataByID(
+        String part_id,
+        const String & table_uuid,
+        const String & part_name,
+        const String & replica_name_,
+        const std::string & disk_type,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper_,
+        const MergeTreeSettings & settings,
+        Poco::Logger * logger,
+        const String & zookeeper_path_old,
+        MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
     MutableDataPartStoragePtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -535,7 +553,7 @@ private:
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
-    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
+    void getCommitPartOps(Coordination::Requests & ops, const DataPartPtr & part, const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
@@ -674,11 +692,12 @@ private:
     bool fetchPart(
         const String & part_name,
         const StorageMetadataPtr & metadata_snapshot,
-        const String & replica_path,
+        const String & source_replica_path,
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        bool try_fetch_shared = true,
+        String entry_znode = "");
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
@@ -713,6 +732,11 @@ private:
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
         const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
+        const String & partition_id,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        const String & zookeeper_block_id_path = "",
+        const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
@@ -750,7 +774,7 @@ private:
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     mutable std::unordered_set<std::string> existing_nodes_cache;
     mutable std::mutex existing_nodes_cache_mutex;
-    bool existsNodeCached(const std::string & path) const;
+    bool existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const;
 
     /// Cancels INSERTs in the block range by removing ephemeral block numbers
     void clearLockedBlockNumbersInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
@@ -838,7 +862,7 @@ private:
         const String & part_name, const String & zookeeper_path_old);
 
     static void createZeroCopyLockNode(
-        const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
 
