@@ -12,7 +12,8 @@ node1 = cluster.add_instance(
     main_configs=[
         "configs/macro.xml", 
         "configs/schema_cache.xml", 
-        "configs/cluster.xml"],
+        "configs/cluster.xml"
+    ],
     with_hdfs=True,
 )
 
