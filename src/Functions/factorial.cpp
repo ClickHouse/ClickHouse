@@ -103,7 +103,7 @@ REGISTER_FUNCTION(Factorial)
             R"(
 Computes the factorial of an integer value. It works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is UInt64.
 
-The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater overflows the range for Int64 and will cause exception throw.
+The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
 )",
             Documentation::Examples{{"factorial", "SELECT factorial(10)"}},
             Documentation::Categories{"Mathematical"}},
