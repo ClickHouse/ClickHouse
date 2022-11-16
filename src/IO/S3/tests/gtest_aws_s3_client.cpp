@@ -88,9 +88,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         remote_host_filter,
         s3_max_redirects,
         enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {}
+        /* for_disk_s3 = */ false
     );
 
     client_configuration.endpointOverride = uri.endpoint;
@@ -115,14 +113,12 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     ASSERT_TRUE(client);
 
     DB::ReadSettings read_settings;
-    DB::S3Settings::RequestSettings request_settings;
-    request_settings.max_single_read_retries = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(
         client,
         uri.bucket,
         uri.key,
         version_id,
-        request_settings,
+        max_single_read_retries,
         read_settings
     );
 
