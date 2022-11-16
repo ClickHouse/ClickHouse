@@ -1,4 +1,3 @@
-#include <optional>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
@@ -16,7 +15,6 @@
 #include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include "Processors/Chunk.h"
 #include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>

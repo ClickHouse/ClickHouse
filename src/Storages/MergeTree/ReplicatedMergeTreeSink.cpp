@@ -1,19 +1,11 @@
-#include <algorithm>
-#include <cstddef>
-#include <type_traits>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include "Columns/ColumnsNumber.h"
+#include <Common/ThreadFuzzer.h>
 #include <DataTypes/ObjectUtils.h>
-#include "Processors/Chunk.h"
-#include "Storages/MergeTree/EphemeralLockInZooKeeper.h"
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Storages/MergeTree/MergeTreeDataWriter.h"
 #include <Core/Block.h>
 #include <IO/Operators.h>
 
@@ -128,7 +120,7 @@ void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSink<true>::De
             size_t start_pos = idx > 0 ? offsets[idx - 1] : 0;
             size_t end_pos = offset;
             remove_count += end_pos - start_pos;
-            while(start_pos < end_pos)
+            while (start_pos < end_pos)
             {
                 *(pos + start_pos) = 0;
                 start_pos ++;
@@ -333,7 +325,6 @@ void ReplicatedMergeTreeSink<async_insert>::consume(Chunk chunk)
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    // deduceTypesOfObjectColumns(storage_snapshot, block);
 
     ChunkOffsetsPtr chunk_offsets;
 
@@ -343,7 +334,7 @@ void ReplicatedMergeTreeSink<async_insert>::consume(Chunk chunk)
         if (const auto * chunk_offsets_ptr = typeid_cast<const ChunkOffsets *>(chunk_info.get()))
             chunk_offsets = std::make_shared<ChunkOffsets>(chunk_offsets_ptr->offsets);
         else
-            throw Exception("miss chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Miss chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
     }
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, chunk_offsets);
@@ -618,7 +609,7 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
                 block_id_path.push_back(storage.zookeeper_path + "/blocks/" + single_block_id);
             }
         }
-        else if(deduplicate_block)
+        else if (deduplicate_block)
             block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
         std::optional<EphemeralLockInZooKeeper> block_number_lock;
         if constexpr (async_insert)
