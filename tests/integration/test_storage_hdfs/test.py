@@ -787,32 +787,23 @@ def test_schema_inference_cache(started_cluster):
     check_cache_misses(node1, files, 4)
 
 
-def test_test_hdfsCluster_skip_unavailable_shards(started_cluster):
+def test_hdfsCluster_skip_unavailable_shards(started_cluster):
     node = started_cluster.instances["node1"]
-    result = node.query(
-        """
-        SELECT count(*) FROM hdfsCluster(
-            'cluster_non_existent_port', 
-            'hdfs://hdfs1:9000/test_hdfsCluster/file*', 
-            'TSV', 
-            'id UInt32') 
-            SETTINGS skip_unavailable_shards = 1
-        """
+    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
+    hdfs_api.write_data("/simple_table_function", data)
+
+    assert (
+        node1.query(
+            "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
+        )
+        == data
     )
 
-    assert result == "3\n"
 
-
-def test_test_hdfsCluster_unskip_unavailable_shards(started_cluster):
+def test_hdfsCluster_unskip_unavailable_shards(started_cluster):
     node = started_cluster.instances["node1"]
     error = node.query_and_get_error(
-        """
-        SELECT count(*) FROM hdfsCluster(
-            'cluster_non_existent_port', 
-            'hdfs://hdfs1:9000/test_hdfsCluster/file*', 
-            'TSV', 
-            'id UInt32') 
-        """
+        "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')"
     )
 
     assert "NETWORK_ERROR" in error
