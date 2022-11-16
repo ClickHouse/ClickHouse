@@ -5,16 +5,19 @@ package utils_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
-	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/utils"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+var clickhouseContainer testcontainers.Container
 
 func TestMain(m *testing.M) {
 	// create a ClickHouse container
@@ -38,7 +41,7 @@ func TestMain(m *testing.M) {
 			},
 		},
 	}
-	clickhouseContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	clickhouseContainer, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
@@ -55,25 +58,44 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestFindClickHouseProcesses(t *testing.T) {
+func getProcessesInContainer(t *testing.T) ([]string, error) {
+	result, reader, err := clickhouseContainer.Exec(context.Background(), []string{"ps", "-aux"})
+	if err != nil {
+		return nil, err
+	}
+	require.Zero(t, result)
+	require.NotNil(t, reader)
 
-	t.Run("can find ClickHouse processes", func(t *testing.T) {
-		processes, err := utils.FindClickHouseProcesses()
-		require.Nil(t, err)
-		// we might have clickhouse running locally during development as well as the above container so we allow 1 or more
-		require.GreaterOrEqual(t, len(processes), 1)
-		require.Equal(t, processes[0].List[0], "/usr/bin/clickhouse-server")
-		// flexible as services/containers pass the config differently
-		require.Contains(t, processes[0].List[1], "/etc/clickhouse-server/config.xml")
-	})
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	require.NotNil(t, b)
+
+	lines := strings.Split(string(b), "\n")
+
+	// discard PS header
+	return lines[1:], nil
 }
 
-func TestFindConfigsFromClickHouseProcesses(t *testing.T) {
+func TestFindClickHouseProcessesAndConfigs(t *testing.T) {
 
-	t.Run("can find ClickHouse configs", func(t *testing.T) {
-		configs, err := utils.FindConfigsFromClickHouseProcesses()
+	t.Run("can find ClickHouse processes and configs", func(t *testing.T) {
+		lines, err := getProcessesInContainer(t)
 		require.Nil(t, err)
-		require.GreaterOrEqual(t, len(configs), 1)
-		require.Equal(t, configs[0], "/etc/clickhouse-server/config.xml")
+		require.NotEmpty(t, lines)
+
+		for _, line := range lines {
+			parts := strings.Fields(line)
+			if len(parts) < 11 {
+				continue
+			}
+			if !strings.Contains(parts[10], "clickhouse-server") {
+				continue
+			}
+
+			require.Equal(t, "/usr/bin/clickhouse-server", parts[10])
+			require.Equal(t, "--config-file=/etc/clickhouse-server/config.xml", parts[11])
+		}
 	})
 }
