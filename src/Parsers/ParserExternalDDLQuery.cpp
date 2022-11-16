@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>

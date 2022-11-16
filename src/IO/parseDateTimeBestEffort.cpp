@@ -116,6 +116,8 @@ ReturnType parseDateTimeBestEffortImpl(
     bool is_am = false;
     bool is_pm = false;
 
+    bool has_comma_between_date_and_time = false;
+
     auto read_alpha_month = [&month] (const auto & alpha)
     {
         if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
@@ -137,6 +139,15 @@ ReturnType parseDateTimeBestEffortImpl(
 
     while (!in.eof())
     {
+        if ((year && !has_time) || (!year && has_time))
+        {
+            if (*in.position() == ',')
+            {
+                has_comma_between_date_and_time = true;
+                ++in.position();
+            }
+        }
+
         char digits[std::numeric_limits<UInt64>::digits10];
 
         size_t num_digits = 0;
@@ -552,6 +563,10 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     }
 
+    //// Date like '2022/03/04, ' should parse fail?
+    if (has_comma_between_date_and_time && (!has_time || !year || !month || !day_of_month))
+        return on_error("Cannot read DateTime: unexpected word after Date", ErrorCodes::CANNOT_PARSE_DATETIME);
+
     /// If neither Date nor Time is parsed successfully, it should fail
     if (!year && !month && !day_of_month && !has_time)
         return on_error("Cannot read DateTime: neither Date nor Time was parsed successfully", ErrorCodes::CANNOT_PARSE_DATETIME);
@@ -643,6 +658,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     {
         fractional *= common::exp10_i64(scale - subsecond.digits);
     }
+
+    if constexpr (std::is_same_v<ReturnType, bool>)
+        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
 
     res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
     return ReturnType(true);

@@ -114,7 +114,7 @@ public:
             return "covarSamp";
         if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
             return "corr";
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     DataTypePtr getReturnType() const override
