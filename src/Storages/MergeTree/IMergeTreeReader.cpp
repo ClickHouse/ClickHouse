@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -43,15 +42,91 @@ IMergeTreeReader::IMergeTreeReader(
     /// to allow to use shared offset column from cache.
     , requested_columns(data_part_info_for_read->isWidePart() ? Nested::convertToSubcolumns(columns_) : columns_)
     , part_columns(data_part_info_for_read->isWidePart() ? Nested::collect(data_part_info_for_read->getColumns()) : data_part_info_for_read->getColumns())
+    , last_read_end_offset(0)
+    , part_offset_column_index(-1)
 {
     columns_to_read.reserve(requested_columns.size());
     serializations.reserve(requested_columns.size());
 
+    ssize_t i = 0;
     for (const auto & column : requested_columns)
     {
-        columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
+        if (column.name == "_part_offset")
+        {
+            assert(part_offset_column_index == -1);
+            part_offset_column_index = i;
+        }
+        else
+        {
+            columns_to_read.emplace_back(getColumnInPart(column));
+            serializations.emplace_back(getSerializationInPart(column));
+        }
+        ++i;
     }
+}
+
+
+size_t IMergeTreeReader::readRows(size_t from_mark, size_t current_task_last_mark,
+    bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+{
+//    Columns * physical_columns_to_fill = &res_columns;
+//    Columns tmp_columns;
+//    if (part_offset_column_index != -1)
+//    {
+//        tmp_columns.reserve(res_columns.size()-1);
+//        tmp_columns.assign(res_columns.begin(), res_columns.begin() + part_offset_column_index);
+//        tmp_columns.insert(tmp_columns.end(), res_columns.begin() + part_offset_column_index + 1, res_columns.end());
+//        physical_columns_to_fill = &tmp_columns;
+//    }
+
+    ColumnPtr part_offset_column_before;
+    if (part_offset_column_index != -1)
+    {
+        part_offset_column_before = res_columns[part_offset_column_index];
+        res_columns.erase(res_columns.begin() + part_offset_column_index);
+    }
+
+    const size_t rows_read = readPhysicalRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, res_columns/* *physical_columns_to_fill*/);
+    const size_t start_row = continue_reading ? last_read_end_offset : data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+    const size_t end_row = start_row + rows_read;
+    last_read_end_offset = end_row;
+
+//    std::cerr << "READ from " << start_row << " to " << end_row << "\n\n\n";
+
+
+    if (part_offset_column_index != -1)
+    {
+        MutableColumnPtr part_offset_column = part_offset_column_before ?
+            part_offset_column_before->assumeMutable()
+            : ColumnUInt64::create()->getPtr();
+        part_offset_column->reserve(part_offset_column->size() + rows_read);
+
+        // TODO: fill the column with int values efficiently
+        for (size_t row_offset = start_row; row_offset < end_row; ++ row_offset)
+            part_offset_column->insert(row_offset);
+
+        res_columns.insert(res_columns.begin() + part_offset_column_index, part_offset_column->getPtr());
+    }
+
+//    if (part_offset_column_index != -1)
+//    {
+//        MutableColumnPtr part_offset_column = res_columns[part_offset_column_index] ?
+//            res_columns[part_offset_column_index]->assumeMutable()
+//            : MutableColumnPtr(ColumnUInt64::create());
+//        part_offset_column->reserve(part_offset_column->size() + rows_read);
+//
+//        // TODO: fill the column with int values efficiently
+//        for (size_t row_offset = start_row; row_offset < end_row; ++ row_offset)
+//            part_offset_column->insert(row_offset);
+//
+//        res_columns.clear();
+//        res_columns.reserve(tmp_columns.size() + 1);
+//        res_columns.assign(tmp_columns.begin(), tmp_columns.begin() + part_offset_column_index);
+//        res_columns.push_back(part_offset_column->getPtr());
+//        res_columns.insert(res_columns.end(), tmp_columns.begin() + part_offset_column_index, tmp_columns.end());
+//    }
+
+    return rows_read;
 }
 
 const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -261,7 +336,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
-    if (num_columns_to_read != requested_columns.size())
+    if (num_columns_to_read != columns_to_read.size())//requested_columns.size())
         throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected " + toString(requested_columns.size()) + ", "
                         "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);

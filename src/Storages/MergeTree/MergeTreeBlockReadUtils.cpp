@@ -292,7 +292,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
     for (const auto & name : system_columns)
     {
-        if (data_part_info_for_reader.getColumns().contains(name))
+        if (data_part_info_for_reader.getColumns().contains(name) || name == "_part_offset")
             column_names.push_back(name);
     }
 

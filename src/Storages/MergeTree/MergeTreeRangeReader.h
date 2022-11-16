@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
@@ -46,9 +47,13 @@ public:
     explicit FilterWithCachedCount() = default;
 
     explicit FilterWithCachedCount(const ColumnPtr & column_)
-        : column(column_->convertToFullIfNeeded()) // TODO: is this optimal?
-        , data(&typeid_cast<const ColumnUInt8 *>(column.get())->getData())
+//        : column(column_->convertToFullIfNeeded()) // TODO: is this optimal?
+//        , data(&typeid_cast<const ColumnUInt8 &>(*column).getData())
     {
+        ColumnPtr col = column_->convertToFullIfNeeded();
+        FilterDescription desc(*col);
+        column = desc.data_holder ? desc.data_holder : col;
+        data = desc.data;
     }
 
     bool present() const { return !!column; }
@@ -125,6 +130,8 @@ private:
         const MergeTreeIndexGranularity * index_granularity = nullptr;
         bool continue_reading = false;
         bool is_finished = true;
+
+//        size_t last_read_end;
 
         /// Current position from the begging of file in rows
         size_t position() const;
@@ -222,7 +229,7 @@ public:
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize(bool can_read_incomplete_granules);
+        void optimize(ColumnPtr current_filter, bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
         void clearFilter();
@@ -239,11 +246,15 @@ public:
         /// The checks might be non-trivial so it make sense to have the only in debug builds.
         void checkInternalConsistency() const;
 
+        std::string dumpInfo() const;
+
         /// If this flag is false than filtering form PREWHERE can be delayed and done in WHERE
         /// to reduce memory copies and applying heavy filters multiple times
         bool need_filter = false;
 
-        Block block_before_prewhere;
+        Block block_before_prewhere;  // TODO: think how to keep it properly synced with filter
+                                        // test 01097_one_more_range_reader_test with wide parts triggers the problem:
+                                        // Code: 9. DB::Exception: Size of filter (2) doesn't match size of column (5): While executing MergeTreeInOrder. (SIZES_OF_COLUMNS_DOESNT_MATCH)
 
         RangesInfo started_ranges;
         /// The number of rows read from each granule.
@@ -258,8 +269,9 @@ public:
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;
-        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
-        FilterWithCachedCount filter;
+//        /// nullptr if prev reader hasn't prewhere_actions. Otherwise filter.size() >= total_rows_per_granule.
+        /// Applying this filter to 'columns' will leave only rows that pass all filtering steps in the reading chain
+        FilterWithCachedCount final_filter;
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
@@ -278,7 +290,9 @@ public:
 private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
-    void executePrewhereActionsAndFilterColumns(ReadResult & result);
+    void fillMissingColumns(Columns & columns, const ReadResult & read_result);
+    void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
+//    void optimize(ReadResult & result, ColumnPtr current_step_filter) const;
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;

@@ -68,12 +68,13 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
     injectNonConstVirtualColumns(0, header_without_const_virtual_columns, virt_column_names);
 
-    /// Reverse order is to minimize reallocations when removing columns from the block
     for (size_t col_num = non_const_columns_offset; col_num < header_without_const_virtual_columns.columns(); ++col_num)
         non_const_virtual_column_names.emplace_back(header_without_const_virtual_columns.getByPosition(col_num).name);
 
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
+
+//    std::cerr << "PREWHERE actions:\n" << (prewhere_actions ? prewhere_actions->dump() : std::string()) << "\n\n\n";
 }
 
 
