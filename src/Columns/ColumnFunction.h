@@ -177,6 +177,7 @@ public:
 
     DataTypePtr getResultType() const;
 
+    /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
 private:
@@ -189,6 +190,12 @@ private:
     /// argument with ColumnFunction column (some functions can return it)
     /// See ExpressionActions.cpp for details.
     bool is_short_circuit_argument;
+
+    /// Special flag for lazy executed argument for short-circuit function.
+    /// If true, call recursiveRemoveLowCardinality on the result column
+    /// when function will be executed.
+    /// It's used when short-circuit function uses default implementation
+    /// for low cardinality arguments.
     bool recursively_convert_result_to_full_column_if_low_cardinality = false;
 
     /// Determine if passed function is compiled. Used for profiling.
