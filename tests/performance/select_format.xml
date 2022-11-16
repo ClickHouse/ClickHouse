@@ -29,6 +29,7 @@
                 <value>JSONCompact</value>
                 <value>JSONEachRow</value>
                 <value>JSONCompactEachRow</value>
+                <value>BSONEachRow</value>
                 <value>TSKV</value>
                 <value>RowBinary</value>
                 <value>Native</value>
