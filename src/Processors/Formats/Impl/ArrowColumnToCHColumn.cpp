@@ -467,9 +467,12 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto flatten_result = list_chunk.Flatten();
-        if (flatten_result.ok()) {
+        if (flatten_result.ok())
+        {
             array_vector.emplace_back(flatten_result.ValueOrDie());
-        } else {
+        }
+        else
+        {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to flatten chunk '{}' of column of type '{}' ", chunk_i, arrow_column->type()->id());
         }
     }
