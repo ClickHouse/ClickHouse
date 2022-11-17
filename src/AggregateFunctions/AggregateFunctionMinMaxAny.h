@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Aggregate functions that store one of passed values.
@@ -485,13 +486,15 @@ struct SingleValueDataString //-V730
 private:
     using Self = SingleValueDataString;
 
-    Int32 size = -1;    /// -1 indicates that there is no value.
-    Int32 capacity = 0;    /// power of two or zero
+    /// 0 size indicates that there is no value. Empty string must has terminating '\0' and, therefore, size of empty string is 1
+    UInt32 size = 0;
+    UInt32 capacity = 0;    /// power of two or zero
     char * large_data;
 
 public:
-    static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
-    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
+    static constexpr UInt32 AUTOMATIC_STORAGE_SIZE = 64;
+    static constexpr UInt32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
+    static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
 
 private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
@@ -502,7 +505,7 @@ public:
 
     bool has() const
     {
-        return size >= 0;
+        return size;
     }
 
 private:
@@ -536,19 +539,26 @@ public:
 
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
-        writeBinary(size, buf);
+        if (unlikely(MAX_STRING_SIZE < size))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
+
+        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+        Int32 size_to_write = size ? size : -1;
+        writeBinary(size_to_write, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void allocateLargeDataIfNeeded(Int32 size_to_reserve, Arena * arena)
+    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
     {
         if (capacity < size_to_reserve)
         {
-            capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(size_to_reserve));
-            /// It might happen if the size was too big and the rounded value does not fit a size_t
-            if (unlikely(capacity < size_to_reserve))
+            if (unlikely(MAX_STRING_SIZE < size_to_reserve))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
+
+            size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
+            chassert(rounded_capacity <= MAX_STRING_SIZE + 1);  /// rounded_capacity <= 2^31
+            capacity = static_cast<UInt32>(rounded_capacity);
 
             /// Don't free large_data here.
             large_data = arena->alloc(capacity);
@@ -557,24 +567,23 @@ public:
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
-        Int32 rhs_size;
-        readBinary(rhs_size, buf);
+        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+        Int32 rhs_size_signed;
+        readBinary(rhs_size_signed, buf);
 
-        if (rhs_size < 0)
+        if (rhs_size_signed < 0)
         {
             /// Don't free large_data here.
-            size = rhs_size;
+            size = 0;
             return;
         }
 
+        UInt32 rhs_size = rhs_size_signed;
         if (rhs_size <= MAX_SMALL_STRING_SIZE)
         {
             /// Don't free large_data here.
-
             size = rhs_size;
-
-            if (size > 0)
-                buf.readStrict(small_data, size);
+            buf.readStrict(small_data, size);
         }
         else
         {
@@ -599,6 +608,7 @@ public:
         /// NOTE It's possible that a string that actually ends with '\0' was written by one of the incompatible versions.
         ///      Unfortunately, we cannot distinguish it from normal string written by normal version.
         ///      So such strings will be trimmed.
+        /// NOTE We will throw on attempt to read a value of MAX_STRING_SIZE size if it was written by buggy version (without '\0').
 
         if (size == MAX_SMALL_STRING_SIZE)
         {
@@ -615,7 +625,10 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        Int32 value_size = static_cast<Int32>(value.size);
+        if (unlikely(MAX_STRING_SIZE < value.size))
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", value.size);
+
+        UInt32 value_size = static_cast<UInt32>(value.size);
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
