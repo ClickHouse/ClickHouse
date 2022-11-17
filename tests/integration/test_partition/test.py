@@ -329,9 +329,15 @@ def test_drop_detached_parts(drop_detached_parts_table):
 
 
 def test_system_detached_parts(drop_detached_parts_table):
-    q("create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false")
-    q("create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false")
-    q("create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false")
+    q(
+        "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
+    )
+    q(
+        "create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+    )
+    q(
+        "create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x SETTINGS compress_marks=false, compress_primary_key=false"
+    )
     q(
         "create table sdp_3 (n int, x Enum('broken' = 0, 'all' = 1)) engine=MergeTree order by n partition by x"
     )
@@ -449,7 +455,9 @@ def test_system_detached_parts(drop_detached_parts_table):
 
 
 def test_detached_part_dir_exists(started_cluster):
-    q("create table detached_part_dir_exists (n int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false")
+    q(
+        "create table detached_part_dir_exists (n int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
+    )
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
