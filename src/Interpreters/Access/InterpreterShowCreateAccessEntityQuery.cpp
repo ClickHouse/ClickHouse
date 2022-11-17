@@ -254,7 +254,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     for (const auto & create_query : create_queries)
-        column->insert(create_query->formatWithHiddenSecrets());
+        column->insert(create_query->formatWithSecretsHidden());
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
