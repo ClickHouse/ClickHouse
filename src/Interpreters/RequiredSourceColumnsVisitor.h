@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/RequiredSourceColumnsData.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {

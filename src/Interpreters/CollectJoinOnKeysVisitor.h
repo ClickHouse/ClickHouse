@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
 
