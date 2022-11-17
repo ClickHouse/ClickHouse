@@ -77,6 +77,7 @@ public:
             size_t confidence_,
             const String & query_id_,
             const String & query_to_execute_,
+            size_t max_consecutive_errors_,
             bool continue_on_errors_,
             bool reconnect_,
             bool display_client_side_time_,
@@ -96,6 +97,7 @@ public:
         query_id(query_id_),
         query_to_execute(query_to_execute_),
         continue_on_errors(continue_on_errors_),
+        max_consecutive_errors(max_consecutive_errors_),
         reconnect(reconnect_),
         display_client_side_time(display_client_side_time_),
         print_stacktrace(print_stacktrace_),
@@ -194,6 +196,7 @@ private:
     String query_id;
     String query_to_execute;
     bool continue_on_errors;
+    size_t max_consecutive_errors;
     bool reconnect;
     bool display_client_side_time;
     bool print_stacktrace;
@@ -201,6 +204,8 @@ private:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
+
+    std::atomic<size_t> consecutive_errors{0};
 
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
@@ -421,13 +426,14 @@ private:
             try
             {
                 execute(connection_entries, query, connection_index);
+                consecutive_errors = 0;
             }
             catch (...)
             {
                 std::lock_guard lock(mutex);
                 std::cerr << "An error occurred while processing the query " << "'" << query << "'"
                           << ": " << getCurrentExceptionMessage(false) << std::endl;
-                if (!continue_on_errors)
+                if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
                 {
                     shutdown = true;
                     throw;
@@ -676,6 +682,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("stacktrace", "print stack traces of exceptions")
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
+            ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
@@ -730,6 +737,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
+            options["max-consecutive-errors"].as<size_t>(),
             options.count("continue_on_errors"),
             options.count("reconnect"),
             options.count("client-side-time"),
