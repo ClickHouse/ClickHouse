@@ -1,5 +1,4 @@
 -- { echoOn }
-create table if not exists ordinary_mt (x String) engine=MergeTree() ORDER BY x SETTINGS force_select_final=1; -- { serverError 181 }
 
 -- simple test case
 create table if not exists replacing_mt (x String) engine=ReplacingMergeTree() ORDER BY x SETTINGS force_select_final=1;
@@ -37,6 +36,3 @@ insert into rhs values ('abc');
 
 -- expected output is 2 because lhs table doesn't have final applied
 select count() from lhs inner join rhs on lhs.x = rhs.x;
-
--- Engine that does not support final
-create table if not exists ordinary_mt (x String) engine=MergeTree() ORDER BY x SETTINGS force_select_final=1; -- { serverError 181 }
