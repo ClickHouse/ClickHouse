@@ -209,18 +209,6 @@ struct MergeTreeBaseSelectProcessor::AsyncReadingState
         IsFinished,
     };
 
-    struct Control
-    {
-        EventFD event;
-        std::atomic<Stage> stage = Stage::NotStarted;
-
-        void finish()
-        {
-            stage = Stage::IsFinished;
-            event.write();
-        }
-    };
-
     /// setResult and setException are the only methods
     /// which can be called from background thread.
     /// Invariant:
@@ -229,20 +217,22 @@ struct MergeTreeBaseSelectProcessor::AsyncReadingState
 
     void setResult(ChunkWithProgress chunk_)
     {
+        assert(stage == Stage::InProgress);
         chunk = std::move(chunk_);
-        control->finish();
+        finish();
     }
 
     void setException(std::exception_ptr exception_)
     {
+        assert(stage == Stage::InProgress);
         exception = exception_;
-        control->finish();
+        finish();
     }
 
-    std::shared_ptr<Control> start()
+    void start()
     {
-        control->stage = Stage::InProgress;
-        return control;
+        assert(stage == Stage::NotStarted);
+        stage = Stage::InProgress;
     }
 
     void schedule(ThreadPool::Job job)
@@ -252,8 +242,9 @@ struct MergeTreeBaseSelectProcessor::AsyncReadingState
 
     ChunkWithProgress getResult()
     {
-        control->event.read();
-        control->stage = Stage::NotStarted;
+        assert(stage == Stage::IsFinished);
+        event.read();
+        stage = Stage::NotStarted;
 
         if (exception)
             std::rethrow_exception(exception);
@@ -261,39 +252,27 @@ struct MergeTreeBaseSelectProcessor::AsyncReadingState
         return std::move(chunk);
     }
 
-    Stage getStage() const { return control->stage; }
-    int getFD() const { return control->event.fd; }
+    Stage getStage() const { return stage; }
+    int getFD() const { return event.fd; }
 
     AsyncReadingState()
     {
-        control = std::make_shared<Control>();
         callback_runner = threadPoolCallbackRunner<void>(IOThreadPool::get(), "MergeTreeRead");
-    }
-
-    ~AsyncReadingState()
-    {
-        /// Here we wait for async task if needed.
-        /// ~AsyncReadingState and Control::finish can be run concurrently.
-        /// It's important to store std::shared_ptr<Control> into bg pool task.
-        /// Otherwise following is possible:
-        ///
-        ///  (executing thread)                         (bg pool thread)
-        ///                                             Control::finish()
-        ///                                             stage = Stage::IsFinished;
-        ///  ~MergeTreeBaseSelectProcessor()
-        ///  ~AsyncReadingState()
-        ///  control->stage != Stage::InProgress
-        ///  ~EventFD()
-        ///                                             event.write()
-        if (control->stage == Stage::InProgress)
-            control->event.read();
     }
 
 private:
     ThreadPoolCallbackRunner<void> callback_runner;
-    std::shared_ptr<Control> control;
     ChunkWithProgress chunk;
     std::exception_ptr exception;
+
+    EventFD event;
+    std::atomic<Stage> stage = Stage::NotStarted;
+
+    void finish()
+    {
+        stage = Stage::IsFinished;
+        event.write();
+    }
 };
 
 
@@ -340,12 +319,14 @@ std::optional<Chunk> MergeTreeBaseSelectProcessor::tryGenerate()
         return reportProgress(async_reading_state->getResult());
 
     assert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
+    async_reading_state->start();
 
-    /// It is important to store Control into job.
+    /// It is important to store shared_from_this() into job.
     /// Otherwise, race between job and ~MergeTreeBaseSelectProcessor is possible.
-    /// See ~AsyncReadingState
-    auto job = [control = async_reading_state->start(), this]()
+    auto job = [this, self = shared_from_this()]() mutable
     {
+        auto holder = std::move(self);
+
         try
         {
             async_reading_state->setResult(read());
@@ -407,7 +388,6 @@ MergeTreeBaseSelectProcessor::ChunkWithProgress MergeTreeBaseSelectProcessor::re
             /// Account a progress from previous empty chunks.
             res.num_read_rows += num_read_rows;
             res.num_read_bytes += num_read_bytes;
-            num_read_rows = num_read_bytes = 0;
 
             return ChunkWithProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
