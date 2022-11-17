@@ -332,6 +332,13 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
         auto arrow_offsets_array = list_chunk.offsets();
         auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
 
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * When it is shared, the offsets will be monotonically increasing. Otherwise, the offsets will be zero based.
+         * In order to account for both cases, the starting offset is updated whenever a zero-based offset is found.
+         * More info can be found in: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
         if (list_chunk.offset() == 0)
         {
             start_offset = offsets_data.back();
