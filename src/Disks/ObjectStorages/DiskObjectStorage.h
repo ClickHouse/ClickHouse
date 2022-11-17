@@ -45,8 +45,6 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    const String & getName() const override { return name; }
-
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
@@ -138,7 +136,7 @@ public:
 
     void shutdown() override;
 
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -212,7 +210,6 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
-    const String name;
     const String object_storage_root_path;
     Poco::Logger * log;
 

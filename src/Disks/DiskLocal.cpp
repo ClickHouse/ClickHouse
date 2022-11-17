@@ -500,7 +500,7 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
 }
 
 DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-    : name(name_)
+    : IDisk(name_)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
@@ -528,7 +528,7 @@ DataSourceDescription DiskLocal::getDataSourceDescription() const
     return data_source_description;
 }
 
-void DiskLocal::startup(ContextPtr)
+void DiskLocal::startupImpl(ContextPtr)
 {
     try
     {
@@ -757,10 +757,11 @@ void registerDiskLocal(DiskFactory & factory)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
-        disk->startup(context);
-        return std::make_shared<DiskRestartProxy>(disk);
+        disk->startup(context, skip_access_check);
+        return std::make_shared<DiskRestartProxy>(disk, skip_access_check);
     };
     factory.registerDiskType("local", creator);
 }

@@ -31,7 +31,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int PATH_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -41,39 +40,6 @@ namespace
 class CheckAccess
 {
 public:
-    static void check(const String & disk_name, IDisk & disk)
-    {
-        /// NOTE: you don't need to pass prefix here since the writes is done
-        /// with IDisk interface that will do this automatically.
-        const String path = fmt::format("clickhouse_access_check_{}", getServerUUID());
-
-        /// write
-        {
-            auto file = disk.writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-            try
-            {
-                file->write("test", 4);
-            }
-            catch (...)
-            {
-                /// Log current exception, because finalize() can throw a different exception.
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                file->finalize();
-                throw;
-            }
-        }
-
-        /// read
-        auto file = disk.readFile(path);
-        String buf(4, '0');
-        file->readStrict(buf.data(), 4);
-        if (buf != "test")
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "No read access to S3 bucket in disk {}", disk_name);
-
-        /// remove
-        disk.removeFile(path);
-    }
-
     static bool checkBatchRemove(S3ObjectStorage & storage, const String & key_with_trailing_slash)
     {
         /// NOTE: key_with_trailing_slash is the disk prefix, it is required
@@ -166,12 +132,11 @@ void registerDiskS3(DiskFactory & factory)
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 
-        CheckAccess access_checker;
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
         if (!skip_access_check)
         {
             /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-            if (s3_capabilities.support_batch_delete && !access_checker.checkBatchRemove(*s3_storage, uri.key))
+            if (s3_capabilities.support_batch_delete && !CheckAccess::checkBatchRemove(*s3_storage, uri.key))
             {
                 LOG_WARNING(
                     &Poco::Logger::get("registerDiskS3"),
@@ -187,7 +152,7 @@ void registerDiskS3(DiskFactory & factory)
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
-        std::shared_ptr<DiskObjectStorage> s3disk = std::make_shared<DiskObjectStorage>(
+        DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
             uri.key,
             type == "s3" ? "DiskS3" : "DiskS3Plain",
@@ -196,17 +161,11 @@ void registerDiskS3(DiskFactory & factory)
             send_metadata,
             copy_thread_pool_size);
 
-        /// This code is used only to check access to the corresponding disk.
-        if (!skip_access_check)
-        {
-            access_checker.check(name, *s3disk);
-        }
-
-        s3disk->startup(context);
+        s3disk->startup(context, skip_access_check);
 
         std::shared_ptr<IDisk> disk_result = s3disk;
 
-        return std::make_shared<DiskRestartProxy>(disk_result);
+        return std::make_shared<DiskRestartProxy>(disk_result, skip_access_check);
     };
     factory.registerDiskType("s3", creator);
     factory.registerDiskType("s3_plain", creator);

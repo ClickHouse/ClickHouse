@@ -28,8 +28,6 @@ public:
         ContextPtr context,
         UInt64 local_disk_check_period_ms);
 
-    const String & getName() const override { return name; }
-
     const String & getPath() const override { return disk_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -113,7 +111,7 @@ public:
 
     bool isBroken() const override { return broken; }
 
-    void startup(ContextPtr) override;
+    void startupImpl(ContextPtr) override;
 
     void shutdown() override;
 
@@ -143,7 +141,6 @@ private:
     /// Read magic number from disk checker file. Return std::nullopt if exception happens.
     std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
 
-    const String name;
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;

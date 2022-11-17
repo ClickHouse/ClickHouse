@@ -23,6 +23,7 @@ void registerDiskWebServer(DiskFactory & factory)
                       const DisksMap & /*map*/) -> DiskPtr
     {
         String uri{config.getString(config_prefix + ".endpoint")};
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
 
         if (!uri.ends_with('/'))
             throw Exception(
@@ -41,7 +42,7 @@ void registerDiskWebServer(DiskFactory & factory)
         auto metadata_storage = std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
         std::string root_path;
 
-        return std::make_shared<DiskObjectStorage>(
+        DiskPtr disk = std::make_shared<DiskObjectStorage>(
             disk_name,
             root_path,
             "DiskWebServer",
@@ -49,6 +50,8 @@ void registerDiskWebServer(DiskFactory & factory)
             object_storage,
             /* send_metadata */false,
             /* threadpool_size */16);
+        disk->startup(context, skip_access_check);
+        return disk;
     };
 
     factory.registerDiskType("web", creator);

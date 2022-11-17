@@ -141,6 +141,11 @@ private:
 };
 
 
+DiskMemory::DiskMemory(const String & name_)
+    : IDisk(name_)
+    , disk_path("memory://" + name_ + '/')
+{}
+
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
     throw Exception("Method reserve is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
@@ -459,10 +464,16 @@ using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
 void registerDiskMemory(DiskFactory & factory)
 {
     auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & /*config*/,
-                      const String & /*config_prefix*/,
-                      ContextPtr /*context*/,
-                      const DisksMap & /*map*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
+                      const Poco::Util::AbstractConfiguration & config,
+                      const String & config_prefix,
+                      ContextPtr context,
+                      const DisksMap & /*map*/) -> DiskPtr
+    {
+        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+        DiskPtr disk = std::make_shared<DiskMemory>(name);
+        disk->startup(context, skip_access_check);
+        return disk;
+    };
     factory.registerDiskType("memory", creator);
 }
 
