@@ -107,8 +107,9 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
-        : executor(executor_)
+    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : name(name_)
+        , executor(executor_)
     {
     }
 
@@ -120,6 +121,9 @@ public:
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
+
+    /// Return disk name.
+    const String & getName() const override { return name; }
 
     /// Total available space on the disk.
     virtual UInt64 getTotalSpace() const = 0;
@@ -316,8 +320,14 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
-    /// Performs action on disk startup.
-    virtual void startup(ContextPtr) {}
+    void startup(ContextPtr context, bool skip_access_check)
+    {
+        if (!skip_access_check)
+            checkAccess();
+        startupImpl(context);
+    }
+    /// Performs custom action on disk startup.
+    virtual void startupImpl(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -408,8 +418,14 @@ protected:
     /// A derived class may override copy() to provide a faster implementation.
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
+protected:
+    const String name;
+
 private:
     std::shared_ptr<Executor> executor;
+
+    /// Check access to the disk.
+    void checkAccess();
 };
 
 using Disks = std::vector<DiskPtr>;

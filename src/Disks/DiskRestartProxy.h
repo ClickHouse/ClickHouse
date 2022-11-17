@@ -21,7 +21,7 @@ class RestartAwareWriteBuffer;
 class DiskRestartProxy : public DiskDecorator
 {
 public:
-    explicit DiskRestartProxy(DiskPtr & delegate_);
+    explicit DiskRestartProxy(DiskPtr & delegate_, bool skip_access_check_);
 
     ReservationPtr reserve(UInt64 bytes) override;
     const String & getPath() const override;
@@ -79,6 +79,7 @@ private:
 
     /// Mutex to protect RW access.
     mutable std::shared_timed_mutex mutex;
+    bool skip_access_check;
 
     Poco::Logger * log = &Poco::Logger::get("DiskRestartProxy");
 };
