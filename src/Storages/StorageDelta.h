@@ -32,7 +32,7 @@ public:
     void setLastModifiedTime(const String & filename, uint64_t timestamp);
     void remove(const String & filename, uint64_t timestamp);
 
-    std::vector<String> ListCurrentFiles() &&;
+    std::vector<String> listCurrentFiles() &&;
 
 private:
     std::unordered_map<String, uint64_t> file_update_time;
@@ -44,10 +44,10 @@ class JsonMetadataGetter
 public:
     JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
 
-    std::vector<String> getFiles() { return std::move(metadata).ListCurrentFiles(); }
+    std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
 
 private:
-    void Init(ContextPtr context);
+    void init(ContextPtr context);
 
     std::vector<String> getJsonLogFiles();
 
@@ -87,14 +87,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    static ColumnsDescription getTableStructureFromData(
+        const StorageS3Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
 private:
-    void Init();
-
-    // DeltaLake stores data in parts in different files
-    // keys is vector of parts with latest version
-    // generateQueryFromKeys constructs query from parts filenames for
-    // underlying StorageS3 engine
-    static String generateQueryFromKeys(std::vector<String> && keys);
+    void init();
 
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;

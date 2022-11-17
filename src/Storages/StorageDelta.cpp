@@ -47,7 +47,7 @@ void DeltaLakeMetadata::remove(const String & filename, uint64_t /*timestamp */)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid table metadata, tried to remove {} before adding it", filename);
 }
 
-std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
+std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
 {
     std::vector<String> keys;
     keys.reserve(file_update_time.size());
@@ -61,10 +61,10 @@ std::vector<String> DeltaLakeMetadata::ListCurrentFiles() &&
 JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context)
     : base_configuration(configuration_), table_path(table_path_)
 {
-    Init(context);
+    init(context);
 }
 
-void JsonMetadataGetter::Init(ContextPtr context)
+void JsonMetadataGetter::init(ContextPtr context)
 {
     auto keys = getJsonLogFiles();
 
@@ -178,6 +178,52 @@ void JsonMetadataGetter::handleJSON(const JSON & json)
     }
 }
 
+namespace
+{
+
+StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
+{
+    return {configuration.url, configuration.auth_settings, configuration.rw_settings, configuration.headers};
+}
+
+// DeltaLake stores data in parts in different files
+// keys is vector of parts with latest version
+// generateQueryFromKeys constructs query from parts filenames for
+// underlying StorageS3 engine
+String generateQueryFromKeys(const std::vector<String> & keys)
+{
+    std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
+    return new_query;
+}
+
+
+StorageS3Configuration getAdjustedS3Configuration(
+    const ContextPtr & context,
+    StorageS3::S3Configuration & base_configuration,
+    const StorageS3Configuration & configuration,
+    const std::string & table_path,
+    Poco::Logger * log)
+{
+    JsonMetadataGetter getter{base_configuration, table_path, context};
+
+    auto keys = getter.getFiles();
+    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(keys);
+
+    LOG_DEBUG(log, "New uri: {}", new_uri);
+    LOG_DEBUG(log, "Table path: {}", table_path);
+
+    // set new url in configuration
+    StorageS3Configuration new_configuration;
+    new_configuration.url = new_uri;
+    new_configuration.auth_settings.access_key_id = configuration.auth_settings.access_key_id;
+    new_configuration.auth_settings.secret_access_key = configuration.auth_settings.secret_access_key;
+    new_configuration.format = configuration.format;
+
+    return new_configuration;
+}
+
+}
+
 StorageDelta::StorageDelta(
     const StorageS3Configuration & configuration_,
     const StorageID & table_id_,
@@ -187,28 +233,14 @@ StorageDelta::StorageDelta(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_)
     : IStorage(table_id_)
-    , base_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , base_configuration{getBaseConfiguration(configuration_)}
     , log(&Poco::Logger::get("StorageDeltaLake (" + table_id_.table_name + ")"))
     , table_path(base_configuration.uri.key)
 {
     StorageInMemoryMetadata storage_metadata;
     StorageS3::updateS3Configuration(context_, base_configuration);
 
-    JsonMetadataGetter getter{base_configuration, table_path, context_};
-
-    auto keys = getter.getFiles();
-    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(std::move(keys));
-
-    LOG_DEBUG(log, "New uri: {}", new_uri);
-    LOG_DEBUG(log, "Table path: {}", table_path);
-
-    // set new url in configuration
-    StorageS3Configuration new_configuration;
-    new_configuration.url = new_uri;
-    new_configuration.auth_settings.access_key_id = configuration_.auth_settings.access_key_id;
-    new_configuration.auth_settings.secret_access_key = configuration_.auth_settings.secret_access_key;
-    new_configuration.format = configuration_.format;
-
+    auto new_configuration = getAdjustedS3Configuration(context_, base_configuration, configuration_, table_path, log);
 
     if (columns_.empty())
     {
@@ -250,13 +282,15 @@ Pipe StorageDelta::read(
     return s3engine->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-String StorageDelta::generateQueryFromKeys(std::vector<String> && keys)
+ColumnsDescription StorageDelta::getTableStructureFromData(
+    const StorageS3Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
 {
-    // DeltaLake store data parts in different files
-    // keys are filenames of parts
-    // for StorageS3 to read all parts we need format {key1,key2,key3,...keyn}
-    std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
-    return new_query;
+    auto base_configuration = getBaseConfiguration(configuration);
+    StorageS3::updateS3Configuration(ctx, base_configuration);
+    auto new_configuration = getAdjustedS3Configuration(
+        ctx, base_configuration, configuration, base_configuration.uri.key, &Poco::Logger::get("StorageDeltaLake"));
+    return StorageS3::getTableStructureFromData(
+        new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
 }
 
 void registerStorageDelta(StorageFactory & factory)
