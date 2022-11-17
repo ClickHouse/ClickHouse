@@ -733,6 +733,11 @@ namespace
 {
 
 
+/// Simplified representation of queue entry. Contain two sets
+/// 1) Which parts we will receive after entry execution
+/// 2) Which parts we will drop/remove after entry execution
+///
+/// We use this representation to understand which parts mutation actually have to mutate.
 struct QueueEntryRepresentation
 {
     std::vector<std::string> produced_parts;
@@ -741,6 +746,7 @@ struct QueueEntryRepresentation
 
 using QueueRepresentation = std::map<std::string, QueueEntryRepresentation>;
 
+/// Produce a map from queue znode name to simplified entry representation.
 QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLogEntryPtr> & entries, MergeTreeDataFormatVersion format_version)
 {
     using LogEntryType = ReplicatedMergeTreeLogEntryData::Type;
@@ -750,6 +756,8 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
         const auto & key = entry->znode_name;
         switch (entry->type)
         {
+            /// explicetely specify all types of entries without default, so if
+            /// someone decide to add new type it will produce a compiler warning (error in our case)
             case LogEntryType::GET_PART:
             case LogEntryType::ATTACH_PART:
             case LogEntryType::MERGE_PARTS:
@@ -760,6 +768,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
             }
             case LogEntryType::REPLACE_RANGE:
             {
+                /// Quite tricky entry, it both produce and drop parts (in some cases)
                 const auto & new_parts = entry->replace_range_entry->new_part_names;
                 auto & produced_parts = result[key].produced_parts;
                 produced_parts.insert(
@@ -777,6 +786,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
                 result[key].dropped_parts.push_back(entry->new_part_name);
                 break;
             }
+            /// These entries don't produce/drop any parts
             case LogEntryType::EMPTY:
             case LogEntryType::ALTER_METADATA:
             case LogEntryType::CLEAR_INDEX:
@@ -791,21 +801,33 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
     return result;
 }
 
+/// Try to understand which part we need to mutate to finish mutation. In ReplicatedQueue we have two set of parts:
+/// current parts -- set of parts which we actually have (on disk)
+/// virtual parts -- set of parts which we will have after we will execute our queue
+///
+/// From the first glance it can sound that these two sets should be enough to understand which parts we have to mutate
+/// to finish mutation but it's not true:
+/// 1) Obviously we cannot rely on current_parts because we can have stale state (some parts are absent, some merges not finished). We also have to account parts which we will
+///    get after queue execution.
+/// 2) But we cannot rely on virtual_parts for this, because they contain parts which we will get after we have executed our queue. So if we need to execute mutation 0000000001 for part all_0_0_0
+///    and we have already pulled entry to mutate this part into own queue our virtual parts will contain part all_0_0_0_1, not part all_0_0_0.
+///
+/// To avoid such issues we simply traverse all entries in queue in order and applying diff (add parts/remove parts) to current parts if they could be affected by mutation. Such approach is expensive
+/// but we do it only once since we get the mutation. After that we just update parts_to_do for each mutation when pulling entries into our queue (addPartToMutations, removePartFromMutations).
 ActiveDataPartSet getPartNamesToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & current_parts,
     const QueueRepresentation & queue_representation, MergeTreeDataFormatVersion format_version)
 {
     ActiveDataPartSet result(format_version);
-    for (const auto & pair : mutation.block_numbers)
+    /// Traverse mutation by partition
+    for (const auto & [partition_id, block_num] : mutation.block_numbers)
     {
-        const String & partition_id = pair.first;
-        Int64 block_num = pair.second;
-
         /// Note that we cannot simply count all parts to mutate using getPartsCoveredBy(appropriate part_info)
         /// because they are not consecutive in `parts`.
         MergeTreePartInfo covering_part_info(
             partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
+        /// First of all add all affected current_parts
         for (const String & covered_part_name : current_parts.getPartsCoveredBy(covering_part_info))
         {
             auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, current_parts.getFormatVersion());
@@ -813,8 +835,10 @@ ActiveDataPartSet getPartNamesToMutate(
                 result.add(covered_part_name);
         }
 
+        /// Traverse queue and update affected current_parts
         for (const auto & [_, entry_representation] : queue_representation)
         {
+            /// First we have to drop something if entry drop parts
             for (const auto & part_to_drop : entry_representation.dropped_parts)
             {
                 auto part_to_drop_info = MergeTreePartInfo::fromPartName(part_to_drop, format_version);
@@ -822,6 +846,7 @@ ActiveDataPartSet getPartNamesToMutate(
                     result.removePartAndCoveredParts(part_to_drop);
             }
 
+            /// After we have to add parts if entry add them
             for (const auto & part_to_add : entry_representation.produced_parts)
             {
                 auto part_to_add_info = MergeTreePartInfo::fromPartName(part_to_add, format_version);
@@ -932,9 +957,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
-                /// Initialize `mutation.parts_to_do`.
-                /// We need to mutate all parts in `current_parts` and all parts that will appear after queue entries execution.
-                /// So, we need to mutate all parts in virtual_parts (with the corresponding block numbers).
+                /// Initialize `mutation.parts_to_do`. We cannot use only current_parts + virtual_parts here so we
+                /// traverse all the queue and build correct state of parts_to_do.
                 auto queue_representation = getQueueRepresentation(queue, format_version);
                 mutation.parts_to_do = getPartNamesToMutate(*entry, virtual_parts, queue_representation, format_version);
 
@@ -1842,6 +1866,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             }
             else if (mutation.parts_to_do.size() == 0)
             {
+                /// Why it doesn't mean that mutation 100% finished? Because when we were creating part_to_do set
+                /// some INSERT queries could be in progress. So we have to double-check that no affected committing block
+                /// numbers exist and no new parts were surprisingly committed.
                 LOG_TRACE(log, "Will check if mutation {} is done", mutation.entry->znode_name);
                 candidates.emplace_back(mutation.entry);
             }
@@ -1853,6 +1880,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     else
         LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
 
+    /// We need to check committing block numbers and new parts which could be committed.
+    /// Actually we don't need most of predicate logic here but it all the code related to committing blocks
+    /// and updatading queue state is implemented there.
     auto merge_pred = getMergePredicate(zookeeper);
 
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
@@ -2382,6 +2412,8 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
 
 bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers) const
 {
+    /// Check committing block numbers, maybe some affected inserts
+    /// still not written to disk and committed to ZK.
     for (const auto & kv : block_numbers)
     {
         const String & partition_id = kv.first;
@@ -2401,6 +2433,8 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const std::string & z
     }
 
     std::lock_guard lock(queue.state_mutex);
+    /// When we creating predicate we have updated the queue. Some committing inserts can now be committed so
+    /// we check parts_to_do one more time. Also this code is async so mutation actually could be deleted from memory.
     if (auto it = queue.mutations_by_znode.find(znode_name); it != queue.mutations_by_znode.end())
     {
         if (it->second.parts_to_do.size() == 0)
