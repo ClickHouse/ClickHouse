@@ -156,7 +156,7 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
 /// Note that this is both reading and tokenizing until the end of the row
 /// This is doing unnecessary work if the rest of the columns can be read with tryReadValue (which doesn't require tokens)
 /// and it's more efficient if they don't (as everything is already tokenized)
-void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize()
+void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_column_idx)
 {
     if (tokens && token_iterator)
         return;
@@ -166,6 +166,17 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize()
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
     token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    auto const & first = (*token_iterator).get();
+    if (first.isError() || first.isEnd())
+    {
+        const Block & header = getPort().getHeader();
+        const IDataType & type = *header.getByPosition(current_column_idx).type;
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Cannot parse expression of type {} here: {}",
+            type.getName(),
+            std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+    }
 }
 
 void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
@@ -205,7 +216,7 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
-    readUntilTheEndOfRowAndReTokenize();
+    readUntilTheEndOfRowAndReTokenize(column_idx);
     chassert(token_iterator.has_value());
     chassert((*token_iterator)->begin <= buf->position());
     IParser::Pos start = *token_iterator;
@@ -372,7 +383,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     auto settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
-    readUntilTheEndOfRowAndReTokenize();
+    readUntilTheEndOfRowAndReTokenize(column_idx);
     chassert(token_iterator.has_value());
     chassert((*token_iterator)->begin <= buf->position());
     while ((*token_iterator)->begin < buf->position())
@@ -391,9 +402,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         parsed &= (*token_iterator)->type == TokenType::ClosingRoundBracket;
 
     if (!parsed)
-        throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())),
-                        ErrorCodes::SYNTAX_ERROR);
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Cannot parse expression of type {} here: {}",
+            type.getName(),
+            std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     ++(*token_iterator);
 
     if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
