@@ -131,7 +131,7 @@ Type: `UInt32`.
 ### regionToPopulation(id\[, geobase\])
 
 Gets the population for a region.
-The population can be recorded in files with the geobase. See the section “External dictionaries”.
+The population can be recorded in files with the geobase. See the section “Dictionaries”.
 If the population is not recorded for the region, it returns 0.
 In the geobase, the population might be recorded for child regions, but not for parent regions.
 
