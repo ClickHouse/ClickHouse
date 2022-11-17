@@ -167,12 +167,11 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithSecretsHidden(size_t max_length, bool one_line, bool hilite) const
+String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
 
     FormatSettings settings{buf, one_line};
-    settings.hilite = hilite;
     settings.show_secrets = false;
     format(settings);
 
