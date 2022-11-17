@@ -241,9 +241,9 @@ public:
     }
 
     // A simple way to add some user-readable context to an error message.
-    String formatWithHiddenSecrets(size_t max_length = 0, bool one_line = true, bool hilite = false) const;
-    String formatForLogging(size_t max_length = 0) const { return formatWithHiddenSecrets(max_length, true, false); }
-    String formatForErrorMessage() const { return formatWithHiddenSecrets(0, true, false); }
+    String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true, bool hilite = false) const;
+    String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true, false); }
+    String formatForErrorMessage() const { return formatWithSecretsHidden(0, true, false); }
 
     /// If an AST has secret parts then formatForLogging() will replace them with the placeholder '[HIDDEN]'.
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }

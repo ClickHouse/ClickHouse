@@ -231,7 +231,7 @@ protected:
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
                             ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
-                            res_columns[res_index++]->insert(ast ? ast->formatWithHiddenSecrets() : "");
+                            res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
                         }
 
                         // engine_full
@@ -382,7 +382,7 @@ protected:
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? ast->formatWithHiddenSecrets() : "");
+                        res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
 
                     if (columns_mask[src_index++])
                     {
@@ -390,7 +390,7 @@ protected:
 
                         if (ast_create && ast_create->storage)
                         {
-                            engine_full = ast_create->storage->formatWithHiddenSecrets();
+                            engine_full = ast_create->storage->formatWithSecretsHidden();
 
                             static const char * const extra_head = " ENGINE = ";
                             if (startsWith(engine_full, extra_head))
@@ -404,7 +404,7 @@ protected:
                     {
                         String as_select;
                         if (ast_create && ast_create->select)
-                            as_select = ast_create->select->formatWithHiddenSecrets();
+                            as_select = ast_create->select->formatWithSecretsHidden();
                         res_columns[res_index++]->insert(as_select);
                     }
                 }
@@ -419,7 +419,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithHiddenSecrets());
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -427,7 +427,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithHiddenSecrets());
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -435,7 +435,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithHiddenSecrets());
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -443,7 +443,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithHiddenSecrets());
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
