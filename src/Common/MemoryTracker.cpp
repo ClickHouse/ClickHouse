@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerFaultInjectorInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
@@ -192,7 +193,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
+    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng) || MemoryTrackerFaultInjectorInThread::faulty()))
     {
         if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {
