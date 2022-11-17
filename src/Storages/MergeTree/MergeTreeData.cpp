@@ -312,13 +312,19 @@ MergeTreeData::MergeTreeData(
     if (!attach || !read_format_version)
     {
         format_version = min_format_version;
-        auto disk = getStoragePolicy()->getAnyDisk();
-        if (!disk->isReadOnly())
+
+        // try to write to first non-readonly disk
+        for (const auto & disk : getStoragePolicy()->getDisks())
         {
-            auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, context_->getWriteSettings());
-            writeIntText(format_version.toUnderType(), *buf);
-            if (getContext()->getSettingsRef().fsync_metadata)
-                buf->sync();
+            if (!disk->isReadOnly())
+            {
+                auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, context_->getWriteSettings());
+                writeIntText(format_version.toUnderType(), *buf);
+                if (getContext()->getSettingsRef().fsync_metadata)
+                    buf->sync();
+
+                break;
+            }
         }
     }
     else
