@@ -24,7 +24,7 @@ Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type 
 
 Uses a linear congruential generator.
 
-## canonicalRand
+## randCanonical
 The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1).
 
 Non-deterministic. Return type is Float64.
