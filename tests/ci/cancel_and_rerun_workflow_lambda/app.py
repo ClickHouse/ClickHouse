@@ -367,6 +367,12 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
+
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"status": "OK"}',
+        }
     finally:
         for name, value in DEBUG_INFO.items():
             print(f"Value of {name}: ", value)
