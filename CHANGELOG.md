@@ -27,7 +27,7 @@
 * Added applied row-level policies to `system.query_log`. [#39819](https://github.com/ClickHouse/ClickHouse/pull/39819) ([Vladimir Chebotaryov](https://github.com/quickhouse)).
 * Add four-letter command `csnp` for manually creating snapshots in ClickHouse Keeper. Additionally, `lgif` was added to get Raft information for a specific node (e.g. index of last created snapshot, last committed log index). [#41766](https://github.com/ClickHouse/ClickHouse/pull/41766) ([JackyWoo](https://github.com/JackyWoo)).
 * Add function `ascii` like in Apache Spark: https://spark.apache.org/docs/latest/api/sql/#ascii. [#42670](https://github.com/ClickHouse/ClickHouse/pull/42670) ([李扬](https://github.com/taiyang-li)).
-* Add function `pmod` which returns non-negative result based on modulo. [#42755](https://github.com/ClickHouse/ClickHouse/pull/42755) ([李扬](https://github.com/taiyang-li)).
+* Add function `positive_modulo` (`pmod`) which returns non-negative result based on modulo. [#42755](https://github.com/ClickHouse/ClickHouse/pull/42755) ([李扬](https://github.com/taiyang-li)).
 * Add function `formatReadableDecimalSize`. [#42774](https://github.com/ClickHouse/ClickHouse/pull/42774) ([Alejandro](https://github.com/alexon1234)).
 * Add function `randCanonical`, which is similar to the `rand` function in Apache Spark or Impala. The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1). [#43124](https://github.com/ClickHouse/ClickHouse/pull/43124) ([李扬](https://github.com/taiyang-li)).
 * Add function `displayName`, closes [#36770](https://github.com/ClickHouse/ClickHouse/issues/36770). [#37681](https://github.com/ClickHouse/ClickHouse/pull/37681) ([hongbin](https://github.com/xlwh)).
