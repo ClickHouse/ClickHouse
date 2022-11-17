@@ -403,8 +403,8 @@ void TCPHandler::runImpl()
                             if (isQueryCancelled())
                                 return true;
 
-                            sendSelectProfileEvents();
                             sendProgress();
+                            sendSelectProfileEvents();
                             sendLogs();
 
                             return false;
@@ -421,8 +421,8 @@ void TCPHandler::runImpl()
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
-                sendSelectProfileEvents();
                 sendProgress();
+                sendSelectProfileEvents();
             }
             else
             {
@@ -769,8 +769,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             {
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
-                sendSelectProfileEvents();
                 sendProgress();
+                sendSelectProfileEvents();
             }
 
             sendLogs();
@@ -794,9 +794,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendTotals(executor.getTotalsBlock());
             sendExtremes(executor.getExtremesBlock());
             sendProfileInfo(executor.getProfileInfo());
-            sendSelectProfileEvents();
             sendProgress();
             sendLogs();
+            sendSelectProfileEvents();
         }
 
         if (state.is_connection_closed)
