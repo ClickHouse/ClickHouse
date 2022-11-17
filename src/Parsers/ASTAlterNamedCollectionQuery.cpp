@@ -32,7 +32,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
             settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         }
     }
-    else if (!delete_keys.empty())
+    if (!delete_keys.empty())
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
         bool first = true;
