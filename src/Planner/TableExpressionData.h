@@ -39,6 +39,8 @@ using ColumnIdentifier = std::string;
 class TableExpressionData
 {
 public:
+    using ColumnNameToColumn = std::unordered_map<std::string, NameAndTypePair>;
+
     using ColumnNameToColumnIdentifier = std::unordered_map<std::string, ColumnIdentifier>;
 
     using ColumnIdentifierToColumnName = std::unordered_map<ColumnIdentifier, std::string>;
@@ -46,7 +48,7 @@ public:
     /// Return true if column with name exists, false otherwise
     bool hasColumn(const std::string & column_name) const
     {
-        return alias_columns_names.contains(column_name) || columns_names.contains(column_name);
+        return alias_columns_names.contains(column_name) || column_name_to_column.contains(column_name);
     }
 
     /** Add column in table expression data.
@@ -59,8 +61,7 @@ public:
         if (hasColumn(column.name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
 
-        columns_names.insert(column.name);
-        columns.push_back(column);
+        column_name_to_column.emplace(column.name, column);
         column_name_to_column_identifier.emplace(column.name, column_identifier);
         column_identifier_to_column_name.emplace(column_identifier, column.name);
     }
@@ -73,8 +74,7 @@ public:
         if (hasColumn(column.name))
             return;
 
-        columns_names.insert(column.name);
-        columns.push_back(column);
+        column_name_to_column.emplace(column.name, column);
         column_name_to_column_identifier.emplace(column.name, column_identifier);
         column_identifier_to_column_name.emplace(column_identifier, column.name);
     }
@@ -91,16 +91,22 @@ public:
         return alias_columns_names;
     }
 
-    /// Get columns names
-    const NameSet & getColumnsNames() const
+    /// Get column name to column map
+    const ColumnNameToColumn & getColumnNameToColumn() const
     {
-        return columns_names;
+        return column_name_to_column;
     }
 
-    /// Get columns
-    const NamesAndTypesList & getColumns() const
+    /// Get column names
+    Names getColumnNames() const
     {
-        return columns;
+        Names result;
+        result.reserve(column_name_to_column.size());
+
+        for (const auto & [column_name, column] : column_name_to_column)
+            result.push_back(column_name);
+
+        return result;
     }
 
     /// Get column name to column identifier map
@@ -113,6 +119,32 @@ public:
     const ColumnNameToColumnIdentifier & getColumnIdentifierToColumnName() const
     {
         return column_identifier_to_column_name;
+    }
+
+    /** Get column for column name.
+      * Exception is thrown if there are no column for column name.
+      */
+    const NameAndTypePair & getColumnOrThrow(const std::string & column_name) const
+    {
+        auto it = column_name_to_column.find(column_name);
+        if (it == column_name_to_column.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column for name {} does not exists",
+                column_name);
+
+        return it->second;
+    }
+
+    /** Get column for column name.
+      * Null is returned if there are no column for column name.
+      */
+    const NameAndTypePair * getColumnOrNull(const std::string & column_name) const
+    {
+        auto it = column_name_to_column.find(column_name);
+        if (it == column_name_to_column.end())
+            return nullptr;
+
+        return &it->second;
     }
 
     /** Get column identifier for column name.
@@ -184,10 +216,7 @@ public:
 
 private:
     /// Valid for table, table function, array join, query, union nodes
-    NamesAndTypesList columns;
-
-    /// Valid for table, table function, array join, query, union nodes
-    NameSet columns_names;
+    ColumnNameToColumn column_name_to_column;
 
     /// Valid only for table node
     NameSet alias_columns_names;
