@@ -130,9 +130,16 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
 {
     EscapingRule escaping_rule = row_format.escaping_rules[file_column];
     if (escaping_rule == EscapingRule::CSV)
-        /// Will read unquoted string until settings.csv.delimiter
-        settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
-                                                                                row_format.delimiters[file_column + 1].front();
+    {
+        settings.csv.custom_delimiter.clear();
+        if (row_format.delimiters[file_column + 1].empty())
+            settings.csv.delimiter = default_csv_delimiter;
+        else if (row_format.delimiters[file_column + 1].size() == 1)
+            settings.csv.delimiter = row_format.delimiters[file_column + 1].front();
+        else
+            settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
+    }
+
     try
     {
         return deserializeFieldByEscapingRule(type, serialization, column, *buf, escaping_rule, settings);
@@ -466,6 +473,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , format(format_)
     , row_format(row_format_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
+    , default_csv_delimiter(format_settings_.csv.delimiter)
 {
     setColumnNames(row_format.column_names);
 }
@@ -490,7 +498,15 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
     {
         format_reader.skipDelimiter(i);
         if (row_format.escaping_rules[i] == FormatSettings::EscapingRule::CSV)
-            format_settings.csv.delimiter = row_format.delimiters[i + 1].empty() ? format_settings.csv.delimiter : row_format.delimiters[i + 1].front();
+        {
+            format_settings.csv.custom_delimiter.clear();
+            if (row_format.delimiters[i + 1].empty())
+                format_settings.csv.delimiter = default_csv_delimiter;
+            else if (row_format.delimiters[i + 1].size() == 1)
+                format_settings.csv.delimiter = row_format.delimiters[i + 1].front();
+            else
+                format_settings.csv.custom_delimiter = row_format.delimiters[i + 1];
+        }
 
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
         data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i]));

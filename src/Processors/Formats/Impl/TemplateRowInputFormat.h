@@ -128,6 +128,7 @@ private:
     const ParsedTemplateFormatString row_format;
     TemplateFormatReader format_reader;
     bool first_row = true;
+    const char default_csv_delimiter;
 };
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);
