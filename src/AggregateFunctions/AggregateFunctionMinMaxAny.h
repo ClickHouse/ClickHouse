@@ -462,7 +462,7 @@ struct Compatibility
         auto res = column.getDataAt(n);
         /// ColumnString always reserves extra byte for null-character after string.
         /// But getDataAt returns StringRef without the null-character. Let's add it.
-        chassert(res.data[res.size] == 0);
+        chassert(res.data[res.size] == '\0');
         ++res.size;
         return res;
     }
@@ -472,7 +472,7 @@ struct Compatibility
         /// String already has terminating null-character.
         /// But insertData will add another one unconditionally. Trim existing null-character to avoid duplication.
         chassert(0 < length);
-        chassert(pos[length - 1] == 0);
+        chassert(pos[length - 1] == '\0');
         column.insertData(pos, length - 1);
     }
 };
@@ -506,16 +506,22 @@ public:
     }
 
 private:
-    const char * getData() const
+    char * getDataMutable()
     {
         return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
     }
 
-    StringRef getStringRef() const
+    const char * getData() const
     {
+        const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
         /// It must always be terminated with null-character
         chassert(0 < size);
-        chassert(getData()[size - 1] == 0);
+        chassert(data_ptr[size - 1] == '\0');
+        return data_ptr;
+    }
+
+    StringRef getStringRef() const
+    {
         return StringRef(getData(), size);
     }
 
@@ -535,44 +541,75 @@ public:
             buf.write(getData(), size);
     }
 
+    void allocateLargeDataIfNeeded(Int32 size_to_reserve, Arena * arena)
+    {
+        if (capacity < size_to_reserve)
+        {
+            capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(size_to_reserve));
+            /// It might happen if the size was too big and the rounded value does not fit a size_t
+            if (unlikely(capacity < size_to_reserve))
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
+
+            /// Don't free large_data here.
+            large_data = arena->alloc(capacity);
+        }
+    }
+
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
 
-        if (rhs_size >= 0)
-        {
-            if (rhs_size <= MAX_SMALL_STRING_SIZE)
-            {
-                /// Don't free large_data here.
-
-                size = rhs_size;
-
-                if (size > 0)
-                    buf.readStrict(small_data, size);
-            }
-            else
-            {
-                if (capacity < rhs_size)
-                {
-                    capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(rhs_size));
-                    /// It might happen if the size was too big and the rounded value does not fit a size_t
-                    if (unlikely(capacity < rhs_size))
-                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", rhs_size);
-
-                    /// Don't free large_data here.
-                    large_data = arena->alloc(capacity);
-                }
-
-                size = rhs_size;
-                buf.readStrict(large_data, size);
-            }
-        }
-        else
+        if (rhs_size < 0)
         {
             /// Don't free large_data here.
             size = rhs_size;
+            return;
         }
+
+        if (rhs_size <= MAX_SMALL_STRING_SIZE)
+        {
+            /// Don't free large_data here.
+
+            size = rhs_size;
+
+            if (size > 0)
+                buf.readStrict(small_data, size);
+        }
+        else
+        {
+            /// Reserve one byte more for null-character
+            Int32 rhs_size_to_reserve = rhs_size + 1;
+            allocateLargeDataIfNeeded(rhs_size_to_reserve, arena);
+            size = rhs_size;
+            buf.readStrict(large_data, size);
+        }
+
+        /// Check if the string we read is null-terminated (getDataMutable does not have the assertion)
+        if (0 < size && getDataMutable()[size - 1] == '\0')
+            return;
+
+        /// It's not null-terminated, but it must be (for historical reasons). There are two variants:
+        /// - The value was serialized by one of the incompatible versions of ClickHouse. We had some range of versions
+        ///   that used to serialize SingleValueDataString without terminating '\0'. Let's just append it.
+        /// - An attacker sent crafted data. Sanitize it and append '\0'.
+        /// In all other cases the string must be already null-terminated.
+
+        /// NOTE We cannot add '\0' unconditionally, because it will be duplicated.
+        /// NOTE It's possible that a string that actually ends with '\0' was written by one of the incompatible versions.
+        ///      Unfortunately, we cannot distinguish it from normal string written by normal version.
+        ///      So such strings will be trimmed.
+
+        if (size == MAX_SMALL_STRING_SIZE)
+        {
+            /// Special case: We have to move value to large_data
+            allocateLargeDataIfNeeded(size + 1, arena);
+            memcpy(large_data, small_data, size);
+        }
+
+        /// We have enough space to append
+        getDataMutable()[size] = '\0';
+        ++size;
     }
 
     /// Assuming to.has()
@@ -590,13 +627,7 @@ public:
         }
         else
         {
-            if (capacity < value_size)
-            {
-                /// Don't free large_data here.
-                capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(value_size));
-                large_data = arena->alloc(capacity);
-            }
-
+            allocateLargeDataIfNeeded(value_size, arena);
             size = value_size;
             memcpy(large_data, value.data, size);
         }
