@@ -77,7 +77,7 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
     AggregateFunctionProperties properties;
     auto aggregate_function = AggregateFunctionFactory::instance().get(name, {argument->getResultType()}, parameters, properties);
     function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
-    function_node->getArguments().getNodes() = {argument};
+    function_node->getArguments().getNodes() = { argument };
 
     return function_node;
 }

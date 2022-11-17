@@ -2171,7 +2171,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         auto & alias_identifier_node = it->second->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
-        if (!lookup_result.isResolved())
+        if (!lookup_result.resolved_identifier)
         {
             std::unordered_set<Identifier> valid_identifiers;
             collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);

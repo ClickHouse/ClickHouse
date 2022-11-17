@@ -34,17 +34,14 @@ inline bool operator!=(const QueryTreeNodeWithHash<T> & lhs, const QueryTreeNode
 }
 
 using QueryTreeNodePtrWithHash = QueryTreeNodeWithHash<QueryTreeNodePtr>;
-using QueryTreeNodeConstPtrWithHash = QueryTreeNodeWithHash<const QueryTreeNodePtr>;
-
 using QueryTreeNodeRawPtrWithHash = QueryTreeNodeWithHash<IQueryTreeNode *>;
 using QueryTreeNodeConstRawPtrWithHash = QueryTreeNodeWithHash<const IQueryTreeNode *>;
 
-using QueryTreeNodeConstPtrWithHashSet = std::unordered_set<QueryTreeNodeConstPtrWithHash>;
-
+using QueryTreeNodePtrWithHashSet = std::unordered_set<QueryTreeNodePtrWithHash>;
 using QueryTreeNodeConstRawPtrWithHashSet = std::unordered_set<QueryTreeNodeConstRawPtrWithHash>;
 
 template <typename Value>
-using QueryTreeNodeConstPtrWithHashMap = std::unordered_map<QueryTreeNodeConstPtrWithHash, Value>;
+using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash, Value>;
 
 template <typename Value>
 using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeConstRawPtrWithHash, Value>;
