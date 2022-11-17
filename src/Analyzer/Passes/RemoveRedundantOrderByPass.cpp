@@ -49,7 +49,7 @@ public:
 class RemoveRedundantOrderByClausesVisitor : public InDepthQueryTreeVisitor<RemoveRedundantOrderByClausesVisitor>
 {
     bool try_drop_order_by_in_subquery = false;
-    bool an_upper_query_break_order = false;
+    std::vector<QueryTreeNodePtr> parent_queries_breaking_order;
 
     static void tryEliminateOrderBy(QueryNode * query_node)
     {
@@ -73,6 +73,34 @@ class RemoveRedundantOrderByClausesVisitor : public InDepthQueryTreeVisitor<Remo
     }
 
 public:
+    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & child [[maybe_unused]])
+    {
+        auto * query_node = parent->as<QueryNode>();
+        if (query_node)
+        {
+            if (parent_queries_breaking_order.empty() || parent != parent_queries_breaking_order.back())
+            {
+                if (query_node->hasOrderBy() || query_node->hasGroupBy())
+                    parent_queries_breaking_order.push_back(parent);
+            }
+        }
+
+        return true;
+    }
+
+    void allChildrenVisited(VisitQueryTreeNodeType & parent) {
+        auto * query_node = parent->as<QueryNode>();
+        if (query_node)
+        {
+            if (!parent_queries_breaking_order.empty() && parent == parent_queries_breaking_order.back())
+            {
+                parent_queries_breaking_order.pop_back();
+                if (parent_queries_breaking_order.empty())
+                    try_drop_order_by_in_subquery = false;
+            }
+        }
+    }
+
     void visitImpl(VisitQueryTreeNodeType & node)
     {
         auto * query_node = node->as<QueryNode>();
@@ -80,7 +108,7 @@ public:
             return;
 
         /// drop ORDER BY in current subquery if necessary
-        if (query_node->isSubquery() && an_upper_query_break_order)
+        if (query_node->isSubquery() && try_drop_order_by_in_subquery)
             tryEliminateOrderBy(query_node);
 
         /// check if we can eliminate ORDER BY in subquery
@@ -96,11 +124,10 @@ public:
             }
         }
 
-        if (an_upper_query_break_order)
+        if (parent_queries_breaking_order.empty())
+            try_drop_order_by_in_subquery = query_node->hasOrderBy() || query_node->hasGroupBy();
+        else
             try_drop_order_by_in_subquery = true;
-
-        if (!an_upper_query_break_order)
-            an_upper_query_break_order = query_node->hasOrderBy() || query_node->hasGroupBy();
     }
 };
 

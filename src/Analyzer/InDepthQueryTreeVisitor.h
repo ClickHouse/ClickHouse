@@ -43,6 +43,10 @@ public:
         return true;
     }
 
+    void allChildrenVisited(VisitQueryTreeNodeType& parent [[maybe_unused]])
+    {
+    }
+
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
         bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
@@ -78,6 +82,8 @@ private:
             if (need_visit_child)
                 visit(child);
         }
+        if (!expression->getChildren().empty())
+            getDerived().allChildrenVisited(expression);
     }
 };
 

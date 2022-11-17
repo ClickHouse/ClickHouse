@@ -103,7 +103,7 @@ FROM
 )
 ORDER BY a ASC;
 
-SELECT '-- GROUP BY with aggregation function which depends on order -> eliminate ORDER BY in most inner subquery since the order will be changed by ORDER BY in main query';
+SELECT '-- GROUP BY with aggregation function which depends on order -> ORDER BY in subquery is kept due to the aggregation function';
 EXPLAIN QUERY TREE run_passes = 1
 SELECT a
 FROM
@@ -139,5 +139,56 @@ FROM
     GROUP BY number
 )
 WHERE a > 0;
+
+SELECT '-- CROSS JOIN with subqueries, nor ORDER BY nor GROUP BY in main query -> only ORDER BY clauses in most inner subqueries will be removed';
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC
+) AS t1,
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+) AS t2;
+
+SELECT '-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries';
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC
+) AS t1,
+(
+    SELECT number
+    FROM
+    (
+        SELECT number
+        FROM numbers(3)
+        ORDER BY number ASC
+    )
+    ORDER BY number DESC
+) AS t2
+ORDER BY t1.number ASC;
 
 -- TODO: add tests with LIMIT BY
