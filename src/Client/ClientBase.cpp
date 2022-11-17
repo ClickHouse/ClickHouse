@@ -1628,6 +1628,14 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     global_context->applySettingChange(change);
             }
             global_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+            /// Query parameters inside SET queries should be also saved on the client side
+            ///  to override their previous definitions set with --param_* arguments
+            ///  and for substitutions to work inside INSERT ... VALUES queries
+            for (const auto & [name, value] : set_query->query_parameters)
+                query_parameters.insert_or_assign(name, value);
+
+            global_context->addQueryParameters(set_query->query_parameters);
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
