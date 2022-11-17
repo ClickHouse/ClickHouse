@@ -324,13 +324,24 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
     offsets_data.reserve(arrow_column->length());
 
+    int64_t start_offset = 0;
+
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
         auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
+
+        if (list_chunk.offset() == 0)
+        {
+            start_offset = offsets_data.back();
+        }
+
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
-            offsets_data.emplace_back(arrow_offsets.Value(i));
+        {
+            auto offset = list_chunk.value_offset(i);
+            offsets_data.emplace_back(start_offset + offset);
+        }
     }
     return offsets_column;
 }
