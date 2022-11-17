@@ -12,7 +12,6 @@
                 <value>CSVWithNames</value>
                 <value>JSONEachRow</value>
                 <value>JSONCompactEachRowWithNames</value>
-                <value>BSONEachRow</value>
                 <value>TSKV</value>
                 <value>Avro</value>
                 <value>ORC</value>
