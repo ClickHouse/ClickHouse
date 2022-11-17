@@ -19,10 +19,6 @@ NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "BackportPR",
 }
 
-# https://docs.github.com/en/rest/reference/actions#cancel-a-workflow-run
-#
-API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
-
 MAX_RETRY = 5
 
 DEBUG_INFO = {}  # type: Dict[str, Any]
@@ -117,7 +113,7 @@ def _exec_get_with_retry(url: str, token: str) -> dict:
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
-    ["run_id", "head_sha", "status", "rerun_url", "cancel_url", "conclusion"],
+    ["url", "run_id", "head_sha", "status", "rerun_url", "cancel_url", "conclusion"],
 )
 
 
@@ -130,7 +126,8 @@ def get_workflows_description_for_pull_request(
     print("PR", pull_request_event["number"], "has head ref", head_branch)
 
     workflows_data = []
-    request_url = f"{API_URL}/actions/runs?per_page=100"
+    repo_url = pull_request_event["base"]["repo"]["url"]
+    request_url = f"{repo_url}/actions/runs?per_page=100"
     # Get all workflows for the current branch
     for i in range(1, 11):
         workflows = _exec_get_with_retry(
@@ -169,6 +166,7 @@ def get_workflows_description_for_pull_request(
         ):
             workflow_descriptions.append(
                 WorkflowDescription(
+                    url=workflow["url"],
                     run_id=workflow["id"],
                     head_sha=workflow["head_sha"],
                     status=workflow["status"],
@@ -188,7 +186,8 @@ def get_workflow_description_fallback(
     head_branch = pull_request_event["head"]["ref"]
     print("Get last 500 workflows from API to search related there")
     # Fallback for a case of an already deleted branch and no workflows received
-    request_url = f"{API_URL}/actions/runs?per_page=100"
+    repo_url = pull_request_event["base"]["repo"]["url"]
+    request_url = f"{repo_url}/actions/runs?per_page=100"
     q = Queue()  # type: Queue
     workers = []
     workflows_data = []
@@ -227,6 +226,7 @@ def get_workflow_description_fallback(
 
     workflow_descriptions = [
         WorkflowDescription(
+            url=wf["url"],
             run_id=wf["id"],
             head_sha=wf["head_sha"],
             status=wf["status"],
@@ -240,9 +240,10 @@ def get_workflow_description_fallback(
     return workflow_descriptions
 
 
-def get_workflow_description(workflow_id, token) -> WorkflowDescription:
-    workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}", token)
+def get_workflow_description(workflow_url, token) -> WorkflowDescription:
+    workflow = _exec_get_with_retry(workflow_url, token)
     return WorkflowDescription(
+        url=workflow["url"],
         run_id=workflow["id"],
         head_sha=workflow["head_sha"],
         status=workflow["status"],
@@ -346,8 +347,9 @@ def main(event):
             print("Cancelled")
 
         for _ in range(45):
+            # If the number of retries is changed: tune the lambda limits accordingly
             latest_workflow_desc = get_workflow_description(
-                most_recent_workflow.run_id, token
+                most_recent_workflow.url, token
             )
             print("Checking latest workflow", latest_workflow_desc)
             if latest_workflow_desc.status in ("completed", "cancelled"):
