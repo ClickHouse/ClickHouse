@@ -41,11 +41,20 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
             return false;
     }
 
+    bool parsed_delete = false;
     if (!set_p.parse(pos, set, expected))
     {
         if (!s_delete.ignore(pos, expected))
             return false;
 
+        parsed_delete = true;
+    }
+    else if (s_delete.ignore(pos, expected))
+    {
+        parsed_delete = true;
+    }
+
+    if (parsed_delete)
         while (true)
         {
             if (!delete_keys.empty() && !s_comma.ignore(pos))
@@ -57,7 +66,6 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 
             delete_keys.push_back(getIdentifierName(key));
         }
-    }
 
     auto query = std::make_shared<ASTAlterNamedCollectionQuery>();
 
