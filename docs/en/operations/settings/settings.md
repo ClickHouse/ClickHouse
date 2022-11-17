@@ -276,7 +276,7 @@ Default value: 0.
 Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md/#create-default-values) instead of [NULL](../../sql-reference/syntax.md/#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
-This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md/#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
+This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md/#inserting-the-results-of-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
 
 Possible values:
 
@@ -1619,8 +1619,8 @@ These functions can be transformed:
 -   [length](../../sql-reference/functions/array-functions.md/#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 -   [empty](../../sql-reference/functions/array-functions.md/#function-empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 -   [notEmpty](../../sql-reference/functions/array-functions.md/#function-notempty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
--   [isNull](../../sql-reference/operators/index.md/#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
--   [isNotNull](../../sql-reference/operators/index.md/#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 -   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 -   [mapKeys](../../sql-reference/functions/tuple-map-functions.md/#mapkeys) to read the [keys](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
 -   [mapValues](../../sql-reference/functions/tuple-map-functions.md/#mapvalues) to read the [values](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
@@ -2041,7 +2041,7 @@ Default value: 16.
 
 ## validate_polygons {#validate_polygons}
 
-Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md/#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
 Possible values:
 
@@ -2227,7 +2227,7 @@ Default value: `0`.
 
 ## mutations_sync {#mutations_sync}
 
-Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
 
 Possible values:
 
@@ -2239,8 +2239,8 @@ Default value: `0`.
 
 **See Also**
 
--   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md/#synchronicity-of-alter-queries)
--   [Mutations](../../sql-reference/statements/alter/index.md/#mutations)
+-   [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
+-   [Mutations](../../sql-reference/statements/alter/index.md#mutations)
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
@@ -3398,6 +3398,17 @@ Default value: `true`.
 Use schema from cache for URL with last modification time validation (for urls with Last-Modified header). If this setting is enabled and URL doesn't have Last-Modified header, schema from cache won't be used.
 
 Default value: `true`.
+
+## use_structure_from_insertion_table_in_table_functions {use_structure_from_insertion_table_in_table_functions}
+
+Use structure from insertion table instead of schema inference from data.
+
+Possible values:
+- 0 - disabled
+- 1 - enabled
+- 2 - auto
+
+Default value: 2.
 
 ## compatibility {#compatibility}
 
