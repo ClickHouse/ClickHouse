@@ -1,6 +1,7 @@
 import logging
 import pytest
 import os
+import time
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -18,6 +19,9 @@ def cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
             ],
+            user_configs=[
+                "configs/users.d/users.xml",
+            ],
             stay_alive=True,
         )
 
@@ -30,14 +34,12 @@ def cluster():
         cluster.shutdown()
 
 
-def replace_config(path, old, new):
-    config = open(path, "r")
-    config_lines = config.readlines()
-    config.close()
-    config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(path, "w")
-    config.writelines(config_lines)
-    config.close()
+def replace_config(node, old, new):
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        old,
+        new,
+    )
 
 
 def test_config_reload(cluster):
@@ -58,12 +60,7 @@ def test_config_reload(cluster):
         ).strip()
     )
 
-    replace_config(
-        NAMED_COLLECTIONS_CONFIG,
-        "<key1>value1",
-        "<key1>value2",
-    )
-
+    replace_config(node, "value1", "value2")
     node.query("SYSTEM RELOAD CONFIG")
 
     assert (
@@ -80,14 +77,13 @@ def test_config_reload(cluster):
     )
 
 
-def test_create_and_drop_collection(cluster):
+def test_sql_commands(cluster):
     node = cluster.instances["node"]
     assert "1" == node.query("select count() from system.named_collections").strip()
 
     node.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
 
     def check_created():
-        assert "2" == node.query("select count() from system.named_collections").strip()
         assert (
             "collection1\ncollection2"
             == node.query("select name from system.named_collections").strip()
@@ -117,6 +113,76 @@ def test_create_and_drop_collection(cluster):
     check_created()
     node.restart_clickhouse()
     check_created()
+
+    node.query("ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'")
+
+    def check_altered():
+        assert (
+            "['key1','key2','key3']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "4"
+            == node.query(
+                "select collection['key1'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "value3"
+            == node.query(
+                "select collection['key3'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+
+    check_altered();
+    node.restart_clickhouse()
+    check_altered();
+
+    node.query("ALTER NAMED COLLECTION collection2 DELETE key2")
+
+    def check_deleted():
+        assert (
+            "['key1','key3']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+    check_deleted();
+    node.restart_clickhouse()
+    check_deleted();
+
+    node.query("ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1")
+
+    def check_altered_and_deleted():
+        assert (
+            "['key3','key4']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+        assert (
+            "3"
+            == node.query(
+                "select collection['key3'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+        assert (
+            "value4"
+            == node.query(
+                "select collection['key4'] from system.named_collections where name = 'collection2'"
+            ).strip()
+        )
+
+    check_altered_and_deleted();
+    node.restart_clickhouse()
+    check_altered_and_deleted();
 
     node.query("DROP NAMED COLLECTION collection2")
 

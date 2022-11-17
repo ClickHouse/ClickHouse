@@ -150,7 +150,8 @@ private:
 public:
     explicit LoadFromSQL(ContextPtr context_)
         : WithContext(context_)
-        , metadata_path(fs::path(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
+        , metadata_path(
+            fs::canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
     {
         if (!fs::exists(metadata_path))
             fs::create_directories(metadata_path);
@@ -168,6 +169,7 @@ public:
     NamedCollectionsMap getAll() const
     {
         NamedCollectionsMap result;
+
         for (const auto & collection_name : listCollections())
         {
             if (result.contains(collection_name))
@@ -205,10 +207,10 @@ public:
         const auto path = getMetadataPath(query.collection_name);
         auto create_query = readCreateQueryFromMetadata(path, getContext()->getSettings());
 
-        std::unordered_map<std::string, Field> alter_changes_map;
+        std::unordered_map<std::string, Field> result_changes_map;
         for (const auto & [name, value] : query.changes)
         {
-            auto [it, inserted] = alter_changes_map.emplace(name, value);
+            auto [it, inserted] = result_changes_map.emplace(name, value);
             if (!inserted)
             {
                 throw Exception(
@@ -219,15 +221,24 @@ public:
         }
 
         for (auto & [name, value] : create_query.changes)
+            result_changes_map.emplace(name, value);
+
+        for (const auto & delete_key : query.delete_keys)
         {
-            auto it = alter_changes_map.find(name);
-            if (it == alter_changes_map.end())
-                continue;
-            value = it->second;
-            alter_changes_map.erase(name);
+            auto it = result_changes_map.find(delete_key);
+            if (it == result_changes_map.end())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot delete key `{}` because it does not exist in collection",
+                    delete_key);
+            }
+            else
+                result_changes_map.erase(it);
         }
 
-        for (const auto & [name, value] : alter_changes_map)
+        create_query.changes.clear();
+        for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
 
         writeCreateQueryToMetadata(
