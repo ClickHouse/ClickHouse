@@ -240,7 +240,7 @@ Int32 HardwareCodecDeflateQpl::doDecompressDataAsynchronous(const char * source,
 
 void HardwareCodecDeflateQpl::flushAsynchronousDecompressRequests()
 {
-    UInt32 n_jobs_processing = decomp_async_job_map.size();
+    auto n_jobs_processing = decomp_async_job_map.size();
     std::map<UInt32, qpl_job *>::iterator it = decomp_async_job_map.begin();
 
     while (n_jobs_processing)
