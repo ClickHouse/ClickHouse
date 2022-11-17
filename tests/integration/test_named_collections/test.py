@@ -138,10 +138,9 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
-
-    check_altered();
+    check_altered()
     node.restart_clickhouse()
-    check_altered();
+    check_altered()
 
     node.query("ALTER NAMED COLLECTION collection2 DELETE key2")
 
@@ -153,11 +152,13 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
-    check_deleted();
+    check_deleted()
     node.restart_clickhouse()
-    check_deleted();
+    check_deleted()
 
-    node.query("ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1")
+    node.query(
+        "ALTER NAMED COLLECTION collection2 SET key3=3, key4='value4' DELETE key1"
+    )
 
     def check_altered_and_deleted():
         assert (
@@ -173,6 +174,7 @@ def test_sql_commands(cluster):
                 "select collection['key3'] from system.named_collections where name = 'collection2'"
             ).strip()
         )
+
         assert (
             "value4"
             == node.query(
@@ -180,9 +182,9 @@ def test_sql_commands(cluster):
             ).strip()
         )
 
-    check_altered_and_deleted();
+    check_altered_and_deleted()
     node.restart_clickhouse()
-    check_altered_and_deleted();
+    check_altered_and_deleted()
 
     node.query("DROP NAMED COLLECTION collection2")
 
