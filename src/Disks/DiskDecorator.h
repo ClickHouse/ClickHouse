@@ -75,6 +75,7 @@ public:
     DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }
     bool isRemote() const override { return delegate->isRemote(); }
     bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
