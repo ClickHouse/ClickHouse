@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

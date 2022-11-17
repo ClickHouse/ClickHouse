@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB

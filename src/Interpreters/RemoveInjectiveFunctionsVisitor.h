@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST.h>
 
 namespace DB

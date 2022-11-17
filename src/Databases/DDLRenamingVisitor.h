@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/QualifiedTableName.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <memory>
 #include <unordered_map>
 

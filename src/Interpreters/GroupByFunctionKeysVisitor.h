@@ -2,7 +2,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>

@@ -3,7 +3,7 @@
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/InDepthNodeVisitor.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
