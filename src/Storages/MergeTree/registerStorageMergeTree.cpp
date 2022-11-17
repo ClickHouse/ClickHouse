@@ -682,12 +682,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-
-    if (merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary && storage_settings->force_select_final)
-    {
-        throw Exception("Storage MergeTree doesn't support FINAL", ErrorCodes::ILLEGAL_FINAL);
-    }
-
     if (replicated)
     {
         return std::make_shared<StorageReplicatedMergeTree>(
