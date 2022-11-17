@@ -182,7 +182,7 @@ REGISTER_FUNCTION(ModuloLegacy)
 
 struct NamePositiveModulo
 {
-    static constexpr auto name = "positive_modulo";
+    static constexpr auto name = "positiveModulo";
 };
 using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloImpl, NamePositiveModulo, false>;
 
@@ -191,11 +191,17 @@ REGISTER_FUNCTION(PositiveModulo)
     factory.registerFunction<FunctionPositiveModulo>(
         {
             R"(
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
+Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
+In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
         )",
-            Documentation::Examples{{"positive_modulo", "SELECT positive_modulo(-1000, 32);"}},
+            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
             Documentation::Categories{"Arithmetic"}},
         FunctionFactory::CaseInsensitive);
+
+    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
+    /// Compatibility with Spark:
+    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
 }
 
 }
