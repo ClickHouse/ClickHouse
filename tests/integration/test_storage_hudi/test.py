@@ -174,6 +174,7 @@ def test_select_query(started_cluster):
     assert TSV(result) == TSV(expected)
     assert TSV(result_table_function) == TSV(expected)
 
+
 def test_describe_query(started_cluster):
     instance = started_cluster.instances["main_server"]
     bucket = started_cluster.minio_bucket
