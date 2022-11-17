@@ -484,6 +484,14 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * Therefore, simply appending arrow::ListArray::values() could lead to duplicated data to be appended.
+         * To properly handle this, arrow::ListArray::values() needs to be sliced based on the chunk offsets.
+         * arrow::ListArray::Flatten does that. More info on: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
         auto flatten_result = list_chunk.Flatten();
         if (flatten_result.ok())
         {
