@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE parsing_bson(WatchID UInt64, ClientIP6 Fixed
 
 
 $CLICKHOUSE_CLIENT --max_threads=0 --max_block_size=65505 --output_format_parallel_formatting=false -q \
-"SELECT WatchID, ClientIP6, EventTime, Title FROM test.hits ORDER BY UserID LIMIT 200000 Format BSONEachRow" > 00176_data.bson
+"SELECT WatchID, ClientIP6, EventTime, Title FROM test.hits ORDER BY UserID LIMIT 100000 Format BSONEachRow" > 00176_data.bson
 
 cat 00176_data.bson | $CLICKHOUSE_CLIENT --max_threads=0 --max_block_size=65505 --input_format_parallel_parsing=false -q "INSERT INTO parsing_bson FORMAT BSONEachRow"
 
