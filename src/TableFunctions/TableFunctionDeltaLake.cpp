@@ -13,7 +13,7 @@
 #    include <Storages/StorageDelta.h>
 #    include <Storages/StorageURL.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
-#    include <TableFunctions/TableFunctionDelta.h>
+#    include <TableFunctions/TableFunctionDeltaLake.h>
 #    include <TableFunctions/TableFunctionFactory.h>
 #    include "registerTableFunctions.h"
 
@@ -160,9 +160,9 @@ void registerTableFunctionDelta(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionDelta>(
         {.documentation
          = {R"(The table function can be used to read the DeltaLake table stored on object store.)",
-            Documentation::Examples{{"hudi", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)"}},
+            Documentation::Examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)"}},
             Documentation::Categories{"DataLake"}},
-         .allow_readonly = true});
+         .allow_readonly = false});
 }
 
 }
