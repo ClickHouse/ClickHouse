@@ -7609,8 +7609,6 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {
-    /// Lock is not required in other places because createTableSharedID()
-    /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
@@ -7637,8 +7635,12 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 void StorageReplicatedMergeTree::createTableSharedID() const
 {
     LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
+    // can be set by the call to getTableSharedID
     if (table_shared_id != UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
+    {
+        LOG_INFO(log, "Shared ID already set to {}", table_shared_id);
+        return;
+    }
 
     auto zookeeper = getZooKeeper();
     String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
