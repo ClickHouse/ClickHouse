@@ -461,6 +461,7 @@ public:
     {
         std::lock_guard lock(cancel_mutex);
         finalize();
+        finalize();
         cancelled = true;
     }
 
@@ -473,6 +474,7 @@ public:
     void onFinish() override
     {
         std::lock_guard lock(cancel_mutex);
+        finalize();
         finalize();
     }
 

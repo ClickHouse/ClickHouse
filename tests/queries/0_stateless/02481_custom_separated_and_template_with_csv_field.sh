@@ -12,8 +12,6 @@ echo "ab|c||de&f&&" | $CLICKHOUSE_LOCAL --input-format=CustomSeparated --format_
 
 echo -e "\${column_1:CSV}||\${column_2:CSV}**\${column_3:CSV}&&" > row_format_02481
 
-TEMPLATE_SETTINGS="SETTINGS format_template_rows_between_delimiter='\n', format_template_row='row_format_02481'"
-
 echo -e "ab|c||de*f**gh&k&&\n|av||*ad**&ad&&" | $CLICKHOUSE_LOCAL -q "select * from table" --input-format=Template --format_template_row='row_format_02481' --format_template_rows_between_delimiter ""
 
 rm row_format_02481
