@@ -2055,9 +2055,8 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
     const ContextPtr & context)
 {
-    if (filter_nodes.empty()) {
+    if (filter_nodes.empty())
         return nullptr;
-    }
 
     struct Frame
     {
