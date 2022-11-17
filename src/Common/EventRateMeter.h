@@ -28,7 +28,7 @@ public:
     void add(double now, double count)
     {
         // Remove data for initial heating stage that can present at the beginning of a query.
-        // Otherwise it leads to wrong gradual increase of average value, turning algoritm into not very reactive.
+        // Otherwise it leads to wrong gradual increase of average value, turning algorithm into not very reactive.
         if (count != 0.0 && ++data_points < 5)
         {
             start = events.time;
