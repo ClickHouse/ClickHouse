@@ -74,6 +74,7 @@ public:
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }
     bool isRemote() const override { return delegate->isRemote(); }
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
