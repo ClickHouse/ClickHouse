@@ -113,7 +113,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
