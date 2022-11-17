@@ -80,9 +80,10 @@ public:
         const DataTypePtr type;
         const size_t matcher_index;
         const size_t score;
+        const bool should_parse_the_rest_as_one_string;
         char * pos;
-        Field(const DataTypePtr & type_, const size_t & index_, const size_t & score_, char * pos_)
-            : type(type_), matcher_index(index_), score(score_), pos(pos_)
+        Field(const DataTypePtr & type_, const size_t & index_, const size_t & score_, char * pos_, const bool & one_string)
+            : type(type_), matcher_index(index_), score(score_), should_parse_the_rest_as_one_string(one_string), pos(pos_)
         {
         }
     };
@@ -114,9 +115,10 @@ private:
     int max_rows_to_check;
     ReadBuffer & in;
 
-    void recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions);
+    void
+    recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions, const bool & one_string);
     void readRowAndGenerateSolutions(char * pos, std::vector<Solution> & solutions);
-    std::vector<Field> readNextPossibleFields(const size_t & index);
+    std::vector<Field> readNextPossibleFields(const bool & one_string);
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 static inline void skipWhitespacesAndTabs(ReadBuffer & in)
 {
-    while (!in.eof() && isWhitespaceASCII(*in.position()))
+    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == '-' || *in.position() == ':' || *in.position() == ','))
         ++in.position();
 }
 
@@ -37,7 +37,7 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & in)
 // - 5: Decimal, Float
 // - 10: Date, DateTime, Map, Array, Tuple
 //
-// TODO: Find a better way to define score criterias, these are just mere guesses
+// TODO: Find a better way to define score criterions, these are just mere guesses
 static size_t scoreForType(const DataTypePtr & type, const char * pos)
 {
     WhichDataType which(type);
@@ -47,9 +47,6 @@ static size_t scoreForType(const DataTypePtr & type, const char * pos)
         const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
         return scoreForType(nullable_type->getNestedType(), pos);
     }
-
-    if (which.isStringOrFixedString() && *pos == '\n')
-        return 0; // eating up the entire string into one line gets 0 score
 
     if (which.isMap() || which.isArray() || which.isTuple())
         return 10;
@@ -63,18 +60,18 @@ static size_t scoreForType(const DataTypePtr & type, const char * pos)
     return 1;
 }
 
-// Returns if type is not String and rule is not JSON (mixed JSON fields is not reproducible)
-static bool isPreferredType(const DataTypePtr & type, const FormatSettings::EscapingRule & rule)
+// Returns if type is not String
+static bool isPreferredType(const DataTypePtr & type)
 {
     WhichDataType which(type);
 
     if (which.isNullable())
     {
         const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
-        return isPreferredType(nullable_type->getNestedType(), rule);
+        return isPreferredType(nullable_type->getNestedType());
     }
 
-    return !which.isStringOrFixedString() && rule != FormatSettings::EscapingRule::JSON;
+    return !which.isStringOrFixedString();
 }
 
 static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
@@ -115,10 +112,9 @@ static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
     UNREACHABLE();
 }
 
-static size_t
-scoreForField(const FormatSettings::EscapingRule & rule, const size_t & length, const size_t & index, DataTypePtr type, const char * pos)
+static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type, const char * pos)
 {
-    return scoreForRule(rule) * scoreForType(type, pos) * length * std::min<int>(index, 5);
+    return scoreForRule(rule) * scoreForType(type, pos);
 }
 
 void JSONFieldMatcher::parseField(String & s, ReadBuffer & in) const
@@ -129,8 +125,6 @@ void JSONFieldMatcher::parseField(String & s, ReadBuffer & in) const
 void CSVFieldMatcher::parseField(String & s, ReadBuffer & in) const
 {
     readCSVField(s, in, settings.csv);
-    if (!in.eof() && *in.position() == ',')
-        ++in.position();
 }
 
 void QuotedFieldMatcher::parseField(String & s, ReadBuffer & in) const
@@ -159,13 +153,21 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.push_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleFields(const size_t & index)
+std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleFields(const bool & one_string)
 {
     skipWhitespacesAndTabs(in);
     char * start = in.position();
     std::vector<FreeformFieldMatcher::Field> fields;
 
     String field;
+    if (one_string)
+    {
+        matchers[4]->parseField(field, in);
+        auto type = matchers[4]->getTypeFromField(field);
+        fields.emplace_back(type, 4, scoreForField(FormatSettings::EscapingRule::JSON, type, in.position()), in.position(), false);
+        return fields;
+    }
+
     for (size_t i = 0; const auto & matcher : matchers)
     {
         try
@@ -177,16 +179,21 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
             {
                 type = makeFloatIfInt(type); // for the sake of correctness, make all int to be float
                 fields.emplace_back(
-                    type, i, scoreForField(matcher->getEscapingRule(), field.size(), index, type, in.position()), in.position());
+                    type,
+                    i,
+                    scoreForField(matcher->getEscapingRule(), type, in.position()),
+                    in.position(),
+                    field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher");
                 LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got type: {}", type->getName());
-                if (isPreferredType(type, matcher->getEscapingRule()) || i >= 2)
+                if (isPreferredType(type))
                     break;
             }
             else
                 LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got null type from field: {}", field);
         }
-        catch (...)
+        catch (Exception & e)
         {
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed parsing field, message: {}", e.message());
         }
 
         ++i;
@@ -196,7 +203,8 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
     return fields;
 }
 
-void FreeformFieldMatcher::recursivelyGetNextFieldInRow(char * current_pos, Solution current_solution, std::vector<Solution> & solutions)
+void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
+    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, const bool & one_string)
 {
     char * tmp = in.position();
     in.position() = current_pos;
@@ -212,7 +220,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(char * current_pos, Solu
         return;
     }
 
-    const auto fields = readNextPossibleFields(current_solution.matched_types.size());
+    const auto fields = readNextPossibleFields(one_string);
     for (const auto & field : fields)
     {
         auto next = current_solution;
@@ -220,7 +228,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(char * current_pos, Solu
         next.matched_types.push_back(field.type);
         next.score += field.score;
 
-        recursivelyGetNextFieldInRow(field.pos, next, solutions);
+        recursivelyGetNextFieldInRow(field.pos, next, solutions, field.should_parse_the_rest_as_one_string);
     }
 
     in.position() = tmp; // reset to initial position
@@ -229,7 +237,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(char * current_pos, Solu
 void FreeformFieldMatcher::readRowAndGenerateSolutions(char * pos, std::vector<Solution> & solutions)
 {
     Solution current_solution{.score = 0};
-    recursivelyGetNextFieldInRow(pos, current_solution, solutions);
+    recursivelyGetNextFieldInRow(pos, current_solution, solutions, false);
     skipToNextLineOrEOF(in);
 }
 
@@ -250,11 +258,14 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution");
 
 
-    std::vector<char *> rows_positions(max_rows_to_check);
+    std::vector<char *> rows_positions;
     for (int row = 0; row < max_rows_to_check; ++row)
     {
         skipWhitespacesAndTabs(in);
-        rows_positions[row] = in.position();
+        if (in.eof())
+            break;
+
+        rows_positions.push_back(in.position());
         skipToNextLineOrEOF(in);
     }
 
@@ -293,6 +304,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
 
 bool FreeformFieldMatcher::parseRow()
 {
+    skipWhitespacesAndTabs(in);
     if (in.eof() || final_solution.matchers_order.empty())
         return false;
 
