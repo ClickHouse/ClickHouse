@@ -88,7 +88,8 @@ public:
         return true;
     }
 
-    void allChildrenVisited(VisitQueryTreeNodeType & parent) {
+    void allChildrenVisited(VisitQueryTreeNodeType & parent)
+    {
         auto * query_node = parent->as<QueryNode>();
         if (query_node)
         {
