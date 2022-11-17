@@ -24,7 +24,7 @@ expect_after {
 spawn bash
 send "source $basedir/../shell_config.sh\r"
 
-send "yes | head -n10000000 | \$CLICKHOUSE_CLIENT --query \"insert into function null('foo String') format TSV\" >/dev/null\r"
+send "yes | head -n10000000 | \$CLICKHOUSE_CLIENT --progress --query \"insert into function null('foo String') format TSV\" >/dev/null\r"
 expect "Progress: "
 send "\3"
 

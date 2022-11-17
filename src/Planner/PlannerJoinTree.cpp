@@ -227,7 +227,11 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
 
-    auto join_constant = tryExtractConstantFromJoinNode(join_tree_node);
+    std::optional<bool> join_constant;
+
+    if (join_node.getStrictness() == JoinStrictness::All)
+        join_constant = tryExtractConstantFromJoinNode(join_tree_node);
+
     if (join_constant)
     {
         /** If there is JOIN with always true constant, we transform it to cross.
