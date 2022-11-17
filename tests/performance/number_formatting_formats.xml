@@ -9,7 +9,6 @@
                 <value>JSON</value>
                 <value>JSONCompact</value>
                 <value>JSONEachRow</value>
-                <value>BSONEachRow</value>
                 <value>TSKV</value>
                 <value>RowBinary</value>
                 <value>XML</value>
