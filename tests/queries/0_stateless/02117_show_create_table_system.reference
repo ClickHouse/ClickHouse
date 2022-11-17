@@ -106,6 +106,7 @@ CREATE TABLE system.data_skipping_indices
     `table` String,
     `name` String,
     `type` String,
+    `index_expr` String,
     `expr` String,
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
