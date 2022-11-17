@@ -55,6 +55,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     }
 
     if (parsed_delete)
+    {
         while (true)
         {
             if (!delete_keys.empty() && !s_comma.ignore(pos))
@@ -66,6 +67,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 
             delete_keys.push_back(getIdentifierName(key));
         }
+    }
 
     auto query = std::make_shared<ASTAlterNamedCollectionQuery>();
 
