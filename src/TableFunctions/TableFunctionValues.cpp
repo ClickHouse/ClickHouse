@@ -25,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
@@ -83,7 +82,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = args_func.at(0)->children;
 
