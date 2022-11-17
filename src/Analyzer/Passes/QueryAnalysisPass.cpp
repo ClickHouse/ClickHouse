@@ -517,7 +517,7 @@ public:
 
 private:
     QueryTreeNodes expressions;
-    std::unordered_map<std::string, std::vector<QueryTreeNodePtr>> alias_name_to_expressions;
+    std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 
 /** Projection names is name of query tree node that is used in projection part of query node.
@@ -2175,14 +2175,15 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         {
             std::unordered_set<Identifier> valid_identifiers;
             collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
-
             auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}' in scope {}{}",
-                toStringLowercase(IdentifierLookupContext::EXPRESSION),
+
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
+                toStringLowercase(identifier_lookup.lookup_context),
                 identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
         }
+
         it->second = lookup_result.resolved_identifier;
 
         /** During collection of aliases if node is identifier and has alias, we cannot say if it is
@@ -2193,9 +2194,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
           * If we resolved identifier node as function, we must remove identifier node alias from
           * expression alias map.
           */
-        if (identifier_lookup.isExpressionLookup() && it->second)
+        if (identifier_lookup.isExpressionLookup())
             scope.alias_name_to_lambda_node.erase(identifier_bind_part);
-        else if (identifier_lookup.isFunctionLookup() && it->second)
+        else if (identifier_lookup.isFunctionLookup())
             scope.alias_name_to_expression_node.erase(identifier_bind_part);
 
         scope.expressions_in_resolve_process_stack.popNode();
@@ -3203,11 +3204,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
         if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
-            size_t table_expressions_column_nodes_with_names_stack_size = table_expressions_column_nodes_with_names_stack.size();
-            if (table_expressions_column_nodes_with_names_stack_size < 1)
+            if (table_expressions_column_nodes_with_names_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 1 table expressions on stack before ARRAY JOIN processing. Actual {}",
-                    table_expressions_column_nodes_with_names_stack_size);
+                    "Expected at least 1 table expressions on stack before ARRAY JOIN processing");
 
             auto & table_expression_column_nodes_with_names = table_expressions_column_nodes_with_names_stack.back();
 
