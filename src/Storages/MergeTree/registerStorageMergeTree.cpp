@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int ILLEGAL_FINAL;
 }
 
 
