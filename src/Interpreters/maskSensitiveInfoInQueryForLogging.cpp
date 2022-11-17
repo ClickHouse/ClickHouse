@@ -8,6 +8,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/formatAST.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -79,6 +82,14 @@ namespace
             else if (auto * backup_query = ast->as<ASTBackupQuery>())
             {
                 visitBackupQuery(*backup_query, data);
+            }
+            else if (auto * create_named_collection_query = ast->as<ASTCreateNamedCollectionQuery>())
+            {
+                visitCreateNamedCollectionQuery(*create_named_collection_query, data);
+            }
+            else if (auto * alter_named_collection_query = ast->as<ASTAlterNamedCollectionQuery>())
+            {
+                visitAlterNamedCollectionQuery(*alter_named_collection_query, data);
             }
             else if (auto * storage = ast->as<ASTStorage>())
             {
@@ -550,6 +561,32 @@ namespace
                     data.password_was_hidden = true;
                 }
             }
+        }
+
+        static void visitCreateNamedCollectionQuery(ASTCreateNamedCollectionQuery & create_named_collection, Data & data)
+        {
+            data.can_contain_password = true;
+
+            if constexpr (check_only)
+                return;
+
+            for (auto & [name, value] : create_named_collection.changes)
+                value = "[HIDDEN]";
+
+            data.password_was_hidden = true;
+        }
+
+        static void visitAlterNamedCollectionQuery(ASTAlterNamedCollectionQuery & alter_named_collection, Data & data)
+        {
+            data.can_contain_password = true;
+
+            if constexpr (check_only)
+                return;
+
+            for (auto & [name, value] : alter_named_collection.changes)
+                value = "[HIDDEN]";
+
+            data.password_was_hidden = true;
         }
     };
 
