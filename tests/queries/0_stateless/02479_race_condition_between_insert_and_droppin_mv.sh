@@ -17,7 +17,7 @@ function insert {
         {
             ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset"
         } || {
-            for thread_pid in ${$2[@]}; do
+            for thread_pid in "${$2[@]}"; do
                 kill $thread_pid
             done
         }
@@ -45,7 +45,7 @@ for i in {1..3}
 do
     drop_mv $i &
     drop_mv_pid=$!
-    drop_mv_threads+=($drop_mv_pid)
+    drop_mv_threads+=("$drop_mv_pid")
 done
 
 insert_threads=()
@@ -53,14 +53,14 @@ for i in {1..3}
 do
     insert 100 drop_mv_threads &
     insert_pid=$!
-    insert_threads+=($insert_pid)
+    insert_threads+=("$insert_pid")
 done
 
 
-for thread_pid in ${insert_threads[@]}; do
+for thread_pid in "${insert_threads[@]}"; do
     wait $thread_pid
 done
-for thread_pid in ${drop_mv_threads[@]}; do
+for thread_pid in "${drop_mv_threads[@]}"; do
     kill $thread_pid
 done
 
