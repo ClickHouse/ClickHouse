@@ -1,4 +1,7 @@
 #include <Storages/NamedCollectionUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -10,10 +13,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/Context.h>
-#include <Common/escapeForFileName.h>
 #include <Storages/NamedCollections.h>
 #include <Storages/NamedCollectionConfiguration.h>
-#include <Common/FieldVisitorToString.h>
 
 
 namespace fs = std::filesystem;
@@ -153,7 +154,9 @@ public:
         , metadata_path(
             fs::canonical(context_->getPath()) / NAMED_COLLECTIONS_METADATA_DIRECTORY)
     {
-        if (!fs::exists(metadata_path))
+        if (fs::exists(metadata_path))
+            cleanUp();
+        else
             fs::create_directories(metadata_path);
     }
 
@@ -162,14 +165,26 @@ public:
         std::vector<std::string> collection_names;
         fs::directory_iterator it{metadata_path};
         for (; it != fs::directory_iterator{}; ++it)
-            collection_names.push_back(it->path().stem());
+        {
+            const auto & current_path = it->path();
+            if (current_path.extension() == ".sql")
+            {
+                collection_names.push_back(it->path().stem());
+            }
+            else
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("NamedCollectionsLoadFromSQL"),
+                    "Unexpected file {} in named collections directory",
+                    current_path.filename().string());
+            }
+        }
         return collection_names;
     }
 
     NamedCollectionsMap getAll() const
     {
         NamedCollectionsMap result;
-
         for (const auto & collection_name : listCollections())
         {
             if (result.contains(collection_name))
@@ -282,6 +297,22 @@ private:
     std::string getMetadataPath(const std::string & collection_name) const
     {
         return fs::path(metadata_path) / (escapeForFileName(collection_name) + ".sql");
+    }
+
+    /// Delete .tmp files. They could be left undeleted in case of
+    /// some exception or abrupt server restart.
+    void cleanUp()
+    {
+        fs::directory_iterator it{metadata_path};
+        std::vector<std::string> files_to_remove;
+        for (; it != fs::directory_iterator{}; ++it)
+        {
+            const auto & current_path = it->path();
+            if (current_path.extension() == ".tmp")
+                files_to_remove.push_back(current_path);
+        }
+        for (const auto & file : files_to_remove)
+            fs::remove(file);
     }
 
     static ASTCreateNamedCollectionQuery readCreateQueryFromMetadata(
