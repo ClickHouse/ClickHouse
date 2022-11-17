@@ -31,7 +31,7 @@ from version_helper import (
 )
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
-BUCKETS = {"amd64": "package_release", "arm64": "package_aarch64"}
+BUCKETS = {"amd64": "package_release"}
 git = Git(ignore_no_tags=True)
 
 
