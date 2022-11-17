@@ -434,7 +434,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(const Block & from, Block & to)
+static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();
@@ -480,6 +480,9 @@ static void appendBlock(const Block & from, Block & to)
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
         LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+
+        /// But first log exception to get more details in case of LOGICAL_ERROR
+        tryLogCurrentException(log, "Caught exception while adding data to buffer, rolling back...");
 
         try
         {
@@ -625,7 +628,7 @@ private:
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
-        appendBlock(sorted_block, buffer.data);
+        appendBlock(storage.log, sorted_block, buffer.data);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
