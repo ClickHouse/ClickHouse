@@ -642,9 +642,10 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
     const char delimiter = settings.delimiter;
     const char maybe_quote = *buf.position();
+    const String & custom_delimiter = settings.custom_delimiter;
 
     /// Emptiness and not even in quotation marks.
-    if (maybe_quote == delimiter)
+    if (custom_delimiter.empty() && maybe_quote == delimiter)
         return;
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
@@ -682,6 +683,42 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     }
     else
     {
+        /// If custom_delimiter is specified, we should read until first occurrences of
+        /// custom_delimiter in buffer.
+        if (!custom_delimiter.empty())
+        {
+            PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&buf);
+            if (!peekable_buf)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading CSV string with custom delimiter is allowed only when using PeekableReadBuffer");
+
+            while (true)
+            {
+                if (peekable_buf->eof())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading CSV string, expected custom delimiter \"{}\"", custom_delimiter);
+
+                char * next_pos = reinterpret_cast<char *>(memchr(peekable_buf->position(), custom_delimiter[0], peekable_buf->available()));
+                if (!next_pos)
+                    next_pos = peekable_buf->buffer().end();
+
+                appendToStringOrVector(s, *peekable_buf, next_pos);
+                peekable_buf->position() = next_pos;
+
+                if (!buf.hasPendingData())
+                    continue;
+
+                {
+                    PeekableReadBufferCheckpoint checkpoint{*peekable_buf, true};
+                    if (checkString(custom_delimiter, *peekable_buf))
+                        return;
+                }
+
+                s.push_back(*peekable_buf->position());
+                ++peekable_buf->position();
+            }
+
+            return;
+        }
+
         /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
@@ -774,6 +811,68 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
 
     if (add_quote)
         s.push_back(quote);
+}
+
+void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+{
+    /// Read all data until first_delimiter or second_delimiter
+    while (true)
+    {
+        if (buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
+
+        char * next_pos = buf.position();
+        while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
+            ++next_pos;
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == first_delimiter[0])
+        {
+            PeekableReadBufferCheckpoint checkpoint(buf, true);
+            if (checkString(first_delimiter, buf))
+                return;
+        }
+
+        if (*buf.position() == second_delimiter[0])
+        {
+            PeekableReadBufferCheckpoint checkpoint(buf, true);
+            if (checkString(second_delimiter, buf))
+                return;
+        }
+
+        s.push_back(*buf.position());
+        ++buf.position();
+    }
+}
+
+String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
+{
+    String res;
+
+    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
+    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
+        readCSVStringInto(res, buf, settings);
+    else
+        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
+
+    return res;
+}
+
+String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
+{
+    String res;
+
+    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
+    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
+         readCSVField(res, buf, settings);
+    else
+        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
+
+    return res;
 }
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);

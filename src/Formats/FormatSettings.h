@@ -117,6 +117,7 @@ struct FormatSettings
         char tuple_delimiter = ',';
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
+        String custom_delimiter;
     } csv;
 
     struct HiveText
