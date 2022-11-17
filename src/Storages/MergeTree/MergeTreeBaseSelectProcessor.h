@@ -31,7 +31,7 @@ struct ParallelReadingExtension
 };
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
-class MergeTreeBaseSelectProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public ISource, public std::enable_shared_from_this<MergeTreeBaseSelectProcessor>
 {
 public:
     MergeTreeBaseSelectProcessor(
