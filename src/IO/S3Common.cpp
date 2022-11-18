@@ -736,7 +736,7 @@ namespace S3
         return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging, for_disk_s3);
     }
 
-    URI::URI(const Poco::URI & uri_)
+    URI::URI(const std::string & uri_)
     {
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
@@ -754,16 +754,30 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-        uri = uri_;
+        uri = Poco::URI(uri_);
+
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
         /// Extract object version ID from query string.
+        bool has_version_id = false;
         for (const auto & [query_key, query_value] : uri.getQueryParameters())
             if (query_key == "versionId")
+            {
                 version_id = query_value;
+                has_version_id = true;
+            }
+
+        /// If uri contains parameter "versionId", the "?" will not be used as wildcards.
+        /// Otherwise it is necessary to encode "?" to avoid deletion during parsing.
+        if (!has_version_id && uri_.find('?') != String::npos)
+        {
+            String uri_with_question_mark_encode;
+            Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
+            uri = Poco::URI(uri_with_question_mark_encode);
+        }
 
         String name;
         String endpoint_authority_from_uri;

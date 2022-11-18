@@ -121,7 +121,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ true);
 
-    S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
+    S3::URI uri(config.getString(config_prefix + ".endpoint"));
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
