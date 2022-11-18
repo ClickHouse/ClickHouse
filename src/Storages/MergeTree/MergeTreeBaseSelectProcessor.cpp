@@ -696,12 +696,11 @@ IMergeTreeSelectAlgorithm::Status IMergeTreeSelectAlgorithm::performRequestToCoo
     if (task->data_part->isProjectionPart())
     {
         part_name = task->data_part->getParentPart()->name;
-        projection_name  = task->data_part->name;
+        projection_name = task->data_part->name;
     }
     else
     {
         part_name = task->data_part->name;
-        projection_name = "";
     }
 
     PartBlockRange block_range
@@ -718,8 +717,9 @@ IMergeTreeSelectAlgorithm::Status IMergeTreeSelectAlgorithm::performRequestToCoo
         .block_range = std::move(block_range),
         .mark_ranges = std::move(requested_ranges)
     };
+    String request_description = request.toString();
 
-    /// Constistent hashing won't work with reading in order, because at the end of the execution
+    /// Consistent hashing won't work with reading in order, because at the end of the execution
     /// we could possibly seek back
     if (!delayed && canUseConsistentHashingForParallelReading())
     {
@@ -729,6 +729,7 @@ IMergeTreeSelectAlgorithm::Status IMergeTreeSelectAlgorithm::performRequestToCoo
             auto delayed_task = std::make_unique<MergeTreeReadTask>(*task); // Create a copy
             delayed_task->mark_ranges = std::move(request.mark_ranges);
             delayed_tasks.emplace_back(std::move(delayed_task));
+            LOG_TRACE(log, "Request delayed by hash: {}", request_description);
             return Status::Denied;
         }
     }
@@ -736,17 +737,24 @@ IMergeTreeSelectAlgorithm::Status IMergeTreeSelectAlgorithm::performRequestToCoo
     auto optional_response = extension.value().callback(std::move(request));
 
     if (!optional_response.has_value())
+    {
+        LOG_TRACE(log, "Request cancelled: {}", request_description);
         return Status::Cancelled;
+    }
 
     auto response = optional_response.value();
 
     task->mark_ranges = std::move(response.mark_ranges);
 
     if (response.denied || task->mark_ranges.empty())
+    {
+        LOG_TRACE(log, "Request rejected: {}", request_description);
         return Status::Denied;
+    }
 
     finalizeNewTask();
 
+    LOG_TRACE(log, "Request accepted: {}", request_description);
     return Status::Accepted;
 }
 

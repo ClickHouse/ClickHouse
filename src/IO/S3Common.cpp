@@ -573,7 +573,14 @@ public:
             /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
             /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                    configuration.region,
+                    configuration.remote_host_filter,
+                    configuration.s3_max_redirects,
+                    configuration.enable_s3_requests_logging,
+                    configuration.for_disk_s3,
+                    configuration.get_request_throttler,
+                    configuration.put_request_throttler);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
 
@@ -610,7 +617,14 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects, configuration.enable_s3_requests_logging, configuration.for_disk_s3);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                    configuration.region,
+                    configuration.remote_host_filter,
+                    configuration.s3_max_redirects,
+                    configuration.enable_s3_requests_logging,
+                    configuration.for_disk_s3,
+                    configuration.get_request_throttler,
+                    configuration.put_request_throttler);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -731,9 +745,18 @@ namespace S3
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         bool enable_s3_requests_logging,
-        bool for_disk_s3)
+        bool for_disk_s3,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging, for_disk_s3);
+        return PocoHTTPClientConfiguration(
+            force_region,
+            remote_host_filter,
+            s3_max_redirects,
+            enable_s3_requests_logging,
+            for_disk_s3,
+            get_request_throttler,
+            put_request_throttler);
     }
 
     URI::URI(const Poco::URI & uri_)

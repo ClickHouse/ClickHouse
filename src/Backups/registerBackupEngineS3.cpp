@@ -47,7 +47,7 @@ void registerBackupEngineS3(BackupFactory & factory)
     auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
 #if USE_AWS_S3
-        String backup_name_for_logging = params.backup_info.toStringForLogging(params.context);
+        String backup_name_for_logging = params.backup_info.toStringForLogging();
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
