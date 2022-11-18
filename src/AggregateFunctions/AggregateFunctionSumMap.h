@@ -202,7 +202,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
         for (size_t col = 0, size = values_types.size(); col < size; ++col)
         {
-            const auto & array_column = assert_cast<const ColumnArray&>(*columns[col + 1]);
+            const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
             const size_t values_vec_offset = offsets[row_num - 1];
@@ -532,7 +532,12 @@ private:
 public:
     explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
@@ -567,7 +572,13 @@ private:
 public:
     explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
