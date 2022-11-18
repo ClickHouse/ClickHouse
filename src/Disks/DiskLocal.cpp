@@ -528,26 +528,6 @@ DataSourceDescription DiskLocal::getDataSourceDescription() const
     return data_source_description;
 }
 
-void DiskLocal::startupImpl(ContextPtr)
-{
-    try
-    {
-        broken = false;
-        disk_checker_magic_number = -1;
-        disk_checker_can_check_read = true;
-        readonly = !setup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(logger, fmt::format("Disk {} is marked as broken during startup", name));
-        broken = true;
-        /// Disk checker is disabled when failing to start up.
-        disk_checker_can_check_read = false;
-    }
-    if (disk_checker && disk_checker_can_check_read)
-        disk_checker->startup();
-}
-
 void DiskLocal::shutdown()
 {
     if (disk_checker)
@@ -641,7 +621,7 @@ DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
     );
 }
 
-bool DiskLocal::setup()
+void DiskLocal::checkAccessImpl(const String & path)
 {
     try
     {
@@ -650,9 +630,15 @@ bool DiskLocal::setup()
     catch (...)
     {
         LOG_ERROR(logger, "Cannot create the directory of disk {} ({}).", name, disk_path);
-        throw;
+        readonly = true;
+        return;
     }
 
+    IDisk::checkAccessImpl(path);
+}
+
+bool DiskLocal::setup()
+{
     try
     {
         if (!FS::canRead(disk_path))
@@ -715,6 +701,28 @@ bool DiskLocal::setup()
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
     return true;
+}
+
+void DiskLocal::startupImpl(ContextPtr)
+{
+    broken = false;
+    disk_checker_magic_number = -1;
+    disk_checker_can_check_read = true;
+
+    try
+    {
+        if (!setup())
+            readonly = true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, fmt::format("Disk {} is marked as broken during startup", name));
+        broken = true;
+        /// Disk checker is disabled when failing to start up.
+        disk_checker_can_check_read = false;
+    }
+    if (disk_checker && disk_checker_can_check_read)
+        disk_checker->startup();
 }
 
 struct stat DiskLocal::stat(const String & path) const

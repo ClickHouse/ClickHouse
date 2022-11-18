@@ -320,12 +320,9 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
-    void startup(ContextPtr context, bool skip_access_check)
-    {
-        if (!skip_access_check)
-            checkAccess();
-        startupImpl(context);
-    }
+    /// Performs access check and custom action on disk startup.
+    void startup(ContextPtr context, bool skip_access_check);
+
     /// Performs custom action on disk startup.
     virtual void startupImpl(ContextPtr) {}
 
@@ -410,6 +407,8 @@ public:
 protected:
     friend class DiskDecorator;
 
+    const String name;
+
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
 
@@ -418,8 +417,7 @@ protected:
     /// A derived class may override copy() to provide a faster implementation.
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
-protected:
-    const String name;
+    virtual void checkAccessImpl(const String & path);
 
 private:
     std::shared_ptr<Executor> executor;

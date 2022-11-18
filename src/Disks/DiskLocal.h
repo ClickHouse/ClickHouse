@@ -111,7 +111,7 @@ public:
 
     bool isBroken() const override { return broken; }
 
-    void startupImpl(ContextPtr) override;
+    void startupImpl(ContextPtr context) override;
 
     void shutdown() override;
 
@@ -130,6 +130,9 @@ public:
     void chmod(const String & path, mode_t mode) override;
 
     MetadataStoragePtr getMetadataStorage() override;
+
+protected:
+    void checkAccessImpl(const String & path) override;
 
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
