@@ -191,4 +191,35 @@ FROM
 ) AS t2
 ORDER BY t1.number ASC;
 
--- TODO: add tests with LIMIT BY
+SELECT '-- ORDER BY cannot remove ORDER BY in subquery with ORDER BY WITH FILL';
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM
+(
+    SELECT *
+    FROM
+    (
+        SELECT *
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC WITH FILL STEP 1
+)
+ORDER BY number ASC;
+
+SELECT '-- ORDER BY cannot remove ORDER BY in subquery with LIMIT BY';
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM
+(
+    SELECT *
+    FROM
+    (
+        SELECT *
+        FROM numbers(3)
+        ORDER BY number DESC
+    )
+    ORDER BY number ASC
+    LIMIT 1 BY number
+)
+ORDER BY number ASC;

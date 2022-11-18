@@ -413,3 +413,82 @@ QUERY id: 0
       SORT id: 24, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 25, column_name: number, result_type: UInt64, source_id: 3
+-- ORDER BY cannot remove ORDER BY in subquery with ORDER BY WITH FILL
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    QUERY id: 3, is_subquery: 1
+      PROJECTION COLUMNS
+        number UInt64
+      PROJECTION
+        LIST id: 4, nodes: 1
+          COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
+      JOIN TREE
+        QUERY id: 6, is_subquery: 1
+          PROJECTION COLUMNS
+            number UInt64
+          PROJECTION
+            LIST id: 7, nodes: 1
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+          JOIN TREE
+            TABLE_FUNCTION id: 9, table_function_name: numbers
+              ARGUMENTS
+                LIST id: 10, nodes: 1
+                  CONSTANT id: 11, constant_value: UInt64_3, constant_value_type: UInt8
+      ORDER BY
+        LIST id: 12, nodes: 1
+          SORT id: 13, sort_direction: ASCENDING, with_fill: 1
+            EXPRESSION
+              COLUMN id: 14, column_name: number, result_type: UInt64, source_id: 6
+            FILL STEP
+              CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 16, nodes: 1
+      SORT id: 17, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 18, column_name: number, result_type: UInt64, source_id: 3
+-- ORDER BY cannot remove ORDER BY in subquery with LIMIT BY
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    QUERY id: 3, is_subquery: 1
+      PROJECTION COLUMNS
+        number UInt64
+      PROJECTION
+        LIST id: 4, nodes: 1
+          COLUMN id: 5, column_name: number, result_type: UInt64, source_id: 6
+      JOIN TREE
+        QUERY id: 6, is_subquery: 1
+          PROJECTION COLUMNS
+            number UInt64
+          PROJECTION
+            LIST id: 7, nodes: 1
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+          JOIN TREE
+            TABLE_FUNCTION id: 9, table_function_name: numbers
+              ARGUMENTS
+                LIST id: 10, nodes: 1
+                  CONSTANT id: 11, constant_value: UInt64_3, constant_value_type: UInt8
+      ORDER BY
+        LIST id: 12, nodes: 1
+          SORT id: 13, sort_direction: ASCENDING, with_fill: 0
+            EXPRESSION
+              COLUMN id: 14, column_name: number, result_type: UInt64, source_id: 6
+      LIMIT BY LIMIT
+        CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+      LIMIT BY
+        LIST id: 16, nodes: 1
+          COLUMN id: 14, column_name: number, result_type: UInt64, source_id: 6
+  ORDER BY
+    LIST id: 17, nodes: 1
+      SORT id: 18, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 19, column_name: number, result_type: UInt64, source_id: 3
