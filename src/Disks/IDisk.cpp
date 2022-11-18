@@ -129,24 +129,37 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::checkAccess()
-try
+void IDisk::startup(ContextPtr context, bool skip_access_check)
 {
-    if (isReadOnly())
+    if (!skip_access_check)
     {
-        LOG_DEBUG(&Poco::Logger::get("IDisk"),
-            "Skip access check for disk {} (read-only disk).",
-            getName());
-        return;
+        if (isReadOnly())
+        {
+            LOG_DEBUG(&Poco::Logger::get("IDisk"),
+                "Skip access check for disk {} (read-only disk).",
+                getName());
+        }
+        else
+            checkAccess();
     }
+    startupImpl(context);
+}
 
+void IDisk::checkAccess()
+{
     DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
     const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
-    const std::string_view payload("test", 4);
 
-    /// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
+    checkAccessImpl(path);
+}
+
+/// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
+void IDisk::checkAccessImpl(const String & path)
+try
+{
+    const std::string_view payload("test", 4);
 
     /// write
     {
