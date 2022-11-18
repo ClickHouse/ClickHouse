@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from base64 import b64decode
 from collections import namedtuple
 from typing import Any, Dict, List
 from threading import Thread
@@ -277,7 +278,10 @@ def exec_workflow_url(urls_to_cancel, token):
 def main(event):
     token = get_token_from_aws()
     DEBUG_INFO["event"] = event
-    event_data = json.loads(event["body"])
+    if event["isBase64Encoded"]:
+        event_data = json.loads(b64decode(event["body"]))
+    else:
+        event_data = json.loads(event["body"])
 
     print("Got event for PR", event_data["number"])
     action = event_data["action"]
