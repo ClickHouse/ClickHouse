@@ -135,7 +135,7 @@ void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSink<true>::De
         idx++;
     }
 
-    LOG_TRACE(log, "new block ids {}, new offsets{}", toString(new_block_ids), toString(new_offsets));
+    LOG_TRACE(log, "New block IDs: {}, new offsets: {}", toString(new_block_ids), toString(new_offsets));
 
     offsets = std::move(new_offsets);
     partition.block_id = std::move(new_block_ids);
