@@ -334,7 +334,7 @@ void ReplicatedMergeTreeSink<async_insert>::consume(Chunk chunk)
         if (const auto * chunk_offsets_ptr = typeid_cast<const ChunkOffsets *>(chunk_info.get()))
             chunk_offsets = std::make_shared<ChunkOffsets>(chunk_offsets_ptr->offsets);
         else
-            throw Exception("Miss chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("No chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
     }
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, chunk_offsets);
