@@ -113,6 +113,7 @@ private:
 
 using Chunks = std::vector<Chunk>;
 
+/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
 class ChunkOffsets : public ChunkInfo
 {
 public:

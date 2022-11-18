@@ -43,7 +43,7 @@ struct ReplicatedMergeTreeSink<async_insert>::DelayedChunk
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
         BlockIDsType block_id;
-        BlockWithPartition block;
+        BlockWithPartition block_with_partition;
         std::unordered_map<String, size_t> block_id_to_offset_idx;
 
         Partition() = default;
@@ -51,7 +51,7 @@ struct ReplicatedMergeTreeSink<async_insert>::DelayedChunk
             : temp_part(std::move(temp_part_)),
               elapsed_ns(elapsed_ns_),
               block_id(std::move(block_id_)),
-              block(std::move(block_))
+              block_with_partition(std::move(block_))
         {
                 initBlockIDMap();
         }
@@ -78,77 +78,105 @@ struct ReplicatedMergeTreeSink<async_insert>::DelayedChunk
     std::vector<Partition> partitions;
 };
 
-template<typename T>
-inline String toString(const std::vector<T> & vec)
+namespace
 {
-    String res = "{";
-    for (const auto & item : vec)
-        res += toString(item) + ",";
-    return res + "}";
-}
-
-/// remove the conflict parts of block for rewriting again.
-void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSink<true>::DelayedChunk::Partition & partition, const std::vector<String> & block_paths)
-{
-    std::vector<size_t> offset_idx;
-    for (const auto & raw_path : block_paths)
+    template<typename T>
+    inline String toString(const std::vector<T> & vec)
     {
-        std::filesystem::path p(raw_path);
-        String conflict_block_id = p.filename();
-        auto it = partition.block_id_to_offset_idx.find(conflict_block_id);
-        if (it == partition.block_id_to_offset_idx.end())
-            throw Exception("unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
-        offset_idx.push_back(it->second);
+        String res = "{";
+        for (const auto & item : vec)
+            res += DB::toString(item) + ",";
+        return res + "}";
     }
-    std::sort(offset_idx.begin(), offset_idx.end());
 
-    auto & offsets = partition.block.offsets->offsets;
-    size_t idx = 0, remove_count = 0;
-    auto it = offset_idx.begin();
-    std::vector<size_t> new_offsets;
-    std::vector<String> new_block_ids;
-
-    /// construct filter
-    size_t rows = partition.block.block.rows();
-    auto filter_col = ColumnUInt8::create(rows, 1u);
-    ColumnUInt8::Container & vec = filter_col->getData();
-    UInt8 * pos = vec.data();
-    for (auto & offset : offsets)
+    /// remove the conflict parts of block for rewriting again.
+    void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSink<true>::DelayedChunk::Partition & partition, const std::vector<String> & block_paths)
     {
-        if (it != offset_idx.end() && *it == idx)
+        std::vector<size_t> offset_idx;
+        for (const auto & raw_path : block_paths)
         {
-            size_t start_pos = idx > 0 ? offsets[idx - 1] : 0;
-            size_t end_pos = offset;
-            remove_count += end_pos - start_pos;
-            while (start_pos < end_pos)
+            std::filesystem::path p(raw_path);
+            String conflict_block_id = p.filename();
+            auto it = partition.block_id_to_offset_idx.find(conflict_block_id);
+            if (it == partition.block_id_to_offset_idx.end())
+                throw Exception("Unknown conflict path " + conflict_block_id, ErrorCodes::LOGICAL_ERROR);
+            offset_idx.push_back(it->second);
+        }
+        std::sort(offset_idx.begin(), offset_idx.end());
+
+        auto & offsets = partition.block_with_partition.offsets->offsets;
+        size_t idx = 0, remove_count = 0;
+        auto it = offset_idx.begin();
+        std::vector<size_t> new_offsets;
+        std::vector<String> new_block_ids;
+
+        /// construct filter
+        size_t rows = partition.block_with_partition.block.rows();
+        auto filter_col = ColumnUInt8::create(rows, 1u);
+        ColumnUInt8::Container & vec = filter_col->getData();
+        UInt8 * pos = vec.data();
+        for (auto & offset : offsets)
+        {
+            if (it != offset_idx.end() && *it == idx)
             {
-                *(pos + start_pos) = 0;
-                start_pos ++;
+                size_t start_pos = idx > 0 ? offsets[idx - 1] : 0;
+                size_t end_pos = offset;
+                remove_count += end_pos - start_pos;
+                while (start_pos < end_pos)
+                {
+                    *(pos + start_pos) = 0;
+                    start_pos ++;
+                }
+                it++;
             }
-            it++;
+            else
+            {
+                new_offsets.push_back(offset - remove_count);
+                new_block_ids.push_back(partition.block_id[idx]);
+            }
+            idx++;
         }
-        else
+
+        LOG_TRACE(log, "New block IDs: {}, new offsets: {}", toString(new_block_ids), toString(new_offsets));
+
+        offsets = std::move(new_offsets);
+        partition.block_id = std::move(new_block_ids);
+        auto cols = partition.block_with_partition.block.getColumns();
+        for (auto & col : cols)
         {
-            new_offsets.push_back(offset - remove_count);
-            new_block_ids.push_back(partition.block_id[idx]);
+            col = col -> filter(vec, rows - remove_count);
         }
-        idx++;
+        partition.block_with_partition.block.setColumns(cols);
+
+        LOG_TRACE(log, "New block rows {}", partition.block_with_partition.block.rows());
+
+        partition.initBlockIDMap();
     }
 
-    LOG_TRACE(log, "New block IDs: {}, new offsets: {}", toString(new_block_ids), toString(new_offsets));
-
-    offsets = std::move(new_offsets);
-    partition.block_id = std::move(new_block_ids);
-    auto cols = partition.block.block.getColumns();
-    for (auto & col : cols)
+    std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id)
     {
-        col = col -> filter(vec, rows - remove_count);
+        size_t start = 0;
+        auto cols = block.block.getColumns();
+        std::vector<String> block_id_vec;
+        for (auto offset : block.offsets->offsets)
+        {
+            SipHash hash;
+            for (size_t i = start; i < offset; ++i)
+                for (const auto & col : cols)
+                    col->updateHashWithValue(i, hash);
+            union
+            {
+                char bytes[16];
+                UInt64 words[2];
+            } hash_value;
+            hash.get128(hash_value.bytes);
+
+            block_id_vec.push_back(partition_id + "_" + DB::toString(hash_value.words[0]) + "_" + DB::toString(hash_value.words[1]));
+
+            start = offset;
+        }
+        return block_id_vec;
     }
-    partition.block.block.setColumns(cols);
-
-    LOG_TRACE(log, "New block rows {}", partition.block.block.rows());
-
-    partition.initBlockIDMap();
 }
 
 template<bool async_insert>
@@ -263,31 +291,6 @@ size_t ReplicatedMergeTreeSink<async_insert>::checkQuorumPrecondition(const ZooK
     return replicas_number;
 }
 
-std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id)
-{
-    size_t start = 0;
-    auto cols = block.block.getColumns();
-    std::vector<String> block_id_vec;
-    for (auto offset : block.offsets->offsets)
-    {
-        SipHash hash;
-        for (size_t i = start; i < offset; ++i)
-            for (const auto & col : cols)
-                col->updateHashWithValue(i, hash);
-        union
-        {
-            char bytes[16];
-            UInt64 words[2];
-        } hash_value;
-        hash.get128(hash_value.bytes);
-
-        block_id_vec.push_back(partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]));
-
-        start = offset;
-    }
-    return block_id_vec;
-}
-
 template<bool async_insert>
 void ReplicatedMergeTreeSink<async_insert>::consume(Chunk chunk)
 {
@@ -363,7 +366,7 @@ void ReplicatedMergeTreeSink<async_insert>::consume(Chunk chunk)
         if constexpr (async_insert)
         {
             /// TODO consider insert_deduplication_token
-            block_id = getBlockIDVec(current_block, temp_part.part->info.partition_id);
+            block_id = getHashesForBlocks(current_block, temp_part.part->info.partition_id);
             LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets->offsets), current_block.offsets->offsets.size());
         }
         else if (deduplicate)
@@ -484,8 +487,8 @@ void ReplicatedMergeTreeSink<true>::finishDelayedChunk(const ZooKeeperWithFaultI
             rewriteBlock(log, partition, conflict_block_ids);
             if (partition.block_id.empty())
                 break;
-            partition.block.partition = std::move(partition.temp_part.part->partition.value);
-            partition.temp_part = storage.writer.writeTempPart(partition.block, metadata_snapshot, context);
+            partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
+            partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
         }
     }
 
@@ -605,17 +608,11 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
         if constexpr (async_insert)
         {
             for (const auto & single_block_id : block_id)
-            {
                 block_id_path.push_back(storage.zookeeper_path + "/blocks/" + single_block_id);
-            }
         }
         else if (deduplicate_block)
             block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
-        std::optional<EphemeralLockInZooKeeper> block_number_lock;
-        if constexpr (async_insert)
-            std::tie(block_number_lock, conflict_block_ids) = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
-        else
-            block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+        auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
         ThreadFuzzer::maybeInjectSleep();
 
         /// Prepare transaction to ZooKeeper
@@ -627,6 +624,20 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
         String existing_part_name;
         if (block_number_lock)
         {
+            if constexpr (async_insert)
+            {
+                /// The truth is that we always get only one path from block_number_lock.
+                /// This is a restriction of Keeper. Here I would like to use vector because
+                /// I wanna keep extensibility for future optimization, for instance, using
+                /// cache to resolve conflicts in advance.
+                String conflict_path = block_number_lock->getConflictPath();
+                if (!conflict_path.empty())
+                {
+                    LOG_TRACE(log, "Cannot get lock, the conflict path is {}", conflict_path);
+                    conflict_block_ids.push_back(conflict_path);
+                    return;
+                }
+            }
             is_already_existing_part = false;
             block_number = block_number_lock->getNumber();
 
@@ -715,14 +726,8 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
                         quorum_info.host_node_version));
             }
         }
-        else if constexpr (async_insert)
-        {
-            LOG_TRACE(log, "cannot get lock, the conflict block ids are {}", toString(conflict_block_ids));
-            if (conflict_block_ids.empty())
-                throw Exception("conflict block ids and block number lock should not be empty at the same time", ErrorCodes::LOGICAL_ERROR);
-            return;
-        }
-        else
+        /// async_insert will never return null lock, because they need the conflict path.
+        else if constexpr (!async_insert)
         {
             is_already_existing_part = true;
 
@@ -776,6 +781,8 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
             /// Do not check for duplicate on commit to ZK.
             block_id_path.clear();
         }
+        else
+            throw Exception("Conflict block ids and block number lock should not be empty at the same time for async inserts", ErrorCodes::LOGICAL_ERROR);
 
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
