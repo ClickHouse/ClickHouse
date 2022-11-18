@@ -2120,7 +2120,7 @@ size_t MergeTreeData::clearEmptyParts()
         if (part->rows_count != 0)
             continue;
 
-        /// Do not try to drop uncommitted parts. If the newest tx doesn't see it that is probably hasn't been commited jet
+        /// Do not try to drop uncommitted parts. If the newest tx doesn't see it that is probably hasn't been committed jet
         if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
