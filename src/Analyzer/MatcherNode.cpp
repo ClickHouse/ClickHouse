@@ -136,10 +136,10 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     {
         buffer << fmt::format("{}", fmt::join(columns_identifiers, ", "));
     }
-    buffer << ") id: " << format_state.getNodeId(this) << "\n";
+    buffer << ") id: " << format_state.getNodeId(this);
 
     const auto & column_transformers_list = getColumnTransformers();
-    column_transformers_list.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "COLUMN_TRANSFORMERS");
+    column_transformers_list.dumpTreeIfNotEmpty(buffer, format_state, indent + 2, "COLUMN TRANSFORMERS");
 }
 
 bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const

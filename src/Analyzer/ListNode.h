@@ -41,7 +41,14 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    void dumpTreeIfNotEmpty(WriteBuffer & buffer, FormatState & format_state, size_t indent, std::string_view kind) const;
+    void dumpTreeWithPrefix(WriteBuffer & buffer, FormatState & format_state, size_t indent, std::string_view kind) const;
+
+    void dumpTreeIfNotEmpty(WriteBuffer & buffer, FormatState & format_state, size_t indent, std::string_view kind) const
+    {
+        if (children.empty())
+            return;
+        dumpTreeWithPrefix(buffer, format_state, indent, kind);
+    }
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;

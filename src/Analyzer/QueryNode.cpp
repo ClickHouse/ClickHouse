@@ -91,9 +91,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         }
     }
 
-    buffer << '\n';
-    buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
-    getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
+    getProjection().dumpTreeWithPrefix(buffer, format_state, indent + 2, "PROJECTION");
 
     if (getJoinTree())
     {

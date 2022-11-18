@@ -38,12 +38,9 @@ void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
-void ListNode::dumpTreeIfNotEmpty(WriteBuffer &buffer, FormatState &format_state, size_t indent, std::string_view kind) const
+void ListNode::dumpTreeWithPrefix(WriteBuffer &buffer, FormatState &format_state, size_t indent, std::string_view kind) const
 {
-    if (children.empty())
-        return;
-
-    buffer << std::string(indent, ' ')  << kind << "LIST id: " << format_state.getNodeId(this);
+    buffer << "\n" << std::string(indent, ' ')  << kind << " LIST id: " << format_state.getNodeId(this);
 
     size_t children_size = children.size();
     buffer << ", nodes: " << children_size << '\n';
