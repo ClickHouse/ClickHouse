@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
+#include <Common/FieldVisitorToString.h>
 
 
 namespace DB
@@ -9,42 +10,51 @@ namespace DB
 
 class IColumn;
 
+
+struct SettingValue
+{
+    virtual ~SettingValue() = default;
+    virtual const Field & getField() const = 0;
+    virtual Field & getField() = 0;
+    virtual std::string toString() const = 0;
+};
+using SettingValuePtr = std::shared_ptr<SettingValue>;
+
+SettingValuePtr getSettingValueFromField(const Field & field);
+SettingValuePtr getSettingValueFromField(Field && field);
+
+
 class SettingChange
 {
 private:
     String name;
-    Field field_value;
-    ASTPtr ast_value; /// A setting value which cannot be put in Field.
+    SettingValuePtr value;
 
 public:
     SettingChange() = default;
 
-    SettingChange(std::string_view name_, const Field & value_) : name(name_), field_value(value_) {}
-    SettingChange(std::string_view name_, Field && value_) : name(name_), field_value(std::move(value_)) {}
-    SettingChange(std::string_view name_, const ASTPtr & value_) : name(name_), ast_value(value_->clone()) {}
+    SettingChange(std::string_view name_, const Field & value_) : name(name_), value(getSettingValueFromField(value_)) {}
+    SettingChange(std::string_view name_, Field && value_) : name(name_), value(getSettingValueFromField(std::move(value_))) {}
+    SettingChange(std::string_view name_, SettingValuePtr && value_) : name(name_), value(std::move(value_)) {}
 
     friend bool operator ==(const SettingChange & lhs, const SettingChange & rhs)
     {
-        return (lhs.name == rhs.name) && (lhs.field_value == rhs.field_value) && (lhs.ast_value == rhs.ast_value);
+        return (lhs.name == rhs.name) && (lhs.value == rhs.value);
     }
 
     friend bool operator !=(const SettingChange & lhs, const SettingChange & rhs) { return !(lhs == rhs); }
 
-    void throwIfASTValueNotConvertedToField() const;
-
     const String & getName() const { return name; }
     String & getName() { return name; }
 
-    const Field & getFieldValue() const;
-    Field & getFieldValue();
+    SettingValuePtr getValue() const { return value; }
+    const Field & getFieldValue() const { return value->getField(); }
+    Field & getFieldValue() { return value->getField(); }
 
-    const ASTPtr & getASTValue() const { return ast_value; }
-    ASTPtr & getASTValue() { return ast_value; }
+    void setValue(const Field & field) { value = getSettingValueFromField(field); }
+    void setValue(SettingValuePtr value_) { value = std::move(value_); }
 
-    void setFieldValue(const Field & field);
-    void setASTValue(const ASTPtr & ast);
-
-    String getValueString() const;
+    String getValueString() const { return value->toString(); }
 };
 
 

@@ -78,15 +78,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const std::st
 DiskConfigurationPtr getDiskConfigurationFromAST(const std::string & root_name, const ASTs & disk_args, ContextPtr context)
 {
     auto xml_document = getDiskConfigurationFromASTImpl(root_name, disk_args, context);
-
     Poco::AutoPtr<Poco::Util::XMLConfiguration> conf(new Poco::Util::XMLConfiguration());
     conf->load(xml_document);
-
-    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss.exceptions(std::ios::failbit);
-    conf->save(ss);
-    LOG_TEST(&Poco::Logger::get("getDiskConfigurationFromAST"), "Received disk configuration: {}", ss.str());
-
     return conf;
 }
 

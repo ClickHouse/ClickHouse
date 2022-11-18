@@ -6,6 +6,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/SettingValueFromAST.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -118,7 +119,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
         tryGetIdentifierNameInto(name, change.getName());
-        change.setASTValue(function_ast);
+        change.setValue(std::make_unique<SettingValueFromAST>(function_ast));
 
         return true;
     }
@@ -126,7 +127,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     tryGetIdentifierNameInto(name, change.getName());
-    change.setFieldValue(value->as<ASTLiteral &>().value);
+    change.setValue(value->as<ASTLiteral &>().value);
 
     return true;
 }
@@ -159,7 +160,7 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
         tryGetIdentifierNameInto(name, change.getName());
-        change.setASTValue(function_ast);
+        change.setValue(std::make_unique<SettingValueFromAST>(function_ast));
 
         return true;
     }
@@ -170,7 +171,7 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
     if (is_default)
         default_settings = change.getName();
     else
-        change.setFieldValue(value->as<ASTLiteral &>().value);
+        change.setValue(value->as<ASTLiteral &>().value);
 
     return true;
 }
