@@ -293,7 +293,7 @@ public:
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        buf.read(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
+        buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
 };
 
