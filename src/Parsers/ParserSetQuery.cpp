@@ -13,7 +13,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
-#include <ranges>
 
 namespace DB
 {
@@ -99,11 +98,11 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     ParserLiteralOrMap literal_or_map_p;
     ParserToken s_eq(TokenType::Equals);
     ParserSetQuery set_p(true);
-    ParserToken l_br(TokenType::OpeningRoundBracket);
-    ParserToken r_br(TokenType::ClosingRoundBracket);
+    ParserFunction function_p;
 
     ASTPtr name;
     ASTPtr value;
+    ASTPtr function_ast;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -115,15 +114,12 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     else if (ParserKeyword("FALSE").ignore(pos, expected))
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
-    else if (ParserKeyword("SETTINGS").ignore(pos, expected)
-             && l_br.ignore(pos, expected)
-             && set_p.parse(pos, value, expected)
-             && r_br.ignore(pos, expected))
+    /// for SETTINGS disk=disk(type='s3', path='', ...)
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
         tryGetIdentifierNameInto(name, change.name);
-        auto changes = value->as<ASTSetQuery>()->changes;
-        auto values = changes | std::views::transform([](const auto & setting) { return Tuple{setting.name, setting.value}; });
-        change.value = Array(values.begin(), values.end());
+        change.value_ast = function_ast;
+
         return true;
     }
     else if (!literal_or_map_p.parse(pos, value, expected))
@@ -140,13 +136,12 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
     ParserToken s_eq(TokenType::Equals);
-    ParserSetQuery set_p(true);
-    ParserToken l_br(TokenType::OpeningRoundBracket);
-    ParserToken r_br(TokenType::ClosingRoundBracket);
+    ParserFunction function_p;
 
     ASTPtr name;
     ASTPtr value;
     bool is_default = false;
+    ASTPtr function_ast;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -160,25 +155,22 @@ bool ParserSetQuery::parseNameValuePairWithDefault(SettingChange & change, Strin
         value = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     else if (ParserKeyword("DEFAULT").ignore(pos, expected))
         is_default = true;
-    else if (ParserKeyword("SETTINGS").ignore(pos, expected)
-             && l_br.ignore(pos, expected)
-             && set_p.parse(pos, value, expected)
-             && r_br.ignore(pos, expected))
+    /// for SETTINGS disk=disk(type='s3', path='', ...)
+    else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        auto changes = value->as<ASTSetQuery>()->changes;
-        auto values = changes | std::views::transform([](const auto & setting) { return Tuple{setting.name, setting.value}; });
-        change.value = Array(values.begin(), values.end());
+        tryGetIdentifierNameInto(name, change.getName());
+        change.setASTValue(function_ast);
+
         return true;
     }
     else if (!value_p.parse(pos, value, expected))
         return false;
 
-    tryGetIdentifierNameInto(name, change.name);
+    tryGetIdentifierNameInto(name, change.getName());
     if (is_default)
-        default_settings = change.name;
+        default_settings = change.getName();
     else
-        change.value = value->as<ASTLiteral &>().value;
+        change.setFieldValue(value->as<ASTLiteral &>().value);
 
     return true;
 }

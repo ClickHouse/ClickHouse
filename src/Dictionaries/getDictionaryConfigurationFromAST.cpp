@@ -511,7 +511,7 @@ void buildSourceConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
+        for (const auto & [name, value, _] : settings->changes)
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);

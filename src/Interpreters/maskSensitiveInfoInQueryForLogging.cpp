@@ -169,10 +169,6 @@ namespace
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 wipePasswordFromS3TableEngineArguments(*storage.engine, data);
             }
-            else if (storage.engine->arguments && storage.settings)
-            {
-                wipeDiskSettingsArguments(*storage.settings, data);
-            }
         }
 
         static void wipePasswordFromS3TableEngineArguments(ASTFunction & engine, Data & data)
@@ -389,33 +385,6 @@ namespace
 
             arguments[arg_idx] = std::make_shared<ASTLiteral>("[HIDDEN]");
             data.password_was_hidden = true;
-        }
-
-        static void wipeDiskSettingsArguments(ASTSetQuery & settings, Data & data)
-        {
-            if (settings.changes.empty())
-                return;
-
-            for (auto & setting : settings.changes)
-            {
-                if (setting.name != "disk")
-                    continue;
-
-                if constexpr (check_only)
-                {
-                    data.can_contain_password = true;
-                    return;
-                }
-
-                if (setting.value.getType() != Field::Types::Which::Array)
-                    continue;
-
-                for (auto & disk_setting : setting.value.safeGet<Array>())
-                    disk_setting = Tuple({disk_setting.safeGet<Tuple>()[0], "[HIDDEN]"});
-
-                data.password_was_hidden = true;
-                return;
-            }
         }
 
         static void removeArgumentsAfter(ASTFunction & function, Data & data, size_t new_num_arguments)
