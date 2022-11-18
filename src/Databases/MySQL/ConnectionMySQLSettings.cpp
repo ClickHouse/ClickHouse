@@ -42,7 +42,7 @@ void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
     SettingsChanges & changes = storage_def.settings->changes;
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
-                  [](const SettingChange & c) { return c.name == #NAME; })                                    \
+                  [](const SettingChange & c) { return c.getName() == #NAME; })                               \
             == changes.end())                                                                                 \
         changes.push_back(SettingChange{#NAME, static_cast<Field>(NAME)});
 

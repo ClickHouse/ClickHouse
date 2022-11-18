@@ -24,11 +24,11 @@ namespace ErrorCodes
 
 static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
 {
-    auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+    auto name = change.getName().substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
 
-    auto value = applyVisitor(FieldVisitorToString(), change.value);
+    auto value = applyVisitor(FieldVisitorToString(), change.getFieldValue());
     /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
     if (value.starts_with('\''))
     {
@@ -117,16 +117,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     /// for SETTINGS disk=disk(type='s3', path='', ...)
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value_ast = function_ast;
+        tryGetIdentifierNameInto(name, change.getName());
+        change.setASTValue(function_ast);
 
         return true;
     }
     else if (!literal_or_map_p.parse(pos, value, expected))
         return false;
 
-    tryGetIdentifierNameInto(name, change.name);
-    change.value = value->as<ASTLiteral &>().value;
+    tryGetIdentifierNameInto(name, change.getName());
+    change.setFieldValue(value->as<ASTLiteral &>().value);
 
     return true;
 }
@@ -208,7 +208,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parseNameValuePairWithDefault(current, name_of_default_setting, pos, expected))
             return false;
 
-        if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
+        if (current.getName().starts_with(QUERY_PARAMETER_NAME_PREFIX))
             query_parameters.emplace(convertToQueryParameter(std::move(current)));
         else if (!name_of_default_setting.empty())
             default_settings.emplace_back(std::move(name_of_default_setting));

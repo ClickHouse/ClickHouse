@@ -1268,8 +1268,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             const auto & changes = args.getContext()->getSettingsRef().changes();
             for (const auto & change : changes)
             {
-                if (user_format_settings.has(change.name))
-                    user_format_settings.set(change.name, change.value);
+                if (user_format_settings.has(change.getName()))
+                    user_format_settings.set(change.getName(), change.getFieldValue());
             }
 
             // Apply changes from SETTINGS clause, with validation.

@@ -482,7 +482,7 @@ void Client::printChangedSettings() const
             {
                 fmt::print(stderr, ", ");
             }
-            fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+            fmt::print(stderr, "{} = '{}'", changes[i].getName(), changes[i].getValueString());
         }
         fmt::print(stderr, "\n");
     }

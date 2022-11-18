@@ -183,7 +183,7 @@ namespace
             changes,
             [](const SettingChange & change)
             {
-                const String & name = change.name;
+                const String & name = change.getName();
                 return (name == "internal") || (name == "async") || (name == "host_id");
             });
 

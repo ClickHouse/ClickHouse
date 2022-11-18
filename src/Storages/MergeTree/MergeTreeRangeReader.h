@@ -246,6 +246,8 @@ public:
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
 
+    void prefetch(const MarkRanges & ranges);
+
     const Block & getSampleBlock() const { return sample_block; }
 
 private:

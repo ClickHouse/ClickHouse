@@ -249,26 +249,28 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
-                if (setting.name == "join_use_nulls")
-                    join_use_nulls = setting.value;
-                else if (setting.name == "max_rows_in_join")
-                    max_rows_in_join = setting.value;
-                else if (setting.name == "max_bytes_in_join")
-                    max_bytes_in_join = setting.value;
-                else if (setting.name == "join_overflow_mode")
-                    join_overflow_mode = setting.value;
-                else if (setting.name == "join_any_take_last_row")
-                    join_any_take_last_row = setting.value;
-                else if (setting.name == "any_join_distinct_right_table_keys")
-                    old_any_join = setting.value;
-                else if (setting.name == "disk")
-                    disk_name = setting.value.get<String>();
-                else if (setting.name == "persistent")
+                const auto & setting_name = setting.getName();
+                const auto & setting_value = setting.getFieldValue();
+                if (setting_name == "join_use_nulls")
+                    join_use_nulls = setting_value;
+                else if (setting_name == "max_rows_in_join")
+                    max_rows_in_join = setting_value;
+                else if (setting_name == "max_bytes_in_join")
+                    max_bytes_in_join = setting_value;
+                else if (setting_name == "join_overflow_mode")
+                    join_overflow_mode = setting_value;
+                else if (setting_name == "join_any_take_last_row")
+                    join_any_take_last_row = setting_value;
+                else if (setting_name == "any_join_distinct_right_table_keys")
+                    old_any_join = setting_value;
+                else if (setting_name == "disk")
+                    disk_name = setting_value.get<String>();
+                else if (setting_name == "persistent")
                 {
-                    persistent = setting.value.get<bool>();
+                    persistent = setting_value.get<bool>();
                 }
                 else
-                    throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception("Unknown setting " + setting_name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
