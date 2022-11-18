@@ -6647,6 +6647,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
         moving_part.moves_list_entry = data.getContext()->getMovesList().insert(
             data.getStorageID(),
             moving_part.part->name,
+            moving_part.reserved_space->getDisk()->getName(),
             moving_part.reserved_space->getDisk()->getPath(),
             moving_part.part->getBytesOnDisk());
 }

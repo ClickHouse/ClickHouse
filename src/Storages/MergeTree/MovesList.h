@@ -19,6 +19,7 @@ struct MoveInfo
     std::string database;
     std::string table;
     std::string partition_id;
+    std::string target_disk_name;
     std::string target_disk_path;
     UInt64 part_size;
 
@@ -30,6 +31,7 @@ struct MovesListElement : private boost::noncopyable
 {
     const StorageID table_id;
     const std::string partition_id;
+    const std::string target_disk_name;
     const std::string target_disk_path;
     const UInt64 part_size;
 
@@ -39,6 +41,7 @@ struct MovesListElement : private boost::noncopyable
     MovesListElement(
         const StorageID & table_id_,
         const std::string & partition_id_,
+        const std::string & target_disk_name_,
         const std::string & target_disk_path_,
         UInt64 part_size_);
 
