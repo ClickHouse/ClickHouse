@@ -32,10 +32,12 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    explicit CastOverloadResolverImpl(std::optional<Diagnostic> diagnostic_, bool keep_nullable_, bool cast_ipv4_ipv6_default_on_conversion_error_)
+    explicit CastOverloadResolverImpl(std::optional<Diagnostic> diagnostic_, bool keep_nullable_, bool cast_ipv4_ipv6_default_on_conversion_error_, bool input_format_ipv4_default_on_conversion_error_, bool input_format_ipv6_default_on_conversion_error_)
         : diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , cast_ipv4_ipv6_default_on_conversion_error(cast_ipv4_ipv6_default_on_conversion_error_)
+        , input_format_ipv4_default_on_conversion_error(input_format_ipv4_default_on_conversion_error_)
+        , input_format_ipv6_default_on_conversion_error(input_format_ipv6_default_on_conversion_error_)
     {
     }
 
@@ -44,15 +46,15 @@ public:
         const auto & settings_ref = context->getSettingsRef();
 
         if constexpr (internal)
-            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
+            return createImpl({}, false /*keep_nullable*/, settings_ref.cast_ipv4_ipv6_default_on_conversion_error, settings_ref.input_format_ipv4_default_on_conversion_error, settings_ref.input_format_ipv6_default_on_conversion_error);
 
-        return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error);
+        return createImpl({}, settings_ref.cast_keep_nullable, settings_ref.cast_ipv4_ipv6_default_on_conversion_error, settings_ref.input_format_ipv4_default_on_conversion_error, settings_ref.input_format_ipv6_default_on_conversion_error);
     }
 
-    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool cast_ipv4_ipv6_default_on_conversion_error = false)
+    static FunctionOverloadResolverPtr createImpl(std::optional<Diagnostic> diagnostic = {}, bool keep_nullable = false, bool cast_ipv4_ipv6_default_on_conversion_error = false, bool input_format_ipv4_default_on_conversion_error = false, bool input_format_ipv6_default_on_conversion_error = false)
     {
         assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(std::move(diagnostic), keep_nullable, cast_ipv4_ipv6_default_on_conversion_error);
+        return std::make_unique<CastOverloadResolverImpl>(std::move(diagnostic), keep_nullable, cast_ipv4_ipv6_default_on_conversion_error, input_format_ipv4_default_on_conversion_error, input_format_ipv6_default_on_conversion_error);
     }
 
 protected:
@@ -65,7 +67,7 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast<FunctionName>>(name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, cast_ipv4_ipv6_default_on_conversion_error);
+        return std::make_unique<FunctionCast<FunctionName>>(name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, cast_ipv4_ipv6_default_on_conversion_error, input_format_ipv4_default_on_conversion_error, input_format_ipv6_default_on_conversion_error);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -104,6 +106,8 @@ private:
     std::optional<Diagnostic> diagnostic;
     bool keep_nullable;
     bool cast_ipv4_ipv6_default_on_conversion_error;
+    bool input_format_ipv4_default_on_conversion_error;
+    bool input_format_ipv6_default_on_conversion_error;
 };
 
 

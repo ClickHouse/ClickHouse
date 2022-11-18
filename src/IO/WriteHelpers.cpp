@@ -107,7 +107,7 @@ void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
     char * paddr = addr;
 
     formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
-    buf.write(addr, paddr - addr);
+    buf.write(addr, paddr - addr - 1);
 }
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)

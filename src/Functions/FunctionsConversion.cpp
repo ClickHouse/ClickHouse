@@ -39,8 +39,6 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
-    factory.registerFunction<FunctionToIPv4>();
-    factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionToString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
