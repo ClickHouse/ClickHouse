@@ -263,7 +263,7 @@ size_t ReplicatedMergeTreeSink<async_insert>::checkQuorumPrecondition(const ZooK
     return replicas_number;
 }
 
-std::vector<String> getBlockIDVec(BlockWithPartition & block, String partition_id)
+std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id)
 {
     size_t start = 0;
     auto cols = block.block.getColumns();
