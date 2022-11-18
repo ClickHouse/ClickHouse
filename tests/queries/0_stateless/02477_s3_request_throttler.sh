@@ -1,6 +1,12 @@
--- Tags: no-fasttest
--- Tag no-fasttest: needs s3
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: needs s3
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -nq "
 -- Limit S3 PUT request per second rate
 SET s3_max_put_rps = 2;
 SET s3_max_put_burst = 1;
@@ -24,3 +30,4 @@ AND type = 'QueryFinish'
 AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
+"
