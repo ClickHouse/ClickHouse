@@ -34,8 +34,8 @@ public:
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
     enum class SortScope
     {
-        None = 0,
-        Chunk = 1, /// Separate chunks are sorted
+        None   = 0,
+        Chunk  = 1, /// Separate chunks are sorted
         Stream = 2, /// Each data steam is sorted
         Global = 3, /// Data is globally sorted
     };

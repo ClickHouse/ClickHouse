@@ -67,7 +67,7 @@ private:
         size_t to_row = 0;
 
         /// Number of bytes in all columns + number of bytes in arena, related to current chunk.
-        Int64 total_bytes = 0;
+        size_t total_bytes = 0;
 
         State(const Chunk & chunk, const SortDescriptionWithPositions & description, Int64 total_bytes_);
         State() = default;
