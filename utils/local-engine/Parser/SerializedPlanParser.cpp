@@ -44,6 +44,7 @@
 #include <Storages/SubstraitSource/SubstraitFileSource.h>
 #include <base/logger_useful.h>
 #include <google/protobuf/util/json_util.h>
+#include <google/protobuf/wrappers.pb.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <Common/DebugUtils.h>
@@ -197,8 +198,9 @@ void SerializedPlanParser::addRemoveNullableStep(QueryPlan & plan, std::vector<S
 QueryPlanPtr SerializedPlanParser::parseMergeTreeTable(const substrait::ReadRel & rel)
 {
     assert(rel.has_extension_table());
-    std::string table = rel.extension_table().detail().value();
-    auto merge_tree_table = local_engine::parseMergeTreeTableString(table);
+    google::protobuf::StringValue table;
+    table.ParseFromString(rel.extension_table().detail().value());
+    auto merge_tree_table = local_engine::parseMergeTreeTableString(table.value());
     DB::Block header;
     if (rel.has_base_schema() && rel.base_schema().names_size())
     {
@@ -1454,7 +1456,9 @@ void SerializedPlanParser::collectJoinKeys(
 
 DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::QueryPlanPtr left, DB::QueryPlanPtr right)
 {
-    auto join_opt_info = parseJoinOptimizationInfo(join.advanced_extension().optimization().value());
+    google::protobuf::StringValue optimization;
+    optimization.ParseFromString(join.advanced_extension().optimization().value());
+    auto join_opt_info = parseJoinOptimizationInfo(optimization.value());
     auto table_join = std::make_shared<TableJoin>(global_context->getSettings(), global_context->getTemporaryVolume());
     if (join.type() == substrait::JoinRel_JoinType_JOIN_TYPE_INNER)
     {
