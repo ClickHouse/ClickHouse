@@ -537,7 +537,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/docs/en/sql-reference/operators/index.md/#operators-datetime) operators, for example:
+To define `interval`, use [time interval](/docs/en/sql-reference/operators/index.md#operators-datetime) operators, for example:
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -860,7 +860,7 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 -   As a result of an insert (`INSERT` query).
--   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md/#alter-mutations).
+-   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
 -   When downloading from another replica.
 -   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 
