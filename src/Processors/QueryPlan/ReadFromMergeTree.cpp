@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
@@ -89,7 +90,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
-    : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
+    : ISourceStep(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfo(query_info_),
         data_.getPartitionValueType(),
@@ -211,11 +212,13 @@ Pipe ReadFromMergeTree::readFromPool(
             };
         }
 
-        auto source = std::make_shared<MergeTreeThreadSelectProcessor>(
+        auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, storage_snapshot, use_uncompressed_cache,
             prewhere_info, actions_settings, reader_settings, virt_column_names, std::move(extension));
+
+        auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
 
         /// Set the approximate number of rows for the first source only
         /// In case of parallel processing on replicas do not set approximate rows at all.
@@ -224,13 +227,14 @@ Pipe ReadFromMergeTree::readFromPool(
         if (i == 0 && !client_info.collaborate_with_initiator)
             source->addTotalRowsApprox(total_rows);
 
+
         pipes.emplace_back(std::move(source));
     }
 
     return Pipe::unitePipes(std::move(pipes));
 }
 
-template<typename TSource>
+template<typename Algorithm>
 ProcessorPtr ReadFromMergeTree::createSource(
     const RangesInDataPart & part,
     const Names & required_columns,
@@ -261,13 +265,15 @@ ProcessorPtr ReadFromMergeTree::createSource(
     /// because we don't know actual amount of read rows in case when limit is set.
     bool set_rows_approx = !extension.has_value() && !reader_settings.read_in_order;
 
-    auto source = std::make_shared<TSource>(
+    auto algorithm = std::make_unique<Algorithm>(
             data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
             actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block, std::move(extension));
 
+    auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
+
     if (set_rows_approx)
-        source -> addTotalRowsApprox(total_rows);
+        source->addTotalRowsApprox(total_rows);
 
     return source;
 }
@@ -287,8 +293,8 @@ Pipe ReadFromMergeTree::readInOrder(
     for (const auto & part : parts_with_range)
     {
         auto source = read_type == ReadType::InReverseOrder
-                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block)
-                    : createSource<MergeTreeInOrderSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block);
+                    ? createSource<MergeTreeReverseSelectAlgorithm>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block)
+                    : createSource<MergeTreeInOrderSelectAlgorithm>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block);
 
         pipes.emplace_back(std::move(source));
     }
