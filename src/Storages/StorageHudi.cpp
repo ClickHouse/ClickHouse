@@ -37,7 +37,7 @@ StorageHudi::StorageHudi(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_)
     : IStorage(table_id_)
-    , base_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , base_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
     , table_path(base_configuration.uri.key)
 {
