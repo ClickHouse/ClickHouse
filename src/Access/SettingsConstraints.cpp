@@ -234,7 +234,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         }
         else
-            change.setFieldValue(min_value);
+            change.setValue(min_value);
     }
 
     if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
@@ -246,7 +246,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
         }
         else
-            change.setFieldValue(max_value);
+            change.setValue(max_value);
     }
 
     return true;

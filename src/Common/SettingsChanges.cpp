@@ -29,43 +29,6 @@ namespace
     }
 }
 
-String SettingChange::getValueString() const
-{
-    if (ast_value)
-        return serializeAST(*ast_value);
-    return convertFieldToString(field_value);
-}
-
-const Field & SettingChange::getFieldValue() const
-{
-    throwIfASTValueNotConvertedToField();
-    return field_value;
-}
-
-Field & SettingChange::getFieldValue()
-{
-    throwIfASTValueNotConvertedToField();
-    return field_value;
-}
-
-void SettingChange::setFieldValue(const Field & field)
-{
-    field_value = field;
-}
-
-void SettingChange::setASTValue(const ASTPtr & ast)
-{
-    ast_value = ast ? ast->clone() : ast;
-}
-
-void SettingChange::throwIfASTValueNotConvertedToField() const
-{
-    if (getASTValue() != nullptr && field_value == Field{})
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "AST value of the setting must be converted to Field value");
-}
-
 bool SettingsChanges::tryGet(std::string_view name, Field & out_value) const
 {
     const auto * change = find(*this, name);
@@ -89,6 +52,28 @@ Field * SettingsChanges::tryGet(std::string_view name)
     if (!change)
         return nullptr;
     return &change->getFieldValue();
+}
+
+struct SettingValueFromField : SettingValue
+{
+    explicit SettingValueFromField(const Field & value_) : value(value_) {}
+    explicit SettingValueFromField(Field && value_) : value(std::move(value_)) {}
+
+    const Field & getField() const override { return value; }
+    Field & getField() override { return value; }
+    std::string toString() const override { return applyVisitor(FieldVisitorToString(), value); }
+
+    Field value;
+};
+
+SettingValuePtr getSettingValueFromField(const Field & field)
+{
+    return std::make_shared<SettingValueFromField>(field);
+}
+
+SettingValuePtr getSettingValueFromField(Field && field)
+{
+    return std::make_shared<SettingValueFromField>(std::move(field));
 }
 
 }

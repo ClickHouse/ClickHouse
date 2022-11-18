@@ -1,6 +1,7 @@
 #include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 #include <Formats/FormatFactory.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -9,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/SettingValueFromAST.h>
 #include <Parsers/formatAST.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/ProfileEvents.h>
@@ -168,6 +170,10 @@ namespace
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 wipePasswordFromS3TableEngineArguments(*storage.engine, data);
+            }
+            else if (storage.settings)
+            {
+                wipeSensitiveInfoFromStorageSettings(storage.settings->changes, data);
             }
         }
 
@@ -384,6 +390,29 @@ namespace
             }
 
             arguments[arg_idx] = std::make_shared<ASTLiteral>("[HIDDEN]");
+            data.password_was_hidden = true;
+        }
+
+        static void wipeSensitiveInfoFromStorageSettings(SettingsChanges & changes, Data & data)
+        {
+            if (changes.empty())
+                return;
+
+            for (auto & change : changes)
+            {
+                auto value = change.getValue();
+                auto * ast_value = dynamic_cast<SettingValueFromAST *>(value.get());
+                if (ast_value && isDiskFunction(ast_value->value))
+                {
+                    if constexpr (check_only)
+                    {
+                        data.can_contain_password = true;
+                        return;
+                    }
+                    change.setValue("[HIDDEN]");
+                }
+            }
+
             data.password_was_hidden = true;
         }
 

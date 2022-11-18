@@ -1,11 +1,11 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/createDiskFromDiskAST.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -17,6 +17,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/SettingValueFromAST.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -611,17 +612,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (auto & change : args.storage_def->settings->changes)
             {
-                if (isDiskFunction(change.getASTValue()))
+                auto value = change.getValue();
+                auto * ast_value = dynamic_cast<SettingValueFromAST *>(value.get());
+                if (ast_value && isDiskFunction(ast_value->value))
                 {
-                    const auto & ast_value = assert_cast<const ASTFunction &>(*change.getASTValue());
-                    auto value = createDiskFromDiskAST(ast_value, context);
-                    change.setFieldValue(value);
+                    const auto & ast_function = assert_cast<const ASTFunction &>(*ast_value->value);
+                    auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
+                    ast_value->setField(disk_name);
                     break;
                 }
             }
         }
 
         storage_settings->loadFromQuery(*args.storage_def);
+
+        if (storage_settings->disk.changed && storage_settings->storage_policy.changed)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)

@@ -49,7 +49,7 @@ void QueryWithOutputSettingsPushDownMatcher::visit(ASTSelectQuery & select_query
         if (it == select_settings.end())
             select_settings.push_back(setting);
         else
-            it->setFieldValue(setting.getFieldValue());
+            it->setValue(setting.getFieldValue());
     }
 }
 

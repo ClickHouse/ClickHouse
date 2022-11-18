@@ -238,9 +238,6 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    if (settings->disk.changed && settings->storage_policy.changed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
-
     allow_nullable_key = attach || settings->allow_nullable_key;
 
     if (relative_data_path.empty())
