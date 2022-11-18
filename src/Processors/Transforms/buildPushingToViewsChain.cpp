@@ -258,7 +258,7 @@ Chain buildPushingToViewsChain(
         auto dependent_table = DatabaseCatalog::instance().tryGetTable(database_table, context);
         if (dependent_table == nullptr)
         {
-            LOG_INFO(
+            LOG_WARNING(
                 &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", database_table.getFullTableName());
             continue;
         }
@@ -312,7 +312,7 @@ Chain buildPushingToViewsChain(
 
             if (lock == nullptr)
             {
-                LOG_INFO(
+                LOG_WARNING(
                     &Poco::Logger::get("PushingToViews"),
                     "Trying to access table {} but it doesn't exist",
                     database_table.getFullTableName());
