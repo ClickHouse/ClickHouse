@@ -27,7 +27,6 @@ public:
         Index,
         /// TRIGGER,FUNCTION,EVENT and so on, No need for support
         Other,
-        
     };
     Kind kind;
     struct QualifiedName

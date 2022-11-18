@@ -55,7 +55,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     bool is_temporary = false;
 
     if (s_truncate.ignore(pos, expected) && s_table.ignore(pos, expected))
-    {   
+    {
         is_drop = false;
         query->kind = ASTDropQuery::Kind::Table;
         ASTDropQuery::QualifiedName name;
@@ -63,7 +63,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
             names.push_back(name);
         else
             return false;
-    } 
+    }
     else if (s_drop.ignore(pos, expected))
     {
         if (s_database.ignore(pos, expected))
@@ -92,7 +92,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
                 if (!(name_p.parse(pos, index, expected) && on.ignore(pos, expected)))
                     return false;
             }
-            else if (s_event.ignore(pos, expected) || s_function.ignore(pos, expected) || s_server.ignore(pos, expected) 
+            else if (s_event.ignore(pos, expected) || s_function.ignore(pos, expected) || s_server.ignore(pos, expected)
                 || s_trigger.ignore(pos, expected))
             {
                 query->kind = ASTDropQuery::Kind::Other;
@@ -117,8 +117,8 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
             if (!ParserList::parseUtil(pos, expected, parse_element, false))
                 return false;
         }
-    } 
-    else 
+    }
+    else
         return false;
 
     query->if_exists = if_exists;
@@ -128,8 +128,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     query->is_drop = is_drop;
     query->is_temporary = is_temporary;
 
-    return true;    
-    
+    return true;
 }
 
 }
