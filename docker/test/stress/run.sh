@@ -388,6 +388,9 @@ else
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
+    # it uses recently introduced settings which previous versions may not have
+    rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
+
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
@@ -481,6 +484,7 @@ else
                -e "The set of parts restored in place of" \
                -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
                -e "Code: 269. DB::Exception: Destination table is myself" \
+               -e "Coordination::Exception: Connection loss" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
