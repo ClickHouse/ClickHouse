@@ -91,23 +91,30 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2 or 3.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(), arguments.size());
 
         if (!isStringOrFixedString(arguments[0]))
             throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
 
         if (!isString(arguments[1]))
             throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
 
         if (arguments.size() >= 3)
         {
             if (!isUnsignedInteger(arguments[2]))
                 throw Exception(
-                    "Illegal type " + arguments[2]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[2]->getName(), getName());
         }
 
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
@@ -196,9 +203,11 @@ public:
                 vec_res);
         else
             throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + " and "
-                    + arguments[1].column->getName() + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal columns {} and {} of arguments of function {}",
+                arguments[0].column->getName(),
+                arguments[1].column->getName(),
+                getName());
 
         return col_res;
     }

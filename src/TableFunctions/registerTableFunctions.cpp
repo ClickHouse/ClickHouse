@@ -27,6 +27,10 @@ void registerTableFunctions()
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
+    registerTableFunctionHudi(factory);
+    registerTableFunctionDelta(factory);
+    registerTableFunctionOSS(factory);
+
 #endif
 
 #if USE_HDFS
