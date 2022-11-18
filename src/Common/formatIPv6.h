@@ -135,7 +135,6 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
         {
             if (!parseIPv4(curtok, tp))
                 return clear_dst();
-
             if constexpr (std::endian::native == std::endian::little)
                 std::reverse(tp, tp + IPV4_BINARY_LENGTH);
 
