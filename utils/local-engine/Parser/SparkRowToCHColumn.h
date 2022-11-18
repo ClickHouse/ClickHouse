@@ -91,14 +91,23 @@ public:
             auto * rows_buf_ptr = static_cast<char*>(env->GetDirectBufferAddress(rows_buf));
             int len = *(reinterpret_cast<int*>(rows_buf_ptr));
 
-            // when len = -1, reach the buf's end.
-            while (len > 0)
+            // len = -1 means reaching the buf's end.
+            while (len >= 0)
             {
                 rows_buf_ptr += 4;
                 appendSparkRowToCHColumn(helper, rows_buf_ptr, len);
-                rows_buf_ptr += len;
-                len = *(reinterpret_cast<int*>(rows_buf_ptr));
+
+                if (len > 0)
+                {
+                    rows_buf_ptr += len;
+                    len = *(reinterpret_cast<int *>(rows_buf_ptr));
+                }
+                else
+                {
+                    len = -1;
+                }
             }
+
             // Try to release reference.
             env->DeleteLocalRef(rows_buf);
         }
