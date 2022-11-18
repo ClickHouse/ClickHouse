@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
+        {"engine_full", std::make_shared<DataTypeString>()},
         {"comment", std::make_shared<DataTypeString>()}
     };
 }
@@ -47,7 +49,22 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[2]->insert(context->getPath() + database->getDataPath());
         res_columns[3]->insert(database->getMetadataPath());
         res_columns[4]->insert(database->getUUID());
-        res_columns[5]->insert(database->getDatabaseComment());
+
+        ASTPtr ast = database->getCreateDatabaseQuery();
+        auto * ast_create = ast->as<ASTCreateQuery>();
+        String engine_full;
+
+        if (ast_create && ast_create->storage) 
+        {
+            engine_full = ast_create->storage->formatWithSecretsHidden();
+            static const char *const extra_head = " ENGINE = ";
+          
+            if (startsWith(engine_full, extra_head))
+                engine_full = engine_full.substr(strlen(extra_head));
+        }
+
+        res_columns[5]->insert(engine_full);
+        res_columns[6]->insert(database->getDatabaseComment());
    }
 }
 
