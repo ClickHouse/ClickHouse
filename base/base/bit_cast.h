@@ -20,13 +20,13 @@ std::decay_t<To> bit_cast(const From & from)
      * With BE, the result after bit_cast will be 0x00000000AABBCCDD --> input value == output value.
      */
     To res {};
-    static_assert(sizeof(From) <= sizeof(To));
     if constexpr (std::endian::native == std::endian::little)
       memcpy(static_cast<void*>(&res), &from, std::min(sizeof(res), sizeof(from)));
     else
     {
-      uint32_t offset = sizeof(res) - sizeof(from);
-      memcpy(reinterpret_cast<char *>(&res) + offset, &from, std::min(sizeof(res), sizeof(from)));
+      uint32_t offset_to = (sizeof(res) > sizeof(from)) ? (sizeof(res) - sizeof(from)) : 0;
+      uint32_t offset_from = (sizeof(from) > sizeof(res)) ? (sizeof(from) - sizeof(res)) : 0;
+      memcpy(reinterpret_cast<char *>(&res) + offset_to, reinterpret_cast<const char *>(&from) + offset_from, std::min(sizeof(res), sizeof(from)));
     }
     return res;
 }
