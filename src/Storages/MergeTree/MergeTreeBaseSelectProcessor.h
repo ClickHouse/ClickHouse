@@ -1,13 +1,10 @@
 #pragma once
-
-#include <Common/EventFD.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/RequestResponse.h>
-
-#include <Processors/ISource.h>
+#include <Processors/Chunk.h>
 
 
 namespace DB
@@ -18,6 +15,12 @@ class UncompressedCache;
 class MarkCache;
 struct PrewhereExprInfo;
 
+struct ChunkAndProgress
+{
+    Chunk chunk;
+    size_t num_read_rows = 0;
+    size_t num_read_bytes = 0;
+};
 
 struct ParallelReadingExtension
 {
@@ -30,11 +33,11 @@ struct ParallelReadingExtension
     Names colums_to_read;
 };
 
-/// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
-class MergeTreeBaseSelectProcessor : public ISource, public std::enable_shared_from_this<MergeTreeBaseSelectProcessor>
+/// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
+class IMergeTreeSelectAlgorithm
 {
 public:
-    MergeTreeBaseSelectProcessor(
+    IMergeTreeSelectAlgorithm(
         Block header,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -48,7 +51,7 @@ public:
         const Names & virt_column_names_ = {},
         std::optional<ParallelReadingExtension> extension = {});
 
-    ~MergeTreeBaseSelectProcessor() override;
+    virtual ~IMergeTreeSelectAlgorithm();
 
     static Block transformHeader(
         Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns);
@@ -58,30 +61,25 @@ public:
         const MergeTreeReadTaskColumns & task_columns,
         const Block & sample_block);
 
-    Status prepare() override;
+    Block getHeader() const { return result_header; }
+
+    ChunkAndProgress read();
+
+    void cancel() { is_cancelled = true; }
+
+    const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
+
+    virtual std::string getName() const = 0;
 
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
-    struct BlockAndRowCount
+    struct BlockAndProgress
     {
         Block block;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
     };
-
-    struct ChunkWithProgress
-    {
-        Chunk chunk;
-        size_t num_read_rows = 0;
-        size_t num_read_bytes = 0;
-    };
-
-    std::optional<Chunk> reportProgress(ChunkWithProgress chunk);
-    std::optional<Chunk> tryGenerate() final;
-    ChunkWithProgress read();
-
-    int schedule() override;
 
     /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
@@ -97,9 +95,9 @@ protected:
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
 
-    virtual BlockAndRowCount readFromPart();
+    virtual BlockAndProgress readFromPart();
 
-    BlockAndRowCount readFromPartImpl();
+    BlockAndProgress readFromPartImpl();
 
     /// Used for filling header with no rows as well as block with data
     static void
@@ -153,7 +151,9 @@ protected:
     DataTypePtr partition_value_type;
 
     /// This header is used for chunks from readFromPart().
-    Block header_without_virtual_columns;
+    Block header_without_const_virtual_columns;
+    /// A result of getHeader(). A chunk which this header is returned from read().
+    Block result_header;
 
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
@@ -172,8 +172,7 @@ protected:
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
-    struct AsyncReadingState;
-    std::unique_ptr<AsyncReadingState> async_reading_state;
+    std::atomic<bool> is_cancelled{false};
 
     enum class Status
     {
@@ -214,6 +213,9 @@ private:
 
     void splitCurrentTaskRangesAndFillBuffer();
 
+    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 };
+
+using MergeTreeSelectAlgorithmPtr = std::unique_ptr<IMergeTreeSelectAlgorithm>;
 
 }

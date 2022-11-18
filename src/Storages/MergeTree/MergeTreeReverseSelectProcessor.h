@@ -9,12 +9,12 @@ namespace DB
 /// in reverse order of primary key.
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeReverseSelectProcessor final : public MergeTreeSelectProcessor
+class MergeTreeReverseSelectAlgorithm final : public MergeTreeSelectAlgorithm
 {
 public:
     template <typename... Args>
-    explicit MergeTreeReverseSelectProcessor(Args &&... args)
-        : MergeTreeSelectProcessor{std::forward<Args>(args)...}
+    explicit MergeTreeReverseSelectAlgorithm(Args &&... args)
+        : MergeTreeSelectAlgorithm{std::forward<Args>(args)...}
     {
         LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
@@ -27,9 +27,9 @@ private:
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {}
 
-    BlockAndRowCount readFromPart() override;
+    BlockAndProgress readFromPart() override;
 
-    std::vector<BlockAndRowCount> chunks;
+    std::vector<BlockAndProgress> chunks;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 
