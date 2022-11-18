@@ -12,7 +12,7 @@ namespace Poco::Util
 namespace DB
 {
 struct Settings;
-struct SettingChange;
+class SettingChange;
 class SettingsChanges;
 class AccessControl;
 

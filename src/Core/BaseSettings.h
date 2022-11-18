@@ -293,7 +293,7 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
-    set(change.name, change.value);
+    set(change.getName(), change.getFieldValue());
 }
 
 template <typename TTraits>

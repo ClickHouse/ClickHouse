@@ -944,7 +944,7 @@ public:
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
-    StoragePolicyPtr getOrCreateStoragePolicyForSingleDisk(const String & name) const;
+    StoragePolicyPtr getStoragePolicyFromDisk(const String & name) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
