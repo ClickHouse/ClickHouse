@@ -1687,10 +1687,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
 scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name) const
 {
-    bool inserted = temporary_parts.add(part_dir_name);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} already added", part_dir_name);
-
+    temporary_parts.add(part_dir_name);
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
 }
 
@@ -2122,9 +2119,8 @@ size_t MergeTreeData::clearEmptyParts()
     {
         if (part->rows_count != 0)
             continue;
-        LOG_TRACE(log, "Find empty part {}", part->name);
 
-        /// Do not try to drop uncommitted parts.
+        /// Do not try to drop uncommitted parts. If the newest tx doesn't see it that is probably hasn't been commited jet
         if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
@@ -3010,7 +3006,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     PartHierarchy hierarchy = getPartHierarchy(new_part_info, DataPartState::Active, data_parts_lock);
 
     if (!hierarchy.intersected_parts.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects part {}. It is a bug.",
                         new_part_name, hierarchy.intersected_parts.back()->getNameWithState());
 
     if (hierarchy.duplicate_part)
@@ -3089,13 +3085,19 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (!hierarchy.intersected_parts.empty())
     {
-        String message = fmt::format("Part {} intersects next part {}", part->name, hierarchy.intersected_parts.back()->getNameWithState());
+        String message = fmt::format("Part {} intersects part {}", part->name, hierarchy.intersected_parts.back()->getNameWithState());
 
+        // Drop part|partition operation inside some transactions sees some stale snapshot from the time when transactions has been started.
+        // So such operation may attempt to delete already outdated part. In this case, this outdated part is most likely covered by the other part and intersection may occur.
+        // Part mayght be outdated due to merge|mutation|update|optimization operations.
         if (part->isEmpty() || (hierarchy.intersected_parts.size() == 1 && hierarchy.intersected_parts.back()->isEmpty()))
+        {
+            message += fmt::format("One of them is empty part. That is a race between drop operation under transaction and a merge/mutation.");
             throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
+        }
 
         if (hierarchy.intersected_parts.size() > 1)
-            message += fmt::format("There are {} such parts.", hierarchy.intersected_parts.size());
+            message += fmt::format("There are {} intersected parts.", hierarchy.intersected_parts.size());
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, message + " It is a bug.");
     }
@@ -3146,8 +3148,8 @@ bool MergeTreeData::renameTempPartAndAdd(
         return false;
 
     if (!covered_parts.empty())
-        throw Exception("Added part " + part->name + " covers " + toString(covered_parts.size())
-            + " existing part(s) (including " + covered_parts[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Added part {} covers {} existing part(s) (including {})",
+            part->name, toString(covered_parts.size()), covered_parts[0]->name);
 
     return true;
 }
@@ -5306,7 +5308,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 DataPartPtr covering_part;
                 DataPartsVector covered_active_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
 
-                /// outdated tables should be also collected here
+                /// outdated parts should be also collected here
                 /// the visible outdated parts should be tried to be removed
                 /// more likely the conflict happens at the removing visible outdated parts, what is right actually
                 DataPartsVector covered_outdated_parts = data.getCoveredOutdatedParts(part, *owing_parts_lock);
