@@ -68,6 +68,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     {
         if (s_database.ignore(pos, expected))
         {
+            query->kind = ASTDropQuery::Kind::Database;
             if (s_if_exists.ignore(pos, expected))
                 if_exists = true;
 
