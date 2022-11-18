@@ -8,7 +8,7 @@ namespace local_engine
 class Logger
 {
 public:
-    static void initConsoleLogger(const std::string & level);
+    static void initConsoleLogger(const std::string & level = "error");
     static void initFileLogger(Poco::Util::AbstractConfiguration & config, const std::string & cmd_name);
 };
 }
