@@ -609,13 +609,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->settings)
         {
-            for (auto & change : args.storage_def->settings->changes)
+            for (auto & [_, value, value_ast] : args.storage_def->settings->changes)
             {
-                if (isDiskFunction(change.getASTValue()))
+                if (isDiskFunction(value_ast))
                 {
-                    const auto & ast_value = assert_cast<const ASTFunction &>(*change.getASTValue());
-                    auto value = createDiskFromDiskAST(ast_value, context);
-                    change.setFieldValue(value);
+                    value = createDiskFromDiskAST(*value_ast->as<ASTFunction>(), context);
                     break;
                 }
             }

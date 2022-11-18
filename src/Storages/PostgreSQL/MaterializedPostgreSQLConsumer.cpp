@@ -729,10 +729,10 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
 
 void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 {
-    if (setting.getName() == "materialized_postgresql_max_block_size")
-        max_block_size = setting.getFieldValue().safeGet<UInt64>();
-    else if (setting.getName() == "materialized_postgresql_allow_automatic_update")
-        allow_automatic_update = setting.getFieldValue().safeGet<bool>();
+    if (setting.name == "materialized_postgresql_max_block_size")
+        max_block_size = setting.value.safeGet<UInt64>();
+    else if (setting.name == "materialized_postgresql_allow_automatic_update")
+        allow_automatic_update = setting.value.safeGet<bool>();
 }
 
 

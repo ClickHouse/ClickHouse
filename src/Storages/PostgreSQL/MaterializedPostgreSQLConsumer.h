@@ -13,7 +13,7 @@
 
 namespace DB
 {
-class SettingChange;
+struct SettingChange;
 
 struct StorageInfo
 {

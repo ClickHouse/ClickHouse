@@ -11,7 +11,7 @@ namespace DB
 {
 
 class StorageMaterializedPostgreSQL;
-class SettingChange;
+struct SettingChange;
 
 class PostgreSQLReplicationHandler : WithContext
 {
