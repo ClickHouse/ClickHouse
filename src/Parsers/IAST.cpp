@@ -1,8 +1,10 @@
+#include <Parsers/IAST.h>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
-#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -165,11 +167,25 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-std::string IAST::formatForErrorMessage() const
+String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
-    format(FormatSettings(buf, true /* one line */));
-    return buf.str();
+
+    FormatSettings settings{buf, one_line};
+    settings.show_secrets = false;
+    format(settings);
+
+    return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
+}
+
+bool IAST::childrenHaveSecretParts() const
+{
+    for (const auto & child : children)
+    {
+        if (child->hasSecretParts())
+            return true;
+    }
+    return false;
 }
 
 void IAST::cloneChildren()
