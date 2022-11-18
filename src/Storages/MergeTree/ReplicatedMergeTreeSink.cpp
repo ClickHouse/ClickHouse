@@ -146,7 +146,7 @@ void rewriteBlock(Poco::Logger * log, typename ReplicatedMergeTreeSink<true>::De
     }
     partition.block.block.setColumns(cols);
 
-    LOG_TRACE(log, "new block rows {}", partition.block.block.rows());
+    LOG_TRACE(log, "New block rows {}", partition.block.block.rows());
 
     partition.initBlockIDMap();
 }
