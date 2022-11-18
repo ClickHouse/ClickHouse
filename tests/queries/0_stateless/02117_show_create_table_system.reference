@@ -367,6 +367,19 @@ CREATE TABLE system.metrics
 )
 ENGINE = SystemMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
+CREATE TABLE system.moves
+(
+    `database` String,
+    `table` String,
+    `elapsed` Float64,
+    `target_disk_name` String,
+    `target_disk_path` String,
+    `partition_id` String,
+    `part_size` UInt64,
+    `thread_id` UInt64
+)
+ENGINE = SystemMoves
+COMMENT 'SYSTEM TABLE is built on the fly.'
 CREATE TABLE system.mutations
 (
     `database` String,
