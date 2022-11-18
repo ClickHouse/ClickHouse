@@ -549,7 +549,7 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
         return {};
     TQuery::QualifiedNames tables = drop_query.names;
     ASTs rewritten_querys;
-    for(const auto & table: tables)
+    for (const auto & table: tables)
     {
         const auto & database_name = resolveDatabase(table.schema, mysql_database, mapped_to_database, context);
         if (database_name != mapped_to_database)
@@ -562,7 +562,7 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
         rewritten_query->is_view = false;
         rewritten_query->if_exists = drop_query.if_exists;
         rewritten_querys.push_back(rewritten_query);
-    } 
+    }
     return rewritten_querys;
 }
 
