@@ -4506,20 +4506,32 @@ jobs:
       - FunctionalStatelessTestDebug0
       - FunctionalStatelessTestDebug1
       - FunctionalStatelessTestDebug2
+      - FunctionalStatelessTestDebug3
+      - FunctionalStatelessTestDebug4
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseReplicated0
       - FunctionalStatelessTestReleaseDatabaseReplicated1
+      - FunctionalStatelessTestReleaseDatabaseReplicated2
+      - FunctionalStatelessTestReleaseDatabaseReplicated3
       - FunctionalStatelessTestReleaseWideParts
       - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan0
       - FunctionalStatelessTestAsan1
+      - FunctionalStatelessTestAsan2
+      - FunctionalStatelessTestAsan3
       - FunctionalStatelessTestTsan0
       - FunctionalStatelessTestTsan1
       - FunctionalStatelessTestTsan2
+      - FunctionalStatelessTestTsan3
+      - FunctionalStatelessTestTsan4
       - FunctionalStatelessTestMsan0
       - FunctionalStatelessTestMsan1
       - FunctionalStatelessTestMsan2
-      - FunctionalStatelessTestUBsan
+      - FunctionalStatelessTestMsan3
+      - FunctionalStatelessTestMsan4
+      - FunctionalStatelessTestMsan5
+      - FunctionalStatelessTestUBsan0
+      - FunctionalStatelessTestUBsan1
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
       - FunctionalStatefulTestAarch64
@@ -4527,13 +4539,17 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
-      - FunctionalStatelessTestReleaseS3
+      - FunctionalStatelessTestReleaseS3_0
+      - FunctionalStatelessTestReleaseS3_1
       - FunctionalStatelessTestS3Debug0
       - FunctionalStatelessTestS3Debug1
       - FunctionalStatelessTestS3Debug2
+      - FunctionalStatelessTestS3Debug4
+      - FunctionalStatelessTestS3Debug5
       - FunctionalStatelessTestS3Tsan0
       - FunctionalStatelessTestS3Tsan1
       - FunctionalStatelessTestS3Tsan2
+      - FunctionalStatelessTestS3Tsan4
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
@@ -4547,12 +4563,19 @@ jobs:
       - IntegrationTestsAsan0
       - IntegrationTestsAsan1
       - IntegrationTestsAsan2
+      - IntegrationTestsAsan3
+      - IntegrationTestsAsan4
+      - IntegrationTestsAsan5
       - IntegrationTestsRelease0
       - IntegrationTestsRelease1
+      - IntegrationTestsRelease2
+      - IntegrationTestsRelease3
       - IntegrationTestsTsan0
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
+      - IntegrationTestsTsan4
+      - IntegrationTestsTsan5
       - PerformanceComparisonX86-0
       - PerformanceComparisonX86-1
       - PerformanceComparisonX86-2
