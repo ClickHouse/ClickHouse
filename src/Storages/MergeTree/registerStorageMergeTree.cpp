@@ -5,7 +5,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/createDiskFromDiskAST.h>
+#include <Storages/getOrCreateDiskFromSettings.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <ranges>
 
 
 namespace DB
@@ -607,21 +608,26 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        if (args.storage_def->settings)
-        {
-            for (auto & [_, value, value_ast] : args.storage_def->settings->changes)
-            {
-                if (isDiskFunction(value_ast))
-                {
-                    value = createDiskFromDiskAST(*value_ast->as<ASTFunction>(), context);
-                    break;
-                }
-            }
-        }
-
         storage_settings->loadFromQuery(*args.storage_def);
 
-        // updates the default storage_settings with settings specified via SETTINGS arg in a query
+        /**
+         * If settings contain disk setting as disk=setting(<disk_configuration>),
+         * create a disk from this configuration and substitute disk setting with result disk name.
+         */
+        Field disk_value;
+        if (storage_settings->tryGet("disk", disk_value))
+        {
+            auto disk_settings = disk_value.safeGet<Array>() | std::views::transform([](const Field & field)
+            {
+                auto setting = field.safeGet<Tuple>();
+                return SettingChange(setting[0].safeGet<String>(), setting[1]);
+            });
+            auto changes = SettingsChanges(disk_settings.begin(), disk_settings.end());
+            auto disk_name = getOrCreateDiskFromSettings(changes, context);
+            storage_settings->set("disk", disk_name);
+        }
+
+        /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
             metadata.settings_changes = args.storage_def->settings->ptr();
     }
