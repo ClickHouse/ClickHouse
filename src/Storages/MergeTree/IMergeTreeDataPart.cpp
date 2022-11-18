@@ -1382,7 +1382,7 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
     chassert(!version.creation_tid.isEmpty());
-    chassert(version.removal_csn == 0);
+    chassert(version.removal_csn == 0 || (version.removal_csn == Tx::PrehistoricCSN && version.removal_tid.isPrehistoric()));
     chassert(!version.removal_tid.isEmpty());
     chassert(isStoredOnDisk());
 
