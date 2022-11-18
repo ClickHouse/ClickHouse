@@ -1174,9 +1174,9 @@ void registerStorageFile(StorageFactory & factory)
                 const auto & changes = factory_args.getContext()->getSettingsRef().changes();
                 for (const auto & change : changes)
                 {
-                    if (user_format_settings.has(change.getName()))
+                    if (user_format_settings.has(change.name))
                     {
-                        user_format_settings.set(change.getName(), change.getFieldValue());
+                        user_format_settings.set(change.name, change.value);
                     }
                 }
 

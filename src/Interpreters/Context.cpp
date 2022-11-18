@@ -1388,11 +1388,12 @@ void Context::applySettingChange(const SettingChange & change)
 {
     try
     {
-        setSetting(change.getName(), change.getFieldValue());
+        setSetting(change.name, change.value);
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}", change.getName(), change.getValueString()));
+        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
+                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
         throw;
     }
 }
@@ -2818,7 +2819,7 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
-StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & name) const
+StoragePolicyPtr Context::getOrCreateStoragePolicyForSingleDisk(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 

@@ -10,8 +10,8 @@ String getDiskName(ASTStorage & storage_def)
     {
         SettingsChanges changes = storage_def.settings->changes;
         for (const auto & change : changes)
-            if (change.getName() == "disk")
-                return change.getFieldValue().safeGet<String>();
+            if (change.name == "disk")
+                return change.value.safeGet<String>();
     }
     return "default";
 }

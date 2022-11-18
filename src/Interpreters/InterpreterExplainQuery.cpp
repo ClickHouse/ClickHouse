@@ -299,31 +299,21 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
     for (const auto & change : set_query.changes)
     {
-        if (!settings.has(change.getName()))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING,
-                "Unknown setting {} for EXPLAIN {} query. Supported settings: {}",
-                doubleQuoteString(change.getName()), Settings::name, settings.getSettingsList());
+        if (!settings.has(change.name))
+            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN " + Settings::name + " query. "
+                            "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
 
-        if (change.getFieldValue().getType() != Field::Types::UInt64)
+        if (change.value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                "Invalid type {} for setting \"{}\" only integer settings are supported",
-                change.getFieldValue().getTypeName(), change.getName());
+                "Invalid type {} for setting \"{}\" only boolean settings are supported",
+                change.value.getTypeName(), change.name);
 
-        if (settings.hasBooleanSetting(change.getName()))
-        {
-            auto value = change.getFieldValue().get<UInt64>();
-            if (value > 1)
-                throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.getName() +
-                                "\". Expected boolean type", ErrorCodes::INVALID_SETTING_VALUE);
+        auto value = change.value.get<UInt64>();
+        if (value > 1)
+            throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
+                            "\". Only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
 
-            settings.setBooleanSetting(change.getName(), value);
-        }
-        else
-        {
-            auto value = change.getFieldValue().get<UInt64>();
-            settings.setIntegerSetting(change.getName(), value);
-        }
+        settings.setBooleanSetting(change.name, value);
     }
 
     return settings;
