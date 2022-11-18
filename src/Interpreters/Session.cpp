@@ -272,11 +272,6 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 
 Session::~Session()
 {
-    LOG_DEBUG(log, "{} Releasing {}",
-        toString(auth_id),
-        (named_session ? "named session '" + named_session->key.second + "'" : "unnamed session")
-    );
-
     /// Early release a NamedSessionData.
     if (named_session)
         named_session->release();

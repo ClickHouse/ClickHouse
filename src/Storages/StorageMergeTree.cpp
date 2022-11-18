@@ -1393,7 +1393,8 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         auto merge_blocker = stopMergesAndWait();
         auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
-            throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
+
         removePartsFromWorkingSet(txn, {part}, true);
         return part;
     }
@@ -1435,32 +1436,6 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
     }
 
     /// Else nothing to do, part was removed in some different way
-}
-
-using RangesWithContinuousBlocks = std::vector<DataPartsVector>;
-
-RangesWithContinuousBlocks groupByRangesWithContinuousBlocks(DataPartsVector parts)
-{
-    RangesWithContinuousBlocks result;
-
-    std::sort(parts.begin(), parts.end(), MergeTreeData::LessDataPart());
-
-    for (const auto & part: parts)
-    {
-        if (result.empty())
-        {
-            result.push_back({part});
-            continue;
-        }
-
-        auto last_part_in_prev_range = result.back().back();
-        if (last_part_in_prev_range->info.max_block + 1 == part->info.min_block)
-            result.back().push_back(part);
-        else
-            result.push_back({part});
-    }
-
-    return result;
 }
 
 struct FutureNewEmptyPart
@@ -1527,7 +1502,7 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         DataPartsVector covered_parts_by_one_part = renameTempPartAndReplace(part, transaction);
 
         if (covered_parts_by_one_part.size() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} expected to cover not more then 1 part. {} covered parts have found. This is a bug.",
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} expected to cover not more then 1 part. {} covered parts have been found. This is a bug.",
                             part->name, covered_parts_by_one_part.size());
 
         std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
@@ -1604,7 +1579,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
         auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
-            throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
         if (detach)
         {
