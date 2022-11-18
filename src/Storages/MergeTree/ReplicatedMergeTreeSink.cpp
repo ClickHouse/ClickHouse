@@ -479,7 +479,7 @@ void ReplicatedMergeTreeSink<true>::finishDelayedChunk(const ZooKeeperWithFaultI
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
             if (conflict_block_ids.empty())
                 break;
-            LOG_DEBUG(log, "depulicate block ids {}", toString(conflict_block_ids));
+            LOG_DEBUG(log, "Found depulicate block IDs: {}", toString(conflict_block_ids));
             /// partition clean conflict
             rewriteBlock(log, partition, conflict_block_ids);
             if (partition.block_id.empty())
