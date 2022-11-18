@@ -732,16 +732,13 @@ private:
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, const zkutil::ZooKeeperPtr & zookeeper,
         const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
+
+    template<typename T>
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const String & zookeeper_block_id_path = "",
+        const T & zookeeper_block_id_path,
         const String & zookeeper_path_prefix = "") const;
-
-    std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> allocateBlockNumber(
-        const String & partition_id,
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::vector<String> & zookeeper_block_id_paths) const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.

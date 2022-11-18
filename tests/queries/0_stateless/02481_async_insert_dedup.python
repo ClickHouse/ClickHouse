@@ -65,7 +65,7 @@ client.query('''
 CREATE TABLE t_async_insert_dedup (
 EventDate DateTime,
 KeyID     UInt32
-) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_async_insert_dedup', '{replica}')
+) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/t_async_insert_dedup', '{replica}')
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (KeyID, EventDate)
 ''')

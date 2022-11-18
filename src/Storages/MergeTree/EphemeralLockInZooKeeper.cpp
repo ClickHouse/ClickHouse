@@ -13,16 +13,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_)
-    : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_)
+    : zookeeper(zookeeper_), path_prefix(path_prefix_), path(path_), conflict_path(conflict_path_)
 {
-    if (path.size() <= path_prefix.size())
+    if (conflict_path.empty() && path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
 }
 
+template <typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path)
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path)
 {
+    constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
+
     String path;
 
     if (deduplication_path.empty())
@@ -36,14 +39,40 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
 
         /// Check for duplicates in advance, to avoid superfluous block numbers allocation
         Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
+        if constexpr (async_insert)
+        {
+            for (const auto & single_dedup_path : deduplication_path)
+            {
+                ops.emplace_back(zkutil::makeCreateRequest(single_dedup_path, "", zkutil::CreateMode::Persistent));
+                ops.emplace_back(zkutil::makeRemoveRequest(single_dedup_path, -1));
+            }
+        }
+        else
+        {
+            ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
+        }
         ops.emplace_back(zkutil::makeCreateRequest(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential));
         Coordination::Responses responses;
         Coordination::Error e = zookeeper_->tryMulti(ops, responses);
         if (e != Coordination::Error::ZOK)
         {
-            if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            if constexpr (async_insert)
+            {
+                for (size_t i = 0; i < deduplication_path.size(); i++)
+                {
+                    if (responses[i*2]->error == Coordination::Error::ZNODEEXISTS)
+                    {
+                        const String & failed_op_path = deduplication_path[i];
+                        LOG_DEBUG(
+                            &Poco::Logger::get("createEphemeralLockInZooKeeper"),
+                            "Deduplication path already exists: deduplication_path={}",
+                            failed_op_path);
+                        return EphemeralLockInZooKeeper{"", nullptr, "", failed_op_path};
+                    }
+                }
+            }
+            else if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
             {
                 LOG_DEBUG(
                     &Poco::Logger::get("createEphemeralLockInZooKeeper"),
@@ -51,54 +80,14 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
                     deduplication_path);
                 return {};
             }
-            else
-            {
-                zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
-                throw Exception("Unable to handle error {} when acquiring ephemeral lock in ZK", ErrorCodes::LOGICAL_ERROR);
-            }
+            zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
+            throw Exception("Unable to handle error {} when acquiring ephemeral lock in ZK", ErrorCodes::LOGICAL_ERROR);
         }
 
         path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
     }
 
     return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, path};
-}
-
-std::tuple<std::optional<EphemeralLockInZooKeeper>, std::vector<String>> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_paths)
-{
-    /// The /abandonable_lock- name is for backward compatibility.
-    String holder_path_prefix = temp_path + "/abandonable_lock-";
-    String holder_path;
-
-    /// Check for duplicates in advance, to avoid superfluous block numbers allocation
-    Coordination::Requests ops;
-    for (const auto & deduplication_path : deduplication_paths)
-    {
-        ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
-    }
-    ops.emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
-    Coordination::Responses responses;
-    Coordination::Error e = zookeeper_->tryMulti(ops, responses);
-    if (e != Coordination::Error::ZOK)
-    {
-        /// TODO we should use some cache to check the conflict in advance.
-        for (const auto & response: responses)
-        {
-            if (response->error == Coordination::Error::ZNODEEXISTS)
-            {
-                String failed_op_path = zkutil::KeeperMultiException(e, ops, responses).getPathForFirstFailedOp();
-                return std::make_pair(std::nullopt, std::vector<String>({failed_op_path}));
-            }
-        }
-        zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to handle error {} when acquiring ephemeral lock in ZK", toString(e));
-    }
-
-    holder_path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
-
-    return std::make_pair(EphemeralLockInZooKeeper{path_prefix_, zookeeper_, holder_path}, std::vector<String>());
 }
 
 void EphemeralLockInZooKeeper::unlock()
@@ -229,5 +218,11 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
         tryLogCurrentException("~EphemeralLocksInAllPartitions");
     }
 }
+
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<String>(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
+
+template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path);
 
 }
