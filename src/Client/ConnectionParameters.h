@@ -27,6 +27,11 @@ struct ConnectionParameters
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, std::optional<UInt16> port);
 
+    /// Check if we're working with https://clickhouse.com/cloud or not
+    inline bool isClickHouseCloud() {
+        return host.ends_with(".clickhouse.cloud");
+    }
+
     static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config);
 };
 
