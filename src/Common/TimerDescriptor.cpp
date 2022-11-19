@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -72,8 +70,6 @@ void TimerDescriptor::drain() const
 
             if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-            else
-                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
         }
     }
 }

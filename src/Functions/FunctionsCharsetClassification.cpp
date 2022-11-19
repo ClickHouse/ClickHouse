@@ -143,7 +143,7 @@ struct NameDetectLanguageUnknown
 using FunctionDetectCharset = FunctionTextClassificationString<CharsetClassificationImpl<false>, NameDetectCharset>;
 using FunctionDetectLanguageUnknown = FunctionTextClassificationString<CharsetClassificationImpl<true>, NameDetectLanguageUnknown>;
 
-REGISTER_FUNCTION(DetectCharset)
+void registerFunctionDetectCharset(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDetectCharset>();
     factory.registerFunction<FunctionDetectLanguageUnknown>();

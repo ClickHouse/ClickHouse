@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -145,7 +145,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     if (!columns)
         return StoragePtr{};
 
-    auto storage = std::make_shared<StorageSQLite>(
+    auto storage = StorageSQLite::create(
         StorageID(database_name, table_name),
         sqlite_db,
         database_path,
@@ -173,16 +173,12 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    StoragePtr storage;
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        storage = fetchTable(table_name, local_context, false);
-    }
+    auto storage = fetchTable(table_name, local_context, false);
     if (!storage)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "SQLite table {}.{} does not exist",
-                            getDatabaseName(), table_name);
+                            database_name, table_name);
         return nullptr;
     }
     auto table_storage_define = database_engine_define->clone();
@@ -192,10 +188,8 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
 
     return create_table_query;
 }

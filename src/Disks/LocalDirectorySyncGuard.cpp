@@ -1,20 +1,12 @@
 #include <Disks/LocalDirectorySyncGuard.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Disks/IDisk.h>
-#include <Common/Stopwatch.h>
 #include <fcntl.h> // O_RDWR
 
 /// OSX does not have O_DIRECTORY
 #ifndef O_DIRECTORY
 #define O_DIRECTORY O_RDWR
 #endif
-
-namespace ProfileEvents
-{
-    extern const Event DirectorySync;
-    extern const Event DirectorySyncElapsedMicroseconds;
-}
 
 namespace DB
 {
@@ -37,12 +29,8 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 {
-    ProfileEvents::increment(ProfileEvents::DirectorySync);
-
     try
     {
-        Stopwatch watch;
-
 #if defined(OS_DARWIN)
         if (fcntl(fd, F_FULLFSYNC, 0))
             throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
@@ -52,8 +40,6 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 #endif
         if (-1 == ::close(fd))
             throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
-
-        ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
     }
     catch (...)
     {

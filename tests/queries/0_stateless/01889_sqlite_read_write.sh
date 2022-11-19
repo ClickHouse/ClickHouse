@@ -19,6 +19,7 @@ DB_PATH2=$CUR_DIR/${CURR_DATABASE}_db2
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}"
+    rm -r "${DB_PATH}" "${DB_PATH2}"
 }
 trap cleanup EXIT
 
@@ -42,7 +43,7 @@ sqlite3 "${DB_PATH}" "INSERT INTO table3 VALUES ('not a null', 2)"
 sqlite3 "${DB_PATH}" 'INSERT INTO table3 VALUES (NULL, 3)'
 sqlite3 "${DB_PATH}" "INSERT INTO table3 VALUES ('', 4)"
 
-sqlite3 "${DB_PATH}" 'CREATE TABLE table4 (a int, b integer, c tinyint, d smallint, e mediumint, f bigint, g int2, h int8)'
+sqlite3 "${DB_PATH}" 'CREATE TABLE table4 (a int, b integer, c tinyint, d smallint, e mediumint, bigint, int2, int8)'
 sqlite3 "${DB_PATH}" 'CREATE TABLE table5 (a character(20), b varchar(10), c real, d double, e double precision, f float)'
 
 

@@ -29,7 +29,7 @@ struct DivideIntegralOrZeroImpl
 struct NameIntDivOrZero { static constexpr auto name = "intDivOrZero"; };
 using FunctionIntDivOrZero = BinaryArithmeticOverloadResolver<DivideIntegralOrZeroImpl, NameIntDivOrZero>;
 
-REGISTER_FUNCTION(IntDivOrZero)
+void registerFunctionIntDivOrZero(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIntDivOrZero>();
 }

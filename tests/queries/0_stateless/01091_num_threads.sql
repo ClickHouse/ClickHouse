@@ -1,6 +1,5 @@
 set log_queries=1;
 set log_query_threads=1;
-set max_threads=0;
 
 WITH 01091 AS id SELECT 1;
 SYSTEM FLUSH LOGS;
@@ -28,7 +27,7 @@ WITH
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
-SELECT uniqExact(thread_id) > 2
+SELECT uniqExact(thread_id)
 FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 

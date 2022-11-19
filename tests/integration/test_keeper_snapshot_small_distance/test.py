@@ -2,7 +2,6 @@
 ##!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 from multiprocessing.dummy import Pool
 from kazoo.client import KazooClient, KazooState
 import random
@@ -23,7 +22,7 @@ node3 = cluster.add_instance(
 
 
 def start_zookeeper(node):
-    node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
+    node1.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
 
 
 def stop_zookeeper(node):
@@ -67,7 +66,6 @@ def stop_clickhouse(node):
 
 def start_clickhouse(node):
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
 
 
 def copy_zookeeper_data(make_zk_snapshots, node):

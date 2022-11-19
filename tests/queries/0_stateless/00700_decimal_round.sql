@@ -78,17 +78,3 @@ SELECT toDecimal128('12345678901234567890123456789.123456789', 9) AS x, -x AS y,
 SELECT toDecimal128('12345678901234567890123456789.123456789', 9) AS x, -x AS y, ceil(x), ceil(y), ceil(x, -3), ceil(y, -3);
 SELECT toDecimal128('12345678901234567890123456789.123456789', 9) AS x, -x AS y, floor(x), floor(y), floor(x, -3), floor(y, -3);
 SELECT toDecimal128('12345678901234567890123456789.123456789', 9) AS x, -x AS y, trunc(x), trunc(y), trunc(x, -3), trunc(y, -3);
-
-select '-- Decimal128, Scale 20';
-SELECT 'round()        : ', toDecimal128('1234567890.123456789', 20) AS x, -x AS y, round(x), round(y), round(x, -3), round(y, -3);
-SELECT 'roundBankers() : ', toDecimal128('1234567890.123456789', 20) AS x, -x AS y, roundBankers(x), roundBankers(y), roundBankers(x, -3), roundBankers(y, -3);
-SELECT 'ceil()         : ', toDecimal128('1234567890.123456789', 20) AS x, -x AS y, ceil(x), ceil(y), ceil(x, -3), ceil(y, -3);
-SELECT 'floor()        : ', toDecimal128('1234567890.123456789', 20) AS x, -x AS y, floor(x), floor(y), floor(x, -3), floor(y, -3);
-SELECT 'trunc()        : ', toDecimal128('1234567890.123456789', 20) AS x, -x AS y, trunc(x), trunc(y), trunc(x, -3), trunc(y, -3);
-
-select '-- Decimal256, Scale 40';
-SELECT 'round()        : ', toDecimal256('1234567890.123456789', 40) AS x, -x AS y, round(x), round(y), round(x, -3), round(y, -3);
-SELECT 'roundBankers() : ', toDecimal256('1234567890.123456789', 40) AS x, -x AS y, roundBankers(x), roundBankers(y), roundBankers(x, -3), roundBankers(y, -3);
-SELECT 'ceil()         : ', toDecimal256('1234567890.123456789', 40) AS x, -x AS y, ceil(x), ceil(y), ceil(x, -3), ceil(y, -3);
-SELECT 'floor()        : ', toDecimal256('1234567890.123456789', 40) AS x, -x AS y, floor(x), floor(y), floor(x, -3), floor(y, -3);
-SELECT 'trunc()        : ', toDecimal256('1234567890.123456789', 40) AS x, -x AS y, trunc(x), trunc(y), trunc(x, -3), trunc(y, -3);

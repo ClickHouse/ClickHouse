@@ -32,7 +32,7 @@ public:
     /// Stops using named sessions. The method must be called at the server shutdown.
     static void shutdownNamedSessions();
 
-    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false, const std::string & certificate = "");
+    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_);
     ~Session();
 
     Session(const Session &&) = delete;
@@ -51,9 +51,6 @@ public:
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
-    /// Writes a row about login failure into session log (if enabled)
-    void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
-
     /// Returns a reference to session ClientInfo.
     ClientInfo & getClientInfo();
     const ClientInfo & getClientInfo() const;
@@ -64,8 +61,6 @@ public:
     ContextMutablePtr makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
-
-    ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
 
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of
@@ -84,6 +79,7 @@ private:
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;
+    const ClientInfo::Interface interface;
 
     /// ClientInfo that will be copied to a session context when it's created.
     std::optional<ClientInfo> prepared_client_info;

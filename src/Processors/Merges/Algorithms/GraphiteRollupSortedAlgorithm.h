@@ -92,7 +92,7 @@ private:
      */
 
     /// Path name of current bucket
-    std::string_view current_group_path;
+    StringRef current_group_path;
 
     static constexpr size_t max_row_refs = 2; /// current_subgroup_newest_row, current_row.
     /// Last row with maximum version for current primary key (time bucket).

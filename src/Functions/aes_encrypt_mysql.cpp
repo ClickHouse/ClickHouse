@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 
@@ -19,7 +19,7 @@ struct EncryptMySQLModeImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(AESEncryptMysql)
+void registerFunctionAESEncryptMysql(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEncrypt<EncryptMySQLModeImpl>>();
 }

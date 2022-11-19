@@ -9,7 +9,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -99,7 +98,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         String node_alias = ast->tryGetAlias();
 
-        if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
+        if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
@@ -113,20 +112,12 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             if (!is_cycle)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
-                /// Check size of the alias before cloning too large alias AST
-                alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
             }
         }
         else
-        {
-            /// Check size of the alias before cloning too large alias AST
-            alias_node->checkSize(data.settings.max_expanded_ast_elements);
-            auto alias_name = ast->getAliasOrColumnName();
-            ast = alias_node->clone();
-            ast->setAlias(alias_name);
-        }
+            ast = alias_node;
     }
 }
 
@@ -143,8 +134,7 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    /// exclude interpolate elements - they are not subject for normalization and will be processed in filling transform
-    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>());
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
 }
 
 /// special visitChildren() for ASTSelectQuery
@@ -243,7 +233,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     auto & finished_asts = data.finished_asts;
     auto & current_asts = data.current_asts;
 
-    if (finished_asts.contains(ast))
+    if (finished_asts.count(ast))
     {
         ast = finished_asts[ast];
         return;

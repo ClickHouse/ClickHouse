@@ -1,4 +1,4 @@
--- Tags: distributed, no-replicated-database, no-parallel, no-fasttest, no-random-settings
+-- Tags: distributed, no-replicated-database, no-parallel, no-fasttest
 
 SET allow_experimental_live_view = 1;
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/IServer.h>
-#include <Daemon/BaseDaemon.h>
+#include <daemon/BaseDaemon.h>
 #include "TinyContext.h"
 
 namespace Poco
@@ -42,8 +42,6 @@ public:
 
 protected:
     void logRevision() const override;
-
-    void handleCustomArguments(const std::string & arg, const std::string & value);
 
     int run() override;
 

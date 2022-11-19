@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/data-types/fixedstring
-sidebar_position: 45
-sidebar_label: FixedString(N)
+toc_priority: 45
+toc_title: FixedString(N)
 ---
 
-# Fixedstring
+# Fixedstring {#fixedstring}
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 

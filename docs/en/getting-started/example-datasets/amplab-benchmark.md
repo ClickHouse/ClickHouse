@@ -1,10 +1,9 @@
 ---
-slug: /en/getting-started/example-datasets/amplab-benchmark
-sidebar_label: AMPLab Big Data Benchmark
-description: A benchmark dataset used for comparing the performance of data warehousing solutions.
+toc_priority: 19
+toc_title: AMPLab Big Data Benchmark
 ---
 
-# AMPLab Big Data Benchmark
+# AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
 
 See https://amplab.cs.berkeley.edu/benchmark/
 
