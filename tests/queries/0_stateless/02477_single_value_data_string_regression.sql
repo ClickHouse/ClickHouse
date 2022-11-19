@@ -98,5 +98,6 @@ SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString
 
 SELECT '2^30-1', maxMerge(x) from (select CAST(unhex('ffffff3f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
 -- The following query works, but it's too long and consumes to much memory
--- SELECT '2^30-1', length(maxMerge(x)) from (select CAST(unhex('ffffff3f') || randomString(0x3FFFFFFF), 'AggregateFunction(max, String)') as x);
-SELECT '1M', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000), 'AggregateFunction(max, String)') as x);
+-- SELECT '2^30-1', length(maxMerge(x)) from (select CAST(unhex('ffffff3f') || randomString(0x3FFFFFFF - 1) || 'x', 'AggregateFunction(max, String)') as x);
+SELECT '1M without 0', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000 - 1) || 'x', 'AggregateFunction(max, String)') as x);
+SELECT '1M with 0', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000 - 1) || '\0', 'AggregateFunction(max, String)') as x);
