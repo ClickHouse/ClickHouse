@@ -66,7 +66,7 @@ if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
 
-list (APPEND PRIVATE_LIBS ch_contrib::lz4)
+list (APPEND PRIVATE_LIBS ch_contrib::xxHash)
 
 if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)

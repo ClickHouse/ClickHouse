@@ -39,6 +39,7 @@ REGISTER_FUNCTION(Hashing)
 
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
+    factory.registerFunction<FunctionXXH3>();
 
     factory.registerFunction<FunctionWyHash64>();
 
