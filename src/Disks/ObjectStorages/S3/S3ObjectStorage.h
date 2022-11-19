@@ -23,17 +23,17 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_)
-        : s3_settings(s3_settings_)
+        : request_settings(request_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
     {}
 
-    S3Settings::ReadWriteSettings s3_settings;
+    S3Settings::RequestSettings request_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -105,7 +105,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
     void getDirectoryContents(const std::string & path,
         RelativePathsWithSize & files,
         std::vector<std::string> & directories) const override;
