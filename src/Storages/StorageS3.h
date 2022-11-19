@@ -43,7 +43,8 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
-            Strings * read_keys_ = nullptr);
+            Strings * read_keys_ = nullptr,
+            const S3Settings::RequestSettings & request_settings_ = {});
 
         String next();
 
@@ -79,7 +80,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
-        UInt64 max_single_read_retries_,
+        const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
         const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
@@ -102,7 +103,7 @@ private:
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
-    UInt64 max_single_read_retries;
+    S3Settings::RequestSettings request_settings;
     String compression_hint;
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
@@ -186,7 +187,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client;
 
         S3::AuthSettings auth_settings;
-        S3Settings::ReadWriteSettings rw_settings;
+        S3Settings::RequestSettings request_settings;
 
         /// If s3 configuration was passed from ast, then it is static.
         /// If from config - it can be changed with config reload.
@@ -198,11 +199,11 @@ public:
         S3Configuration(
             const String & url_,
             const S3::AuthSettings & auth_settings_,
-            const S3Settings::ReadWriteSettings & rw_settings_,
+            const S3Settings::RequestSettings & request_settings_,
             const HeaderCollection & headers_from_ast_)
             : uri(S3::URI(url_))
             , auth_settings(auth_settings_)
-            , rw_settings(rw_settings_)
+            , request_settings(request_settings_)
             , static_configuration(!auth_settings_.access_key_id.empty())
             , headers_from_ast(headers_from_ast_) {}
     };
