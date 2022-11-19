@@ -99,6 +99,10 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
+#    include <cstddef>
+#    include <cstdlib>
+#    include <sys/socket.h>
+#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
@@ -273,6 +277,7 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -645,6 +650,47 @@ static void sanityChecks(Server & server)
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
 }
+
+#if defined(OS_LINUX)
+static void _sd_notify(const char*command)
+{
+    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
+
+    if (path == nullptr)
+        return; // not using systemd
+
+    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+    if (s == -1)
+        throw Exception("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+
+    size_t len = strlen(path);
+
+    struct sockaddr_un addr;
+
+    addr.sun_family = AF_UNIX;
+
+    if (len < 2 || len > sizeof(addr.sun_path) - 1)
+        throw Exception("NOTIFY_SOCKET env var value is wrong.", ErrorCodes::SYSTEM_ERROR);
+
+    memcpy(addr.sun_path, path, len + 1); // write last zero as well.
+
+    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
+
+    if (path[0] == '@')
+        addr.sun_path[0] = 0;
+    else if (path[0] == '/')
+        addrlen += 1; // non-abstract-addresses should be zero terminated.
+    else
+        throw Exception("Wrong UNIX path in NOTIFY_SOCKET env var", ErrorCodes::SYSTEM_ERROR);
+
+    size_t cmd_len = strlen(command);
+    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
+
+    if (sendto(s, command, cmd_len, 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(cmd_len))
+        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
+}
+#endif
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
@@ -1775,6 +1821,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
+
+#if defined(OS_LINUX)
+        _sd_notify("READY=1\n");
+#endif
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
