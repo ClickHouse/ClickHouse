@@ -95,13 +95,14 @@ private:
 
 }
 
-void registerDiskS3(DiskFactory & factory)
+void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & /*map*/) -> DiskPtr
     {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
 
@@ -132,7 +133,8 @@ void registerDiskS3(DiskFactory & factory)
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 
-        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+        /// NOTE: should we still perform this check for clickhouse-disks?
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         if (!skip_access_check)
         {
             /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
@@ -175,6 +177,6 @@ void registerDiskS3(DiskFactory & factory)
 
 #else
 
-void registerDiskS3(DiskFactory &) {}
+void registerDiskS3(DiskFactory &, bool /* global_skip_access_check */) {}
 
 #endif
