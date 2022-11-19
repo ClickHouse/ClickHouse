@@ -167,7 +167,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
         std::shared_ptr<IDisk> disk_result = s3disk;
 
-        return std::make_shared<DiskRestartProxy>(disk_result, skip_access_check);
+        return std::make_shared<DiskRestartProxy>(disk_result);
     };
     factory.registerDiskType("s3", creator);
     factory.registerDiskType("s3_plain", creator);

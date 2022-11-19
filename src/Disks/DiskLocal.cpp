@@ -762,7 +762,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
         disk->startup(context, skip_access_check);
-        return std::make_shared<DiskRestartProxy>(disk, skip_access_check);
+        return std::make_shared<DiskRestartProxy>(disk);
     };
     factory.registerDiskType("local", creator);
 }

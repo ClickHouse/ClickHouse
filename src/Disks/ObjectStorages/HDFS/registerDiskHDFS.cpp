@@ -55,7 +55,7 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
             copy_thread_pool_size);
         disk->startup(context, skip_access_check);
 
-        return std::make_shared<DiskRestartProxy>(disk, skip_access_check);
+        return std::make_shared<DiskRestartProxy>(disk);
     };
 
     factory.registerDiskType("hdfs", creator);
