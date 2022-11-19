@@ -14,16 +14,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void registerDiskWebServer(DiskFactory & factory)
+void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & disk_name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & disk_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & /*map*/) -> DiskPtr
     {
         String uri{config.getString(config_prefix + ".endpoint")};
-        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
         if (!uri.ends_with('/'))
             throw Exception(

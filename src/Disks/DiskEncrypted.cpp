@@ -369,15 +369,16 @@ void DiskEncrypted::applyNewSettings(
     current_settings.set(std::move(new_settings));
 }
 
-void registerDiskEncrypted(DiskFactory & factory)
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & map) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & map) -> DiskPtr
     {
-        bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(context, skip_access_check);
         return disk;
