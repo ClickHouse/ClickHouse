@@ -222,18 +222,51 @@ def need_retry(args, stdout, stderr, total_time):
     )
 
 
-def get_processlist(args):
+def get_processlist_with_stacktraces(args):
     if args.replicated_database:
         return clickhouse_execute_json(
             args,
             """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
+        SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
+        -- NOTE: view() here to do JOIN on shards, instead of initiator
+        FROM clusterAllReplicas('test_cluster_database_replicated', view(
+            SELECT
+                groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                    x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                    s.trace), '\n') AS stacktrace
+                )) AS stacktraces,
+                p.*
+            FROM system.processes p
+            JOIN system.stack_trace s USING (query_id)
+            WHERE query NOT LIKE '%system.processes%'
+            GROUP BY p.*
+        ))
+        ORDER BY elapsed DESC
         """,
+            settings={
+                "allow_introspection_functions": 1,
+            },
         )
     else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+        return clickhouse_execute_json(
+            args,
+            """
+        SELECT
+            groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                s.trace), '\n') AS stacktrace
+            )) AS stacktraces,
+            p.*
+        FROM system.processes p
+        JOIN system.stack_trace s USING (query_id)
+        WHERE query NOT LIKE '%system.processes%'
+        GROUP BY p.*
+        ORDER BY elapsed DESC
+        """,
+            settings={
+                "allow_introspection_functions": 1,
+            },
+        )
 
 
 def get_transactions_list(args):
@@ -1895,10 +1928,9 @@ def main(args):
         exit_code.value = 1
 
     if args.hung_check:
-
         # Some queries may execute in background for some time after test was finished. This is normal.
         for _ in range(1, 60):
-            processlist = get_processlist(args)
+            processlist = get_processlist_with_stacktraces(args)
             if not processlist:
                 break
             sleep(1)
@@ -1912,7 +1944,6 @@ def main(args):
             print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
-            print_stacktraces()
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
