@@ -1523,6 +1523,7 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
     {
         for (const auto & [name, expression] : scope.alias_name_to_expression_node)
         {
+            assert(expression);
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
 
@@ -2238,6 +2239,18 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         auto & alias_identifier_node = it->second->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
+        if (!lookup_result.isResolved())
+        {
+            std::unordered_set<Identifier> valid_identifiers;
+            collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
+
+            auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}' in scope {}{}",
+                toStringLowercase(IdentifierLookupContext::EXPRESSION),
+                identifier.getFullName(),
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
+        }
         it->second = lookup_result.resolved_identifier;
 
         /** During collection of aliases if node is identifier and has alias, we cannot say if it is
