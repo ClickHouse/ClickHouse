@@ -320,6 +320,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 data_settings->merge_with_ttl_timeout,
                 true);
 
+        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
         parts_to_merge = drop_ttl_selector.select(parts_ranges, data_settings->max_bytes_to_merge_at_max_space_in_pool);
         if (!parts_to_merge.empty())
         {
