@@ -541,7 +541,7 @@ public:
             buf.write(getData(), size);
     }
 
-    void allocateLargeDataIfNeeded(Int32 size_to_reserve, Arena * arena)
+    void allocateLargeDataIfNeeded(Int64 size_to_reserve, Arena * arena)
     {
         if (capacity < size_to_reserve)
         {
@@ -579,7 +579,8 @@ public:
         else
         {
             /// Reserve one byte more for null-character
-            Int32 rhs_size_to_reserve = rhs_size + 1;
+            Int64 rhs_size_to_reserve = rhs_size;
+            rhs_size_to_reserve += 1; /// Avoid overflow
             allocateLargeDataIfNeeded(rhs_size_to_reserve, arena);
             size = rhs_size;
             buf.readStrict(large_data, size);
@@ -608,8 +609,8 @@ public:
         }
 
         /// We have enough space to append
-        getDataMutable()[size] = '\0';
         ++size;
+        getDataMutable()[size - 1] = '\0';
     }
 
     /// Assuming to.has()

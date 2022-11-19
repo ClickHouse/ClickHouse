@@ -85,3 +85,18 @@ SELECT '63_KO', finalizeAggregation(CAST(unhex('3F000000303132333435363738393031
 -- SELECT hex(argMaxState('0123456789012345678901234567890123456789012345678901234567890123' as a, number)) AS state, length(a) FROM numbers(1) FORMAT CSV
 SELECT '64_OK', finalizeAggregation(CAST(unhex('410000003031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323300010000000000000000'), 'AggregateFunction(argMax, String, UInt64)'));
 SELECT '64_KO', finalizeAggregation(CAST(unhex('4000000030313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233010000000000000000'), 'AggregateFunction(argMax, String, UInt64)'));
+
+SELECT '-1', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('ffffffff') || randomString(100500), 'AggregateFunction(max, String)') as x);
+SELECT '-2', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('fffffffe') || randomString(100500), 'AggregateFunction(max, String)') as x);
+SELECT '-2^31', maxMerge(x), length(maxMerge(x)) from (select CAST(unhex('00000080') || randomString(100500), 'AggregateFunction(max, String)') as x);
+
+SELECT '2^31-2', maxMerge(x) from (select CAST(unhex('feffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT '2^31-1', maxMerge(x) from (select CAST(unhex('ffffff7f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
+
+SELECT '2^30', maxMerge(x) from (select CAST(unhex('00000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT '2^30+1', maxMerge(x) from (select CAST(unhex('01000040') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError TOO_LARGE_STRING_SIZE }
+
+SELECT '2^30-1', maxMerge(x) from (select CAST(unhex('ffffff3f') || randomString(100500), 'AggregateFunction(max, String)') as x); -- { serverError CANNOT_READ_ALL_DATA }
+-- The following query works, but it's too long and consumes to much memory
+-- SELECT '2^30-1', length(maxMerge(x)) from (select CAST(unhex('ffffff3f') || randomString(0x3FFFFFFF), 'AggregateFunction(max, String)') as x);
+SELECT '1M', length(maxMerge(x)) from (select CAST(unhex('00001000') || randomString(0x00100000), 'AggregateFunction(max, String)') as x);
