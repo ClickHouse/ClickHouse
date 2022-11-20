@@ -626,10 +626,16 @@ void DiskLocal::checkAccessImpl(const String & path)
     try
     {
         fs::create_directories(disk_path);
+        if (!FS::canWrite(disk_path))
+        {
+            LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
+            readonly = true;
+            return;
+        }
     }
     catch (...)
     {
-        LOG_ERROR(logger, "Cannot create the directory of disk {} ({}).", name, disk_path);
+        LOG_ERROR(logger, "Cannot create the root directory of disk {} ({}).", name, disk_path);
         readonly = true;
         return;
     }
