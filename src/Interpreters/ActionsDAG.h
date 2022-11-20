@@ -273,6 +273,11 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    /// The result is similar to merge(*this, second);
+    /// Invariant : no nodes are removed from the first (this) DAG.
+    /// So that pointers to nodes are kept valid.
+    void mergeInplace(ActionsDAG && second);
+
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.

@@ -93,7 +93,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             auth_settings.region,
             RemoteHostFilter(), s3_max_redirects,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false);
+            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
@@ -135,8 +135,8 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         if (s3_client == nullptr)
             return;
 
-        S3Settings::ReadWriteSettings read_write_settings;
-        read_write_settings.upload_part_size_multiply_parts_count_threshold = 10000;
+        S3Settings::RequestSettings request_settings_1;
+        request_settings_1.upload_part_size_multiply_parts_count_threshold = 10000;
 
         const auto create_writer = [&](const auto & key)
         {
@@ -145,7 +145,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
-                read_write_settings
+                request_settings_1
             };
         };
 
@@ -194,13 +194,15 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         lock_writer.finalize();
 
         // We read back the written UUID, if it's the same we can upload the file
+        S3Settings::RequestSettings request_settings_2;
+        request_settings_2.max_single_read_retries = 1;
         ReadBufferFromS3 lock_reader
         {
             s3_client->client,
             s3_client->uri.bucket,
             lock_file,
             "",
-            1,
+            request_settings_2,
             {}
         };
 
