@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
@@ -28,6 +28,12 @@ static inline bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isNativeInt() || data_type.isFloat() || data_type.isEnum();
+}
+
+static inline llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
+{
+    auto * is_null_type = builder.getInt1Ty();
+    return llvm::StructType::get(type, is_null_type);
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
@@ -218,7 +224,7 @@ static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::I
         size_t rhs_bit_width = rhs->getType()->getIntegerBitWidth() + (!rhs_is_signed && lhs_is_signed);
 
         size_t max_bit_width = std::max(lhs_bit_width, rhs_bit_width);
-        common = b.getIntNTy(max_bit_width);
+        common = b.getIntNTy(static_cast<unsigned>(max_bit_width));
     }
     else
     {

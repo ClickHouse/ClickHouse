@@ -2,8 +2,8 @@
 #include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 
@@ -62,7 +62,6 @@ namespace
 #define LIST_OF_BACKUP_SETTINGS(M) \
     M(String, id) \
     M(String, compression_method) \
-    M(Int64, compression_level) \
     M(String, password) \
     M(Bool, structure_only) \
     M(Bool, async) \
@@ -72,6 +71,7 @@ namespace
     M(String, host_id) \
     M(String, coordination_zk_path) \
     M(OptionalUUID, backup_uuid)
+    /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {
@@ -82,6 +82,9 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
+            if (setting.name == "compression_level")
+                res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
+            else
 #define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
             if (setting.name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
@@ -123,7 +126,12 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     query.settings = query_settings;
 
-    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    if (base_backup_name)
+        query.setOrReplace(query.base_backup_name, base_backup_name);
+    else
+        query.reset(query.base_backup_name);
+
     query.cluster_host_ids = !cluster_host_ids.empty() ? Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 

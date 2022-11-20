@@ -13,8 +13,6 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionsConversion.h>
 
-#include <Common/FieldVisitorToString.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
@@ -30,6 +28,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
 }
 
@@ -141,7 +140,6 @@ void SerializationObject<Parser>::checkSerializationIsSupported(const TSettings 
 template <typename Parser>
 struct SerializationObject<Parser>::SerializeStateObject : public ISerialization::SerializeBinaryBulkState
 {
-    bool is_first = true;
     DataTypePtr nested_type;
     SerializationPtr nested_serialization;
     SerializeBinaryBulkStatePtr nested_state;
@@ -158,6 +156,7 @@ struct SerializationObject<Parser>::DeserializeStateObject : public ISerializati
 
 template <typename Parser>
 void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -166,15 +165,34 @@ void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "DataTypeObject doesn't support serialization with non-trivial state");
 
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    if (!column_object.isFinalized())
+    {
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkStatePrefix(*finalized, settings, state);
+        return;
+    }
+
     settings.path.push_back(Substream::ObjectStructure);
     auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
 
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
 
+    auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
+
     writeIntBinary(static_cast<UInt8>(BinarySerializationKind::TUPLE), *stream);
-    state = std::make_shared<SerializeStateObject>();
+    writeStringBinary(tuple_type->getName(), *stream);
+
+    auto state_object = std::make_shared<SerializeStateObject>();
+    state_object->nested_type = tuple_type;
+    state_object->nested_serialization = tuple_type->getDefaultSerialization();
+
+    settings.path.back() = Substream::ObjectData;
+    state_object->nested_serialization->serializeBinaryBulkStatePrefix(*tuple_column, settings, state_object->nested_state);
+
+    state = std::move(state_object);
+    settings.path.pop_back();
 }
 
 template <typename Parser>
@@ -261,33 +279,14 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
     if (!column_object.isFinalized())
     {
-        auto finalized_object = column_object.clone();
-        assert_cast<ColumnObject &>(*finalized_object).finalize();
-        serializeBinaryBulkWithMultipleStreams(*finalized_object, offset, limit, settings, state);
+        auto finalized = column_object.cloneFinalized();
+        serializeBinaryBulkWithMultipleStreams(*finalized, offset, limit, settings, state);
         return;
     }
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 
-    if (state_object->is_first)
-    {
-        /// Actually it's a part of serializeBinaryBulkStatePrefix,
-        /// but it cannot be done there, because we have to know the
-        /// structure of column.
-
-        settings.path.push_back(Substream::ObjectStructure);
-        if (auto * stream = settings.getter(settings.path))
-            writeStringBinary(tuple_type->getName(), *stream);
-
-        state_object->nested_type = tuple_type;
-        state_object->nested_serialization = tuple_type->getDefaultSerialization();
-        state_object->is_first = false;
-
-        settings.path.back() = Substream::ObjectData;
-        state_object->nested_serialization->serializeBinaryBulkStatePrefix(settings, state_object->nested_state);
-        settings.path.pop_back();
-    }
-    else if (!state_object->nested_type->equals(*tuple_type))
+    if (!state_object->nested_type->equals(*tuple_type))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Types of internal column of Object mismatched. Expected: {}, Got: {}",
@@ -411,16 +410,61 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
     writeChar('{', ostr);
     for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
     {
+        const auto & entry = *it;
         if (it != subcolumns.begin())
             writeCString(",", ostr);
 
-        writeDoubleQuoted((*it)->path.getPath(), ostr);
+        writeDoubleQuoted(entry->path.getPath(), ostr);
         writeChar(':', ostr);
-
-        auto serialization = (*it)->data.getLeastCommonType()->getDefaultSerialization();
-        serialization->serializeTextJSON((*it)->data.getFinalizedColumn(), row_num, ostr, settings);
+        serializeTextFromSubcolumn(entry->data, row_num, ostr, settings);
     }
     writeChar('}', ostr);
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextFromSubcolumn(
+    const ColumnObject::Subcolumn & subcolumn, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & least_common_type = subcolumn.getLeastCommonType();
+
+    if (subcolumn.isFinalized())
+    {
+        const auto & finalized_column = subcolumn.getFinalizedColumn();
+        auto info = least_common_type->getSerializationInfo(finalized_column);
+        auto serialization = least_common_type->getSerialization(*info);
+        serialization->serializeTextJSON(finalized_column, row_num, ostr, settings);
+        return;
+    }
+
+    size_t ind = row_num;
+    if (ind < subcolumn.getNumberOfDefaultsInPrefix())
+    {
+        /// Suboptimal, but it should happen rarely.
+        auto tmp_column = subcolumn.getLeastCommonType()->createColumn();
+        tmp_column->insertDefault();
+
+        auto info = least_common_type->getSerializationInfo(*tmp_column);
+        auto serialization = least_common_type->getSerialization(*info);
+        serialization->serializeTextJSON(*tmp_column, 0, ostr, settings);
+        return;
+    }
+
+    ind -= subcolumn.getNumberOfDefaultsInPrefix();
+    for (const auto & part : subcolumn.getData())
+    {
+        if (ind < part->size())
+        {
+            auto part_type = getDataTypeByColumn(*part);
+            auto info = part_type->getSerializationInfo(*part);
+            auto serialization = part_type->getSerialization(*info);
+            serialization->serializeTextJSON(*part, ind, ostr, settings);
+            return;
+        }
+
+        ind -= part->size();
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for text serialization is out of range", row_num);
 }
 
 template <typename Parser>

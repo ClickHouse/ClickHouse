@@ -14,6 +14,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
+}
+void IObjectStorage::getDirectoryContents(const std::string &,
+    RelativePathsWithSize &,
+    std::vector<std::string> &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+}
+
 IAsynchronousReader & IObjectStorage::getThreadPoolReader()
 {
     auto context = Context::getGlobalContextInstance();

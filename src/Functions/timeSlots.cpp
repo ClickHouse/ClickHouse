@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Functions/IFunction.h>
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -41,6 +43,9 @@ struct TimeSlotsImpl
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<UInt32> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = starts.size();
 
         result_offsets.resize(size);
@@ -63,6 +68,9 @@ struct TimeSlotsImpl
         const PaddedPODArray<UInt32> & starts, UInt32 duration, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = starts.size();
 
         result_offsets.resize(size);
@@ -85,6 +93,9 @@ struct TimeSlotsImpl
         UInt32 start, const PaddedPODArray<UInt32> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         size_t size = durations.size();
 
         result_offsets.resize(size);
@@ -125,6 +136,9 @@ struct TimeSlotsImpl
 
         ColumnArray::Offset current_offset = 0;
         time_slot_size = time_slot_size.value * ts_multiplier;
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] * dt_multiplier + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
@@ -155,6 +169,9 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         duration = duration * dur_multiplier;
         time_slot_size = time_slot_size.value * ts_multiplier;
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = (starts[i] * dt_multiplier) / time_slot_size, end = (starts[i] * dt_multiplier + duration) / time_slot_size; value <= end; value += 1)
@@ -185,6 +202,9 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         start = dt_multiplier * start;
         time_slot_size = time_slot_size.value * ts_multiplier;
+        if (time_slot_size == 0)
+            throw Exception("Time slot size cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+
         for (size_t i = 0; i < size; ++i)
         {
             for (DateTime64 value = start / time_slot_size, end = (start + durations[i] * dur_multiplier) / time_slot_size; value <= end; value += 1)
@@ -281,11 +301,11 @@ public:
                     throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
             }
 
-            const auto * dt_starts = checkAndGetColumn<ColumnUInt32>(arguments[0].column.get());
-            const auto * dt_const_starts = checkAndGetColumnConst<ColumnUInt32>(arguments[0].column.get());
+            const auto * dt_starts = checkAndGetColumn<ColumnDateTime>(arguments[0].column.get());
+            const auto * dt_const_starts = checkAndGetColumnConst<ColumnDateTime>(arguments[0].column.get());
 
-            const auto * durations = checkAndGetColumn<ColumnUInt32>(arguments[1].column.get());
-            const auto * const_durations = checkAndGetColumnConst<ColumnUInt32>(arguments[1].column.get());
+            const auto * durations = checkAndGetColumn<ColumnDateTime>(arguments[1].column.get());
+            const auto * const_durations = checkAndGetColumnConst<ColumnDateTime>(arguments[1].column.get());
 
             auto res = ColumnArray::create(ColumnUInt32::create());
             ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
@@ -322,8 +342,8 @@ public:
                 time_slot_scale = assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale();
             }
 
-            const auto * starts = checkAndGetColumn<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
-            const auto * const_starts = checkAndGetColumnConst<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
+            const auto * starts = checkAndGetColumn<ColumnDateTime64>(arguments[0].column.get());
+            const auto * const_starts = checkAndGetColumnConst<ColumnDateTime64>(arguments[0].column.get());
 
             const auto * durations = checkAndGetColumn<ColumnDecimal<Decimal64>>(arguments[1].column.get());
             const auto * const_durations = checkAndGetColumnConst<ColumnDecimal<Decimal64>>(arguments[1].column.get());

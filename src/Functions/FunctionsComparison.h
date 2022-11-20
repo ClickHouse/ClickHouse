@@ -387,15 +387,38 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         ColumnString::Offset prev_a_offset = 0;
 
-        for (size_t i = 0; i < size; ++i)
+        if (b_size == 0)
         {
-            auto a_size = a_offsets[i] - prev_a_offset - 1;
+            /*
+             * Add the fast path of string comparison if the string constant is empty
+             * and b_size is 0. If a_size is also 0, both of string a and b are empty
+             * string. There is no need to call memequalSmallAllowOverflow15() for
+             * string comparison.
+             */
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto a_size = a_offsets[i] - prev_a_offset - 1;
 
-            c[i] = positive == memequalSmallAllowOverflow15(
-                a_data.data() + prev_a_offset, a_size,
-                b_data.data(), b_size);
+                if (a_size == 0)
+                    c[i] = positive;
+                else
+                    c[i] = !positive;
 
-            prev_a_offset = a_offsets[i];
+                prev_a_offset = a_offsets[i];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto a_size = a_offsets[i] - prev_a_offset - 1;
+
+                c[i] = positive == memequalSmallAllowOverflow15(
+                    a_data.data() + prev_a_offset, a_size,
+                    b_data.data(), b_size);
+
+                prev_a_offset = a_offsets[i];
+            }
         }
     }
 
