@@ -110,6 +110,7 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
     bool isBroken() const override { return broken; }
+    bool isReadOnly() const override { return readonly; }
 
     void startupImpl(ContextPtr context) override;
 
