@@ -143,7 +143,7 @@ private:
 
 DiskMemory::DiskMemory(const String & name_)
     : IDisk(name_)
-    , disk_path("memory://" + name_ + '/')
+    , disk_path("memory(" + name_ + ')')
 {}
 
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
