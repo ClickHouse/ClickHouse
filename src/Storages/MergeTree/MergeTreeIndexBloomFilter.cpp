@@ -3,7 +3,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <base/types.h>
-#include <base/bit_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Columns/ColumnConst.h>

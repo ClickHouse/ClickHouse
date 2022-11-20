@@ -72,7 +72,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
