@@ -637,7 +637,7 @@ void DiskLocal::checkAccessImpl(const String & path)
     IDisk::checkAccessImpl(path);
 }
 
-bool DiskLocal::setup()
+void DiskLocal::setup()
 {
     try
     {
@@ -652,7 +652,7 @@ bool DiskLocal::setup()
 
     /// If disk checker is disabled, just assume RW by default.
     if (!disk_checker)
-        return true;
+        return;
 
     try
     {
@@ -676,6 +676,7 @@ bool DiskLocal::setup()
 
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
+    {
         try
         {
             pcg32_fast rng(randomSeed());
@@ -695,12 +696,12 @@ bool DiskLocal::setup()
                 disk_checker_path,
                 name);
             disk_checker_can_check_read = false;
-            return true;
+            return;
         }
+    }
 
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
-    return true;
 }
 
 void DiskLocal::startupImpl(ContextPtr)
@@ -711,8 +712,7 @@ void DiskLocal::startupImpl(ContextPtr)
 
     try
     {
-        if (!setup())
-            readonly = true;
+        setup();
     }
     catch (...)
     {

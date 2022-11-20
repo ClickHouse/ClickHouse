@@ -137,9 +137,9 @@ protected:
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
+    /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
-    bool setup();
+    void setup();
 
     /// Read magic number from disk checker file. Return std::nullopt if exception happens.
     std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
