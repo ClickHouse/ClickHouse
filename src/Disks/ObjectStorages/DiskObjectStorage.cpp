@@ -109,8 +109,7 @@ DiskObjectStorage::DiskObjectStorage(
     ObjectStoragePtr object_storage_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
-    : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
-    , name(name_)
+    : IDisk(name_, getAsyncExecutor(log_name, thread_pool_size_))
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
@@ -420,9 +419,8 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startup(ContextPtr context)
+void DiskObjectStorage::startupImpl(ContextPtr context)
 {
-
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
 
@@ -497,6 +495,11 @@ bool DiskObjectStorage::supportsCache() const
 bool DiskObjectStorage::isReadOnly() const
 {
     return object_storage->isReadOnly();
+}
+
+bool DiskObjectStorage::isWriteOnce() const
+{
+    return object_storage->isWriteOnce();
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
