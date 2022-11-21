@@ -374,7 +374,7 @@ CREATE TABLE system.moves
     `elapsed` Float64,
     `target_disk_name` String,
     `target_disk_path` String,
-    `partition_id` String,
+    `part_name` String,
     `part_size` UInt64,
     `thread_id` UInt64
 )
