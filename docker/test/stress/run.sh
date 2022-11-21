@@ -254,7 +254,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start
 
-./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
