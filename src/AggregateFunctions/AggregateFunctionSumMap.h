@@ -155,7 +155,7 @@ public:
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
                         getName(), value_type->getName()};
 
-                WhichDataType value_type_to_check(value_type);
+                WhichDataType value_type_to_check(value_type_without_nullable);
 
                 /// Do not promote decimal because of implementation issues of this function design
                 /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
