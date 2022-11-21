@@ -14,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_, nuraft::ptr<nuraft::raft_server> * raft_server = nullptr);
+    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
@@ -69,6 +69,8 @@ public:
 
     /// Get entry with latest config in logstore
     nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
+
+    void setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server);
 
 private:
     mutable std::mutex changelog_lock;

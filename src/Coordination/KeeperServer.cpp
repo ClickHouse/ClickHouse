@@ -136,8 +136,7 @@ KeeperServer::KeeperServer(
         configuration_and_settings_->log_storage_path,
         configuration_and_settings_->state_file_path,
         config,
-        coordination_settings,
-        &raft_instance_raw);
+        coordination_settings);
 }
 
 /**
@@ -350,10 +349,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
-    raft_instance_raw = raft_instance;
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+
+    state_manager->getLogStore()->setRaftServer(raft_instance);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 

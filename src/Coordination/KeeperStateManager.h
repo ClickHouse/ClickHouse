@@ -42,8 +42,7 @@ public:
         const std::string & log_storage_path,
         const std::string & state_file_path,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
-        nuraft::ptr<nuraft::raft_server> * raft_server);
+        const CoordinationSettingsPtr & coordination_settings);
 
     /// Constructor for tests
     KeeperStateManager(
