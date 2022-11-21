@@ -464,7 +464,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             auto key = arguments.at(0);
             key.column = key.column->convertToFullColumnIfConst();
 
-            const auto * array = getArrayJoinColumn(key.column, true);
+            const auto * array = getArrayJoinColumn(key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "ARRAY JOIN of not array nor map: {}", node->result_name);

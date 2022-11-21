@@ -620,7 +620,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const auto * array = getArrayJoinColumn(array_join_key.column, true);
+            const auto * array = getArrayJoinColumn(array_join_key.column);
             if (!array)
                 throw Exception("ARRAY JOIN of not array nor map: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
 

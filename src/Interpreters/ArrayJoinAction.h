@@ -13,10 +13,12 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 class DataTypeArray;
 class ColumnArray;
+const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type);
+const ColumnArray * getArrayJoinColumn(const ColumnPtr & column);
 
-const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type, bool allow_map = true);
-const ColumnArray * getArrayJoinColumn(const ColumnPtr & column, bool allow_map = true);
-
+/// If input array join column has map type, convert it to array type.
+/// Otherwise do nothing.
+ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_col);
 
 class ArrayJoinAction
 {
