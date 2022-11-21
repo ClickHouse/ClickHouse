@@ -57,21 +57,21 @@ struct MergeTreeSource::AsyncReadingState
 
     void setResult(ChunkAndProgress chunk_)
     {
-        assert(stage == Stage::InProgress);
+        assert(control->stage == Stage::InProgress);
         chunk = std::move(chunk_);
         control->finish();
     }
 
     void setException(std::exception_ptr exception_)
     {
-        assert(stage == Stage::InProgress);
+        assert(control->stage == Stage::InProgress);
         exception = exception_;
         control->finish();
     }
 
     std::shared_ptr<Control> start()
     {
-        assert(stage == Stage::NotStarted);
+        assert(control->stage == Stage::NotStarted);
         control->stage = Stage::InProgress;
         return control;
     }
@@ -83,7 +83,7 @@ struct MergeTreeSource::AsyncReadingState
 
     ChunkAndProgress getResult()
     {
-        assert(stage == Stage::IsFinished);
+        assert(control->stage == Stage::IsFinished);
         control->event.read();
         control->stage = Stage::NotStarted;
 
