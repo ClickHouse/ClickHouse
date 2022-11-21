@@ -151,12 +151,14 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key, ContextPtr context)
 {
     /// TODO: add parallel downloads
+    S3Settings::RequestSettings request_settings;
+    request_settings.max_single_read_retries = 10;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,
         key,
         base_configuration.uri.version_id,
-        /* max single read retries */10,
+        request_settings,
         context->getReadSettings());
 }
 
@@ -187,7 +189,7 @@ StorageDelta::StorageDelta(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_)
     : IStorage(table_id_)
-    , base_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
+    , base_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
     , log(&Poco::Logger::get("StorageDeltaLake (" + table_id_.table_name + ")"))
     , table_path(base_configuration.uri.key)
 {
