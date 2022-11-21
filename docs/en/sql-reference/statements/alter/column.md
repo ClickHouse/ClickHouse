@@ -35,11 +35,11 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#codecs) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
-Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)).
+Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md)).
 
 This approach allows us to complete the `ALTER` query instantly, without increasing the volume of old data.
 
@@ -76,7 +76,7 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 :::warning    
-You can’t delete a column if it is referenced by [materialized view](../../../sql-reference/statements/create/view.md#materialized). Otherwise, it returns an error.
+You can’t delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
 :::
 
 Example:
@@ -107,7 +107,7 @@ ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](partition.md/#how-to-set-partition-expression).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
@@ -127,7 +127,7 @@ Adds a comment to the column. If the `IF EXISTS` clause is specified, the query 
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](../../../sql-reference/statements/describe-table.md) query.
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](/docs/en/sql-reference/statements/describe-table.md) query.
 
 Example:
 
@@ -152,15 +152,15 @@ This query changes the `name` column properties:
 
 -   TTL
 
-For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md#codecs).
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
 
-For examples of columns TTL modifying, see [Column TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
+For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description.
 
-When changing the type, values are converted as if the [toType](../../../sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
+When changing the type, values are converted as if the [toType](/docs/en/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
 Example:
 
@@ -204,8 +204,9 @@ It is used if it is necessary to add or update a column with a complicated expre
 Syntax:
 
 ```sql
-ALTER TABLE table MATERIALIZE COLUMN col;
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
 ```
+- If you specify a PARTITION, a column will be materialized with only the specified partition.
 
 **Example**
 
@@ -245,7 +246,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](../../statements/create/table.md#materialized).
+- [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized).
 
 ## Limitations
 
@@ -253,8 +254,8 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](../../../sql-reference/statements/insert-into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](../../../sql-reference/statements/rename.md#rename-table) query and delete the old table. You can use the [clickhouse-copier](../../../operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table. You can use the [clickhouse-copier](/docs/en/operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
-For tables that do not store data themselves (such as [Merge](../../../sql-reference/statements/alter/index.md) and [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
+For tables that do not store data themselves (such as [Merge](/docs/en/sql-reference/statements/alter/index.md) and [Distributed](/docs/en/sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.

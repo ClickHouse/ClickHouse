@@ -229,7 +229,7 @@ void StorageMergeTree::read(
     bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
 
     if (enable_parallel_reading)
-        LOG_TRACE(log, "Parallel reading from replicas enabled {}", enable_parallel_reading);
+        LOG_TRACE(log, "Parallel reading from replicas enabled: {}", enable_parallel_reading);
 
     if (auto plan = reader.read(
         column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))

@@ -584,10 +584,33 @@ public:
     /// Used in REPLACE PARTITION command.
     void removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
+    /// This wrapper is required to restrict access to parts in Deleting state
+    class PartToRemoveFromZooKeeper
+    {
+        DataPartPtr part;
+        bool was_active;
+
+    public:
+        explicit PartToRemoveFromZooKeeper(DataPartPtr && part_, bool was_active_ = true)
+         : part(std::move(part_)), was_active(was_active_)
+        {
+        }
+
+        /// It's safe to get name of any part
+        const String & getPartName() const { return part->name; }
+
+        DataPartPtr getPartIfItWasActive() const
+        {
+            return was_active ? part : nullptr;
+        }
+    };
+
+    using PartsToRemoveFromZooKeeper = std::vector<PartToRemoveFromZooKeeper>;
+
     /// Same as above, but also returns list of parts to remove from ZooKeeper.
     /// It includes parts that have been just removed by these method
     /// and Outdated parts covered by drop_range that were removed earlier for any reason.
-    DataPartsVector removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
+    PartsToRemoveFromZooKeeper removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
     /// Restores Outdated part and adds it to working set
@@ -639,6 +662,9 @@ public:
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
+
+    /// This flag is for hardening and assertions.
+    bool all_data_dropped = false;
 
     /// Drop data directories if they are empty. It is safe to call this method if table creation was unsuccessful.
     void dropIfEmpty();
@@ -753,10 +779,10 @@ public:
         return column_sizes;
     }
 
-    const ColumnsDescription & getObjectColumns() const { return object_columns; }
+    const ColumnsDescription & getConcreteObjectColumns() const { return object_columns; }
 
     /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getObjectColumns(
+    static ColumnsDescription getConcreteObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
     IndexSizeByName getSecondaryIndexSizes() const override
@@ -1131,7 +1157,7 @@ protected:
     }
 
     /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getObjectColumns(
+    static ColumnsDescription getConcreteObjectColumns(
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(

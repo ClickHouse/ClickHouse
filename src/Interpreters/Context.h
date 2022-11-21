@@ -9,6 +9,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -45,6 +46,8 @@ struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct EnabledRolesInfo;
 class EnabledRowPolicies;
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
 struct QuotaUsage;
 class AccessFlags;
@@ -237,6 +240,9 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+
+    String insert_format; /// Format, used in insert query.
+
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -516,7 +522,7 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
     /// if the initial user exists.
@@ -600,7 +606,9 @@ public:
     const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
-    StoragePtr executeTableFunction(const ASTPtr & table_expression);
+    /// For table functions s3/file/url/hdfs/input we can use structure from
+    /// insertion table depending on select expression.
+    StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -628,6 +636,9 @@ public:
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
+
+    String getInsertFormat() const;
+    void setInsertFormat(const String & name);
 
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
