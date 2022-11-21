@@ -2202,8 +2202,9 @@ def dropddl(clickhouse_node, mysql_node, mysql_host):
         f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
     )
     check_query(
-        clickhouse_node, f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
-        "4\n"
+        clickhouse_node,
+        f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
+        "4\n",
     )
     check_query(clickhouse_node, f"SELECT * FROM {db}.t1 FORMAT TSV", "1\t1\n")
     mysql_node.query(f"DROP EVENT IF EXISTS {db}.event_name")
@@ -2220,7 +2221,7 @@ def dropddl(clickhouse_node, mysql_node, mysql_host):
     check_query(
         clickhouse_node,
         f"SELECT name FROM system.tables where database = '{db}' FORMAT TSV",
-        "t1\nt2\n"
+        "t1\nt2\n",
     )
     mysql_node.query(f"DROP DATABASE {db}")
     clickhouse_node.query(f"DROP DATABASE {db}")
