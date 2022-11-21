@@ -652,43 +652,47 @@ static void sanityChecks(Server & server)
 }
 
 #if defined(OS_LINUX)
-static void _sd_notify(const char*command)
+/// Sends notification to systemd, analogous to sd_notify from libsystemd
+static void systemdNotify(const std::string_view & command)
 {
     const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
 
     if (path == nullptr)
-        return; // not using systemd
+        return; /// not using systemd
 
     int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
     if (s == -1)
-        throw Exception("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
 
-    size_t len = strlen(path);
+    SCOPE_EXIT({ close(s); });
+
+    const size_t len = strlen(path);
 
     struct sockaddr_un addr;
 
     addr.sun_family = AF_UNIX;
 
     if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw Exception("NOTIFY_SOCKET env var value is wrong.", ErrorCodes::SYSTEM_ERROR);
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
 
-    memcpy(addr.sun_path, path, len + 1); // write last zero as well.
+    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
 
     size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
 
+    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
     if (path[0] == '@')
         addr.sun_path[0] = 0;
     else if (path[0] == '/')
-        addrlen += 1; // non-abstract-addresses should be zero terminated.
+        addrlen += 1; /// non-abstract-addresses should be zero terminated.
     else
-        throw Exception("Wrong UNIX path in NOTIFY_SOCKET env var", ErrorCodes::SYSTEM_ERROR);
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
 
-    size_t cmd_len = strlen(command);
     const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
 
-    if (sendto(s, command, cmd_len, 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(cmd_len))
+    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
         throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
+
 }
 #endif
 
@@ -1823,7 +1827,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
 #if defined(OS_LINUX)
-        _sd_notify("READY=1\n");
+        systemdNotify("READY=1\n");
 #endif
 
         SCOPE_EXIT_SAFE({
