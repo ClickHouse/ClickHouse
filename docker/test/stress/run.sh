@@ -254,7 +254,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start
 
-./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
@@ -387,6 +387,9 @@ else
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
+
+    # it uses recently introduced settings which previous versions may not have
+    rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
     start
 
