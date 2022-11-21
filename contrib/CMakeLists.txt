@@ -115,12 +115,25 @@ endif()
 add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
-add_contrib (aws-s3-cmake
+
+add_contrib (aws-cmake
     aws
+    aws-c-auth
+    aws-c-cal
     aws-c-common
+    aws-c-compression
     aws-c-event-stream
+    aws-c-http
+    aws-c-io
+    aws-c-mqtt
+    aws-c-s3
+    aws-c-sdkutils
+    aws-s2n-tls
     aws-checksums
+    aws-crt-cpp
+    aws-cmake
 )
+
 add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
