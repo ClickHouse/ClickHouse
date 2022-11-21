@@ -222,13 +222,21 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
   *     formatIPv4(&0x7f000001, dst, mask_tail_octets = 1, "0");
   *         > dst == "127.0.0.0"
   */
-inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
+inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
 {
     extern const char one_byte_to_string_lookup_table[256][4];
 
     const size_t mask_length = mask_string ? strlen(mask_string) : 0;
     const size_t limit = std::min(IPV4_BINARY_LENGTH, IPV4_BINARY_LENGTH - mask_tail_octets);
-    for (size_t octet = 0; octet < limit; ++octet)
+    const size_t padding = std::min(4 - src_size, limit);
+
+    for (size_t octet = 0; octet < padding; ++octet)
+    {
+        *dst++ = '0';
+        *dst++ = '.';
+    }
+
+    for (size_t octet = 4 - src_size; octet < limit; ++octet)
     {
         const uint8_t value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         const auto * rep = one_byte_to_string_lookup_table[value];
@@ -249,6 +257,11 @@ inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail
     }
 
     dst[-1] = '\0';
+}
+
+inline void formatIPv4(const unsigned char * src, char *& dst, uint8_t mask_tail_octets = 0, const char * mask_string = "xxx")
+{
+    formatIPv4(src, 4, dst, mask_tail_octets, mask_string);
 }
 
 }

@@ -89,6 +89,7 @@ namespace detail
         char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
         /// ColumnFixedString contains not null terminated strings. But functions parseIPv6, parseIPv4 expect null terminated string.
+        /// TODO fix this - now parseIPv6/parseIPv4 accept end iterator, so can be parsed in-place
         std::string fixed_string_buffer;
 
         if constexpr (std::is_same_v<StringColumnType, ColumnFixedString>)
@@ -124,7 +125,7 @@ namespace detail
 
             if (null_map && (*null_map)[i])
             {
-                std::fill_n(&vec_res[i], IPV6_BINARY_LENGTH, 0);
+                std::fill_n(&vec_res[out_offset], offset_inc, 0);
                 src_offset = src_next_offset;
                 if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
                     (*vec_null_map_to)[i] = true;
