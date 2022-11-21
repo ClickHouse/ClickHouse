@@ -222,7 +222,7 @@ struct IPv6EqualsImpl
         const Container & b_data,
         PaddedPODArray<UInt8> & c)
     {
-        size_t size = a_data.size() / 16;
+        size_t size = a_data.size();
 
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == memequal16(
@@ -235,7 +235,7 @@ struct IPv6EqualsImpl
         const Container & b_data,
         PaddedPODArray<UInt8> & c)
     {
-        size_t size = a_data.size() / 16;
+        size_t size = a_data.size();
 
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == memequal16(
@@ -1431,7 +1431,7 @@ public:
         {
             return executeTuple(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (left_is_ipv6 && right_is_ipv6 && (res = executeIPv6(col_left_untyped, col_right_untyped)))
+        else if ((left_is_ipv6 && right_is_ipv6) && (res = executeIPv6(col_left_untyped, col_right_untyped)))
         {
             return res;
         }

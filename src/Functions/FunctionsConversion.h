@@ -123,6 +123,7 @@ struct AccurateOrNullConvertStrategyAdditions
 
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
+struct ConvertReturnZeroOnErrorTag {};
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
@@ -1422,6 +1423,11 @@ requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
 struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
+template <typename FromDataType, typename ToDataType, typename Name>
+requires (is_any_of<FromDataType, DataTypeString, DataTypeFixedString> && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
+struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag>
+    : ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal> {};
+
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
 template <typename StringColumnType>
 struct ConvertImplGenericFromString
@@ -1649,8 +1655,11 @@ public:
                                                 std::is_same_v<ToDataType, DataTypeDate32> ||
                                                 std::is_same_v<ToDataType, DataTypeDateTime>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
+
+    FunctionConvert() = default;
+    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -1839,6 +1848,7 @@ public:
     }
 
 private:
+    ContextPtr context;
     mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
@@ -1902,16 +1912,6 @@ private:
                 {
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
-                else if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeIPv4>) ||
-                              (bad_right && std::is_same_v<LeftDataType, DataTypeIPv4>))
-                {
-                    throw Exception("Wrong IPv4 conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
-                }
-                else if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeIPv6>) ||
-                              (bad_right && std::is_same_v<LeftDataType, DataTypeIPv6>))
-                {
-                    throw Exception("Wrong IPv6 conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
-                }
                 else
                 {
                     result_column
@@ -1948,19 +1948,27 @@ private:
                 return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
         }
 
-        bool done;
+        bool done = false;
         if constexpr (to_string_or_fixed_string)
         {
             done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
         else
         {
-            /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
-            /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
-            if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
-            else
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            bool cast_ipv4_ipv6_default_on_conversion_error = false;
+            if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
+                if ((cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnZeroOnErrorTag{});
+
+            if (!cast_ipv4_ipv6_default_on_conversion_error)
+            {
+                /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
+                /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
+                if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+                else
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+            }
         }
 
         if (!done)
