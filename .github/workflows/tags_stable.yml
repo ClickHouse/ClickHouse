@@ -38,7 +38,7 @@ jobs:
       with:
         ref: master
         fetch-depth: 0
-    - name: Generate versions
+    - name: Update versions, docker version, changelog, security
       env:
         GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
       run: |
@@ -51,6 +51,7 @@ jobs:
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
                 --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
         git add "./docs/changelogs/${GITHUB_TAG}.md"
+        python ./utils/security-generator/generate_security.py > SECURITY.md
         git diff HEAD
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v3
