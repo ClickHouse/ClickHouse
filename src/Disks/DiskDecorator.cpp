@@ -4,7 +4,10 @@
 
 namespace DB
 {
-DiskDecorator::DiskDecorator(const DiskPtr & delegate_) : delegate(delegate_)
+
+DiskDecorator::DiskDecorator(const DiskPtr & delegate_)
+    : IDisk(/* name_= */ "<decorator>")
+    , delegate(delegate_)
 {
 }
 
@@ -226,9 +229,9 @@ void DiskDecorator::shutdown()
     delegate->shutdown();
 }
 
-void DiskDecorator::startup(ContextPtr context)
+void DiskDecorator::startupImpl(ContextPtr context)
 {
-    delegate->startup(context);
+    delegate->startupImpl(context);
 }
 
 void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
