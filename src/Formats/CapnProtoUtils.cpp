@@ -433,13 +433,13 @@ std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBu
     throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Capnproto struct doesn't contain field with name {}", field_name);
 }
 
-static capnp::StructSchema::Field getFieldByName(const capnp::StructSchema & schema, const String & name)
+static std::pair<capnp::StructSchema::Field, String> getFieldByName(const capnp::StructSchema & schema, const String & name)
 {
     auto [field_name, nested_name] = splitCapnProtoFieldName(name);
     KJ_IF_MAYBE(field, schema.findFieldByName(field_name))
     {
         if (nested_name.empty())
-            return *field;
+            return {*field, name};
 
         /// Support reading Nested as List of Structs.
         if (field->getType().isList())
@@ -450,7 +450,7 @@ static capnp::StructSchema::Field getFieldByName(const capnp::StructSchema & sch
 
             auto struct_schema = list_schema.getElementType().asStruct();
             KJ_IF_MAYBE(nested_field, struct_schema.findFieldByName(nested_name))
-                return *field;
+                return {*field, name};
 
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Element type of List {} doesn't contain field with name \"{}\"", field_name, nested_name);
         }
@@ -473,8 +473,8 @@ void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Blo
     String additional_error_message;
     for (auto & [name, type] : names_and_types)
     {
-        auto field = getFieldByName(schema, name);
-        if (!checkCapnProtoType(field.getType(), type, mode, additional_error_message, name))
+        auto [field, field_name] = getFieldByName(schema, name);
+        if (!checkCapnProtoType(field.getType(), type, mode, additional_error_message, field_name))
         {
             auto e = Exception(
                 ErrorCodes::CAPN_PROTO_BAD_CAST,
