@@ -116,7 +116,8 @@ namespace MySQLReplication
             if (!query.starts_with("XA COMMIT"))
                 transaction_complete = false;
         }
-        else if (query.starts_with("SAVEPOINT"))
+        else if (query.starts_with("SAVEPOINT") || query.starts_with("ROLLBACK")
+                 || query.starts_with("RELEASE SAVEPOINT"))
         {
             typ = QUERY_SAVEPOINT;
         }
@@ -941,6 +942,7 @@ namespace MySQLReplication
                 {
                     case QUERY_EVENT_MULTI_TXN_FLAG:
                     case QUERY_EVENT_XA:
+                    /// Ignore queries that have no impact on the data.
                     case QUERY_SAVEPOINT:
                     {
                         event = std::make_shared<DryRunEvent>(std::move(query->header));

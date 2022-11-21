@@ -177,6 +177,12 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
+    /// Is object write-once?
+    /// For example: S3PlainObjectStorage is write once, this means that it
+    /// does support BACKUP to this disk, but does not support INSERT into
+    /// MergeTree table on this disk.
+    bool isWriteOnce() const override;
+
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
