@@ -770,8 +770,10 @@ namespace S3
                 has_version_id = true;
             }
 
-        /// If uri contains parameter "versionId", the "?" will not be used as wildcards.
-        /// Otherwise it is necessary to encode "?" to avoid deletion during parsing.
+        /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter, 
+        /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
+        /// If no vestionId in the http parameter, '?' can be used as a wildcard.
+        /// It is necessary to encode '?' to avoid deletion during parsing path.
         if (!has_version_id && uri_.find('?') != String::npos)
         {
             String uri_with_question_mark_encode;
