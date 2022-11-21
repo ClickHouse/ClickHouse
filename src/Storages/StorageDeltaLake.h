@@ -60,13 +60,13 @@ private:
     DeltaLakeMetadata metadata;
 };
 
-class StorageDelta : public IStorage
+class StorageDeltaLake : public IStorage
 {
 public:
     // 1. Parses internal file structure of table
     // 2. Finds out parts with latest version
     // 3. Creates url for underlying StorageS3 enigne to handle reads
-    StorageDelta(
+    StorageDeltaLake(
         const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
