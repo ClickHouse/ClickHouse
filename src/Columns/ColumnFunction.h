@@ -29,7 +29,7 @@ private:
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_if_low_cardinality_ = false);
+        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
