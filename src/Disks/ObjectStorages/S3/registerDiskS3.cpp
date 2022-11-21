@@ -130,21 +130,16 @@ void registerDiskS3(DiskFactory & factory)
         chassert(type == "s3" || type == "s3_plain");
 
         MetadataStoragePtr metadata_storage;
+        auto settings = getSettings(config, config_prefix, context);
+        auto client = getClient(config, config_prefix, context, *settings);
         if (type == "s3_plain")
         {
-            s3_storage = std::make_shared<S3PlainObjectStorage>(
-                getClient(config, config_prefix, context),
-                getSettings(config, config_prefix, context),
-                uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
+            s3_storage = std::make_shared<S3PlainObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
             metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, uri.key);
         }
         else
         {
-            s3_storage = std::make_shared<S3ObjectStorage>(
-                getClient(config, config_prefix, context),
-                getSettings(config, config_prefix, context),
-                uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
-
+            s3_storage = std::make_shared<S3ObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
             auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
