@@ -1,6 +1,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Storages/ArrowParquetBlockInputFormat.h>
@@ -25,7 +26,8 @@ FormatFile::InputFormatPtr ParquetFormatFile::createInputFormat(const DB::Block 
 {
     auto row_group_indices = collectRowGroupIndices();
     auto read_buffer = read_buffer_builder->build(file_info);
-    auto input_format = std::make_shared<local_engine::ArrowParquetBlockInputFormat>(*read_buffer, header, DB::FormatSettings(), row_group_indices);
+    auto format_settings = DB::getFormatSettings(context);
+    auto input_format = std::make_shared<local_engine::ArrowParquetBlockInputFormat>(*read_buffer, header, format_settings, row_group_indices);
     auto res = std::make_shared<FormatFile::InputFormat>(input_format, std::move(read_buffer));
     return res;
 }
