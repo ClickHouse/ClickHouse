@@ -33,7 +33,7 @@ namespace
 
 StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
 {
-    return {configuration.url, configuration.auth_settings, configuration.rw_settings, configuration.headers};
+    return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
 }
 
 /// Apache Hudi store parts of data in different files.

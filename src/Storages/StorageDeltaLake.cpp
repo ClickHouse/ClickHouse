@@ -1,7 +1,7 @@
 #include "config.h"
 #if USE_AWS_S3
 
-#include <Storages/StorageDelta.h>
+#include <Storages/StorageDeltaLake.h>
 #include <Common/logger_useful.h>
 
 #include <IO/ReadBufferFromS3.h>
@@ -151,12 +151,14 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key, ContextPtr context)
 {
     /// TODO: add parallel downloads
+    S3Settings::RequestSettings request_settings;
+    request_settings.max_single_read_retries = 10;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,
         key,
         base_configuration.uri.version_id,
-        /* max single read retries */10,
+        request_settings,
         context->getReadSettings());
 }
 
@@ -183,7 +185,7 @@ namespace
 
 StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
 {
-    return {configuration.url, configuration.auth_settings, configuration.rw_settings, configuration.headers};
+    return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
 }
 
 // DeltaLake stores data in parts in different files
@@ -224,7 +226,7 @@ StorageS3Configuration getAdjustedS3Configuration(
 
 }
 
-StorageDelta::StorageDelta(
+StorageDeltaLake::StorageDeltaLake(
     const StorageS3Configuration & configuration_,
     const StorageID & table_id_,
     ColumnsDescription columns_,
@@ -268,7 +270,7 @@ StorageDelta::StorageDelta(
         nullptr);
 }
 
-Pipe StorageDelta::read(
+Pipe StorageDeltaLake::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -282,7 +284,7 @@ Pipe StorageDelta::read(
     return s3engine->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-ColumnsDescription StorageDelta::getTableStructureFromData(
+ColumnsDescription StorageDeltaLake::getTableStructureFromData(
     const StorageS3Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
 {
     auto base_configuration = getBaseConfiguration(configuration);
@@ -293,7 +295,7 @@ ColumnsDescription StorageDelta::getTableStructureFromData(
         new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
 }
 
-void registerStorageDelta(StorageFactory & factory)
+void registerStorageDeltaLake(StorageFactory & factory)
 {
     factory.registerStorage(
         "DeltaLake",
@@ -319,7 +321,7 @@ void registerStorageDelta(StorageFactory & factory)
                 configuration.format = "Parquet";
             }
 
-            return std::make_shared<StorageDelta>(
+            return std::make_shared<StorageDeltaLake>(
                 configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), std::nullopt);
         },
         {
