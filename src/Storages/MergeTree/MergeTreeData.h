@@ -1303,14 +1303,13 @@ protected:
         using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
-        static PartLoadingTree build(std::vector<PartLoadingInfo> nodes);
+        static PartLoadingTree build(PartLoadingInfos nodes);
 
         template <typename Func>
         void traverse(bool recursive, Func && func);
 
     private:
         void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
-
         std::unordered_map<String, NodePtr> root_by_partition;
     };
 
@@ -1323,11 +1322,12 @@ protected:
         MutableDataPartPtr part;
     };
 
-    mutable std::mutex unloaded_outdated_parts_mutex;
-    PartLoadingTreeNodes unloaded_outdated_parts TSA_GUARDED_BY(unloaded_outdated_parts_mutex);
+    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
+    std::atomic_bool are_outdated_data_parts_loaded = false;
 
     void loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load);
-    void scheduleOutdatedDataPartsLoadingJob(BackgroundJobsAssignee & assignee);
+    void waitForOutdatedPartsToBeLoaded() const;
+    void startOutdatedDataPartsLoadingTask();
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
@@ -1414,6 +1414,7 @@ private:
         const MergeTreeSettingsPtr & settings);
 
     void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
+
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }

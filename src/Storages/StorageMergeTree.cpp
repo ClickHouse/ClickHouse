@@ -136,8 +136,8 @@ void StorageMergeTree::startup()
     try
     {
         background_operations_assignee.start();
-        scheduleOutdatedDataPartsLoadingJob(background_operations_assignee);
         startBackgroundMovesIfNeeded();
+        startOutdatedDataPartsLoadingTask();
     }
     catch (...)
     {
@@ -176,6 +176,10 @@ void StorageMergeTree::shutdown()
         std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
+
+    waitForOutdatedPartsToBeLoaded();
+    if (outdated_data_parts_loading_task)
+        outdated_data_parts_loading_task->deactivate();
 
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
@@ -281,6 +285,8 @@ void StorageMergeTree::drop()
 
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    waitForOutdatedPartsToBeLoaded();
+
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
