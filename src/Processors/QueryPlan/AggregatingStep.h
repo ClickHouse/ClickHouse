@@ -52,6 +52,8 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    bool inOrder() const { return group_by_info != nullptr; }
+
 private:
     void updateOutputStream() override;
 
