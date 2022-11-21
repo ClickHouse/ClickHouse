@@ -95,7 +95,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                         out << ",";
                 }
             }
-
+            out << "\ncleanup: " << cleanup;
             break;
 
         case DROP_RANGE:
@@ -264,6 +264,8 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
                     trailing_newline_found = true;
             }
         }
+        in >> "cleanup: " >> cleanup;
+        trailing_newline_found = false;
     }
     else if (type_str == "drop" || type_str == "detach")
     {

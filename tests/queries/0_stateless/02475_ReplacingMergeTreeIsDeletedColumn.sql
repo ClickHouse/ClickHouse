@@ -59,13 +59,7 @@ CREATE TABLE testReplica1 (uid String, version UInt32, is_deleted UInt8)
     ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r1', version, is_deleted)
     ORDER BY uid;
 
-CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
-    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r2', version, is_deleted)
-    ORDER BY uid;
-
 INSERT INTO testReplica1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
-SYSTEM SYNC REPLICA testReplica2;
-
 INSERT INTO testReplica1 (*) VALUES ('d3', 2, 1);
 INSERT INTO testReplica1 (*) VALUES ('d1', 2, 1);
 
@@ -74,5 +68,15 @@ OPTIMIZE TABLE testReplica1 FINAL CLEANUP;
 -- Only d3 to d5 remain
 SELECT '== Replica 1 ==';
 SELECT * FROM testReplica1;
+
+CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
+    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r2', version, is_deleted)
+    ORDER BY uid
+    SETTINGS clean_deleted_rows = 'Always';
+
+INSERT INTO testReplica2 (*) VALUES ('d1', 1, 1),('d2', 1, 0),('d3', 1, 1),('d4', 1, 0);
+
+OPTIMIZE TABLE testReplica2 FINAL;
+-- Only d3 to d5 remain
 SELECT '== Replica 2 ==';
-SELECT * FROM testReplica1;
+SELECT * FROM testReplica2;
