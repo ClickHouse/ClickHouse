@@ -17,6 +17,7 @@
 #include <Poco/URI.h>
 
 #include <Common/Exception.h>
+#include <Common/Throttler_fwd.h>
 
 namespace Aws::S3
 {
@@ -88,7 +89,9 @@ public:
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
         bool enable_s3_requests_logging,
-        bool for_disk_s3);
+        bool for_disk_s3,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler);
 
 private:
     ClientFactory();
