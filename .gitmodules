@@ -58,7 +58,7 @@
 	url = https://github.com/apache/thrift.git
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
-	url = https://github.com/ClickHouse/libhdfs3.git
+	url = https://github.com/ClibMouse/libhdfs3.git
 [submodule "contrib/libxml2"]
 	path = contrib/libxml2
 	url = https://github.com/GNOME/libxml2.git
@@ -158,7 +158,7 @@
 	url = https://github.com/ClickHouse/sentry-native.git
 [submodule "contrib/krb5"]
 	path = contrib/krb5
-	url = https://github.com/ClickHouse/krb5
+	url = https://github.com/ClibMouse/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/ClickHouse/cyrus-sasl
