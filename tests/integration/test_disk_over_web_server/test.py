@@ -13,7 +13,10 @@ def cluster():
             "node1", main_configs=["configs/storage_conf.xml"], with_nginx=True
         )
         cluster.add_instance(
-            "node2", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
+            "node2",
+            main_configs=["configs/storage_conf_web.xml"],
+            with_nginx=True,
+            stay_alive=True,
         )
         cluster.add_instance(
             "node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True
@@ -192,3 +195,53 @@ def test_cache(cluster, node_name):
 
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
+
+
+def test_unavailable_server(cluster):
+    """
+    Regression test for the case when clickhouse-server simply ignore when
+    server is unavailable on start and later will simply return 0 rows for
+    SELECT from table on web disk.
+    """
+    node2 = cluster.instances["node2"]
+    global uuids
+    node2.query(
+        """
+        ATTACH TABLE test0 UUID '{}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS storage_policy = 'web';
+    """.format(
+            uuids[0]
+        )
+    )
+    node2.stop_clickhouse()
+    try:
+        # NOTE: you cannot use separate disk instead, since MergeTree engine will
+        # try to lookup parts on all disks (to look unexpected disks with parts)
+        # and fail because of unavailable server.
+        node2.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "sed -i 's#http://nginx:80/test1/#http://nginx:8080/test1/#' /etc/clickhouse-server/config.d/storage_conf_web.xml",
+            ]
+        )
+        with pytest.raises(Exception):
+            # HTTP retries with backup can take awhile
+            node2.start_clickhouse(start_wait_sec=120, retry_start=False)
+        assert node2.contains_in_log(
+            "Caught exception while loading metadata.*Connection refused"
+        )
+        assert node2.contains_in_log(
+            "HTTP request to \`http://nginx:8080/test1/.*\` failed at try 1/10 with bytes read: 0/unknown. Error: Connection refused."
+        )
+    finally:
+        node2.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "sed -i 's#http://nginx:8080/test1/#http://nginx:80/test1/#' /etc/clickhouse-server/config.d/storage_conf_web.xml",
+            ]
+        )
+        node2.start_clickhouse()
+        node2.query("DROP TABLE test0 SYNC")
