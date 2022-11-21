@@ -4507,6 +4507,9 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 
 SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
+    if (!initialization_done)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
+
     /// If table is read-only because it doesn't have metadata in zk yet, then it's not possible to insert into it
     /// Without this check, we'll write data parts on disk, and afterwards will remove them since we'll fail to commit them into zk
     /// In case of remote storage like s3, it'll generate unnecessary PUT requests
@@ -7609,8 +7612,6 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 
 String StorageReplicatedMergeTree::getTableSharedID() const
 {
-    /// Lock is not required in other places because createTableSharedID()
-    /// can be called only during table initialization
     std::lock_guard lock(table_shared_id_mutex);
 
     /// Can happen if table was partially initialized before drop by DatabaseCatalog
@@ -7637,8 +7638,12 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 void StorageReplicatedMergeTree::createTableSharedID() const
 {
     LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());
+    // can be set by the call to getTableSharedID
     if (table_shared_id != UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
+    {
+        LOG_INFO(log, "Shared ID already set to {}", table_shared_id);
+        return;
+    }
 
     auto zookeeper = getZooKeeper();
     String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";

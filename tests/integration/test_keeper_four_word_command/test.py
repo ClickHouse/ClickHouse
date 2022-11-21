@@ -148,10 +148,11 @@ def test_cmd_mntr(started_cluster):
         wait_nodes()
         clear_znodes()
 
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
         # reset stat first
-        reset_node_stats(node1)
+        reset_node_stats(leader)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(
             zk,
             create_cnt=10,
@@ -162,7 +163,7 @@ def test_cmd_mntr(started_cluster):
             delete_cnt=2,
         )
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="mntr")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="mntr")
 
         # print(data.decode())
         reader = csv.reader(data.split("\n"), delimiter="\t")
@@ -307,12 +308,13 @@ def test_cmd_srvr(started_cluster):
         wait_nodes()
         clear_znodes()
 
-        reset_node_stats(node1)
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        reset_node_stats(leader)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="srvr")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="srvr")
 
         print("srvr output -------------------------------------")
         print(data)
@@ -329,7 +331,7 @@ def test_cmd_srvr(started_cluster):
         assert result["Received"] == "10"
         assert result["Sent"] == "10"
         assert int(result["Connections"]) == 1
-        assert int(result["Zxid"]) > 14
+        assert int(result["Zxid"]) > 10
         assert result["Mode"] == "leader"
         assert result["Node count"] == "13"
 
@@ -342,13 +344,15 @@ def test_cmd_stat(started_cluster):
     try:
         wait_nodes()
         clear_znodes()
-        reset_node_stats(node1)
-        reset_conn_stats(node1)
 
-        zk = get_fake_zk(node1.name, timeout=30.0)
+        leader = keeper_utils.get_leader(cluster, [node1, node2, node3])
+        reset_node_stats(leader)
+        reset_conn_stats(leader)
+
+        zk = get_fake_zk(leader.name, timeout=30.0)
         do_some_action(zk, create_cnt=10)
 
-        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="stat")
+        data = keeper_utils.send_4lw_cmd(cluster, leader, cmd="stat")
 
         print("stat output -------------------------------------")
         print(data)
@@ -604,6 +608,10 @@ def test_cmd_csnp(started_cluster):
         wait_nodes()
         zk = get_fake_zk(node1.name, timeout=30.0)
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="csnp")
+
+        print("csnp output -------------------------------------")
+        print(data)
+
         try:
             int(data)
             assert True
@@ -623,7 +631,10 @@ def test_cmd_lgif(started_cluster):
         do_some_action(zk, create_cnt=100)
 
         data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgif")
+
+        print("lgif output -------------------------------------")
         print(data)
+
         reader = csv.reader(data.split("\n"), delimiter="\t")
         result = {}
 
@@ -641,3 +652,28 @@ def test_cmd_lgif(started_cluster):
         assert int(result["last_snapshot_idx"]) >= 1
     finally:
         destroy_zk_client(zk)
+
+
+def test_cmd_rqld(started_cluster):
+    wait_nodes()
+    # node2 can not be leader
+    for node in [node1, node3]:
+        data = keeper_utils.send_4lw_cmd(cluster, node, cmd="rqld")
+        assert data == "Sent leadership request to leader."
+
+        print("rqld output -------------------------------------")
+        print(data)
+
+        if not keeper_utils.is_leader(cluster, node):
+            # pull wait to become leader
+            retry = 0
+            # TODO not a restrict way
+            while not keeper_utils.is_leader(cluster, node) and retry < 30:
+                time.sleep(1)
+                retry += 1
+            if retry == 30:
+                print(
+                    node.name
+                    + " does not become leader after 30s, maybe there is something wrong."
+                )
+        assert keeper_utils.is_leader(cluster, node)

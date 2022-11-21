@@ -39,8 +39,8 @@ public:
 private:
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
-    UInt64 max_single_read_retries;
     ReadSettings read_settings;
+    S3Settings::RequestSettings request_settings;
 };
 
 
@@ -81,9 +81,8 @@ private:
 
     S3::URI s3_uri;
     std::shared_ptr<Aws::S3::S3Client> client;
-    UInt64 max_single_read_retries;
     ReadSettings read_settings;
-    S3Settings::ReadWriteSettings rw_settings;
+    S3Settings::RequestSettings request_settings;
     Poco::Logger * log;
 };
 

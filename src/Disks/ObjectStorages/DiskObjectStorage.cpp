@@ -499,6 +499,11 @@ bool DiskObjectStorage::isReadOnly() const
     return object_storage->isReadOnly();
 }
 
+bool DiskObjectStorage::isWriteOnce() const
+{
+    return object_storage->isWriteOnce();
+}
+
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     return std::make_shared<DiskObjectStorage>(
