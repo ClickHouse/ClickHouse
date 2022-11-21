@@ -1403,9 +1403,7 @@ try
 
     if (need_render_progress)
     {
-        pipeline.setProgressCallback([this](const Progress & progress){
-            onProgress(progress);
-        });
+        pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
     }
 
     Block block;
