@@ -2,8 +2,63 @@
 drop table if exists test_02302;
 create table test_02302 (a UInt64) engine = S3(s3_conn, filename='test_02302_{_partition_id}', format=Parquet) partition by a;
 insert into test_02302 select number from numbers(10) settings s3_truncate_on_insert=1;
-select * from test_02302;  -- { serverError 48 }
+select * from test_02302 order by a;
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+select * from test_02302 where _file like '%1';
+1
+select * from test_02302 where a = '1';
+1
+drop table if exists test_02302_another;
+create table test_02302_another (a UInt64) engine = S3(s3_conn, filename='test_02302_{_partition_id}_another', format=Parquet) partition by a;
+insert into test_02302_another select number from numbers(10) settings s3_truncate_on_insert=1;
+select _file, * from test_02302_another order by _file;
+test_02302_0_another	0
+test_02302_1_another	1
+test_02302_2_another	2
+test_02302_3_another	3
+test_02302_4_another	4
+test_02302_5_another	5
+test_02302_6_another	6
+test_02302_7_another	7
+test_02302_8_another	8
+test_02302_9_another	9
+select _file, * from test_02302 order by _file;
+test_02302_0	0
+test_02302_0_another	0
+test_02302_1	1
+test_02302_1_another	1
+test_02302_2	2
+test_02302_2_another	2
+test_02302_3	3
+test_02302_3_another	3
+test_02302_4	4
+test_02302_4_another	4
+test_02302_5	5
+test_02302_5_another	5
+test_02302_6	6
+test_02302_6_another	6
+test_02302_7	7
+test_02302_7_another	7
+test_02302_8	8
+test_02302_8_another	8
+test_02302_9	9
+test_02302_9_another	9
+select _file, * from test_02302_another where a = '1' order by _file;
+test_02302_1_another	1
+select _file, * from test_02302 where a = '1' order by _file;
+test_02302_1	1
+test_02302_1_another	1
 drop table test_02302;
+drop table test_02302_another;
 set max_rows_to_read = 1;
 -- Test s3 table function with glob
 select * from s3(s3_conn, filename='test_02302_*', format=Parquet) where _file like '%5';

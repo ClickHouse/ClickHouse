@@ -139,8 +139,10 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+        String key = globbed_uri.key;
+        if (auto pos = globbed_uri.key.find(PARTITION_ID_WILDCARD); pos != String::npos)
+            key = globbed_uri.key.replace(pos, PARTITION_ID_WILDCARD.size(), "*");
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key));
         recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
@@ -842,10 +844,9 @@ Pipe StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos
-        || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = s3_configuration.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos;
     if (partition_by && has_wildcards)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading data of bucket with {_partition_id} wildcard from a partitioned S3 storage is not implemented yet");
 
     updateS3Configuration(local_context, s3_configuration);
 
