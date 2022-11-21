@@ -90,8 +90,13 @@ public:
     {
         this->data(place).result.read(buf, *serialization_res, arena);
         this->data(place).value.read(buf, *serialization_val, arena);
-        if (unlikely(this->data(place).value.has() && !this->data(place).result.has()))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "State of aggregate function {} has value, but does not have result", getName());
+        if (unlikely(this->data(place).value.has() != this->data(place).result.has()))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
+                getName(),
+                this->data(place).value.has(),
+                this->data(place).result.has());
     }
 
     bool allocatesMemoryInArena() const override
