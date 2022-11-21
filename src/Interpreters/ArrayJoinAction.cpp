@@ -18,32 +18,36 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type, bool allow_map)
+const DataTypeArray * getArrayJoinDataType(const DataTypePtr & type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return array_type;
-    else if (allow_map)
+    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-        {
-            const auto & nested_type = map_type->getNestedType();
-            return typeid_cast<const DataTypeArray *>(nested_type.get());
-        }
+        const auto & nested_type = map_type->getNestedType();
+        return typeid_cast<const DataTypeArray *>(nested_type.get());
     }
-
-    return nullptr;
+    else
+        return nullptr;
 }
 
-const ColumnArray * getArrayJoinColumn(const ColumnPtr & column, bool allow_map)
+const ColumnArray * getArrayJoinColumn(const ColumnPtr & column)
 {
     if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.get()))
         return array;
-    else if (allow_map)
-    {
-        if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
-            return typeid_cast<const ColumnArray *>(&map->getNestedColumn());
-    }
-    return nullptr;
+    else if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
+        return typeid_cast<const ColumnArray *>(&map->getNestedColumn());
+    else
+        return nullptr;
+}
+
+ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_col)
+{
+    ColumnWithTypeAndName array_col;
+    array_col.name = src_col.name;
+    array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
+    array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
+    return array_col;
 }
 
 ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool array_join_is_left, ContextPtr context)
@@ -109,11 +113,7 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto & src_col = block.getByName(name);
 
-            ColumnWithTypeAndName array_col;
-            array_col.name = name;
-            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
-            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
-
+            ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col}; //, {{}, uint64, {}}};
             auto len_col = function_length->build(tmp_block)->execute(tmp_block, uint64, rows);
 
@@ -125,11 +125,7 @@ void ArrayJoinAction::execute(Block & block)
         {
             auto & src_col = block.getByName(name);
 
-            ColumnWithTypeAndName array_col;
-            array_col.name = name;
-            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
-            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
-
+            ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col, column_of_max_length};
             array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows);
 
@@ -146,11 +142,7 @@ void ArrayJoinAction::execute(Block & block)
         for (const auto & name : columns)
         {
             const auto & src_col = block.getByName(name);
-            ColumnWithTypeAndName array_col;
-            array_col.name = name;
-            array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
-            array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
-
+            ColumnWithTypeAndName array_col = convertArrayJoinColumn(src_col);
             ColumnsWithTypeAndName tmp_block{array_col};
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size());
         }
