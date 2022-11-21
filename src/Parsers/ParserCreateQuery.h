@@ -420,9 +420,20 @@ protected:
   */
 class ParserStorage : public IParserBase
 {
+public:
+    /// What kind of engine we're going to parse.
+    enum EngineKind
+    {
+        TABLE_ENGINE,
+        DATABASE_ENGINE,
+    };
+
+    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    EngineKind engine_kind;
 };
 
 /** Query like this:
