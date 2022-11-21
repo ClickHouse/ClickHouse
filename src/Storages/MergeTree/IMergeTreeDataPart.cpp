@@ -1390,6 +1390,12 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     {
         /// Metadata file probably does not exist, because it was not written on part creation, because it was created without a transaction.
         /// Let's create it (if needed). Concurrent writes are not possible, because creation_csn is prehistoric and we own removal_tid_lock.
+
+        /// It can happen that VersionMetadata::isVisible sets creation_csn to PrehistoricCSN when creation_tid is Prehistoric
+        /// In order to avoid a race always write creation_csn as PrehistoricCSN for Prehistoric creation_tid
+        assert(version.creation_csn == Tx::UnknownCSN || version.creation_csn == Tx::PrehistoricCSN);
+        version.creation_csn.store(Tx::PrehistoricCSN);
+
         storeVersionMetadata();
         return;
     }
