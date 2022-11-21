@@ -165,11 +165,13 @@ void init(const std::string & plan)
             LOG_INFO(&Poco::Logger::get("ClickHouseBackend"), "Init logger.");
 
             /// Initialize settings
-            const std::string prefix = "local_engine.";
             auto settings = Settings();
-            if (config->has(prefix + "settings"))
+            std::string settings_path = "local_engine.settings";
+            Poco::Util::AbstractConfiguration::Keys config_keys;
+            config->keys(settings_path, config_keys);
+            for (const std::string & key : config_keys)
             {
-                settings.loadSettingsFromConfig(prefix + "settings", *config);
+                settings.set(key, config->getString(settings_path + "." + key));
             }
             settings.set("join_use_nulls", true);
             LOG_INFO(&Poco::Logger::get("ClickHouseBackend"), "Init settings.");
