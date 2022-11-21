@@ -211,19 +211,18 @@ void fixTrace(StackTrace::FramePointers & frames, size_t offset, size_t size)
     }
 }
 
-Task<int> boo([[maybe_unused]] std::string tag)
+void printTrace(Task<int>::coro_handle my_handle)
 {
-    std::cout << "x" << std::endl;
-    co_await std::suspend_always();
-
-    auto my_handle = co_await co_gethandle_awaitable();
-
     auto st = StackTrace();
     auto frames = st.getFramePointers();
     std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
     std::cout << "----------\n";
-    //frames[2] = my_handle.promise().addr;
+
+    auto fixed_frame = frames[2];
+    frames[2] = my_handle.promise().addr;
     std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
+    frames[2] = fixed_frame;
+
     std::cout << "-=--------\n";
     //frames[2] = *reinterpret_cast<void **>(static_cast<char *>(*reinterpret_cast<void **>(&my_handle)) + sizeof(void *) * 2);
     //std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
@@ -236,6 +235,15 @@ Task<int> boo([[maybe_unused]] std::string tag)
     //frames[2] = *reinterpret_cast<void **>(reinterpret_cast<char *>(promise_stack->prev_promise) - sizeof(void *) * 2);
     fixTrace(frames, st.getOffset(), st.getSize());
     std::cout << StackTrace::toStringStatic(frames, st.getOffset(), st.getSize());
+}
+
+Task<int> boo([[maybe_unused]] std::string tag)
+{
+    std::cout << "x" << std::endl;
+    co_await std::suspend_always();
+
+    auto my_handle = co_await co_gethandle_awaitable();
+    printTrace(my_handle);
 
     std::cout << "y" << std::endl;
     co_return 1;
