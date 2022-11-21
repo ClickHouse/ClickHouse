@@ -6641,15 +6641,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
     for (const auto & moving_part : parts_to_move)
         if (!data.currently_moving_parts.emplace(moving_part.part).second)
             throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
-
-    // Register in global moves list (StorageSystemMoves)
-    for (auto & moving_part : parts_to_move)
-        moving_part.moves_list_entry = data.getContext()->getMovesList().insert(
-            data.getStorageID(),
-            moving_part.part->name,
-            moving_part.reserved_space->getDisk()->getName(),
-            moving_part.reserved_space->getDisk()->getPath(),
-            moving_part.part->getBytesOnDisk());
 }
 
 MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
@@ -6661,7 +6652,6 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
         if (!data.currently_moving_parts.contains(moving_part.part))
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
-        moving_part.moves_list_entry.reset(); // Unregister from global moves list
     }
 }
 
@@ -6781,6 +6771,14 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 {moving_part.part},
                 nullptr);
         };
+
+        // Register in global moves list (StorageSystemMoves)
+        auto moves_list_entry = getContext()->getMovesList().insert(
+            getStorageID(),
+            moving_part.part->name,
+            moving_part.reserved_space->getDisk()->getName(),
+            moving_part.reserved_space->getDisk()->getPath(),
+            moving_part.part->getBytesOnDisk());
 
         try
         {
