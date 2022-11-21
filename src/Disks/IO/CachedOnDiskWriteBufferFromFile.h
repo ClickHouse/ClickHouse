@@ -4,6 +4,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Common/filesystemHelpers.h>
 
 namespace Poco
 {
@@ -33,8 +34,11 @@ public:
     * it until it is full and then allocate next file segment.
     */
     bool write(const char * data, size_t size, size_t offset, bool is_persistent);
+    size_t tryWrite(const char * data, size_t size, size_t offset, bool is_persistent, bool strict = false);
 
-    void finalize();
+    void finalize(bool clear = false);
+
+    size_t currentOffset() const { return current_file_segment_write_offset; }
 
     ~FileSegmentRangeWriter();
 
@@ -43,7 +47,7 @@ private:
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
-    void completeFileSegment(FileSegment & file_segment);
+    void completeFileSegment(FileSegment & file_segment, std::optional<FileSegment::State> state = {});
 
     FileCache * cache;
     FileSegment::Key key;

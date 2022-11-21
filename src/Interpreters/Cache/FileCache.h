@@ -221,6 +221,8 @@ private:
 
     FileSegmentCell * getCell(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
 
+    /// Returns non-owened pointer to the cell stored in the `files` map.
+    /// Doesn't reserve any space.
     FileSegmentCell * addCell(
         const Key & key,
         size_t offset,

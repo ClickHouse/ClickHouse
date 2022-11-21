@@ -53,8 +53,15 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 
 bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
 {
+    size_t written_size = tryWrite(data, size, offset, is_persistent, true);
+    chassert(written_size == 0 || written_size == size);
+    return written_size == size;
+}
+
+size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t offset, bool is_persistent, bool strict)
+{
     if (finalized)
-        return false;
+        return 0;
 
     auto & file_segments = file_segments_holder.file_segments;
 
@@ -93,8 +100,8 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
             file_segment->completePartAndResetDownloader();
     });
 
-    bool reserved = file_segment->reserve(size);
-    if (!reserved)
+    size_t reserved_size = file_segment->tryReserve(size, strict);
+    if (strict && reserved_size != size)
     {
         file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         appendFilesystemCacheLog(*file_segment);
@@ -104,8 +111,14 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
             "Unsuccessful space reservation attempt (size: {}, file segment info: {}",
             size, file_segment->getInfoForLog());
 
-        return false;
+        return 0;
     }
+
+    if (reserved_size == 0)
+        return 0;
+
+    /// shrink
+    size = reserved_size;
 
     try
     {
@@ -120,15 +133,26 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
     file_segment->completePartAndResetDownloader();
     current_file_segment_write_offset += size;
 
-    return true;
+    return size;
 }
 
-void FileSegmentRangeWriter::finalize()
+void FileSegmentRangeWriter::finalize(bool clear)
 {
     if (finalized)
         return;
 
     auto & file_segments = file_segments_holder.file_segments;
+
+    /// Set all segments state to SKIP_CACHE to remove it from cache immediately on complete
+    /// Note: if segments are hold by someone else, it won't be removed
+    if (clear)
+    {
+        for (auto & file_segment : file_segments)
+            completeFileSegment(*file_segment, FileSegment::State::SKIP_CACHE);
+        finalized = true;
+        return;
+    }
+
     if (file_segments.empty() || current_file_segment_it == file_segments.end())
         return;
 
@@ -196,11 +220,15 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
     }
 }
 
-void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment)
+void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment, std::optional<FileSegment::State> state)
 {
     /// File segment can be detached if space reservation failed.
     if (file_segment.isDetached())
         return;
+
+    // if (state.has_value())
+    //     file_segment.setDownloadState(*state);
+    UNUSED(state);
 
     file_segment.completeWithoutState();
     appendFilesystemCacheLog(file_segment);

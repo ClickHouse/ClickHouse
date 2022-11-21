@@ -99,6 +99,7 @@ size_t FileSegment::getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mu
     return range().left + getDownloadedSizeUnlocked(segment_lock);
 }
 
+/// same as getFirstNonDownloadedOffset ?
 size_t FileSegment::getCurrentWriteOffset() const
 {
     std::unique_lock segment_lock(mutex);
@@ -309,7 +310,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer)
+        if (!cache_writer && from != nullptr)
         {
             if (current_downloaded_size > 0)
                 throw Exception(
@@ -324,11 +325,13 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
-        cache_writer->write(from, size);
+        if (cache_writer && from != nullptr)
+            cache_writer->write(from, size);
 
         std::unique_lock download_lock(download_mutex);
 
-        cache_writer->next();
+        if (cache_writer && from != nullptr)
+            cache_writer->next();
 
         downloaded_size += size;
     }
@@ -380,6 +383,13 @@ FileSegment::State FileSegment::wait()
 
 bool FileSegment::reserve(size_t size_to_reserve)
 {
+    size_t reserved = tryReserve(size_to_reserve, true);
+    assert(reserved == 0 || reserved == size_to_reserve);
+    return reserved == size_to_reserve;
+}
+
+size_t FileSegment::tryReserve(size_t size_to_reserve, bool strict)
+{
     if (!size_to_reserve)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
@@ -394,10 +404,16 @@ bool FileSegment::reserve(size_t size_to_reserve)
         expected_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
         if (expected_downloaded_size + size_to_reserve > range().size())
-            throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+        {
+            if (strict)
+            {
+                throw Exception(
+                    ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                    "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
+                    size_to_reserve, range().toString(), downloaded_size);
+            }
+            size_to_reserve = range().size() - expected_downloaded_size;
+        }
 
         chassert(reserved_size >= expected_downloaded_size);
     }
@@ -415,17 +431,16 @@ bool FileSegment::reserve(size_t size_to_reserve)
     {
         std::lock_guard cache_lock(cache->mutex);
 
-        size_to_reserve = size_to_reserve - already_reserved_size;
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
+        size_t need_to_reserve = size_to_reserve - already_reserved_size;
+        reserved = cache->tryReserve(key(), offset(), need_to_reserve, cache_lock);
 
-        if (reserved)
-        {
-            std::lock_guard segment_lock(mutex);
-            reserved_size += size_to_reserve;
-        }
+        if (!reserved)
+            return 0;
+
+        std::lock_guard segment_lock(mutex);
+        reserved_size += need_to_reserve;
     }
-
-    return reserved;
+    return size_to_reserve;
 }
 
 void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::mutex> & segment_lock)
@@ -782,6 +797,8 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
         if (!cache)
             cache = file_segment->cache;
+
+        assert(cache == file_segment->cache); /// all segments should belong to the same cache
 
         try
         {

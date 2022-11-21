@@ -2,6 +2,7 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <IO/ReadHelpers.h>
@@ -11,6 +12,7 @@
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -1009,6 +1011,12 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
+                if (offset_it->is_directory())
+                {
+                    LOG_DEBUG(log, "Unexpected directory: {}. Expected a file", offset_it->path().string());
+                    continue;
+                }
+
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;

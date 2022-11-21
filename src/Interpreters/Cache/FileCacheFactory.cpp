@@ -31,14 +31,21 @@ const FileCacheSettings & FileCacheFactory::getSettings(const std::string & cach
 
 }
 
-FileCachePtr FileCacheFactory::get(const std::string & cache_base_path)
+FileCachePtr FileCacheFactory::tryGet(const std::string & cache_base_path)
 {
     std::lock_guard lock(mutex);
     auto it = caches_by_path.find(cache_base_path);
     if (it == caches_by_path.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
+        return nullptr;
     return it->second->cache;
+}
 
+FileCachePtr FileCacheFactory::get(const std::string & cache_base_path)
+{
+    auto file_cache_ptr = tryGet(cache_base_path);
+    if (!file_cache_ptr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
+    return file_cache_ptr;
 }
 
 FileCachePtr FileCacheFactory::getOrCreate(
