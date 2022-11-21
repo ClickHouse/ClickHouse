@@ -26,7 +26,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "table", std::make_shared<DataTypeString>() },
             { "name", std::make_shared<DataTypeString>() },
             { "type", std::make_shared<DataTypeString>() },
-            { "index_expr", std::make_shared<DataTypeString>() },
+            { "type_full", std::make_shared<DataTypeString>() },
             { "expr", std::make_shared<DataTypeString>() },
             { "granularity", std::make_shared<DataTypeUInt64>() },
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
@@ -124,7 +124,7 @@ protected:
                     // 'type' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.type);
-                    // 'index_expr' column
+                    // 'type_full' column
                     if (column_mask[src_index++])
                     {
                         if (auto expression = index.definition_ast->as<ASTIndexDeclaration>())
