@@ -1401,6 +1401,13 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    if (need_render_progress)
+    {
+        pipeline.setProgressCallback([this](const Progress & progress){
+            onProgress(progress);
+        });
+    }
+
     Block block;
     while (executor.pull(block))
     {
@@ -1445,12 +1452,6 @@ catch (...)
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
-    if (need_render_progress)
-    {
-        /// Add callback to track reading from fd.
-        std_in.setProgressCallback(global_context);
-    }
-
     /// Send data read from stdin.
     try
     {
