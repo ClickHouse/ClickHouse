@@ -4,6 +4,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <city.h>
 #include <optional>
+#include <base/defines.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
@@ -122,7 +123,7 @@ public:
     /// Fsync latest log to disk and flush buffer
     void flush();
 
-    void flushAsync();
+    bool flushAsync();
 
     void shutdown();
 
@@ -133,6 +134,7 @@ public:
 
     uint64_t lastDurableIndex() const
     {
+        std::lock_guard lock{durable_idx_mutex};
         return last_durable_idx;
     }
 
@@ -192,7 +194,9 @@ private:
     };
 
     struct Flush
-    {};
+    {
+        uint64_t index;
+    };
 
     using WriteOperation = std::variant<AppendLog, Flush>;
 
@@ -201,7 +205,11 @@ private:
     ThreadFromGlobalPool write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
-    std::atomic<uint64_t> last_durable_idx{0};
+
+    mutable std::mutex durable_idx_mutex;
+    std::condition_variable durable_idx_cv;
+    uint64_t last_durable_idx{0};
+
     nuraft::ptr<nuraft::raft_server> raft_server{nullptr};
 };
 
