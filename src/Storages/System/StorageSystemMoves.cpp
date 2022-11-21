@@ -15,7 +15,7 @@ NamesAndTypesList StorageSystemMoves::getNamesAndTypes()
         {"elapsed", std::make_shared<DataTypeFloat64>()},
         {"target_disk_name", std::make_shared<DataTypeString>()},
         {"target_disk_path", std::make_shared<DataTypeString>()},
-        {"partition_id", std::make_shared<DataTypeString>()},
+        {"part_name", std::make_shared<DataTypeString>()},
         {"part_size", std::make_shared<DataTypeUInt64>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
@@ -38,7 +38,7 @@ void StorageSystemMoves::fillData(MutableColumns & res_columns, ContextPtr conte
         res_columns[i++]->insert(move.elapsed);
         res_columns[i++]->insert(move.target_disk_name);
         res_columns[i++]->insert(move.target_disk_path);
-        res_columns[i++]->insert(move.partition_id);
+        res_columns[i++]->insert(move.part_name);
         res_columns[i++]->insert(move.part_size);
         res_columns[i++]->insert(move.thread_id);
     }
