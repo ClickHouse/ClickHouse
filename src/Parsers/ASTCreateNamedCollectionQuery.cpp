@@ -32,7 +32,11 @@ void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & sett
             first = false;
 
         formatSettingName(change.name, settings.ostr);
-        settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+
+        if (settings.show_secrets)
+            settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+        else
+            settings.ostr << " = '[HIDDEN]'";
     }
 }
 
