@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_NAMED_COLLECTION;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
 }
@@ -48,7 +48,7 @@ NamedCollectionPtr NamedCollectionFactory::get(const std::string & collection_na
     if (!collection)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_NAMED_COLLECTION,
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
             "There is no named collection `{}`",
             collection_name);
     }
@@ -69,7 +69,7 @@ MutableNamedCollectionPtr NamedCollectionFactory::getMutable(
     if (!collection)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_NAMED_COLLECTION,
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
             "There is no named collection `{}`",
             collection_name);
     }
@@ -131,7 +131,7 @@ void NamedCollectionFactory::remove(const std::string & collection_name)
     if (!removed)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_NAMED_COLLECTION,
+            ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
             "There is no named collection `{}`",
             collection_name);
     }

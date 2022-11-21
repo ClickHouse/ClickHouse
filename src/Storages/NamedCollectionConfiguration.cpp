@@ -88,8 +88,6 @@ template <typename T> void copyConfigValue(
 
     if constexpr (std::is_same_v<T, String>)
         to_config.setString(to_path, from_config.getString(from_path));
-    else if constexpr (std::is_same_v<T, std::string>)
-        to_config.setString(to_path, from_config.getString(from_path));
     else if constexpr (std::is_same_v<T, UInt64>)
         to_config.setUInt64(to_path, from_config.getUInt64(from_path));
     else if constexpr (std::is_same_v<T, Int64>)
