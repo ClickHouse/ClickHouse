@@ -190,9 +190,6 @@ void XMLRowOutputFormat::finalizeImpl()
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
 
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 

@@ -311,6 +311,9 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr
         auto current_progress = element_id->getProgressIn();
         Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
         format->onProgress(read_progress);
+
+        /// Update the start of the statistics to use the start of the query, and not the creation of the format class
+        format->setStartTime(element_id->getQueryCPUStartTime(), true);
     }
 }
 

@@ -77,10 +77,6 @@ void JSONColumnsWithMetadataBlockOutputFormat::consumeTotals(Chunk chunk)
 
 void JSONColumnsWithMetadataBlockOutputFormat::finalizeImpl()
 {
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
-
     JSONUtils::writeAdditionalInfo(
         rows,
         statistics.rows_before_limit,
