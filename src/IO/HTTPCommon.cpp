@@ -312,15 +312,29 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
-        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        error_message.exceptions(std::ios::failbit);
-        error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
-                      << response.getReason() << ", body: " << istr.rdbuf();
+        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
+            ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+            : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        throw Exception(error_message.str(),
-            status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        body.exceptions(std::ios::failbit);
+        body << istr.rdbuf();
+
+        throw HTTPException(code, request.getURI(), status, response.getReason(), body.str());
     }
+}
+
+std::string HTTPException::makeExceptionMessage(
+    const std::string & uri,
+    Poco::Net::HTTPResponse::HTTPStatus http_status,
+    const std::string & reason,
+    const std::string & body)
+{
+    return fmt::format(
+        "Received error from remote server {}. "
+        "HTTP status code: {} {}, "
+        "body: {}",
+        uri, http_status, reason, body);
 }
 
 }

@@ -30,9 +30,7 @@ def start_cluster():
         pytest.param("wide", "backup_wide", "s3_backup_wide", int(0), id="wide"),
     ],
 )
-def test_attach_compact_part(
-    table_name, backup_name, storage_policy, min_bytes_for_wide_part
-):
+def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide_part):
     node.query(
         f"""
     -- Catch any errors (NOTE: warnings are ok)
@@ -61,9 +59,6 @@ def test_attach_compact_part(
 
     node.query(
         f"""
-    -- NOTE: be aware not to DROP the table, but DETACH first to keep it in S3.
-    detach table ordinary_db.{table_name};
-
     -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
     set force_remove_data_recursively_on_drop=1;
     drop database ordinary_db sync;
