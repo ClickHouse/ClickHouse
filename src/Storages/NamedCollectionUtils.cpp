@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
-    extern const int NAMED_COLLECTION_DOESNT_EXISTS;
+    extern const int NAMED_COLLECTION_DOESNT_EXIST;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -269,7 +269,7 @@ public:
         if (!removeIfExists(collection_name))
         {
             throw Exception(
-                ErrorCodes::NAMED_COLLECTION_DOESNT_EXISTS,
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
