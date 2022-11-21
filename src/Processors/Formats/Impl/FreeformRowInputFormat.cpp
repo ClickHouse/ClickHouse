@@ -37,7 +37,7 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & in)
 // - 5: Decimal, Float
 // - 10: Date, DateTime, Map, Array, Tuple
 //
-// TODO: Find a better way to define score criterions, these are just mere guesses
+// TODO: Find a better way to define score criterions.
 static size_t scoreForType(const DataTypePtr & type, const char * pos)
 {
     WhichDataType which(type);
@@ -162,6 +162,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
     String field;
     if (one_string)
     {
+        // TODO: add a method to dynamically get a matcher's index
         matchers[4]->parseField(field, in);
         auto type = matchers[4]->getTypeFromField(field);
         fields.emplace_back(type, 4, scoreForField(FormatSettings::EscapingRule::JSON, type, in.position()), in.position(), false);
