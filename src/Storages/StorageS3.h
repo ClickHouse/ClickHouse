@@ -33,7 +33,17 @@ class StorageS3SequentialSource;
 class StorageS3Source : public ISource, WithContext
 {
 public:
-    class DisclosedGlobIterator
+    class IIterator
+    {
+    public:
+        virtual ~IIterator() = default;
+        virtual String next() = 0;
+        virtual size_t getTotalSize() const = 0;
+
+        String operator ()() { return next(); }
+    };
+
+    class DisclosedGlobIterator : public IIterator
     {
     public:
         DisclosedGlobIterator(
@@ -46,7 +56,9 @@ public:
             Strings * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {});
 
-        String next();
+        String next() override;
+
+        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -54,12 +66,22 @@ public:
         std::shared_ptr<Impl> pimpl;
     };
 
-    class KeysIterator
+    class KeysIterator : public IIterator
     {
     public:
         explicit KeysIterator(
-            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
-        String next();
+            const Aws::S3::S3Client & client_,
+            const std::string & version_id_,
+            const std::vector<String> & keys_,
+            const String & bucket_,
+            ASTPtr query,
+            const Block & virtual_header,
+            ContextPtr context,
+            std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
+
+        String next() override;
+
+        size_t getTotalSize() const override;
 
     private:
         class Impl;
@@ -67,7 +89,18 @@ public:
         std::shared_ptr<Impl> pimpl;
     };
 
-    using IteratorWrapper = std::function<String()>;
+    class ReadTaskIterator : public IIterator
+    {
+    public:
+        explicit ReadTaskIterator(const ReadTaskCallback & callback_) : callback(callback_) {}
+
+        String next() override { return callback(); }
+
+        size_t getTotalSize() const override { return 0; }
+
+    private:
+        ReadTaskCallback callback;
+    };
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -85,7 +118,7 @@ public:
         const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
         const String & version_id,
-        std::shared_ptr<IteratorWrapper> file_iterator_,
+        std::shared_ptr<IIterator> file_iterator_,
         size_t download_thread_num,
         const std::unordered_map<String, S3::ObjectInfo> & object_infos_);
 
@@ -116,10 +149,14 @@ private:
     /// onCancel and generate can be called concurrently
     std::mutex reader_mutex;
     std::vector<NameAndTypePair> requested_virtual_columns;
-    std::shared_ptr<IteratorWrapper> file_iterator;
+    std::shared_ptr<IIterator> file_iterator;
     size_t download_thread_num = 1;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
+
+    UInt64 total_rows_approx_max = 0;
+    size_t total_rows_count_times = 0;
+    UInt64 total_rows_approx_accumulated = 0;
 
     std::unordered_map<String, S3::ObjectInfo> object_infos;
 
@@ -233,7 +270,7 @@ private:
 
     static void updateS3Configuration(ContextPtr, S3Configuration &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(
+    static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const S3Configuration & s3_configuration,
         const std::vector<String> & keys,
         bool is_key_with_globs,

@@ -100,7 +100,6 @@ Pipe StorageS3Cluster::read(
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
         *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -116,6 +115,9 @@ Pipe StorageS3Cluster::read(
     if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
+
+    RemoteQueryExecutor::Extension extension;
+    extension.task_iterator = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next(); });
 
     const auto & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -134,7 +136,7 @@ Pipe StorageS3Cluster::read(
                     scalars,
                     Tables(),
                     processed_stage,
-                    RemoteQueryExecutor::Extension{.task_iterator = callback});
+                    extension);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
