@@ -455,7 +455,7 @@ else
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
-               -e "REPLICA_IS_ALREADY_EXIST" \
+               -e "REPLICA_ALREADY_EXISTS" \
                -e "ALL_REPLICAS_LOST" \
                -e "DDLWorker: Cannot parse DDL task query" \
                -e "RaftInstance: failed to accept a rpc connection due to error 125" \
