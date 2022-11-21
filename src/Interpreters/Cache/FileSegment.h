@@ -184,17 +184,12 @@ public:
     void assertCorrectness() const;
 
     /**
-     * ========== Methods for _only_ file segment's `writer` ======================
-     */
-
-    void synchronousWrite(const char * from, size_t size, size_t offset);
-
-    /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
     /// Try to reserve exactly `size` bytes.
     bool reserve(size_t size_to_reserve);
+    size_t tryReserve(size_t size_to_reserve, bool strict);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -247,9 +242,9 @@ private:
     void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
     void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    /// complete() without any completion state is called from destructor of
-    /// FileSegmentsHolder. complete() might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, complete() and destruction
+    /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
+    /// Function might check if the caller of the method
+    /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
@@ -295,7 +290,7 @@ private:
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
 
-    bool is_downloaded{false};
+    bool is_downloaded = false;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state

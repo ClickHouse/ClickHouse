@@ -15,6 +15,8 @@
 #include <filesystem>
 #include <thread>
 
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+
 namespace fs = std::filesystem;
 
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
@@ -516,4 +518,46 @@ TEST(FileCache, get)
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 
+}
+
+
+TEST(FileCache, rangeWriter)
+{
+    if (fs::exists(cache_base_path))
+        fs::remove_all(cache_base_path);
+    fs::create_directories(cache_base_path);
+
+    DB::FileCacheSettings settings;
+    settings.max_size = 25;
+    settings.max_elements = 5;
+    settings.max_file_segment_size = 10;
+
+    auto cache = DB::FileCache(cache_base_path, settings);
+    cache.initialize();
+    auto key = cache.hash("key1");
+
+    DB::FileSegmentRangeWriter writer(&cache, key, nullptr, "", "key1");
+
+    std::string data(100, '\xf0');
+
+    /// Write first segment
+    ASSERT_EQ(writer.tryWrite(data.data(), 5, 0, false, false), 5);
+    ASSERT_EQ(writer.tryWrite(data.data(), 3, 5, false, false), 3);
+    ASSERT_EQ(writer.tryWrite(data.data(), 1, 8, false, false), 1);
+    ASSERT_EQ(writer.tryWrite(data.data(), 1, 9, false, false), 1);
+
+    /// Second segment starts
+    ASSERT_EQ(writer.tryWrite(data.data(), 1, 10, false, false), 1);
+    ASSERT_EQ(writer.tryWrite(data.data(), 1, 11, false, false), 1);
+    /// Can't write 10 bytes into the rest of current segment
+    ASSERT_EQ(writer.tryWrite(data.data(), 10, 12, false, false), 8);
+
+    /// Rest can be written into the next segment
+    ASSERT_EQ(writer.tryWrite(data.data(), 2, 20, false, false), 2);
+    /// Only 3 bytes left, can't write 4 and nothing should be written
+    ASSERT_EQ(writer.tryWrite(data.data(), 4, 22, false, false), 0);
+    ASSERT_EQ(writer.tryWrite(data.data(), 4, 22, false, false), 0);
+    ASSERT_EQ(writer.tryWrite(data.data(), 3, 22, false, false), 3);
+
+    writer.finalize();
 }
