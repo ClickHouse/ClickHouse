@@ -17,6 +17,8 @@ namespace DB
 class Throttler
 {
 public:
+    static const size_t default_burst_seconds = 1;
+
     Throttler(size_t max_speed_, size_t max_burst_, const std::shared_ptr<Throttler> & parent_ = nullptr)
         : max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(max_burst), parent(parent_) {}
 

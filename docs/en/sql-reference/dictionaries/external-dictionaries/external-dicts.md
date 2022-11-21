@@ -3,18 +3,23 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts
 sidebar_position: 39
 sidebar_label: General Description
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# External Dictionaries 
+# Dictionaries 
 
-You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Sources for external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
+:::tip Tutorial
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
+:::
+
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 
 ClickHouse:
 
 -   Fully or partially stores dictionaries in RAM.
 -   Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
--   Allows to create external dictionaries with xml files or [DDL queries](../../../sql-reference/statements/create/dictionary.md).
+-   Allows creating dictionaries with xml files or [DDL queries](../../../sql-reference/statements/create/dictionary.md).
 
-The configuration of external dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
+The configuration of dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
 
@@ -23,6 +28,22 @@ The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tabl
 -   Status of the dictionary.
 -   Configuration parameters.
 -   Metrics like amount of RAM allocated for the dictionary or a number of queries since the dictionary was successfully loaded.
+
+<CloudDetails />
+
+## Creating a dictionary with a DDL query
+
+Dictionaries can be created with [DDL queries](../../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
+- No additional records are added to server configuration files
+- The dictionaries can be worked with as first-class entities, like tables or views
+- Data can be read directly, using familiar SELECT rather than dictionary table functions
+- The dictionaries can be easily renamed
+
+## Creating a dictionary with a configuration file
+
+:::note
+Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.
+:::
 
 The dictionary configuration file has the following format:
 
@@ -44,18 +65,17 @@ The dictionary configuration file has the following format:
 
 You can [configure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md) any number of dictionaries in the same file.
 
-[DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) does not require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
 :::note    
-You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to external dictionaries.
+You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
 :::
 
 ## See Also
 
--   [Configuring an External Dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md)
+-   [Configuring a Dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md)
 -   [Storing Dictionaries in Memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md)
 -   [Dictionary Updates](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md)
--   [Sources of External Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)
+-   [Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)
 -   [Dictionary Key and Fields](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md)
--   [Functions for Working with External Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
+-   [Functions for Working with Dictionaries](../../../sql-reference/functions/ext-dict-functions.md)
 
