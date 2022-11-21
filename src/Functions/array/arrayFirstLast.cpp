@@ -3,8 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
-#include "Columns/IColumn.h"
-#include "Core/Types.h"
 #include "FunctionArrayMapped.h"
 
 
@@ -47,7 +45,7 @@ struct ArrayFirstLastImpl
 
     static ColumnPtr createNullableColumn(MutableColumnPtr && column, ColumnUInt8::MutablePtr && null_map)
     {
-        if (auto * nullable_column = typeid_cast<ColumnNullable * >(column.get()))
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(column.get()))
         {
             nullable_column->applyNullMap(*null_map);
             return std::move(column);
