@@ -231,8 +231,7 @@ KeeperStateManager::KeeperStateManager(
     const std::string & log_storage_path,
     const std::string & state_file_path,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
-    nuraft::ptr<nuraft::raft_server> * raft_server)
+    const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
@@ -241,8 +240,7 @@ KeeperStateManager::KeeperStateManager(
           log_storage_path,
           coordination_settings->rotate_log_storage_interval,
           coordination_settings->force_sync,
-          coordination_settings->compress_logs,
-          raft_server))
+          coordination_settings->compress_logs))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {

@@ -273,8 +273,7 @@ Changelog::Changelog(
     uint64_t rotate_interval_,
     bool force_sync_,
     Poco::Logger * log_,
-    bool compress_logs_,
-    nuraft::ptr<nuraft::raft_server> * raft_server_)
+    bool compress_logs_)
     : changelogs_dir(changelogs_dir_)
     , changelogs_detached_dir(changelogs_dir / "detached")
     , rotate_interval(rotate_interval_)
@@ -282,7 +281,6 @@ Changelog::Changelog(
     , log(log_)
     , compress_logs(compress_logs_)
     , write_operations(std::numeric_limits<size_t>::max())
-    , raft_server(raft_server_)
 {
     /// Load all files in changelog directory
     namespace fs = std::filesystem;
@@ -548,6 +546,9 @@ ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_e
 
 void Changelog::writeThread()
 {
+    // we don't protect current_writer because rotate at the same time can be called from compact only
+    // when the node is applying snapshot from leader
+    // in that case, no entry write should happen, i.e. this thread will be inactive
     size_t last_appended = 0;
     while (true)
     {
@@ -576,8 +577,9 @@ void Changelog::writeThread()
 
                 last_durable_idx = last_appended;
 
-                if (*raft_server)
-                    (*raft_server)->notify_log_append_completion(true);
+                // we shouldn't start the raft_server before sending it here
+                assert(raft_server);
+                raft_server->notify_log_append_completion(true);
             }
         }, write_operation);
     }
@@ -833,6 +835,12 @@ void Changelog::cleanLogThread()
                 LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", path, ec.message());
         }
     }
+}
+
+void Changelog::setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server_)
+{
+    assert(raft_server_);
+    raft_server = std::move(raft_server_);
 }
 
 }

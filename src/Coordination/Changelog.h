@@ -76,7 +76,7 @@ class Changelog
 
 public:
     Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
-            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true, nuraft::ptr<nuraft::raft_server> * raft_server_ = nullptr);
+            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
@@ -136,6 +136,8 @@ public:
         return last_durable_idx;
     }
 
+    void setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server_);
+
     /// Fsync log to disk
     ~Changelog();
 
@@ -170,7 +172,6 @@ private:
     Poco::Logger * log;
     bool compress_logs;
 
-
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
     /// Mapping log_id -> log_entry
@@ -201,7 +202,7 @@ private:
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
     std::atomic<uint64_t> last_durable_idx{0};
-    nuraft::ptr<nuraft::raft_server> * raft_server{nullptr};
+    nuraft::ptr<nuraft::raft_server> raft_server{nullptr};
 };
 
 }
