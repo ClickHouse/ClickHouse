@@ -5,6 +5,11 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+
+#include <Functions/FunctionHelpers.h>
+
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -98,11 +103,6 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
 
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
-        if (auto * query_node = table_expression_node->as<QueryNode>())
-            table_expression_modifiers = query_node->getTableExpressionModifiers();
-        else if (auto * union_node = table_expression_node->as<UnionNode>())
-            table_expression_modifiers = union_node->getTableExpressionModifiers();
-
         result_table_expression->subquery = result_table_expression->children.back();
     }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)
@@ -294,41 +294,28 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     return result;
 }
 
-QueryTreeNodePtr getColumnSourceForJoinNodeWithUsing(const QueryTreeNodePtr & join_node)
+bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier)
 {
-    QueryTreeNodePtr column_source_node = join_node;
+    const IDataType * current_type = compound_type.get();
 
-    while (true)
+    for (const auto & identifier_part : nested_identifier)
     {
-        auto column_source_node_type = column_source_node->getNodeType();
-        if (column_source_node_type == QueryTreeNodeType::TABLE ||
-            column_source_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-            column_source_node_type == QueryTreeNodeType::QUERY ||
-            column_source_node_type == QueryTreeNodeType::UNION)
-        {
-            break;
-        }
-        else if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN)
-        {
-            auto & array_join_node = column_source_node->as<ArrayJoinNode &>();
-            column_source_node = array_join_node.getTableExpression();
-            continue;
-        }
-        else if (column_source_node_type == QueryTreeNodeType::JOIN)
-        {
-            auto & join_node_typed = column_source_node->as<JoinNode &>();
-            column_source_node = isRight(join_node_typed.getKind()) ? join_node_typed.getRightTableExpression() : join_node_typed.getLeftTableExpression();
-            continue;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                column_source_node->getNodeTypeName());
-        }
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
+            current_type = array->getNestedType().get();
+
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(current_type);
+
+        if (!tuple)
+            return false;
+
+        auto position = tuple->tryGetPositionByName(identifier_part);
+        if (!position)
+            return false;
+
+        current_type = tuple->getElements()[*position].get();
     }
 
-    return column_source_node;
+    return true;
 }
 
 }

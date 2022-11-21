@@ -464,6 +464,9 @@ bool tryInferDate(const std::string_view & field)
 
 bool tryInferDateTime(const std::string_view & field, const FormatSettings & settings)
 {
+    if (field.empty())
+        return false;
+
     ReadBufferFromString buf(field);
     Float64 tmp_float;
     /// Check if it's just a number, and if so, don't try to infer DateTime from it,
@@ -859,7 +862,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
                 " null_representation={}, delimiter={}, tuple_delimiter={}",
-                settings.tsv.use_best_effort_in_schema_inference,
+                settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,

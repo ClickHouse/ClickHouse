@@ -8,6 +8,7 @@
 #if USE_AWS_S3
 
 #include <Common/RemoteHostFilter.h>
+#include <Common/Throttler_fwd.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/SessionAwareIOStream.h>
@@ -48,6 +49,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
+    ThrottlerPtr get_request_throttler;
+    ThrottlerPtr put_request_throttler;
     HeaderCollection extra_headers;
 
     void updateSchemeAndRegion();
@@ -60,7 +63,9 @@ private:
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         bool enable_s3_requests_logging_,
-        bool for_disk_s3_
+        bool for_disk_s3_,
+        const ThrottlerPtr & get_request_throttler_,
+        const ThrottlerPtr & put_request_throttler_
     );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -154,6 +159,16 @@ private:
     unsigned int s3_max_redirects;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
+
+    /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
+    /// (i.e. throttles GetObject, HeadObject)
+    ThrottlerPtr get_request_throttler;
+
+    /// Limits put request per second rate for PUT, COPY, POST, LIST requests
+    /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
+    /// NOTE: DELETE and CANCEL requests are not throttled by either put or get throttler
+    ThrottlerPtr put_request_throttler;
+
     const HeaderCollection extra_headers;
 };
 

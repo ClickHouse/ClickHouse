@@ -64,7 +64,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
 
             else
@@ -77,7 +77,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         {
 
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
-            if (FormatFactory::instance().getAllFormats().contains(second_arg))
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -146,10 +146,15 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
+bool TableFunctionS3::supportsReadingSubsetOfColumns()
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+}
+
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri (configuration.url);
-    S3::URI s3_uri (uri);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -181,6 +186,11 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionCOS>();
+}
+
+void registerTableFunctionOSS(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionOSS>();
 }
 
 }

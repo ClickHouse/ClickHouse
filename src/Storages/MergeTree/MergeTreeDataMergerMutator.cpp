@@ -214,6 +214,14 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+    /// collect min_age for each partition while iterating parts
+    struct PartitionInfo
+    {
+        time_t min_age{std::numeric_limits<time_t>::max()};
+    };
+
+    std::unordered_map<std::string, PartitionInfo> partitions_info;
+
     size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
@@ -277,6 +285,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
         part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
+        auto & partition_info = partitions_info[partition_id];
+        partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+
         ++parts_selected_precondition;
 
         parts_ranges.back().emplace_back(part_info);
@@ -303,18 +314,32 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && !ttl_merges_blocker.isCancelled())
     {
         /// TTL delete is preferred to recompression
-        TTLDeleteMergeSelector delete_ttl_selector(
+        TTLDeleteMergeSelector drop_ttl_selector(
                 next_delete_ttl_merge_times_by_partition,
                 current_time,
                 data_settings->merge_with_ttl_timeout,
-                data_settings->ttl_only_drop_parts);
+                true);
 
-        parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
+        parts_to_merge = drop_ttl_selector.select(parts_ranges, data_settings->max_bytes_to_merge_at_max_space_in_pool);
         if (!parts_to_merge.empty())
         {
             future_part->merge_type = MergeType::TTLDelete;
         }
-        else if (metadata_snapshot->hasAnyRecompressionTTL())
+        else if (!data_settings->ttl_only_drop_parts)
+        {
+            TTLDeleteMergeSelector delete_ttl_selector(
+                next_delete_ttl_merge_times_by_partition,
+                current_time,
+                data_settings->merge_with_ttl_timeout,
+                false);
+
+            parts_to_merge = delete_ttl_selector.select(parts_ranges, max_total_size_to_merge);
+            if (!parts_to_merge.empty())
+                future_part->merge_type = MergeType::TTLDelete;
+        }
+
+        if (parts_to_merge.empty() && metadata_snapshot->hasAnyRecompressionTTL())
         {
             TTLRecompressMergeSelector recompress_ttl_selector(
                     next_recompress_ttl_merge_times_by_partition,
@@ -333,7 +358,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         SimpleMergeSelector::Settings merge_settings;
         /// Override value from table settings
         merge_settings.max_parts_to_merge_at_once = data_settings->max_parts_to_merge_at_once;
-        merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
+        if (!data_settings->min_age_to_force_merge_on_partition_only)
+            merge_settings.min_age_to_force_merge = data_settings->min_age_to_force_merge_seconds;
 
         if (aggressive)
             merge_settings.base = 1;
@@ -347,6 +373,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         if (parts_to_merge.empty())
         {
+            if (data_settings->min_age_to_force_merge_on_partition_only && data_settings->min_age_to_force_merge_seconds)
+            {
+                auto best_partition_it = std::max_element(
+                    partitions_info.begin(),
+                    partitions_info.end(),
+                    [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+
+                assert(best_partition_it != partitions_info.end());
+
+                if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
+                    return selectAllPartsToMergeWithinPartition(
+                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
+            }
+
             if (out_disable_reason)
                 *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
             return SelectPartsDecision::CANNOT_SELECT;
@@ -595,8 +635,16 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {
     size_t res = 0;
+    time_t current_time = std::time(nullptr);
     for (const MergeTreeData::DataPartPtr & part : source_parts)
+    {
+        /// Exclude expired parts
+        time_t part_max_ttl = part->ttl_infos.part_max_ttl;
+        if (part_max_ttl && part_max_ttl <= current_time)
+            continue;
+
         res += part->getBytesOnDisk();
+    }
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
