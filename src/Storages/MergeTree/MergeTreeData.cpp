@@ -1290,19 +1290,18 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     }
 
     assert(threads_queue.empty());
-    assert(std::all_of(threads_parts.begin(), threads_parts.end(), [](const std::vector<std::pair<String, DiskPtr>> & parts)
+    assert(std::all_of(threads_parts.begin(), threads_parts.end(), [](const auto & parts)
     {
         return !parts.empty();
     }));
 
-    std::mutex loaded_parts_mutex;
+    std::mutex part_select_mutex;
+    std::mutex part_loading_mutex;
+
     std::vector<LoadPartResult> loaded_parts;
 
     try
     {
-        std::mutex part_select_mutex;
-        std::mutex part_loading_mutex;
-
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
             pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
@@ -1338,8 +1337,8 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                             remaining_thread_parts.erase(thread_idx);
                     }
 
-                    thread_part->is_loaded = true;
                     auto res = loadDataPart(thread_part->info, thread_part->name, thread_part->disk, DataPartState::Active, part_loading_mutex);
+                    thread_part->is_loaded = true;
 
                     bool is_active_part = res.part->getState() == DataPartState::Active && !res.part->is_duplicate;
                     if (!is_active_part && !thread_part->children.empty())
@@ -1351,7 +1350,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                     }
 
                     {
-                        std::lock_guard lock(loaded_parts_mutex);
+                        std::lock_guard lock(part_loading_mutex);
                         loaded_parts.push_back(std::move(res));
                     }
                 }
@@ -1620,6 +1619,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     {
         resetObjectColumnsFromActiveParts(part_lock);
         LOG_DEBUG(log, "There are no data parts");
+        are_outdated_data_parts_loaded = true;
         return;
     }
 
@@ -1660,10 +1660,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             unloaded_parts.push_back(node);
     });
 
+    if (!unloaded_parts.empty())
     {
-        std::lock_guard lock(unloaded_outdated_parts_mutex);
-        unloaded_outdated_parts = std::move(unloaded_parts);
+        LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
+
+        outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeData::loadOutdatedDataParts",
+            [this, unloaded_parts]() mutable
+            {
+                loadOutdatedDataParts(std::move(unloaded_parts));
+            });
+
+        outdated_data_parts_loading_task->deactivate();
     }
+    else
+        are_outdated_data_parts_loaded = true;
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
     data_parts_loading_finished = true;
@@ -1671,9 +1682,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
 {
-    LOG_DEBUG(log, "Loading {} outdated data parts", parts_to_load.size());
     if (parts_to_load.empty())
         return;
+
+    LOG_DEBUG(log, "Loading {} outdated data parts", parts_to_load.size());
 
     for (const auto & part : parts_to_load)
     {
@@ -1688,27 +1700,25 @@ void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts", parts_to_load.size());
+
+    are_outdated_data_parts_loaded.store(true);
+    are_outdated_data_parts_loaded.notify_all();
 }
 
-void MergeTreeData::scheduleOutdatedDataPartsLoadingJob(BackgroundJobsAssignee & assignee)
+void MergeTreeData::waitForOutdatedPartsToBeLoaded() const
 {
-    PartLoadingTreeNodes parts_to_load;
-
+    if (!are_outdated_data_parts_loaded)
     {
-        std::lock_guard lock(unloaded_outdated_parts_mutex);
-        parts_to_load = unloaded_outdated_parts;
+        LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
+        are_outdated_data_parts_loaded.wait(false);
+        LOG_TRACE(log, "Finished waiting for outdated data parts to be loaded");
     }
+}
 
-    if (parts_to_load.empty())
-        return;
-
-    auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-    assignee.scheduleCommonTask(std::make_shared<ExecutableLambdaAdapter>(
-        [this, share_lock, parts_to_load = std::move(parts_to_load)]
-        {
-            loadOutdatedDataParts(std::move(parts_to_load));
-            return false;
-        }, common_assignee_trigger, getStorageID()), /*need_trigger=*/ false);
+void MergeTreeData::startOutdatedDataPartsLoadingTask()
+{
+    if (outdated_data_parts_loading_task)
+        outdated_data_parts_loading_task->activateAndSchedule();
 }
 
 /// Is the part directory old.
@@ -4208,6 +4218,8 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
+    waitForOutdatedPartsToBeLoaded();
+
     PartitionCommandsResultInfo result;
     for (const PartitionCommand & command : commands)
     {
@@ -4253,6 +4265,14 @@ Pipe MergeTreeData::alterPartition(
                     {
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+
+                        auto * dest_storage_merge_tree = dynamic_cast<MergeTreeData *>(dest_storage.get());
+                        if (!dest_storage_merge_tree)
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Cannot move partition from table {} to table {} with storage {}",
+                                getStorageID().getNameForLogs(), dest_storage->getStorageID().getNameForLogs(), dest_storage->getName());
+
+                        dest_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                         movePartitionToTable(dest_storage, command.partition, query_context);
                     }
                     break;
@@ -4276,6 +4296,14 @@ Pipe MergeTreeData::alterPartition(
                     checkPartitionCanBeDropped(command.partition, query_context);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
+
+                auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
+                if (!from_storage_merge_tree)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot replace partition from table {} with storage {} to table {}",
+                        from_storage->getStorageID().getNameForLogs(), from_storage->getName(), getStorageID().getNameForLogs());
+
+                from_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;

@@ -1,0 +1,58 @@
+Engine: MergeTree, Command: ALTER TABLE load_parts_drop_partition_src DROP PARTITION 1
+100
+1
+1
+1
+0
+0
+Engine: MergeTree, Command: ALTER TABLE load_parts_drop_partition_src DETACH PARTITION 1
+100
+1
+1
+1
+0
+0
+Engine: MergeTree, Command: ALTER TABLE load_parts_drop_partition_src MOVE PARTITION 1 TO TABLE load_parts_drop_partition_dst
+100
+100
+1
+1
+1
+0
+0
+Engine: MergeTree, Command: TRUNCATE load_parts_drop_partition_src
+100
+1
+1
+1
+0
+0
+Engine: ReplicatedMergeTree('/test/02482_load_parts_partitions/{database}/{table}', '1'), Command: ALTER TABLE load_parts_drop_partition_src DROP PARTITION 1
+100
+1
+1
+1
+0
+0
+Engine: ReplicatedMergeTree('/test/02482_load_parts_partitions/{database}/{table}', '1'), Command: ALTER TABLE load_parts_drop_partition_src DETACH PARTITION 1
+100
+1
+1
+1
+0
+0
+Engine: ReplicatedMergeTree('/test/02482_load_parts_partitions/{database}/{table}', '1'), Command: ALTER TABLE load_parts_drop_partition_src MOVE PARTITION 1 TO TABLE load_parts_drop_partition_dst
+100
+100
+1
+1
+1
+0
+0
+Engine: ReplicatedMergeTree('/test/02482_load_parts_partitions/{database}/{table}', '1'), Command: TRUNCATE load_parts_drop_partition_src
+100
+1
+1
+1
+0
+0

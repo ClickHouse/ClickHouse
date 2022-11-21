@@ -151,9 +151,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
 
-    if (first_time)
-        storage.scheduleOutdatedDataPartsLoadingJob(storage.background_operations_assignee);
-
     LOG_DEBUG(log, "Table started successfully");
     return true;
 }
