@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NAMED_COLLECTION_ALREADY_EXISTS;
+    extern const int NAMED_COLLECTION_DOESNT_EXISTS;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -230,12 +231,12 @@ public:
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Value with key `{}` already exists in named collection `{}`",
+                    "Value with key `{}` is used twice in the SET query",
                     name, query.collection_name);
             }
         }
 
-        for (auto & [name, value] : create_query.changes)
+        for (const auto & [name, value] : create_query.changes)
             result_changes_map.emplace(name, value);
 
         for (const auto & delete_key : query.delete_keys)
@@ -265,15 +266,24 @@ public:
 
     void remove(const std::string & collection_name)
     {
-        auto collection_path = getMetadataPath(collection_name);
-        fs::remove(collection_path);
+        if (!removeIfExists(collection_name))
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXISTS,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                collection_name);
+        }
     }
 
-    void removeIfExists(const std::string & collection_name)
+    bool removeIfExists(const std::string & collection_name)
     {
         auto collection_path = getMetadataPath(collection_name);
         if (fs::exists(collection_path))
+        {
             fs::remove(collection_path);
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -344,11 +354,7 @@ private:
         }
 
         auto tmp_path = path + ".tmp";
-        WriteBufferFromOwnString wb;
-        formatAST(query, wb, false);
-        writeChar('\n', wb);
-        String formatted_query = wb.str();
-
+        String formatted_query = serializeAST(query);
         WriteBufferFromFile out(tmp_path, formatted_query.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(formatted_query, out);
 
@@ -364,7 +370,7 @@ private:
 std::unique_lock<std::mutex> lockNamedCollectionsTransaction()
 {
     static std::mutex transaction_lock;
-    return std::unique_lock<std::mutex>(transaction_lock);
+    return std::unique_lock(transaction_lock);
 }
 
 void loadFromConfig(const Poco::Util::AbstractConfiguration & config)
