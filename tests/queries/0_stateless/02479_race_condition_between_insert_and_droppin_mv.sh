@@ -4,7 +4,6 @@
 set -e
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="error"
-CLICKHOUSE_DATABASE="default"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,7 +54,7 @@ done
 insert_threads=()
 for i in {1..3}
 do
-    insert 10 drop_mv_threads &
+    insert 20 drop_mv_threads &
     insert_pid=$!
     insert_threads+=("$insert_pid")
 done
