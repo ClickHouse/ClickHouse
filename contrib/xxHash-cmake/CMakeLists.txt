@@ -1,6 +1,5 @@
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/xxHash")
 set (SRCS
-    "${LIBRARY_DIR}/xxh_x86dispatch.c"
     "${LIBRARY_DIR}/xxhash.c"
 )
 
