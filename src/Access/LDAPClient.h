@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #include <base/types.h>
 
@@ -16,6 +16,7 @@
 #include <set>
 #include <vector>
 
+class SipHash;
 
 namespace DB
 {
@@ -38,7 +39,7 @@ public:
         String search_filter;
         String attribute = "cn";
 
-        void combineHash(std::size_t & seed) const;
+        void updateHash(SipHash & hash) const;
     };
 
     struct RoleSearchParams
@@ -46,7 +47,7 @@ public:
     {
         String prefix;
 
-        void combineHash(std::size_t & seed) const;
+        void updateHash(SipHash & hash) const;
     };
 
     using RoleSearchParamsList = std::vector<RoleSearchParams>;
@@ -95,7 +96,7 @@ public:
         ProtocolVersion protocol_version = ProtocolVersion::V3;
 
         String host;
-        std::uint16_t port = 636;
+        UInt16 port = 636;
 
         TLSEnable enable_tls = TLSEnable::YES;
         TLSProtocolVersion tls_minimum_protocol_version = TLSProtocolVersion::TLS1_2;
@@ -119,9 +120,9 @@ public:
         std::chrono::seconds operation_timeout{40};
         std::chrono::seconds network_timeout{30};
         std::chrono::seconds search_timeout{20};
-        std::uint32_t search_limit = 100;
+        UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
 
-        void combineCoreHash(std::size_t & seed) const;
+        void updateHash(SipHash & hash) const;
     };
 
     explicit LDAPClient(const Params & params_);
@@ -133,7 +134,7 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    MAYBE_NORETURN void diag(int rc, String text = "");
+    MAYBE_NORETURN void handleError(int result_code, String text = "");
     MAYBE_NORETURN bool openConnection();
     void closeConnection() noexcept;
     SearchResults search(const SearchParams & search_params);

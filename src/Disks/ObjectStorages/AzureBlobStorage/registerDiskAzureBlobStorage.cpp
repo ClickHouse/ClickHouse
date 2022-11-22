@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #include <Disks/DiskFactory.h>
 
@@ -17,55 +17,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
+void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access_check)
 {
-    extern const int PATH_ACCESS_DENIED;
-}
-
-namespace
-{
-
-constexpr char test_file[] = "test.txt";
-constexpr char test_str[] = "test";
-constexpr size_t test_str_size = 4;
-
-void checkWriteAccess(IDisk & disk)
-{
-    auto file = disk.writeFile(test_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write(test_str, test_str_size);
-}
-
-void checkReadAccess(IDisk & disk)
-{
-    auto file = disk.readFile(test_file);
-    String buf(test_str_size, '0');
-    file->readStrict(buf.data(), test_str_size);
-    if (buf != test_str)
-        throw Exception("No read access to disk", ErrorCodes::PATH_ACCESS_DENIED);
-}
-
-void checkReadWithOffset(IDisk & disk)
-{
-    auto file = disk.readFile(test_file);
-    auto offset = 2;
-    auto test_size = test_str_size - offset;
-    String buf(test_size, '0');
-    file->seek(offset, 0);
-    file->readStrict(buf.data(), test_size);
-    if (buf != test_str + offset)
-        throw Exception("Failed to read file with offset", ErrorCodes::PATH_ACCESS_DENIED);
-}
-
-void checkRemoveAccess(IDisk & disk)
-{
-    disk.removeFile(test_file);
-}
-
-}
-
-void registerDiskAzureBlobStorage(DiskFactory & factory)
-{
-    auto creator = [](
+    auto creator = [global_skip_access_check](
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
@@ -94,15 +48,8 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             copy_thread_pool_size
         );
 
-        if (!config.getBool(config_prefix + ".skip_access_check", false))
-        {
-            checkWriteAccess(*azure_blob_storage_disk);
-            checkReadAccess(*azure_blob_storage_disk);
-            checkReadWithOffset(*azure_blob_storage_disk);
-            checkRemoveAccess(*azure_blob_storage_disk);
-        }
-
-        azure_blob_storage_disk->startup(context);
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+        azure_blob_storage_disk->startup(context, skip_access_check);
 
         return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
     };
@@ -117,7 +64,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
 namespace DB
 {
 
-void registerDiskAzureBlobStorage(DiskFactory &) {}
+void registerDiskAzureBlobStorage(DiskFactory &, bool /* global_skip_access_check */) {}
 
 }
 

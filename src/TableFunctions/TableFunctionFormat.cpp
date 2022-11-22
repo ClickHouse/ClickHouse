@@ -89,9 +89,72 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
     return res;
 }
 
+static const Documentation format_table_function_documentation =
+{
+    R"(
+Extracts table structure from data and parses it according to specified input format.
+Syntax: `format(format_name, data)`.
+Parameters:
+    - `format_name` - the format of the data.
+    - `data ` - String literal or constant expression that returns a string containing data in specified format.
+Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
+)",
+    Documentation::Examples
+    {
+        {
+            "First example",
+            R"(
+Query:
+```
+:) select * from format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+Result:
+```
+┌───b─┬─a─────┐
+│ 111 │ Hello │
+│ 123 │ World │
+│ 112 │ Hello │
+│ 124 │ World │
+└─────┴───────┘
+```
+)"
+        },
+        {
+            "Second example",
+            R"(
+Query:
+```
+:) desc format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+Result:
+```
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ b    │ Nullable(Float64) │              │                    │         │                  │                │
+│ a    │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+)"
+        },
+    },
+    Documentation::Categories{"format", "table-functions"}
+};
+
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>({}, TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::CaseInsensitive);
 }
-
 }

@@ -16,7 +16,9 @@ endmacro()
 
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
-        set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
+        # LLVM-15 has a bug in Address Sanitizer, preventing the usage of 'sanitize-address-use-after-scope',
+        # see https://github.com/llvm/llvm-project/issues/58633
+        set (ASAN_FLAGS "-fsanitize=address -fno-sanitize-address-use-after-scope")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
 
@@ -85,7 +87,7 @@ if (SANITIZE)
             # and they have a bunch of flags not halt the program if UIO happend and even to silence that warnings.
             # But for unknown reason that flags don't work with ClickHouse or we don't understand how to properly use them,
             # that's why we often receive reports about UIO. The simplest way to avoid this is just  set this flag here.
-            set(UBSAN_FLAGS "${SAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
+            set(UBSAN_FLAGS "${UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()
         if (COMPILER_CLANG)
             set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")

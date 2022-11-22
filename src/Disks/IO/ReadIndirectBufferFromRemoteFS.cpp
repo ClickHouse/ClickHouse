@@ -1,7 +1,6 @@
 #include "ReadIndirectBufferFromRemoteFS.h"
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -17,6 +16,7 @@ ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl_, const ReadSettings & settings)
     : ReadBufferFromFileBase(settings.remote_fs_buffer_size, nullptr, 0)
     , impl(impl_)
+    , read_settings(settings)
 {
 }
 
@@ -92,24 +92,27 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
 
 bool ReadIndirectBufferFromRemoteFS::nextImpl()
 {
-    /// Transfer current position and working_buffer to actual ReadBuffer
-    swap(*impl);
+    chassert(internal_buffer.size() == read_settings.remote_fs_buffer_size);
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
-    assert(!impl->hasPendingData());
-    /// Position and working_buffer will be updated in next() call
-    auto result = impl->next();
-    /// and assigned to current buffer.
-    swap(*impl);
+    auto [size, offset] = impl->readInto(internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end, /* ignore */0);
 
-    if (result)
-    {
-        file_offset_of_buffer_end += available();
-        BufferBase::set(working_buffer.begin() + offset(), available(), 0);
-    }
+    chassert(offset <= size);
+    chassert(size <= internal_buffer.size());
 
-    assert(file_offset_of_buffer_end == impl->file_offset_of_buffer_end);
+    size_t bytes_read = size - offset;
+    if (bytes_read)
+        working_buffer = Buffer(internal_buffer.begin() + offset, internal_buffer.begin() + size);
 
-    return result;
+    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+
+    /// In case of multiple files for the same file in clickhouse (i.e. log family)
+    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
+    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
+    chassert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+
+    return bytes_read;
 }
 
 }

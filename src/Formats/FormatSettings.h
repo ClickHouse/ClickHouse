@@ -153,7 +153,13 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
+        bool try_infer_objects = false;
     } json;
+
+    struct
+    {
+        String column_for_object_name;
+    } json_object_each_row;
 
     struct
     {
@@ -297,6 +303,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }

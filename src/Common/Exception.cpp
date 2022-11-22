@@ -15,10 +15,11 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace fs = std::filesystem;
 
@@ -63,11 +64,18 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
     ErrorCodes::increment(code, remote, msg, trace);
 }
 
-Exception::Exception(const std::string & msg, int code, bool remote_)
-    : Poco::Exception(msg, code)
+Exception::MessageMasked::MessageMasked(const std::string & msg_)
+    : msg(msg_)
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
+Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, code, remote, getStackFramePointers());
+    handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
