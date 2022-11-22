@@ -130,7 +130,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageHudi::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -162,7 +162,7 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
          = {R"(The table function can be used to read the Hudi table stored on object store.)",
             Documentation::Examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)"}},
             Documentation::Categories{"DataLake"}},
-         .allow_readonly = true});
+         .allow_readonly = false});
 }
 }
 

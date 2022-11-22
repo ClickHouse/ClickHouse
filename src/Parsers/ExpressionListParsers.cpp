@@ -494,7 +494,12 @@ template <typename... Args>
 static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
     auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
-    ast_function->is_lambda_function = op.type == OperatorType::Lambda;
+
+    if (op.type == OperatorType::Lambda)
+    {
+        ast_function->is_lambda_function = true;
+        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+    }
     return ast_function;
 }
 
@@ -920,7 +925,7 @@ public:
                         , ErrorCodes::SYNTAX_ERROR);
                 }
 
-                if (allow_function_parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, elements);
@@ -999,6 +1004,7 @@ public:
             if (over.ignore(pos, expected))
             {
                 function_node->is_window_function = true;
+                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
 
                 ASTPtr function_node_as_iast = function_node;
 
