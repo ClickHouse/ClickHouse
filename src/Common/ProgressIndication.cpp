@@ -123,13 +123,16 @@ void ProgressIndication::writeFinalProgress()
     if (progress.read_rows < 1000)
         return;
 
-    std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+    UInt64 processed_rows = progress.read_rows + progress.written_rows;
+    UInt64 processed_bytes = progress.read_bytes + progress.written_bytes;
+
+    std::cout << "Processed " << formatReadableQuantity(processed_rows) << " rows, "
+                << formatReadableSizeWithDecimalSuffix(processed_bytes);
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                    << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+        std::cout << " (" << formatReadableQuantity(processed_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                    << formatReadableSizeWithDecimalSuffix(processed_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
         std::cout << ". ";
 }
@@ -164,16 +167,18 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     size_t prefix_size = message.count();
 
+    UInt64 processed_rows = progress.read_rows + progress.written_rows;
+    UInt64 processed_bytes = progress.read_bytes + progress.written_bytes;
     message << indicator << " Progress: ";
     message
-        << formatReadableQuantity(progress.read_rows) << " rows, "
-        << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+        << formatReadableQuantity(processed_rows) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(processed_bytes);
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
         message << " ("
-                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(processed_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(processed_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
     else
         message << ". ";
 
