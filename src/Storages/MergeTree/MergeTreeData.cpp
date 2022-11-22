@@ -967,7 +967,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug!",
-                    info.getPartName(), prev_info.getPartName());
+                    name, prev->second->name);
             }
         }
 
@@ -984,7 +984,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects next part {}. It is a bug!",
-                    info.getPartName(), next_info.getPartName());
+                    name, it->second->name);
             }
         }
 
@@ -1338,10 +1338,14 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                             remaining_thread_parts.erase(thread_idx);
                     }
 
+                    /// Pass a separate mutex to guard the set of parts, because this lambda
+                    /// is called concurrently but with already locked @data_parts_mutex.
                     auto res = loadDataPart(thread_part->info, thread_part->name, thread_part->disk, DataPartState::Active, part_loading_mutex);
                     thread_part->is_loaded = true;
 
                     bool is_active_part = res.part->getState() == DataPartState::Active && !res.part->is_duplicate;
+                    /// If part is broken or duplicate or should be removed according to transaction
+                    /// and it has any covered parts then try to load them to replace this part.
                     if (!is_active_part && !thread_part->children.empty())
                     {
                         std::lock_guard lock{part_select_mutex};
@@ -1503,6 +1507,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     /// Collect parts by disks' names.
     std::map<String, PartLoadingTreeNodes> disk_part_map;
 
+    /// Collect only "the most covering" parts from the top level of the tree.
     loading_tree.traverse(/*recursive=*/ false, [&](const auto & node)
     {
         disk_part_map[node->disk->getName()].emplace_back(node);
