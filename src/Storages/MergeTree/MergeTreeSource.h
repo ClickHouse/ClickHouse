@@ -18,7 +18,10 @@ public:
     std::string getName() const override;
 
     Status prepare() override;
+
+#if defined(OS_LINUX)
     int schedule() override;
+#endif
 
 protected:
     std::optional<Chunk> tryGenerate() override;
@@ -28,8 +31,10 @@ protected:
 private:
     MergeTreeSelectAlgorithmPtr algorithm;
 
+#if defined(OS_LINUX)
     struct AsyncReadingState;
     std::unique_ptr<AsyncReadingState> async_reading_state;
+#endif
 
     std::optional<Chunk> reportProgress(ChunkAndProgress chunk);
 };

@@ -11,8 +11,10 @@ MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
     : ISource(algorithm_->getHeader())
     , algorithm(std::move(algorithm_))
 {
+#if defined(OS_LINUX)
     if (algorithm->getSettings().use_asynchronous_read_from_pool)
         async_reading_state = std::make_unique<AsyncReadingState>();
+#endif
 }
 
 MergeTreeSource::~MergeTreeSource() = default;
@@ -27,6 +29,7 @@ void MergeTreeSource::onCancel()
     algorithm->cancel();
 }
 
+#if defined(OS_LINUX)
 struct MergeTreeSource::AsyncReadingState
 {
     /// NotStarted -> InProgress -> IsFinished -> NotStarted ...
@@ -137,10 +140,11 @@ private:
     ThreadPoolCallbackRunner<void> callback_runner;
     std::shared_ptr<Control> control;
 };
-
+#endif
 
 ISource::Status MergeTreeSource::prepare()
 {
+#if defined(OS_LINUX)
     if (!async_reading_state)
         return ISource::prepare();
 
@@ -153,6 +157,7 @@ ISource::Status MergeTreeSource::prepare()
 
     if (async_reading_state && async_reading_state->getStage() == AsyncReadingState::Stage::InProgress)
         return ISource::Status::Async;
+#endif
 
     return ISource::prepare();
 }
@@ -172,39 +177,44 @@ std::optional<Chunk> MergeTreeSource::reportProgress(ChunkAndProgress chunk)
 
 std::optional<Chunk> MergeTreeSource::tryGenerate()
 {
-    if (!async_reading_state)
-        return reportProgress(algorithm->read());
-
-    if (async_reading_state->getStage() == AsyncReadingState::Stage::IsFinished)
-        return reportProgress(async_reading_state->getResult());
-
-    chassert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
-
-    /// It is important to store control into job.
-    /// Otherwise, race between job and ~MergeTreeBaseSelectProcessor is possible.
-    auto job = [this, control = async_reading_state->start()]() mutable
+#if defined(OS_LINUX)
+    if (async_reading_state)
     {
-        auto holder = std::move(control);
+        if (async_reading_state->getStage() == AsyncReadingState::Stage::IsFinished)
+            return reportProgress(async_reading_state->getResult());
 
-        try
+        chassert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
+
+        /// It is important to store control into job.
+        /// Otherwise, race between job and ~MergeTreeBaseSelectProcessor is possible.
+        auto job = [this, control = async_reading_state->start()]() mutable
         {
-            holder->setResult(algorithm->read());
-        }
-        catch (...)
-        {
-            holder->setException(std::current_exception());
-        }
-    };
+            auto holder = std::move(control);
 
-    async_reading_state->schedule(std::move(job));
+            try
+            {
+                holder->setResult(algorithm->read());
+            }
+            catch (...)
+            {
+                holder->setException(std::current_exception());
+            }
+        };
 
-    return Chunk();
+        async_reading_state->schedule(std::move(job));
+
+        return Chunk();
+    }
+#endif
+
+    return reportProgress(algorithm->read());
 }
 
-
+#if defined(OS_LINUX)
 int MergeTreeSource::schedule()
 {
     return async_reading_state->getFD();
 }
+#endif
 
 }
