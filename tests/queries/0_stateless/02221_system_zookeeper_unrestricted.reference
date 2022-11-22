@@ -6,6 +6,8 @@ abandonable_lock-other
 abandonable_lock-other
 alter_partition_version
 alter_partition_version
+async_blocks
+async_blocks
 block_numbers
 block_numbers
 blocks
