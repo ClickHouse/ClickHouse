@@ -6650,7 +6650,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
 MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
 {
     std::lock_guard lock(data.moving_parts_mutex);
-    for (const auto & moving_part : parts_to_move)
+    for (auto & moving_part : parts_to_move)
     {
         /// Something went completely wrong
         if (!data.currently_moving_parts.contains(moving_part.part))
@@ -6775,6 +6775,14 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 {moving_part.part},
                 nullptr);
         };
+
+        // Register in global moves list (StorageSystemMoves)
+        auto moves_list_entry = getContext()->getMovesList().insert(
+            getStorageID(),
+            moving_part.part->name,
+            moving_part.reserved_space->getDisk()->getName(),
+            moving_part.reserved_space->getDisk()->getPath(),
+            moving_part.part->getBytesOnDisk());
 
         try
         {
