@@ -3092,12 +3092,12 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
         // Part mayght be outdated due to merge|mutation|update|optimization operations.
         if (part->isEmpty() || (hierarchy.intersected_parts.size() == 1 && hierarchy.intersected_parts.back()->isEmpty()))
         {
-            message += fmt::format("One of them is empty part. That is a race between drop operation under transaction and a merge/mutation.");
+            message += fmt::format(" One of them is empty part. That is a race between drop operation under transaction and a merge/mutation.");
             throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
         }
 
         if (hierarchy.intersected_parts.size() > 1)
-            message += fmt::format("There are {} intersected parts.", hierarchy.intersected_parts.size());
+            message += fmt::format(" There are {} intersected parts.", hierarchy.intersected_parts.size());
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, message + " It is a bug.");
     }
