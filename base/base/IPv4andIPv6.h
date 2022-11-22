@@ -12,7 +12,6 @@ namespace DB
 
     struct IPv6 : StrongTypedef<UInt128, struct IPv6Tag>
     {
-        
         constexpr IPv6() = default;
         constexpr explicit IPv6(const UInt128 & x) : StrongTypedef(x) {}
         constexpr explicit IPv6(UInt128 && x) : StrongTypedef(std::move(x)) {}
