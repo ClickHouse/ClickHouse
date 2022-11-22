@@ -518,7 +518,7 @@ public:
                 size = rhs_size;
 
                 if (size > 0)
-                    buf.read(small_data, size);
+                    buf.readStrict(small_data, size);
             }
             else
             {
@@ -530,7 +530,7 @@ public:
                 }
 
                 size = rhs_size;
-                buf.read(large_data, size);
+                buf.readStrict(large_data, size);
             }
         }
         else
