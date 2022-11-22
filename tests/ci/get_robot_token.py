@@ -24,15 +24,17 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
     for token_name in [p["Name"] for p in parameters]:
         value = get_parameter_from_ssm(token_name, True, client)
         gh = Github(value, per_page=100)
-        login = gh.get_user().login
+        # Do not spend additional request to API by accessin user.login unless
+        # the token is chosen by the remaining requests number
+        user = gh.get_user()
         rest, _ = gh.rate_limiting
-        logging.info("Get token for user %s with %s remaining requests", login, rest)
+        logging.info("Get token with %s remaining requests", rest)
         if token["rest"] < rest:
-            token = {"login": login, "value": value, "rest": rest}
+            token = {"user": user, "value": value, "rest": rest}
 
-    assert token["login"]
+    assert token["value"]
     logging.info(
-        "User %s with %s remaining requests is used", token["login"], token["rest"]
+        "User %s with %s remaining requests is used", token["user"].login, token["rest"]
     )
 
     return token["value"]
