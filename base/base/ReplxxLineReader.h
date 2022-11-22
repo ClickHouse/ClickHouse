@@ -4,6 +4,14 @@
 
 #include <replxx.hxx>
 
+enum FuzzyFinderType
+{
+    FUZZY_FINDER_NONE,
+    /// Use https://github.com/junegunn/fzf
+    FUZZY_FINDER_FZF,
+    /// Use https://github.com/lotabout/skim
+    FUZZY_FINDER_SKIM,
+};
 
 class ReplxxLineReader : public LineReader
 {
@@ -38,4 +46,5 @@ private:
 
     std::string editor;
     std::string fuzzy_finder;
+    FuzzyFinderType fuzzy_finder_type = FUZZY_FINDER_NONE;
 };
