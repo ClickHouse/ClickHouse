@@ -923,7 +923,7 @@ public:
                         , ErrorCodes::SYNTAX_ERROR);
                 }
 
-                if (allow_function_parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+                if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
                     std::swap(parameters->children, elements);

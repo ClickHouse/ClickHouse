@@ -161,7 +161,7 @@ def test_select_query(started_cluster):
     result = run_query(instance, distinct_select_query)
     result_table_function = run_query(
         instance,
-        distinct_select_query.format(
+        distinct_select_table_function_query.format(
             ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket
         ),
     )
@@ -173,3 +173,31 @@ def test_select_query(started_cluster):
 
     assert TSV(result) == TSV(expected)
     assert TSV(result_table_function) == TSV(expected)
+
+
+def test_describe_query(started_cluster):
+    instance = started_cluster.instances["main_server"]
+    bucket = started_cluster.minio_bucket
+    result = instance.query(
+        f"DESCRIBE hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV",
+    )
+
+    assert result == TSV(
+        [
+            ["_hoodie_commit_time", "Nullable(String)"],
+            ["_hoodie_commit_seqno", "Nullable(String)"],
+            ["_hoodie_record_key", "Nullable(String)"],
+            ["_hoodie_partition_path", "Nullable(String)"],
+            ["_hoodie_file_name", "Nullable(String)"],
+            ["begin_lat", "Nullable(Float64)"],
+            ["begin_lon", "Nullable(Float64)"],
+            ["driver", "Nullable(String)"],
+            ["end_lat", "Nullable(Float64)"],
+            ["end_lon", "Nullable(Float64)"],
+            ["fare", "Nullable(Float64)"],
+            ["partitionpath", "Nullable(String)"],
+            ["rider", "Nullable(String)"],
+            ["ts", "Nullable(Int64)"],
+            ["uuid", "Nullable(String)"],
+        ]
+    )
