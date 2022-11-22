@@ -270,7 +270,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
@@ -343,7 +343,7 @@ struct GroupArrayNodeBase
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
-        buf.read(node->data(), size);
+        buf.readStrict(node->data(), size);
         return node;
     }
 };

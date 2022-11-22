@@ -55,7 +55,7 @@ struct QuantileExactBase
         size_t size = 0;
         readVarUInt(size, buf);
         array.resize(size);
-        buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
+        buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
     Value get(Float64 level)
