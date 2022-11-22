@@ -129,7 +129,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Bar)
+void registerFunctionBar(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBar>();
 }

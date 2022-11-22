@@ -1,7 +1,6 @@
 ---
-slug: /ru/introduction/performance
-sidebar_position: 6
-sidebar_label: "Производительность"
+toc_priority: 6
+toc_title: "Производительность"
 ---
 
 # Производительность {#proizvoditelnost}

@@ -148,7 +148,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ToStringCutToZero)
+void registerFunctionToStringCutToZero(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStringCutToZero>();
 }

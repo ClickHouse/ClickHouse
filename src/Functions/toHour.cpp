@@ -9,12 +9,14 @@ namespace DB
 
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourImpl>;
 
-REGISTER_FUNCTION(ToHour)
+void registerFunctionToHour(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToHour>();
 
     /// MysQL compatibility alias.
-    factory.registerAlias("HOUR", "toHour", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToHour>("HOUR", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

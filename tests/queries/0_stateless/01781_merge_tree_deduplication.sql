@@ -103,7 +103,7 @@ INSERT INTO merge_tree_deduplication (key, value, part) VALUES (11, '11', 88); -
 INSERT INTO merge_tree_deduplication (key, value) VALUES (11, '11'); -- not deduplicated
 INSERT INTO merge_tree_deduplication (key, value) VALUES (12, '12'); -- not deduplicated
 
-SELECT part, key, value FROM merge_tree_deduplication ORDER BY key, part;
+SELECT part, key, value FROM merge_tree_deduplication ORDER BY key;
 
 -- Alters....
 

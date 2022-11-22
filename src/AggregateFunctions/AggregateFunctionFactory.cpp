@@ -176,12 +176,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
         /// need to filter aggregation result based on another column.
 
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
+
         if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "Nested identical combinator '{}' is not supported",
                 combinator_name);
         }
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic pop
+#endif
 
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -257,11 +266,11 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
-    if (aggregate_functions.contains(name) || isAlias(name))
+    if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
     String name_lowercase = Poco::toLower(name);
-    if (case_insensitive_aggregate_functions.contains(name_lowercase) || isAlias(name_lowercase))
+    if (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

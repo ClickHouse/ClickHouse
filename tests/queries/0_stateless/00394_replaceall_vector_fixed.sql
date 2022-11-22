@@ -14,7 +14,6 @@ ORDER BY str ASC;
 
 DROP TABLE replaceall;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE replaceall (date Date DEFAULT today(), fs FixedString(16)) ENGINE = MergeTree(date, (date, fs), 8192);
 INSERT INTO replaceall (fs) VALUES ('54db0d43009d\0\0\0\0'), ('fe2b58224766cf10'), ('54db0d43009d\0\0\0\0'), ('fe2b58224766cf10');
 

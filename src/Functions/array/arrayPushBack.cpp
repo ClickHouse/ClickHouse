@@ -13,7 +13,7 @@ public:
     FunctionArrayPushBack() : FunctionArrayPush(false, name) {}
 };
 
-REGISTER_FUNCTION(ArrayPushBack)
+void registerFunctionArrayPushBack(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayPushBack>();
 }

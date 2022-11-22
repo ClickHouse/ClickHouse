@@ -1,13 +1,10 @@
----
-slug: /ru/operations/system-tables/query_log
----
 # system.query_log {#system_tables-query_log}
 
 Содержит информацию о выполняемых запросах, например, время начала обработки, продолжительность обработки, сообщения об ошибках.
 
-    :::note "Внимание"
+!!! note "Внимание"
     Таблица не содержит входных данных для запросов `INSERT`.
-    :::
+
 Настойки логгирования можно изменить в секции серверной конфигурации [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
 
 Можно отключить логгирование настройкой [log_queries = 0](../settings/settings.md#settings-log-queries). По-возможности, не отключайте логгирование, поскольку информация из таблицы важна при решении проблем.

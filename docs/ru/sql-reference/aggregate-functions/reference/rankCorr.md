@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/rankCorr
-sidebar_position: 145
+toc_priority: 145
 ---
 
 # rankCorr {#agg_function-rankcorr}

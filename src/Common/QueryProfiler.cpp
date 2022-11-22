@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
+    extern const int CANNOT_DELETE_TIMER;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -132,11 +133,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         sev.sigev_signo = pause_signal;
 
 #if defined(OS_FREEBSD)
-        sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
+        sev._sigev_un._threadid = thread_id;
 #elif defined(USE_MUSL)
-        sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+        sev.sigev_notify_thread_id = thread_id;
 #else
-        sev._sigev_un._tid = static_cast<pid_t>(thread_id);
+        sev._sigev_un._tid = thread_id;
 #endif
         timer_t local_timer_id;
         if (timer_create(clock_type, &sev, &local_timer_id))
@@ -187,7 +188,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
     if (timer_id.has_value())
     {
         if (timer_delete(*timer_id))
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
         timer_id.reset();
     }
 

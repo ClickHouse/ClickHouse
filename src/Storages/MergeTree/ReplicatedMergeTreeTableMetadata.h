@@ -66,8 +66,6 @@ struct ReplicatedMergeTreeTableMetadata
             return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
-
-        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
     void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;

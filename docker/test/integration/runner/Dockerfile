@@ -3,7 +3,6 @@ FROM ubuntu:20.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
-
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
@@ -63,7 +62,6 @@ RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
-    asyncio \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
@@ -76,7 +74,6 @@ RUN python3 -m pip install \
     kazoo \
     lz4 \
     minio \
-    nats-py \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
@@ -91,8 +88,7 @@ RUN python3 -m pip install \
     urllib3 \
     requests-kerberos \
     pyhdfs \
-    azure-storage-blob \
-    meilisearch==0.18.3 
+    azure-storage-blob
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

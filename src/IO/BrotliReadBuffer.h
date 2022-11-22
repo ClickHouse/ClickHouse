@@ -1,13 +1,13 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB
 {
 
-class BrotliReadBuffer : public CompressedReadBufferWrapper
+class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     explicit BrotliReadBuffer(
@@ -20,6 +20,8 @@ public:
 
 private:
     bool nextImpl() override;
+
+    std::unique_ptr<ReadBuffer> in;
 
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;

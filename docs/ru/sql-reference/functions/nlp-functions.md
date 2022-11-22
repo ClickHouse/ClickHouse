@@ -1,14 +1,12 @@
 ---
-slug: /ru/sql-reference/functions/nlp-functions
-sidebar_position: 67
-sidebar_label: NLP
+toc_priority: 67
+toc_title: NLP
 ---
 
 # [экспериментально] Функции для работы с естественным языком {#nlp-functions}
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Сейчас использование функций для работы с естественным языком является экспериментальной возможностью. Чтобы использовать данные функции, включите настройку `allow_experimental_nlp_functions = 1`.
-:::
 
 ## stem {#stem}
 
