@@ -28,9 +28,10 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -38,6 +39,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
@@ -829,6 +832,20 @@ bool Client::processWithFuzzing(const String & full_query)
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
         ast_buf.next();
+        if (const auto * insert = query->as<ASTInsertQuery>())
+        {
+            /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
+            if (insert->hasInlinedData())
+            {
+                String bytes;
+                {
+                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    WriteBufferFromString write_buf(bytes);
+                    copyData(*read_buf, write_buf);
+                }
+                std::cout << std::endl << bytes;
+            }
+        }
         std::cout << std::endl << std::endl;
 
         try
