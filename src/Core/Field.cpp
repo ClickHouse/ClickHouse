@@ -60,7 +60,7 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::IPv6:
         {
             IPv6 value;
-            readBinary(value, buf);
+            readBinary(value.toUnderType(), buf);
             return value;
         }
         case Field::Types::Int64:

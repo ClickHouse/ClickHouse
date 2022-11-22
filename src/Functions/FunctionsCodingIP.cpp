@@ -511,11 +511,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkAndGetDataType<DataTypeUInt32>(arguments[0].get()))
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        const auto * dt_uint32 = checkAndGetDataType<DataTypeUInt32>(arguments[0].get());
+        const auto * dt_ipv4 = checkAndGetDataType<DataTypeIPv4>(arguments[0].get());
+        if (!dt_uint32 && !dt_ipv4)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName()
+            );
 
-        return std::make_shared<DataTypeFixedString>(16);
+        if (dt_uint32)
+            return std::make_shared<DataTypeFixedString>(16);
+        return std::make_shared<DataTypeIPv6>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -525,7 +531,22 @@ public:
         const auto & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
-        if (const auto * col_in = typeid_cast<const ColumnUInt32 *>(column.get()))
+        if (const auto * col_in = checkAndGetColumn<ColumnIPv4>(*column))
+        {
+            auto col_res = ColumnIPv6::create();
+
+            auto & vec_res = col_res->getData();
+            vec_res.resize(col_in->size());
+
+            const auto & vec_in = col_in->getData();
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+                mapIPv4ToIPv6(vec_in[i], reinterpret_cast<UInt8 *>(&vec_res[i].toUnderType()));
+
+            return col_res;
+        }
+
+        if (const auto * col_in = checkAndGetColumn<ColumnUInt32>(*column))
         {
             auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
 
@@ -539,10 +560,11 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName()
+        );
     }
 
 private:

@@ -83,7 +83,7 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr) const override
     {
         IPv x;
-        readBinary(x, istr);
+        readBinary(x.toUnderType(), istr);
         field = NearestFieldType<IPv>(x);
     }
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
@@ -92,8 +92,8 @@ public:
     }
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
     {
-        IPv4 x;
-        readBinary(x, istr);
+        IPv x;
+        readBinary(x.toUnderType(), istr);
         assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     }
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override
