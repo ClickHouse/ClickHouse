@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/MongoDB/Element.h>
+
 #include <Core/Block.h>
 #include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
