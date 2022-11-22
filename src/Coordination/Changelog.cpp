@@ -117,7 +117,7 @@ public:
 
         WriteBuffer * working_buf = compressed_buffer ? compressed_buffer->getNestedBuffer() : file_buf.get();
 
-            /// Flush working buffer to file system
+        /// Flush working buffer to file system
         working_buf->next();
 
         /// Fsync file system if needed
@@ -577,8 +577,14 @@ void Changelog::writeThread()
                 durable_idx_cv.notify_all();
 
                 // we shouldn't start the raft_server before sending it here
-                assert(raft_server);
-                raft_server->notify_log_append_completion(true);
+                if (raft_server)
+                {
+                    raft_server->notify_log_append_completion(true);
+                }
+                else
+                {
+                    LOG_WARNING(log, "Raft server is not set in LogStore.");
+                }
             }
         }, write_operation);
     }
