@@ -1,16 +1,8 @@
--- { echoOn }
--- String field
-SELECT Name FROM (SELECT DISTINCT Name FROM distinct) ORDER BY Name;
 Bill
 John
 Mary
--- Num field
-SELECT Num FROM (SELECT DISTINCT Num FROM distinct) ORDER BY Num;
 1
 3
 4
 5
 7
--- all const columns
-SELECT DISTINCT 1 as a, 2 as b FROM distinct;
-1	2

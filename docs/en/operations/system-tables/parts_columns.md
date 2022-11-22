@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/parts_columns
----
-# parts_columns
+# system.parts_columns {#system_tables-parts_columns}
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -9,7 +6,7 @@ Each row describes one data part.
 
 Columns:
 
--   `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md/#query_language_queries_alter) query.
+-   `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) query.
 
     Formats:
 
@@ -148,3 +145,4 @@ column_marks_bytes:                    48
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/parts_columns) <!--hide-->

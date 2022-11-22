@@ -15,7 +15,6 @@ node1 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-
         yield cluster
     finally:
         cluster.shutdown()

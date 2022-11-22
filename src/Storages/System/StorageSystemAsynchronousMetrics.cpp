@@ -12,7 +12,6 @@ NamesAndTypesList StorageSystemAsynchronousMetrics::getNamesAndTypes()
     return {
         {"metric", std::make_shared<DataTypeString>()},
         {"value", std::make_shared<DataTypeFloat64>()},
-        {"description", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -28,8 +27,7 @@ void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, Co
     for (const auto & name_value : async_metrics_values)
     {
         res_columns[0]->insert(name_value.first);
-        res_columns[1]->insert(name_value.second.value);
-        res_columns[2]->insert(name_value.second.documentation);
+        res_columns[1]->insert(name_value.second);
     }
 }
 

@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 DROP TABLE IF EXISTS sparse_tuple;
 
 CREATE TABLE sparse_tuple (id UInt64, t Tuple(a UInt64, s String))

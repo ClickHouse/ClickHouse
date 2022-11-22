@@ -38,17 +38,17 @@ with client(name="client1>", log=log) as client1:
         log=log,
     ) as client2:
         client2.expect(
-            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}}\n',
+            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}\n',
             escape=True,
         )
         client2.expect('{"row":{"version":"1"}', escape=True)
         client2.expect(
-            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}}',
+            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}',
             escape=True,
         )
         # heartbeat is provided by progress message
         client2.expect(
-            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}}',
+            '{"progress":{"read_rows":"1","read_bytes":"8","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}',
             escape=True,
         )
 

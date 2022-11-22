@@ -289,7 +289,7 @@ void FunctionArrayDistinct::executeHashed(
 }
 
 
-REGISTER_FUNCTION(ArrayDistinct)
+void registerFunctionArrayDistinct(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayDistinct>();
 }

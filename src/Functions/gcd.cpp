@@ -21,7 +21,7 @@ struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
     static ResultType applyImpl(A a, B b)
     {
         using Int = typename NumberTraits::ToInteger<ResultType>::Type;
-        return boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        return boost::integer::gcd(Int(a), Int(b));
     }
 };
 
@@ -29,7 +29,7 @@ using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, fa
 
 }
 
-REGISTER_FUNCTION(GCD)
+void registerFunctionGCD(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGCD>();
 }

@@ -44,7 +44,7 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 
 
 template <bool is_weighted>
-IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types, UInt64 threshold, UInt64 load_factor, const Array & params)
+static IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types, UInt64 threshold, UInt64 load_factor, const Array & params)
 {
     if (argument_types.empty())
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Got empty arguments list");

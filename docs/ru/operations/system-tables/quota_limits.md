@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/quota_limits
----
 # system.quota_limits {#system_tables-quota_limits}
 
 Содержит информацию о максимумах для всех интервалов всех квот. Одной квоте могут соответствовать любое количество строк или ноль.

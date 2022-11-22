@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <!-- Config for test server -->
 <clickhouse>
     <query_masking_rules>
