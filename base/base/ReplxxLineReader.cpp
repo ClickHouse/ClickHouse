@@ -420,6 +420,7 @@ ReplxxLineReader::ReplxxLineReader(
         auto interactive_history_search = [this](char32_t code)
         {
             openInteractiveHistorySearch();
+            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
             return rx.invoke(Replxx::ACTION::REPAINT, code);
         };
         rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
