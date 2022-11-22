@@ -842,72 +842,6 @@ private:
         return res;
     }
 
-    ColumnPtr executeIPv6(const IColumn * c0, const IColumn * c1) const
-    {
-        const ColumnIPv6 * c0_string = checkAndGetColumn<ColumnIPv6>(c0);
-        const ColumnIPv6 * c1_string = checkAndGetColumn<ColumnIPv6>(c1);
-
-        const ColumnConst * c0_const = checkAndGetColumnConst<ColumnIPv6>(c0);
-        const ColumnConst * c1_const = checkAndGetColumnConst<ColumnIPv6>(c1);
-
-        if (!((c0_string || c0_const) && (c1_string || c1_const)))
-            return nullptr;
-
-        const ColumnIPv6::Container * c0_const_chars = nullptr;
-        const ColumnIPv6::Container * c1_const_chars = nullptr;
-
-        if (c0_const)
-        {
-            const ColumnIPv6 * c0_const_string = checkAndGetColumn<ColumnIPv6>(&c0_const->getDataColumn());
-
-            if (c0_const_string)
-                c0_const_chars = &c0_const_string->getData();
-            else
-                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        if (c1_const)
-        {
-            const ColumnIPv6 * c1_const_string = checkAndGetColumn<ColumnIPv6>(&c1_const->getDataColumn());
-
-            if (c1_const_string)
-                c1_const_chars = &c1_const_string->getData();
-            else
-                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        using IPv6Impl = IPv6ComparisonImpl<Op<int, int>>;
-
-        if (c0_const && c1_const)
-        {
-            auto res = executeIPv6(&c0_const->getDataColumn(), &c1_const->getDataColumn());
-            if (!res)
-                return nullptr;
-
-            return ColumnConst::create(res, c0_const->size());
-        }
-        else
-        {
-            auto c_res = ColumnUInt8::create();
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
-
-            if (c0_string && c1_string)
-                IPv6Impl::ipv6_vector_ipv6_vector(c0_string->getData(), c1_string->getData(), c_res->getData());
-            else if (c0_string && c1_const)
-                IPv6Impl::ipv6_vector_constant(c0_string->getData(), *c1_const_chars, c_res->getData());
-            else if (c0_const && c1_string)
-                IPv6Impl::constant_ipv6_vector(*c0_const_chars, c1_string->getData(), c_res->getData());
-            else
-                throw Exception("Illegal columns "
-                    + c0->getName() + " and " + c1->getName()
-                    + " of arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-
-            return c_res;
-        }
-    }
-
     ColumnPtr executeString(const IColumn * c0, const IColumn * c1) const
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
@@ -1397,9 +1331,6 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
-        const bool left_is_ipv6 = which_left.isIPv6();
-        const bool right_is_ipv6 = which_right.isIPv6();
-
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1430,10 +1361,6 @@ public:
             && checkAndGetDataType<DataTypeTuple>(right_type.get()))
         {
             return executeTuple(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
-        }
-        else if ((left_is_ipv6 && right_is_ipv6) && (res = executeIPv6(col_left_untyped, col_right_untyped)))
-        {
-            return res;
         }
         else if (left_is_string && right_is_string && (res = executeString(col_left_untyped, col_right_untyped)))
         {

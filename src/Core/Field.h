@@ -514,8 +514,8 @@ public:
             case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
             case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
-            case Types::IPv4:    return get<IPv4>().toUnderType() <= rhs.get<IPv4>().toUnderType();
-            case Types::IPv6:    return get<IPv6>().toUnderType() <= rhs.get<IPv6>().toUnderType();
+            case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
+            case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
