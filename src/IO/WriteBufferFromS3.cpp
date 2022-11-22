@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
@@ -74,7 +74,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     const S3Settings::ReadWriteSettings & s3_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ThreadPoolCallbackRunner<void> schedule_,
+    ScheduleFunc schedule_,
     const WriteSettings & write_settings_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
@@ -123,10 +123,7 @@ void WriteBufferFromS3::nextImpl()
 void WriteBufferFromS3::allocateBuffer()
 {
     if (total_parts_uploaded != 0 && total_parts_uploaded % s3_settings.upload_part_size_multiply_parts_count_threshold == 0)
-    {
         upload_part_size *= s3_settings.upload_part_size_multiply_factor;
-        upload_part_size = std::min(upload_part_size, s3_settings.max_upload_part_size);
-    }
 
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);
@@ -295,7 +292,7 @@ void WriteBufferFromS3::writePart()
                 }
 
                 task_finish_notify();
-            }, 0);
+            });
         }
         catch (...)
         {
@@ -308,7 +305,7 @@ void WriteBufferFromS3::writePart()
         UploadPartTask task;
         auto & tags = TSA_SUPPRESS_WARNING_FOR_WRITE(part_tags); /// Suppress warning because schedule == false.
 
-        fillUploadRequest(task.req, static_cast<int>(tags.size() + 1));
+        fillUploadRequest(task.req, tags.size() + 1);
         processUploadRequest(task);
         tags.push_back(task.tag);
     }
@@ -365,7 +362,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+        multipart_upload.AddParts(part.WithETag(tags[i]).WithPartNumber(i + 1));
     }
 
     req.SetMultipartUpload(multipart_upload);
@@ -445,7 +442,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
                 }
 
                 task_notify_finish();
-            }, 0);
+            });
         }
         catch (...)
         {

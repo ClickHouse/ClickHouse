@@ -399,7 +399,6 @@
 "demangle"
 "toNullable"
 "concat"
-"formatReadableDecimalSize"
 "formatReadableSize"
 "shardCount"
 "fromModifiedJulianDayOrNull"

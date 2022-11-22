@@ -151,7 +151,7 @@ struct IntegerRoundingComputation
             }
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -165,7 +165,7 @@ struct IntegerRoundingComputation
                 return computeImpl(x, scale);
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out) requires std::integral<T>
@@ -178,7 +178,7 @@ struct IntegerRoundingComputation
                 return;
             }
         }
-        *out = compute(*in, static_cast<T>(scale));
+        *out = compute(*in, scale);
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, T scale, T * __restrict out) requires(!std::integral<T>)
@@ -249,7 +249,7 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Trunc: return truncf(x);
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -262,7 +262,7 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Trunc: return trunc(x);
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 template <typename T>
@@ -436,7 +436,7 @@ public:
         scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
-            auto scale = intExp10OfSize<NativeType>(scale_arg);
+            auto scale = intExp10OfSize<T>(scale_arg);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
