@@ -29,6 +29,15 @@ namespace ErrorCodes
 
 struct DecimalOpHelpers
 {
+    /* These functions perform main arithmetic logic.
+     * As soon as intermediate results may not fit Decimal256 (e.g. 1e36, scale 10),
+     * we may not operate with Decimals. Later on this big number may be shrunk (e.g. result scale is 0 in the case above).
+     * That's why we need to store intermediate results in a flexible extendable storage (here we use std::vector)
+     * Here we operate on numbers using simple digit arithmetics we learned at school.
+     * This is the reason these functions are slower than traditional ones.
+     *
+     * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
+     */
     static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
     {
         UInt16 const len1 = num1.size();
@@ -64,7 +73,9 @@ struct DecimalOpHelpers
             ++i_n1;
         }
 
+        // Maximum Int32 value exceeds 2 billion, we can safely use it for array length storing
         Int32 i = static_cast<Int32>(result.size() - 1);
+
         while (i >= 0 && result[i] == 0)
         {
             result.pop_back();
@@ -134,7 +145,7 @@ struct DivideDecimalsImpl
     static constexpr auto name = "divideDecimal";
 
     template <typename FirstType, typename SecondType>
-    static inline NO_SANITIZE_UNDEFINED Decimal256
+    static inline Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (b.value == 0)
@@ -164,7 +175,7 @@ struct DivideDecimalsImpl
 
         std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
-        if (divided.size() > 76)
+        if (divided.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
         return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(divided));
     }
@@ -176,7 +187,7 @@ struct MultiplyDecimalsImpl
     static constexpr auto name = "multiplyDecimal";
 
     template <typename FirstType, typename SecondType>
-    static inline NO_SANITIZE_UNDEFINED Decimal256
+    static inline Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (a.value == 0 || b.value == 0)
@@ -205,7 +216,7 @@ struct MultiplyDecimalsImpl
         if (multiplied.empty())
             return Decimal256(0);
 
-        if (multiplied.size() > 76)
+        if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
         return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
@@ -235,7 +246,7 @@ struct Processor
     }
 
     template <typename FirstArgVectorType, typename SecondArgVectorType>
-    void NO_INLINE NO_SANITIZE_UNDEFINED
+    void NO_INLINE
     vectorVector(const FirstArgVectorType & vec_first, const SecondArgVectorType & vec_second,
                  PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale) const
     {
@@ -247,7 +258,7 @@ struct Processor
     }
 
     template <typename FirstArgType, typename SecondArgVectorType>
-    void NO_INLINE NO_SANITIZE_UNDEFINED
+    void NO_INLINE
     constantVector(const FirstArgType & first_value, const SecondArgVectorType & vec_second,
                    PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale) const
     {
