@@ -278,12 +278,7 @@ public:
     bool removeIfExists(const std::string & collection_name)
     {
         auto collection_path = getMetadataPath(collection_name);
-        if (fs::exists(collection_path))
-        {
-            fs::remove(collection_path);
-            return true;
-        }
-        return false;
+        return !fs::remove(collection_path);
     }
 
 private:
