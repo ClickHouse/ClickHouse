@@ -148,8 +148,11 @@ public:
     bool isPlaintextPasswordAllowed() const;
 
     /// Check complexity requirements for plaintext passwords
-    void setPasswordComplexityRules(const Poco::Util::AbstractConfiguration & config_);
+
+    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
+    void addPasswordComplexityRule(std::pair<String, String> rule_);
     void checkPasswordComplexityRules(const String & password_) const;
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then
