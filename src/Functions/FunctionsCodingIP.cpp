@@ -777,7 +777,7 @@ private:
 
 #include <emmintrin.h>
 
-    static inline void applyCIDRMask(const IPv6 * __restrict src, IPv6 * __restrict dst_lower, IPv6 * __restrict dst_upper, UInt8 bits_to_keep)
+    static inline void applyCIDRMask(const char * __restrict src, char * __restrict dst_lower, char * __restrict dst_upper, UInt8 bits_to_keep)
     {
         __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep).data()));
         __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
@@ -791,7 +791,7 @@ private:
 #else
 
     /// NOTE IPv6 is stored in memory in big endian format that makes some difficulties.
-    static void applyCIDRMask(const IPv6 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
+    static void applyCIDRMask(const char * __restrict src, char * __restrict dst_lower, char * __restrict dst_upper, UInt8 bits_to_keep)
     {
         const auto & mask = getCIDRMaskIPv6(bits_to_keep);
 
@@ -814,19 +814,24 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkAndGetDataType<DataTypeIPv6>(arguments[0].get()))
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of first argument of function " + getName() +
-                            ", expected IPv6(" + toString(IPV6_BINARY_LENGTH) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        const auto * ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
+        const auto * str = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        if (!ipv6 && !(str && str->getN() == IPV6_BINARY_LENGTH))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected IPv6 or FixedString({})",
+                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
+            );
 
         const DataTypePtr & second_argument = arguments[1];
         if (!isUInt8(second_argument))
-            throw Exception{"Illegal type " + second_argument->getName()
-                            + " of second argument of function " + getName()
-                            + ", expected UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected UInt8",
+                second_argument->getName(), getName()
+            );
 
-        DataTypePtr element = DataTypeFactory::instance().get("IPv6");
+        DataTypePtr element = ipv6 ? DataTypeFactory::instance().get("IPv6") : DataTypeFactory::instance().get("FixedString(16)");
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
@@ -835,17 +840,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & col_type_name_ip = arguments[0];
-        const ColumnPtr & column_ip = col_type_name_ip.column;
-
-        const auto * col_const_ip_in = checkAndGetColumnConst<ColumnIPv6>(column_ip.get());
-        const auto * col_ip_in = checkAndGetColumn<ColumnIPv6>(column_ip.get());
-
-        if (!col_ip_in && !col_const_ip_in)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
-
         const auto & col_type_name_cidr = arguments[1];
         const ColumnPtr & column_cidr = col_type_name_cidr.column;
 
@@ -853,37 +847,87 @@ public:
         const auto * col_cidr_in = checkAndGetColumn<ColumnUInt8>(column_cidr.get());
 
         if (!col_const_cidr_in && !col_cidr_in)
-            throw Exception("Illegal column " + arguments[1].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                arguments[1].column->getName(), getName()
+            );
 
-        auto col_res_lower_range = ColumnIPv6::create();
-        auto col_res_upper_range = ColumnIPv6::create();
+        const auto & col_type_name_ip = arguments[0];
+        const ColumnPtr & column_ip = col_type_name_ip.column;
 
-        auto & vec_res_lower_range = col_res_lower_range->getData();
-        vec_res_lower_range.resize(input_rows_count);
+        const auto * col_const_ip_in = checkAndGetColumnConst<ColumnIPv6>(column_ip.get());
+        const auto * col_ip_in = checkAndGetColumn<ColumnIPv6>(column_ip.get());
 
-        auto & vec_res_upper_range = col_res_upper_range->getData();
-        vec_res_upper_range.resize(input_rows_count);
+        const auto * col_const_str_in = checkAndGetColumnConst<ColumnFixedString>(column_ip.get());
+        const auto * col_str_in = checkAndGetColumn<ColumnFixedString>(column_ip.get());
 
-        static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
-
-        for (size_t offset = 0; offset < input_rows_count; ++offset)
+        if (col_const_ip_in || col_ip_in)
         {
-            const IPv6 ip = col_const_ip_in
-                               ? col_const_ip_in->getValue<IPv6>()
-                               : col_ip_in->getData()[offset];
+            auto col_res_lower_range = ColumnIPv6::create();
+            auto col_res_upper_range = ColumnIPv6::create();
 
-            UInt8 cidr = col_const_cidr_in
-                         ? col_const_cidr_in->getValue<UInt8>()
-                         : col_cidr_in->getData()[offset];
+            auto & vec_res_lower_range = col_res_lower_range->getData();
+            vec_res_lower_range.resize(input_rows_count);
 
-            cidr = std::min(cidr, max_cidr_mask);
+            auto & vec_res_upper_range = col_res_upper_range->getData();
+            vec_res_upper_range.resize(input_rows_count);
 
-            applyCIDRMask(&ip, &vec_res_lower_range[offset], &vec_res_upper_range[offset], cidr);
+            static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const char * ip = col_const_ip_in
+                                ? col_const_ip_in->getDataAt(0).data
+                                : reinterpret_cast<const char *>(&col_ip_in->getData()[i]);
+
+                UInt8 cidr = col_const_cidr_in
+                            ? col_const_cidr_in->getValue<UInt8>()
+                            : col_cidr_in->getData()[i];
+
+                cidr = std::min(cidr, max_cidr_mask);
+
+                applyCIDRMask(ip, reinterpret_cast<char *>(&vec_res_lower_range[i]), reinterpret_cast<char *>(&vec_res_upper_range[i]), cidr);
+            }
+
+            return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
+        }
+        else if ((col_const_str_in && col_const_str_in->getDataAt(0).size == IPV6_BINARY_LENGTH) || (col_str_in && col_str_in->getDataAt(0).size == IPV6_BINARY_LENGTH))
+        {
+            auto col_res_lower_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+            auto col_res_upper_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+
+            auto & vec_res_lower_range = col_res_lower_range->getChars();
+            vec_res_lower_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
+
+            auto & vec_res_upper_range = col_res_upper_range->getChars();
+            vec_res_upper_range.resize(input_rows_count * IPV6_BINARY_LENGTH);
+
+            static constexpr UInt8 max_cidr_mask = IPV6_BINARY_LENGTH * 8;
+
+            for (size_t i = 0, offset = 0; i < input_rows_count; ++i, offset += IPV6_BINARY_LENGTH)
+            {
+                const char * ip = col_const_str_in
+                                ? col_const_str_in->getDataAt(0).data
+                                : reinterpret_cast<const char *>(&col_str_in->getChars().data()[offset]);
+
+                UInt8 cidr = col_const_cidr_in
+                            ? col_const_cidr_in->getValue<UInt8>()
+                            : col_cidr_in->getData()[i];
+
+                cidr = std::min(cidr, max_cidr_mask);
+
+                applyCIDRMask(ip, reinterpret_cast<char *>(&vec_res_lower_range[offset]), reinterpret_cast<char *>(&vec_res_upper_range[offset]), cidr);
+            }
+
+            return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
         }
 
-        return ColumnTuple::create(Columns{std::move(col_res_lower_range), std::move(col_res_upper_range)});
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of argument of function {}",
+            arguments[0].column->getName(), getName()
+        );
     }
 };
 
