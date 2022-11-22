@@ -15,7 +15,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 100.
+Default value: 10.
 
 Override example in `config.xml`:
 
@@ -231,7 +231,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 10800
+Default value: 1800
 
 ## try_fetch_recompressed_part_timeout
 
@@ -261,7 +261,7 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 100
+Default value: 10
 
 ## max_suspicious_broken_parts_bytes
 

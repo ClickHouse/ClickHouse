@@ -45,6 +45,8 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    const String & getName() const override { return name; }
+
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
@@ -136,7 +138,7 @@ public:
 
     void shutdown() override;
 
-    void startupImpl(ContextPtr context) override;
+    void startup(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -164,8 +166,6 @@ public:
 
     UInt64 getRevision() const override;
 
-    ObjectStoragePtr getObjectStorage() override;
-
     DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
@@ -174,12 +174,6 @@ public:
     /// For example: WebObjectStorage is read only as it allows to read from a web server
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
-
-    /// Is object write-once?
-    /// For example: S3PlainObjectStorage is write once, this means that it
-    /// does support BACKUP to this disk, but does not support INSERT into
-    /// MergeTree table on this disk.
-    bool isWriteOnce() const override;
 
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -210,6 +204,7 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
+    const String name;
     const String object_storage_root_path;
     Poco::Logger * log;
 

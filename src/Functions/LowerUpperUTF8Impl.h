@@ -104,7 +104,7 @@ struct LowerUpperUTF8Impl
 
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
      *    `src` and `dst` are incremented by corresponding sequence lengths. */
-    static bool toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst, bool partial)
+    static void toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
     {
         if (src[0] <= ascii_upper_bound)
         {
@@ -136,11 +136,6 @@ struct LowerUpperUTF8Impl
             static const Poco::UTF8Encoding utf8;
 
             size_t src_sequence_length = UTF8::seqLength(*src);
-            /// In case partial buffer was passed (due to SSE optimization)
-            /// we cannot convert it with current src_end, but we may have more
-            /// bytes to convert and eventually got correct symbol.
-            if (partial && src_sequence_length > static_cast<size_t>(src_end-src))
-                return false;
 
             auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
             if (src_code_point)
@@ -157,7 +152,7 @@ struct LowerUpperUTF8Impl
                     {
                         src += dst_sequence_length;
                         dst += dst_sequence_length;
-                        return true;
+                        return;
                     }
                 }
             }
@@ -166,8 +161,6 @@ struct LowerUpperUTF8Impl
             ++dst;
             ++src;
         }
-
-        return true;
     }
 
 private:
@@ -236,13 +229,16 @@ private:
                 const UInt8 * expected_end = std::min(src + bytes_sse, row_end);
 
                 while (src < expected_end)
+                    toCase(src, expected_end, dst);
+
+                /// adjust src_end_sse by pushing it forward or backward
+                const auto diff = src - expected_end;
+                if (diff != 0)
                 {
-                    if (!toCase(src, expected_end, dst, /* partial= */ true))
-                    {
-                        /// Fallback to handling byte by byte.
-                        src_end_sse = src;
-                        break;
-                    }
+                    if (src_end_sse + diff < src_end)
+                        src_end_sse += diff;
+                    else
+                        src_end_sse -= bytes_sse - diff;
                 }
             }
         }
@@ -259,7 +255,7 @@ private:
             chassert(row_end >= src);
 
             while (src < row_end)
-                toCase(src, row_end, dst, /* partial= */ false);
+                toCase(src, row_end, dst);
             ++offset_it;
         }
     }

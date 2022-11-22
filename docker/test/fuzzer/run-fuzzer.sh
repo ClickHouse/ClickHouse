@@ -94,7 +94,6 @@ function configure
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
-    cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 
     cat > db/config.d/core.xml <<EOL
 <clickhouse>
@@ -178,7 +177,7 @@ function fuzz
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > >(tail -100000 > server.log) 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
@@ -241,7 +240,6 @@ quit
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
-        --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
@@ -297,7 +295,7 @@ quit
         # The server has died.
         task_exit_code=210
         echo "failure" > status.txt
-        if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
+        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -391,9 +389,8 @@ th { cursor: pointer; }
 
 <h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
 <p class="links">
-<a href="runlog.log">runlog.log</a>
 <a href="fuzzer.log">fuzzer.log</a>
-<a href="server.log.gz">server.log.gz</a>
+<a href="server.log">server.log</a>
 <a href="main.log">main.log</a>
 ${CORE_LINK}
 </p>

@@ -140,7 +140,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
-        size_t num_streams,
+        unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & real_column_names,
@@ -150,9 +150,9 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
-    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
+    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
 
 private:
     int getSortDirection() const
@@ -164,7 +164,7 @@ private:
         return 1;
     }
 
-    MergeTreeReaderSettings reader_settings;
+    const MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;

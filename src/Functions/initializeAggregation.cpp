@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -113,6 +114,13 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
     MutableColumnPtr result_holder = result_type->createColumn();
     IColumn & res_col = *result_holder;
 
+    /// AggregateFunction's states should be inserted into column using specific way
+    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
+
+    if (!res_col_aggregate_function && agg_func.isState())
+        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
+                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
     {
@@ -143,9 +151,10 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        if (!res_col_aggregate_function)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+        else
+            res_col_aggregate_function->insertFrom(places[i]);
     return result_holder;
 }
 

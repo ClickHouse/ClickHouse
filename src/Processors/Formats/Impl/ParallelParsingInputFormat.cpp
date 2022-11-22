@@ -33,7 +33,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
@@ -128,9 +128,8 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
-            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
             if (e->getLineNumber() != -1)
-                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
+                e->setLineNumber(e->getLineNumber() + offset);
 
             auto file_name = getFileNameFromReadBuffer(getReadBuffer());
             if (!file_name.empty())

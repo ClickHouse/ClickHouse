@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,6 +23,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_DROPPED;
+}
 
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
@@ -231,7 +237,7 @@ protected:
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
                             ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
-                            res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
+                            res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
                         }
 
                         // engine_full
@@ -297,13 +303,15 @@ protected:
                         // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
                     }
-
-                    lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
-
-                    if (lock == nullptr)
+                    try
                     {
-                        // Table was dropped while acquiring the lock, skipping table
-                        continue;
+                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                            continue;
+                        throw;
                     }
                 }
 
@@ -382,7 +390,7 @@ protected:
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
+                        res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
 
                     if (columns_mask[src_index++])
                     {
@@ -390,7 +398,7 @@ protected:
 
                         if (ast_create && ast_create->storage)
                         {
-                            engine_full = ast_create->storage->formatWithSecretsHidden();
+                            engine_full = queryToString(*ast_create->storage);
 
                             static const char * const extra_head = " ENGINE = ";
                             if (startsWith(engine_full, extra_head))
@@ -404,7 +412,7 @@ protected:
                     {
                         String as_select;
                         if (ast_create && ast_create->select)
-                            as_select = ast_create->select->formatWithSecretsHidden();
+                            as_select = queryToString(*ast_create->select);
                         res_columns[res_index++]->insert(as_select);
                     }
                 }
@@ -419,7 +427,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -427,7 +435,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -435,7 +443,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -443,7 +451,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -573,7 +581,7 @@ Pipe StorageSystemTables::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

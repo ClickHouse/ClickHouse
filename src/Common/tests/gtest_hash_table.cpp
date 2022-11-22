@@ -15,17 +15,6 @@
 
 using namespace DB;
 
-namespace
-{
-std::vector<UInt64> getVectorWithNumbersUpToN(size_t n)
-{
-    std::vector<UInt64> res(n);
-    std::iota(res.begin(), res.end(), 0);
-    return res;
-}
-
-}
-
 
 /// To test dump functionality without using other hashes that can change
 template <typename T>
@@ -227,27 +216,27 @@ TEST(HashTable, Erase)
         using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
         Cont cont;
 
-        for (int i = 0; i < 5000; ++i)
+        for (size_t i = 0; i < 5000; ++i)
         {
             cont.insert(i);
         }
 
-        for (int i = 0; i < 2500; ++i)
+        for (size_t i = 0; i < 2500; ++i)
         {
             cont.erase(i);
         }
 
-        for (int i = 5000; i < 10000; ++i)
+        for (size_t i = 5000; i < 10000; ++i)
         {
             cont.insert(i);
         }
 
-        for (int i = 5000; i < 10000; ++i)
+        for (size_t i = 5000; i < 10000; ++i)
         {
             cont.erase(i);
         }
 
-        for (int i = 2500; i < 5000; ++i)
+        for (size_t i = 2500; i < 5000; ++i)
         {
             cont.erase(i);
         }
@@ -382,48 +371,3 @@ TEST(HashTable, Resize)
         ASSERT_EQ(actual, expected);
     }
 }
-
-
-using HashSetContent = std::vector<UInt64>;
-
-class TwoLevelHashSetFixture : public ::testing::TestWithParam<HashSetContent>
-{
-};
-
-
-TEST_P(TwoLevelHashSetFixture, WriteAsSingleLevel)
-{
-    using Key = UInt64;
-
-    {
-        const auto & hash_set_content = GetParam();
-
-        TwoLevelHashSet<Key, HashCRC32<Key>> two_level;
-        for (const auto & elem : hash_set_content)
-            two_level.insert(elem);
-
-        WriteBufferFromOwnString wb;
-        two_level.writeAsSingleLevel(wb);
-
-        ReadBufferFromString rb(wb.str());
-        HashSet<Key, HashCRC32<Key>> single_level;
-        single_level.read(rb);
-
-        EXPECT_EQ(single_level.size(), hash_set_content.size());
-        for (const auto & elem : hash_set_content)
-            EXPECT_NE(single_level.find(elem), nullptr);
-    }
-}
-
-
-INSTANTIATE_TEST_SUITE_P(
-    TwoLevelHashSetTests,
-    TwoLevelHashSetFixture,
-    ::testing::Values(
-        HashSetContent{},
-        getVectorWithNumbersUpToN(1),
-        getVectorWithNumbersUpToN(100),
-        getVectorWithNumbersUpToN(1000),
-        getVectorWithNumbersUpToN(10000),
-        getVectorWithNumbersUpToN(100000),
-        getVectorWithNumbersUpToN(1000000)));

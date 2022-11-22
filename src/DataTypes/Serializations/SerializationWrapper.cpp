@@ -13,11 +13,10 @@ void SerializationWrapper::enumerateStreams(
 }
 
 void SerializationWrapper::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested_serialization->serializeBinaryBulkStatePrefix(column, settings, state);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
 }
 
 void SerializationWrapper::serializeBinaryBulkStateSuffix(

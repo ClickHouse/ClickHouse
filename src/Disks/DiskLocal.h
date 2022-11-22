@@ -28,6 +28,8 @@ public:
         ContextPtr context,
         UInt64 local_disk_check_period_ms);
 
+    const String & getName() const override { return name; }
+
     const String & getPath() const override { return disk_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -110,9 +112,8 @@ public:
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
     bool isBroken() const override { return broken; }
-    bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startup(ContextPtr) override;
 
     void shutdown() override;
 
@@ -132,19 +133,17 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override;
 
-protected:
-    void checkAccessImpl(const String & path) override;
-
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    /// Setup disk for healthy check.
+    /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
     /// Throw exception if it's not possible to setup necessary files and directories.
-    void setup();
+    bool setup();
 
     /// Read magic number from disk checker file. Return std::nullopt if exception happens.
     std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
 
+    const String name;
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;

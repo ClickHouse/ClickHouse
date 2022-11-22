@@ -17,12 +17,11 @@ void SerializationNamed::enumerateStreams(
 }
 
 void SerializationNamed::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested_serialization->serializeBinaryBulkStatePrefix(column, settings, state);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 

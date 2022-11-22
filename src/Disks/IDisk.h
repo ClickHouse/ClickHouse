@@ -74,10 +74,6 @@ public:
     /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
 
-    /// Whether this is a disk or a volume.
-    virtual bool isDisk() const { return false; }
-    virtual bool isVolume() const { return false; }
-
     virtual ~Space() = default;
 };
 
@@ -107,23 +103,16 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
-        : name(name_)
-        , executor(executor_)
+    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : executor(executor_)
     {
     }
-
-    /// This is a disk.
-    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
-
-    /// Return disk name.
-    const String & getName() const override { return name; }
 
     /// Total available space on the disk.
     virtual UInt64 getTotalSpace() const = 0;
@@ -312,19 +301,14 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    virtual bool isWriteOnce() const { return false; }
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
-    /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
-
-    /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    /// Performs action on disk startup.
+    virtual void startup(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -379,14 +363,6 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual ObjectStoragePtr getObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
-    }
-
     /// Create disk object storage according to disk type.
     /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
     /// for DiskObjectStorage create just a copy.
@@ -407,8 +383,6 @@ public:
 protected:
     friend class DiskDecorator;
 
-    const String name;
-
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
 
@@ -417,13 +391,8 @@ protected:
     /// A derived class may override copy() to provide a faster implementation.
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
-    virtual void checkAccessImpl(const String & path);
-
 private:
     std::shared_ptr<Executor> executor;
-
-    /// Check access to the disk.
-    void checkAccess();
 };
 
 using Disks = std::vector<DiskPtr>;
