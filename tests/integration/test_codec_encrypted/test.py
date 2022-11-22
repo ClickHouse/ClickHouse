@@ -24,6 +24,7 @@ def make_storage_with_key(id):
             "bash",
             "-c",
             """cat > /etc/clickhouse-server/config.d/storage_keys_config.xml << EOF
+<?xml version="1.0"?>
 <clickhouse>
     <encryption_codecs>
         <aes_128_gcm_siv>

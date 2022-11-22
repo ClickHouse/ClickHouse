@@ -23,7 +23,7 @@ namespace
 class FunctionDateTrunc : public IFunction
 {
 public:
-    static constexpr auto name = "dateTrunc";
+    static constexpr auto name = "date_trunc";
 
     explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
@@ -153,13 +153,12 @@ private:
 
 }
 
-
 REGISTER_FUNCTION(DateTrunc)
 {
-    factory.registerFunction<FunctionDateTrunc>();
+    factory.registerFunction<FunctionDateTrunc>(FunctionFactory::CaseInsensitive);
 
     /// Compatibility alias.
-    factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("dateTrunc", FunctionDateTrunc::name);
 }
 
 }

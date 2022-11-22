@@ -50,6 +50,8 @@ WorkflowDescription = namedtuple(
 
 # See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
+    7409213,  # yandex
+    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -61,11 +63,11 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "DocsCheck",
-    "DocsReleaseChecks",
+    "Docs",
+    "DocsRelease",
     "MasterCI",
     "PullRequestCI",
-    "ReleaseBranchCI",
+    "ReleaseCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -102,6 +104,8 @@ TRUSTED_CONTRIBUTORS = {
         "kreuzerkrieg",
         "lehasm",  # DOCSUP
         "michon470",  # DOCSUP
+        "MyroTk",  # Tester in Altinity
+        "myrrc",  # Michael Kot, Altinity
         "nikvas0",
         "nvartolomei",
         "olgarev",  # DOCSUP
@@ -491,12 +495,6 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
-
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": '{"status": "OK"}',
-        }
     except Exception:
         print("Received event: ", event)
         raise

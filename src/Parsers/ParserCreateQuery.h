@@ -53,8 +53,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserDataType type_parser;
 
-    ASTPtr name;
-    ASTPtr type;
+    ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
@@ -134,7 +133,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
-    ParserExpression expr_parser;
+    ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
@@ -420,20 +419,9 @@ protected:
   */
 class ParserStorage : public IParserBase
 {
-public:
-    /// What kind of engine we're going to parse.
-    enum EngineKind
-    {
-        TABLE_ENGINE,
-        DATABASE_ENGINE,
-    };
-
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
-
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    EngineKind engine_kind;
 };
 
 /** Query like this:

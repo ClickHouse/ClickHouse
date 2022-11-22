@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/data-types/domains/
 sidebar_label: "域"
 sidebar_position: 56
 ---

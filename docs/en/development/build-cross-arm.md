@@ -1,9 +1,9 @@
 ---
-slug: /en/development/build-cross-arm
 sidebar_position: 67
-title: How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture 
 sidebar_label: Build on Linux for AARCH64 (ARM64)
 ---
+
+# How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture 
 
 If you use AArch64 machine and want to build ClickHouse for AArch64, build as usual.
 

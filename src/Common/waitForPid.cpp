@@ -54,7 +54,7 @@ namespace DB
 
 static int syscall_pidfd_open(pid_t pid)
 {
-    return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
+    return syscall(SYS_pidfd_open, pid, 0);
 }
 
 static bool supportsPidFdOpen()
@@ -126,7 +126,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
-    struct kevent change = {.ident = 0};
+    struct kevent change = {.ident = NULL};
     EV_SET(&change, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
 
     int event_add_result = HANDLE_EINTR(kevent(kq, &change, 1, NULL, 0, NULL));
@@ -138,7 +138,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         return PollPidResult::FAILED;
     }
 
-    struct kevent event = {.ident = 0};
+    struct kevent event = {.ident = NULL};
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
     int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
     PollPidResult result = ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
@@ -170,8 +170,7 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
     /// If timeout is positive try waitpid without block in loop until
     /// process is normally terminated or waitpid return error
 
-    /// NOTE: timeout casted to int, since poll() accept int for timeout
-    int timeout_in_ms = static_cast<int>(timeout_in_seconds * 1000);
+    int timeout_in_ms = timeout_in_seconds * 1000;
     while (timeout_in_ms > 0)
     {
         int waitpid_res = HANDLE_EINTR(waitpid(pid, &status, WNOHANG));

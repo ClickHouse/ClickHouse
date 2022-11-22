@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #include <memory>
 
@@ -171,7 +171,7 @@ public:
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
 
-    /** If function isSuitableForConstantFolding then, this method will be called during query analysis
+    /** If function isSuitableForConstantFolding then, this method will be called during query analyzis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
       * return they result based on some constant arguments.
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
@@ -265,10 +265,9 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;   /// Is the function monotonous (non-decreasing or non-increasing).
-        bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
-        bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -395,7 +394,7 @@ private:
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 /// Old function interface. Check documentation in IFunction.h.
-/// If client do not need stateful properties it can implement this interface.
+/// If client do not need statefull properties it can implement this interface.
 class IFunction
 {
 public:

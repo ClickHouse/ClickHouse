@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
@@ -198,7 +197,7 @@ Result:
 
 ## SHOW DICTIONARIES
 
-Displays a list of [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+Displays a list of [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -303,7 +302,7 @@ SHOW USERS
 
 ## SHOW ROLES
 
-Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Syntax
 
@@ -362,7 +361,7 @@ SHOW ACCESS
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
-:::note
+:::note    
 `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 :::
 
@@ -491,20 +490,6 @@ Result:
 ┌─name─────────────┬─type───┬─value───────┐
 │ max_memory_usage │ UInt64 │ 10000000000 │
 └──────────────────┴────────┴─────────────┘
-```
-
-## SHOW FILESYSTEM CACHES
-
-```sql
-SHOW FILESYSTEM CACHES
-```
-
-Result:
-
-``` text
-┌─Caches────┐
-│ s3_cache  │
-└───────────┘
 ```
 
 **See Also**

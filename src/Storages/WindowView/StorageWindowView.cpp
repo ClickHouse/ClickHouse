@@ -296,7 +296,7 @@ namespace
             CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     class AddingAggregatedChunkInfoTransform : public ISimpleTransform
@@ -895,7 +895,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
@@ -923,7 +923,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
@@ -1018,8 +1018,7 @@ void StorageWindowView::threadFuncFireProc()
         return;
 
     std::lock_guard lock(fire_signal_mutex);
-    /// TODO: consider using time_t instead (for every timestamp in this class)
-    UInt32 timestamp_now = static_cast<UInt32>(std::time(nullptr));
+    UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
     {
@@ -1079,7 +1078,7 @@ void StorageWindowView::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
-    const size_t num_streams)
+    const unsigned num_streams)
 {
     if (target_table_id.empty())
         return;
@@ -1119,7 +1118,7 @@ Pipe StorageWindowView::watch(
     ContextPtr local_context,
     QueryProcessingStage::Enum & processed_stage,
     size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
@@ -1128,7 +1127,7 @@ Pipe StorageWindowView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
+        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
     }
 
     auto reader = std::make_shared<WindowViewSource>(
@@ -1190,7 +1189,7 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(static_cast<UInt32>(std::time(nullptr)));
+        next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     std::exchange(has_inner_table, true);
     if (!attach_)

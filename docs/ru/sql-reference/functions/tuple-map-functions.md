@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/tuple-map-functions
 sidebar_position: 46
 sidebar_label: Работа с контейнерами map
 ---

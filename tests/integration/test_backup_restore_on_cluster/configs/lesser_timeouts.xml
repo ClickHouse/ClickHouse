@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <backups>
         <on_cluster_first_sync_timeout>1000</on_cluster_first_sync_timeout>
