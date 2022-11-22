@@ -608,7 +608,7 @@ std::vector<String> ReplicatedMergeTreeSink<async_insert>::commitPart(
         if constexpr (async_insert)
         {
             for (const auto & single_block_id : block_id)
-                block_id_path.push_back(storage.zookeeper_path + "/blocks/" + single_block_id);
+                block_id_path.push_back(storage.zookeeper_path + "/async_blocks/" + single_block_id);
         }
         else if (deduplicate_block)
             block_id_path = storage.zookeeper_path + "/blocks/" + block_id;

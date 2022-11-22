@@ -53,7 +53,7 @@ private:
                           size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
-    void clearOldBlocks();
+    void clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size);
 
     /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
     void clearOldMutations();
