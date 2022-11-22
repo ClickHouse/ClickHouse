@@ -445,6 +445,8 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 
 UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
+    chassert(!credentials.getUserName().empty());
+
     try
     {
         return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
@@ -459,7 +461,7 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
-        if (credentials.getUserName().empty() || credentials.getUserName() == "default")
+        if (credentials.getUserName() == "default")
             message << "\n\n"
                 << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
                 << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
