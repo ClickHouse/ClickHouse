@@ -388,6 +388,9 @@ else
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
+    # Turn on after 22.12
+    rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
+
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
