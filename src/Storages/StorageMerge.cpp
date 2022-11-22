@@ -364,13 +364,9 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
-    if (order_info)
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
     {
-         query_info.input_order_info = order_info;
-    }
-    else if (query_info.order_optimizer)
-    {
-        InputOrderInfoPtr input_sorting_info;
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
             auto storage_ptr = std::get<1>(*it);

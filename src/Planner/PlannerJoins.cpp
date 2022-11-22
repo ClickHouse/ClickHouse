@@ -20,7 +20,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/CastOverloadResolver.h>
 
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -77,23 +76,6 @@ void JoinClause::dump(WriteBuffer & buffer) const
 
     if (!right_filter_condition_nodes.empty())
         buffer << " right_condition_nodes: " + dump_dag_nodes(right_filter_condition_nodes);
-
-    if (!asof_conditions.empty())
-    {
-        buffer << " asof_conditions: ";
-        size_t asof_conditions_size = asof_conditions.size();
-
-        for (size_t i = 0; i < asof_conditions_size; ++i)
-        {
-            const auto & asof_condition = asof_conditions[i];
-
-            buffer << "key_index: " << asof_condition.key_index;
-            buffer << "inequality: " << toString(asof_condition.asof_inequality);
-
-            if (i + 1 != asof_conditions_size)
-                buffer << ',';
-        }
-    }
 }
 
 String JoinClause::dump() const
@@ -267,7 +249,9 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
         join_node);
 
     if (!expression_side_optional)
-        expression_side_optional = JoinTableSide::Right;
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "JOIN {} with constants is not supported",
+                join_node.formatASTForErrorMessage());
 
     auto expression_side = *expression_side_optional;
     join_clause.addCondition(expression_side, join_expressions_actions_node);
@@ -293,30 +277,12 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     for (const auto & node : join_expression_actions_nodes)
         join_expression_dag_input_nodes.insert(&node);
 
-    auto * function_node = join_node.getJoinExpression()->as<FunctionNode>();
-    if (!function_node)
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "JOIN {} join expression expected function",
-            join_node.formatASTForErrorMessage());
-
-    /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
-      * If we do not ignore it, this function will be replaced by underlying constant.
-      * For example ASOF JOIN does not support JOIN with constants, and we should process it like ordinary JOIN.
-      *
-      * Example: SELECT * FROM (SELECT 1 AS id, 1 AS value) AS t1 ASOF LEFT JOIN (SELECT 1 AS id, 1 AS value) AS t2
-      * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
-      */
-    auto constant_value = function_node->getConstantValueOrNull();
-    function_node->performConstantFolding({});
-
     PlannerActionsVisitor join_expression_visitor(planner_context);
     auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_node.getJoinExpression());
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
             join_node.formatASTForErrorMessage());
-
-    function_node->performConstantFolding(std::move(constant_value));
 
     const auto * join_expressions_actions_root_node = join_expression_dag_node_raw_pointers[0];
     if (!join_expressions_actions_root_node->function)

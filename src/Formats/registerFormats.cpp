@@ -18,7 +18,6 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 #if USE_HIVE
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
-void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -154,7 +153,6 @@ void registerFormats()
 #if USE_HIVE
     registerFileSegmentationEngineHiveText(factory);
 #endif
-    registerFileSegmentationEngineLineAsString(factory);
 
 
     registerInputFormatNative(factory);

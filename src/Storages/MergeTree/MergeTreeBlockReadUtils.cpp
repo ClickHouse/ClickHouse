@@ -315,9 +315,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            Names row_filter_column_names = prewhere_info->row_level_filter->getRequiredColumnsNames();
-            injectRequiredColumns(
-                data_part_info_for_reader, storage_snapshot, with_subcolumns, row_filter_column_names);
+            Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
             pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
         }
@@ -325,7 +323,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 2. Columns for prewhere
         Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
 
-        injectRequiredColumns(
+        const auto injected_pre_columns = injectRequiredColumns(
              data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
 
         for (const auto & name : all_pre_column_names)

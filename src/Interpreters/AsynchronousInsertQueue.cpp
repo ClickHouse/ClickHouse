@@ -37,7 +37,6 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
-    extern const Event FailedAsyncInsertQuery;
 }
 
 namespace DB
@@ -102,8 +101,6 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 {
     std::lock_guard lock(mutex);
     finished = true;
-    if (exception_)
-        ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
     exception = exception_;
     cv.notify_all();
 }

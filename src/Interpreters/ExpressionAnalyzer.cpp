@@ -1829,22 +1829,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
-            // we evaluate sampling for Merge lazily so we need to get all the columns
-            if (storage->getName() == "Merge")
-            {
-                const auto columns = metadata_snapshot->getColumns().getAll();
-
-                for (const auto & column : columns)
-                {
-                    additional_required_columns_after_prewhere.push_back(column.name);
-                }
-            }
-            else
-            {
-                Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
-                additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
-                    columns_for_sampling.begin(), columns_for_sampling.end());
-            }
+            Names columns_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sampling.begin(), columns_for_sampling.end());
         }
 
         if (storage && query.final())
@@ -1957,13 +1944,20 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         optimize_read_in_order =
-            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
+            settings.optimize_read_in_order
             && storage
             && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
+
+        if (storage && optimize_read_in_order)
+        {
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
+        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));

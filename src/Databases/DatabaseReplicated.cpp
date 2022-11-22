@@ -1214,7 +1214,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         String table_name = unescapeForFileName(escaped_table_name);
         if (!filter(table_name))
             continue;
-
         String zk_metadata;
         if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
@@ -1234,10 +1233,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
             if (storage)
                 storage->adjustCreateQueryForBackup(create_table_query);
         }
-
-        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
-        /// but it has not been created on this replica yet.
-
         res.emplace_back(create_table_query, storage);
     }
 

@@ -253,7 +253,7 @@ bool IStorage::isStaticStorage() const
     if (storage_policy)
     {
         for (const auto & disk : storage_policy->getDisks())
-            if (!(disk->isReadOnly() || disk->isWriteOnce()))
+            if (!disk->isReadOnly())
                 return false;
         return true;
     }

@@ -118,7 +118,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        buf.readStrict(place, sizeOfData());
+        buf.read(place, sizeOfData());
     }
 
     DataTypePtr getReturnType() const override

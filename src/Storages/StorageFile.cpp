@@ -81,8 +81,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
-    std::vector<std::string> & result,
-    bool recursive = false)
+    std::vector<std::string> & result)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -90,17 +89,10 @@ void listFilesWithRegexpMatchingImpl(
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
-    const std::string current_glob = suffix_with_globs.substr(0, next_slash);
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
-
+    auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
     re2::RE2 matcher(regexp);
 
-    bool skip_regex = current_glob == "/*" ? true : false;
-    if (!recursive)
-        recursive = current_glob == "/**" ;
-
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-
     if (!fs::exists(prefix_without_globs))
         return;
 
@@ -115,21 +107,15 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
-        else if (it->is_directory())
+        else if (it->is_directory() && looking_for_directory)
         {
-            if (recursive)
-            {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "" ,
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash) : current_glob ,
-                                                total_bytes_to_read, result, recursive);
-            }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash), total_bytes_to_read, result);

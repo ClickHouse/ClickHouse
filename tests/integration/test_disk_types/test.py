@@ -22,7 +22,6 @@ def cluster():
             with_hdfs=True,
         )
         cluster.start()
-
         yield cluster
     finally:
         cluster.shutdown()

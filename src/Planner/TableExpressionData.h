@@ -16,25 +16,6 @@ using ColumnIdentifier = std::string;
 /** Table expression data is created for each table expression that take part in query.
   * Table expression data has information about columns that participate in query, their name to identifier mapping,
   * and additional table expression properties.
-  *
-  * Table expression can be table, table function, query, union, array join node.
-  *
-  * Examples:
-  * SELECT * FROM (SELECT 1);
-  * (SELECT 1) - table expression.
-  *
-  * SELECT * FROM test_table;
-  * test_table - table expression.
-  *
-  * SELECT * FROM view(SELECT 1);
-  * view(SELECT 1) - table expression.
-  *
-  * SELECT * FROM (SELECT 1) JOIN (SELECT 2);
-  * (SELECT 1) - table expression.
-  * (SELECT 2) - table expression.
-  *
-  * SELECT array, a FROM (SELECT [1] AS array) ARRAY JOIN array AS a;
-  * ARRAY JOIN array AS a - table expression.
   */
 class TableExpressionData
 {
@@ -183,19 +164,19 @@ public:
     }
 
 private:
-    /// Valid for table, table function, query, union, array join table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     NamesAndTypesList columns;
 
-    /// Valid for table, table function, query, union, array join table expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     NameSet columns_names;
 
     /// Valid only for table table expression node
     NameSet alias_columns_names;
 
-    /// Valid for table, table function, query, union table, array join expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 
-    /// Valid for table, table function, query, union table, array join expression nodes
+    /// Valid for table, table function, query, union table expression nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
 
     /// Is storage remote

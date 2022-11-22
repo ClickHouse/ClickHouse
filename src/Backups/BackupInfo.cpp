@@ -35,7 +35,6 @@ ASTPtr BackupInfo::toAST() const
     auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
-    func->kind = ASTFunction::Kind::BACKUP_NAME;
 
     auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
@@ -92,10 +91,5 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     return res;
 }
 
-
-String BackupInfo::toStringForLogging() const
-{
-    return toAST()->formatForLogging();
-}
 
 }

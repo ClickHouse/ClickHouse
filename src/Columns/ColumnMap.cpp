@@ -273,14 +273,14 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
+void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnMap::forEachSubcolumnRecursively(ColumnCallback callback)
 {
-    callback(*nested);
+    callback(nested);
     nested->forEachSubcolumnRecursively(callback);
 }
 

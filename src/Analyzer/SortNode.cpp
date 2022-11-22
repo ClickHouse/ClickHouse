@@ -35,6 +35,38 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     children[sort_expression_child_index] = std::move(expression_);
 }
 
+String SortNode::getName() const
+{
+    String result = getExpression()->getName();
+
+    if (sort_direction == SortDirection::ASCENDING)
+        result += " ASC";
+    else
+        result += " DESC";
+
+    if (nulls_sort_direction)
+    {
+        if (*nulls_sort_direction == SortDirection::ASCENDING)
+            result += " NULLS FIRST";
+        else
+            result += " NULLS LAST";
+    }
+
+    if (with_fill)
+        result += " WITH FILL";
+
+    if (hasFillFrom())
+        result += " FROM " + getFillFrom()->getName();
+
+    if (hasFillStep())
+        result += " STEP " + getFillStep()->getName();
+
+    if (hasFillTo())
+        result += " TO " + getFillTo()->getName();
+
+    return result;
+}
+
 void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "SORT id: " << format_state.getNodeId(this);

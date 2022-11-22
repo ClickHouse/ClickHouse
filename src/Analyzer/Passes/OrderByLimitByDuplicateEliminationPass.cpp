@@ -10,34 +10,23 @@ namespace DB
 namespace
 {
 
-struct QueryTreeNodeWithHash
+struct QueryTreeNodeHash
 {
-    explicit QueryTreeNodeWithHash(const IQueryTreeNode * node_)
-        : node(node_)
-        , hash(node->getTreeHash().first)
-    {}
-
-    const IQueryTreeNode * node = nullptr;
-    size_t hash = 0;
-};
-
-struct QueryTreeNodeWithHashHash
-{
-    size_t operator()(const QueryTreeNodeWithHash & node_with_hash) const
+    size_t operator()(const IQueryTreeNode * node) const
     {
-        return node_with_hash.hash;
+        return node->getTreeHash().first;
     }
 };
 
-struct QueryTreeNodeWithHashEqualTo
+struct QueryTreeNodeEqualTo
 {
-    bool operator()(const QueryTreeNodeWithHash & lhs_node, const QueryTreeNodeWithHash & rhs_node) const
+    size_t operator()(const IQueryTreeNode * lhs_node, const IQueryTreeNode * rhs_node) const
     {
-        return lhs_node.hash == rhs_node.hash && lhs_node.node->isEqual(*rhs_node.node);
+        return lhs_node->isEqual(*rhs_node);
     }
 };
 
-using QueryTreeNodeWithHashSet = std::unordered_set<QueryTreeNodeWithHash, QueryTreeNodeWithHashHash, QueryTreeNodeWithHashEqualTo>;
+using QueryTreeNodeSet = std::unordered_set<const IQueryTreeNode *, QueryTreeNodeHash, QueryTreeNodeEqualTo>;
 
 class OrderByLimitByDuplicateEliminationVisitor : public InDepthQueryTreeVisitor<OrderByLimitByDuplicateEliminationVisitor>
 {
@@ -93,7 +82,7 @@ public:
     }
 
 private:
-    QueryTreeNodeWithHashSet unique_expressions_nodes_set;
+    QueryTreeNodeSet unique_expressions_nodes_set;
 };
 
 }

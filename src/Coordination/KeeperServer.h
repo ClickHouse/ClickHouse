@@ -131,12 +131,6 @@ public:
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
-
-    uint64_t createSnapshot();
-
-    KeeperLogInfo getKeeperLogInfo();
-
-    bool requestLeader();
 };
 
 }

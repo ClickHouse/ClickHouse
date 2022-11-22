@@ -625,6 +625,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
     Stopwatch watch;
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
+
     try
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
@@ -642,7 +644,6 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
         thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
 
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
@@ -779,6 +780,14 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             fs::rename(tmp_file, parent.current_batch_file_path);
         }
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
+        auto connection = parent.pool->get(timeouts);
+
+        LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
+            file_indices.size(),
+            connection->getDescription(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
 
         bool batch_broken = false;
         bool batch_marked_as_broken = false;
@@ -786,14 +795,14 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             try
             {
-                sendBatch();
+                sendBatch(*connection, timeouts);
             }
             catch (const Exception & e)
             {
-                if (split_batch_on_failure && file_indices.size() > 1 && isSplittableErrorCode(e.code(), e.isRemoteException()))
+                if (split_batch_on_failure && isSplittableErrorCode(e.code(), e.isRemoteException()))
                 {
                     tryLogCurrentException(parent.log, "Trying to split batch due to");
-                    sendSeparateFiles();
+                    sendSeparateFiles(*connection, timeouts);
                 }
                 else
                     throw;
@@ -873,12 +882,9 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 
 private:
-    void sendBatch()
+    void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
     {
         std::unique_ptr<RemoteInserter> remote;
-        bool compression_expected = false;
-
-        IConnectionPool::Entry connection;
 
         for (UInt64 file_idx : file_indices)
         {
@@ -896,21 +902,12 @@ private:
 
             if (!remote)
             {
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-                connection = parent.pool->get(timeouts);
-                compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-
-                LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
-                    file_indices.size(),
-                    connection->getDescription(),
-                    formatReadableQuantity(total_rows),
-                    formatReadableSizeWithBinarySuffix(total_bytes));
-
-                remote = std::make_unique<RemoteInserter>(*connection, timeouts,
+                remote = std::make_unique<RemoteInserter>(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
             }
+            bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
 
@@ -918,7 +915,7 @@ private:
             remote->onFinish();
     }
 
-    void sendSeparateFiles()
+    void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
     {
         size_t broken_files = 0;
 
@@ -942,15 +939,11 @@ private:
                     distributed_header.client_info.client_trace_context,
                     parent.storage.getContext()->getOpenTelemetrySpanLog());
 
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-                auto connection = parent.pool->get(timeouts);
-                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-
-                RemoteInserter remote(*connection, timeouts,
+                RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-
+                bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
                 remote.onFinish();
             }

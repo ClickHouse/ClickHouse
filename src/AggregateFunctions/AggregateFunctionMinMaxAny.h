@@ -29,7 +29,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
-    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 /** Aggregate functions that store one of passed values.

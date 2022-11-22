@@ -143,10 +143,7 @@ void read(std::string & s, ReadBuffer & in)
         throw Exception("Too large string size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
 
     s.resize(size);
-    size_t read_bytes = in.read(s.data(), size);
-    if (read_bytes != static_cast<size_t>(size))
-        throw Exception(
-            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
+    in.read(s.data(), size);
 }
 
 void read(ACL & acl, ReadBuffer & in)

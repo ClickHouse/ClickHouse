@@ -419,23 +419,19 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            ContextPtr context;
-
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (getContext()->getSettingsRef().use_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
-                context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
-                context = interpreter.getContext();
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
 
             if (settings.json)
             {
@@ -465,24 +461,21 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
-                ContextPtr context;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (getContext()->getSettingsRef().use_analyzer)
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
-                    context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
                 else
                 {
                     InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                     interpreter.buildQueryPlan(plan);
-                    context = interpreter.getContext();
                 }
 
                 auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context));
+                    QueryPlanOptimizationSettings::fromContext(getContext()),
+                    BuildQueryPipelineSettings::fromContext(getContext()));
 
                 if (settings.graph)
                 {
@@ -518,18 +511,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context;
 
             InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
             interpreter.buildQueryPlan(plan);
-            context = interpreter.getContext();
             // collect the selected marks, rows, parts during build query pipeline.
             plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanOptimizationSettings::fromContext(getContext()),
+                BuildQueryPipelineSettings::fromContext(getContext()));
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;

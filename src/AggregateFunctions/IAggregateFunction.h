@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include <base/types.h>
 
 #include "config.h"
 
@@ -147,16 +146,6 @@ public:
 
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
-
-    /// Tells if merge() with thread pool parameter could be used.
-    virtual bool isAbleToParallelizeMerge() const { return false; }
-
-    /// Should be used only if isAbleToParallelizeMerge() returned true.
-    virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
-    }
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
@@ -696,16 +685,7 @@ public:
     static constexpr bool DateTime64Supported = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_)
-    {
-        /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
-        /// Enforce that either both of them are changed or none are
-        constexpr bool declares_destroy_and_hasTrivialDestructor =
-            std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
-            std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
-        static_assert(declares_destroy_and_hasTrivialDestructor,
-            "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
-    }
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {

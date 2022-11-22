@@ -1015,8 +1015,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-    const String & fetch_entry_znode)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1030,40 +1029,22 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part || !fetch_entry_znode.empty());
-
-    auto is_simple_part_producing_op = [](const ReplicatedMergeTreeLogEntryData & data)
-    {
-        return data.type == LogEntry::GET_PART ||
-               data.type == LogEntry::ATTACH_PART ||
-               data.type == LogEntry::MERGE_PARTS ||
-               data.type == LogEntry::MUTATE_PART;
-    };
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
-        /// Skipping currently processing entry
-        if (!fetch_entry_znode.empty() && (*it)->znode_name == fetch_entry_znode)
-        {
-            ++it;
-            continue;
-        }
-
-        bool is_simple_producing_op = is_simple_part_producing_op(**it);
+        auto type = (*it)->type;
+        bool is_simple_producing_op = type == LogEntry::GET_PART ||
+                                      type == LogEntry::ATTACH_PART ||
+                                      type == LogEntry::MERGE_PARTS ||
+                                      type == LogEntry::MUTATE_PART;
 
         bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
             if ((*it)->currently_executing)
-            {
-                bool is_covered_by_simple_op = covering_entry && is_simple_part_producing_op(*covering_entry);
-                bool is_fetching_covering_part = !fetch_entry_znode.empty();
-                if (is_covered_by_simple_op || is_fetching_covering_part)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove covered entry {} producing parts {}, it's a bug",
-                                    (*it)->znode_name, fmt::join((*it)->getVirtualPartNames(format_version), ", "));
                 to_wait.push_back(*it);
-            }
             auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
             if (code != Coordination::Error::ZOK)
                 LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
@@ -1129,12 +1110,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         /// Parts are not disjoint. They can be even intersecting and it's not a problem,
         /// because we may have two queue entries producing intersecting parts if there's DROP_RANGE between them (so virtual_parts are ok).
 
-        /// Give priority to DROP_RANGEs and allow processing them even if covered entries are currently executing.
-        /// DROP_RANGE will cancel covered operations and will wait for them in removePartProducingOpsInRange.
-        if (result_part.isFakeDropRangePart() && result_part.contains(future_part))
-            continue;
-
-        /// In other cases we cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
+        /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
         /// while any covered or covering parts are processed.
         /// But we also cannot simply return true and postpone entry processing, because it may lead to kind of livelock.
         /// Since queue is processed in multiple threads, it's likely that there will be at least one thread
@@ -1996,24 +1972,54 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
 
     /// Load current inserts
-    Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
-    std::vector<std::string> paths;
-    paths.reserve(partitions.size());
-    for (const String & partition : partitions)
-        paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
-
-    auto locks_children = zookeeper->getChildren(paths);
-
-    for (size_t i = 0; i < partitions.size(); ++i)
+    std::unordered_set<String> lock_holder_paths;
+    for (const String & entry : zookeeper->getChildren(fs::path(queue.zookeeper_path) / "temp"))
     {
-        Strings partition_block_numbers = locks_children[i].names;
-        for (const String & entry : partition_block_numbers)
+        if (startsWith(entry, "abandonable_lock-"))
+            lock_holder_paths.insert(fs::path(queue.zookeeper_path) / "temp" / entry);
+    }
+
+    if (!lock_holder_paths.empty())
+    {
+        Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
+        std::vector<std::string> paths;
+        paths.reserve(partitions.size());
+        for (const String & partition : partitions)
+            paths.push_back(fs::path(queue.zookeeper_path) / "block_numbers" / partition);
+
+        auto locks_children = zookeeper->getChildren(paths);
+
+        struct BlockInfoInZooKeeper
         {
-            if (!startsWith(entry, "block-"))
-                continue;
-            Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-            String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
-            committing_blocks[partitions[i]].insert(block_number);
+            String partition;
+            Int64 number;
+            String zk_path;
+            std::future<Coordination::GetResponse> contents_future;
+        };
+
+        std::vector<BlockInfoInZooKeeper> block_infos;
+        for (size_t i = 0; i < partitions.size(); ++i)
+        {
+            Strings partition_block_numbers = locks_children[i].names;
+            for (const String & entry : partition_block_numbers)
+            {
+                /// TODO: cache block numbers that are abandoned.
+                /// We won't need to check them on the next iteration.
+                if (startsWith(entry, "block-"))
+                {
+                    Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
+                    String zk_path = fs::path(queue.zookeeper_path) / "block_numbers" / partitions[i] / entry;
+                    block_infos.emplace_back(
+                        BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+                }
+            }
+        }
+
+        for (auto & block : block_infos)
+        {
+            Coordination::GetResponse resp = block.contents_future.get();
+            if (resp.error == Coordination::Error::ZOK && lock_holder_paths.contains(resp.data))
+                committing_blocks[block.partition].insert(block.number);
         }
     }
 

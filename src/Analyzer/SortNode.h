@@ -128,7 +128,10 @@ public:
         return QueryTreeNodeType::SORT;
     }
 
+    String getName() const override;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;

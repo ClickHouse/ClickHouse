@@ -71,7 +71,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
         }
     }
 
-    /// Add direct edges from output ports.
+    /// Add direct edges form output ports.
     auto & outputs = from->getOutputs();
     auto from_output = nodes[node]->direct_edges.size();
 

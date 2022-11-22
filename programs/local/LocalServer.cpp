@@ -37,7 +37,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Storages/NamedCollections.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -119,8 +118,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
-
-    NamedCollectionFactory::instance().initialize(config());
 }
 
 
@@ -413,12 +410,10 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ true);
+    registerDisks();
     registerFormats();
 
     processConfig();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
-
     applyCmdSettings(global_context);
 
     if (is_interactive)
@@ -494,6 +489,7 @@ void LocalServer::processConfig()
     }
     else
     {
+        need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;

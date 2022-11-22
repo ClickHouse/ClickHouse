@@ -1331,7 +1331,7 @@ public:
     }
 
     template <typename DateOrTime>
-    inline auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
+    inline auto addQuarters(DateOrTime d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }

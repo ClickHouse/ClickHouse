@@ -43,8 +43,7 @@ public:
             const Block & virtual_header,
             ContextPtr context,
             std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
-            Strings * read_keys_ = nullptr,
-            const S3Settings::RequestSettings & request_settings_ = {});
+            Strings * read_keys_ = nullptr);
 
         String next();
 
@@ -67,6 +66,18 @@ public:
         std::shared_ptr<Impl> pimpl;
     };
 
+    class ReadTasksIterator
+    {
+    public:
+        ReadTasksIterator(const std::vector<String> & read_tasks_, const ReadTaskCallback & new_read_tasks_callback_);
+        String next();
+
+    private:
+        class Impl;
+        /// shared_ptr to have copy constructor
+        std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
@@ -80,7 +91,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
-        const S3Settings::RequestSettings & request_settings_,
+        UInt64 max_single_read_retries_,
         String compression_hint_,
         const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
@@ -103,7 +114,7 @@ private:
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
-    S3Settings::RequestSettings request_settings;
+    UInt64 max_single_read_retries;
     String compression_hint;
     std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
@@ -187,7 +198,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client;
 
         S3::AuthSettings auth_settings;
-        S3Settings::RequestSettings request_settings;
+        S3Settings::ReadWriteSettings rw_settings;
 
         /// If s3 configuration was passed from ast, then it is static.
         /// If from config - it can be changed with config reload.
@@ -199,11 +210,11 @@ public:
         S3Configuration(
             const String & url_,
             const S3::AuthSettings & auth_settings_,
-            const S3Settings::RequestSettings & request_settings_,
+            const S3Settings::ReadWriteSettings & rw_settings_,
             const HeaderCollection & headers_from_ast_)
             : uri(S3::URI(url_))
             , auth_settings(auth_settings_)
-            , request_settings(request_settings_)
+            , rw_settings(rw_settings_)
             , static_configuration(!auth_settings_.access_key_id.empty())
             , headers_from_ast(headers_from_ast_) {}
     };
@@ -213,8 +224,6 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class StorageHudi;
-    friend class StorageDeltaLake;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;
@@ -229,6 +238,8 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
+    std::vector<String> read_tasks_used_in_schema_inference;
+
     std::unordered_map<String, S3::ObjectInfo> object_infos;
 
     static void updateS3Configuration(ContextPtr, S3Configuration &);
@@ -241,6 +252,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
+        const std::vector<String> & read_tasks = {},
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr,
         Strings * read_keys = nullptr);
 
@@ -252,6 +264,7 @@ private:
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
+        std::vector<String> * read_keys_in_distributed_processing = nullptr,
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
     bool supportsSubsetOfColumns() const override;

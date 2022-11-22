@@ -79,10 +79,7 @@ int main(int argc, char *argv[])
     for (size_t i = last_commited_index + 1; i < changelog.next_slot(); ++i)
     {
         if (changelog.entry_at(i)->get_val_type() == nuraft::log_val_type::app_log)
-        {
-            state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
             state_machine->commit(i, changelog.entry_at(i)->get_buf());
-        }
     }
 
     dumpMachine(state_machine);

@@ -336,10 +336,8 @@ public:
       * And also wait for the completion of their execution, if they are now being executed.
       * covering_entry is as an entry that caused removal of entries in range (usually, DROP_RANGE)
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper,
-                                       const MergeTreePartInfo & part_info,
-                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-                                       const String & fetch_entry_znode);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info,
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue

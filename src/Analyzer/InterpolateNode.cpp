@@ -17,6 +17,15 @@ InterpolateNode::InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr 
     children[interpolate_expression_child_index] = std::move(interpolate_expression_);
 }
 
+String InterpolateNode::getName() const
+{
+    String result = getExpression()->getName();
+    result += " AS ";
+    result += getInterpolateExpression()->getName();
+
+    return result;
+}
+
 void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "INTERPOLATE id: " << format_state.getNodeId(this);

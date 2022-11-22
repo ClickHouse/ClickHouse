@@ -232,9 +232,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    for (const auto & column : columns)
-        column->finalize();
-
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     return chunk;
 }
