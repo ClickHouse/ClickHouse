@@ -1,5 +1,6 @@
 #include "ShuffleSplitter.h"
 #include <filesystem>
+#include <memory>
 #include <fcntl.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -10,7 +11,7 @@
 #include <Parser/SerializedPlanParser.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/DebugUtils.h>
-
+#include <Poco/StringTokenizer.h>
 
 namespace local_engine
 {
@@ -165,6 +166,10 @@ ShuffleSplitter::Ptr ShuffleSplitter::create(const std::string & short_name, Spl
         options_.partition_nums = 1;
         return RoundRobinSplitter::create(std::move(options_));
     }
+    else if (short_name == "range")
+    {
+        return RangeSplitter::create(std::move(options_));
+    }
     else
     {
         throw std::runtime_error("unsupported splitter " + short_name);
@@ -257,16 +262,16 @@ ColumnsBuffer::ColumnsBuffer(size_t prefer_buffer_size_) : prefer_buffer_size(pr
 {
 }
 
+RoundRobinSplitter::RoundRobinSplitter(SplitOptions options_) : ShuffleSplitter(std::move(options_))
+{
+   selector_builder = std::make_unique<RoundRobinSelectorBuilder>(options.partition_nums);
+}
+
 void RoundRobinSplitter::computeAndCountPartitionId(DB::Block & block)
 {
     Stopwatch watch;
     watch.start();
-    partition_ids.resize(block.rows());
-    for (auto & pid : partition_ids)
-    {
-        pid = pid_selection;
-        pid_selection = (pid_selection + 1) % options.partition_nums;
-    }
+    partition_ids = selector_builder->build(block);
     split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
 
@@ -275,6 +280,14 @@ std::unique_ptr<ShuffleSplitter> RoundRobinSplitter::create(SplitOptions && opti
     return std::make_unique<RoundRobinSplitter>(std::move(options_));
 }
 
+HashSplitter::HashSplitter(SplitOptions options_) : ShuffleSplitter(std::move(options_))
+{
+    Poco::StringTokenizer exprs_list(options_.exprs, ",");
+    std::vector<std::string> hash_fields;
+    hash_fields.insert(hash_fields.end(), exprs_list.begin(), exprs_list.end());
+
+    selector_builder = std::make_unique<HashSelectorBuilder>(options.partition_nums, hash_fields, "murmurHash3_32");
+}
 std::unique_ptr<ShuffleSplitter> HashSplitter::create(SplitOptions && options_)
 {
     return std::make_unique<HashSplitter>(std::move(options_));
@@ -284,26 +297,24 @@ void HashSplitter::computeAndCountPartitionId(DB::Block & block)
 {
     Stopwatch watch;
     watch.start();
-    ColumnsWithTypeAndName args;
-    for (auto &name : options.exprs)
-    {
-        args.emplace_back(block.getByName(name));
-    }
-    if (!hash_function)
-    {
-        auto & factory = DB::FunctionFactory::instance();
-        auto function = factory.get("murmurHash3_32", local_engine::SerializedPlanParser::global_context);
-
-        hash_function = function->build(args);
-    }
-    auto result_type = hash_function->getResultType();
-    auto hash_column = hash_function->execute(args, result_type, block.rows(), false);
-    partition_ids.clear();
-    for (size_t i = 0; i < block.rows(); i++)
-    {
-        partition_ids.emplace_back(static_cast<UInt64>(hash_column->get64(i)  % options.partition_nums));
-    }
+    partition_ids = selector_builder->build(block);
     split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
 
+std::unique_ptr<ShuffleSplitter> RangeSplitter::create(SplitOptions && options_)
+{
+    return std::make_unique<RangeSplitter>(std::move(options_));
+}
+
+RangeSplitter::RangeSplitter(SplitOptions options_) : ShuffleSplitter(std::move(options_))
+{
+    selector_builder = std::make_unique<RangeSelectorBuilder>(options.exprs);
+}
+void RangeSplitter::computeAndCountPartitionId(DB::Block & block)
+{
+    Stopwatch watch;
+    watch.start();
+    partition_ids = selector_builder->build(block);
+    split_result.total_compute_pid_time += watch.elapsedNanoseconds();
+}
 }

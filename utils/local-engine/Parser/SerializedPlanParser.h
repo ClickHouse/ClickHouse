@@ -17,6 +17,8 @@
 #include <arrow/ipc/writer.h>
 #include <substrait/plan.pb.h>
 #include <Common/BlockIterator.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <base/types.h>
 #include <Core/SortDescription.h>
 
 namespace local_engine
@@ -143,8 +145,16 @@ public:
     static bool isReadRelFromJava(const substrait::ReadRel & rel);
     static DB::Block parseNameStruct(const substrait::NamedStruct & struct_);
     static DB::DataTypePtr parseType(const substrait::Type & type);
+    // This is used for construct a data type from spark type name;
+    static DB::DataTypePtr parseType(const std::string & type);
 
     void addInputIter(jobject iter) { input_iters.emplace_back(iter); }
+
+    void parseExtensions(const ::google::protobuf::RepeatedPtrField<substrait::extensions::SimpleExtensionDeclaration> & extensions);
+    std::shared_ptr<DB::ActionsDAG> expressionsToActionsDAG(
+        const ::google::protobuf::RepeatedPtrField<substrait::Expression> & expressions,
+        const DB::Block & header,
+        const DB::Block & read_schema);
 
     static ContextMutablePtr global_context;
     static Context::ConfigurationPtr config;
@@ -246,14 +256,7 @@ public:
     SparkRowInfoPtr next();
     Block * nextColumnar();
     bool hasNext();
-    ~LocalExecutor()
-    {
-        if (this->spark_buffer)
-        {
-            this->ch_column_to_spark_row->freeMem(spark_buffer->address, spark_buffer->size);
-            this->spark_buffer.reset();
-        }
-    }
+    ~LocalExecutor();
 
     Block & getHeader();
 

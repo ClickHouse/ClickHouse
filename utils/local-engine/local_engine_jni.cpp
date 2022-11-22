@@ -603,18 +603,15 @@ jlong Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_nativeMake(
 {
     LOCAL_ENGINE_JNI_METHOD_START
     std::vector<std::string> expr_vec;
+    std::string exprs;
     if (expr_list != nullptr)
     {
         int len = env->GetArrayLength(expr_list);
         auto * str = reinterpret_cast<jbyte *>(new char[len]);
         memset(str, 0, len);
         env->GetByteArrayRegion(expr_list, 0, len, str);
-        std::string exprs(str, str + len);
+        exprs = std::string(str, str + len);
         delete[] str;
-        for (const auto & expr : stringSplit(exprs, ','))
-        {
-            expr_vec.emplace_back(expr);
-        }
     }
     local_engine::SplitOptions options{
         .buffer_size = static_cast<size_t>(buffer_size),
@@ -622,7 +619,7 @@ jlong Java_io_glutenproject_vectorized_CHShuffleSplitterJniWrapper_nativeMake(
         .local_tmp_dir = jstring2string(env, local_dirs),
         .map_id = static_cast<int>(map_id),
         .partition_nums = static_cast<size_t>(num_partitions),
-        .exprs = expr_vec,
+        .exprs = exprs,
         .compress_method = jstring2string(env, codec)};
     local_engine::SplitterHolder * splitter
         = new local_engine::SplitterHolder{.splitter = local_engine::ShuffleSplitter::create(jstring2string(env, short_name), options)};
@@ -817,8 +814,7 @@ jlong Java_io_glutenproject_vectorized_BlockSplitIterator_nativeCreate(
     options.partition_nums = partition_num;
     options.buffer_size = buffer_size;
     auto expr_str = jstring2string(env, expr);
-    Poco::StringTokenizer exprs(expr_str, ",");
-    options.exprs.insert(options.exprs.end(), exprs.begin(), exprs.end());
+    options.exprs_buffer.swap(expr_str);
     local_engine::NativeSplitter::Holder * splitter = new local_engine::NativeSplitter::Holder{
         .splitter = local_engine::NativeSplitter::create(jstring2string(env, name), options, in)};
     return reinterpret_cast<jlong>(splitter);
