@@ -55,6 +55,7 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic_bool allow_use_jemalloc_memory {true};
 
     static std::atomic<Int64> free_memory_in_allocator_arenas;
 
@@ -124,6 +125,10 @@ public:
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);
+    }
+    void setAllowUseJemallocMemory(bool value)
+    {
+        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
     }
 
     /** Set limit if it was not set.

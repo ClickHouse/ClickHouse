@@ -228,6 +228,12 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
+        bool show_named_collections = config.getBool(user_config + ".show_named_collections", false);
+        if (!show_named_collections)
+        {
+            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS);
+        }
+
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 
