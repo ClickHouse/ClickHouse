@@ -36,7 +36,6 @@ public:
     bool haveSubtypes() const override { return false; }
     bool equals(const IDataType & rhs) const override;
     bool isParametric() const override { return true; }
-    bool hasDynamicSubcolumns() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 

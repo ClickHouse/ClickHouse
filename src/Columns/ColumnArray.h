@@ -176,9 +176,6 @@ public:
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
-    void finalize() override { data->finalize(); }
-    bool isFinalized() const override { return data->isFinalized(); }
-
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
     size_t getNumberOfDimensions() const;

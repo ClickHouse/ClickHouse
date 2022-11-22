@@ -38,7 +38,7 @@ private:
     void syncAfterError() override;
 };
 
-class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
+class JSONCompactEachRowFormatReader final : public FormatWithNamesAndTypesReader
 {
 public:
     JSONCompactEachRowFormatReader(ReadBuffer & in_, bool yield_strings_, const FormatSettings & format_settings_);

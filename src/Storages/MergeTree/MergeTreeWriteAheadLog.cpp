@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
@@ -56,18 +55,6 @@ MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-
-void MergeTreeWriteAheadLog::dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path)
-{
-    std::vector<std::string> files;
-    disk_to_drop->listFiles(relative_data_path, files);
-    for (const auto & file : files)
-    {
-        if (file.starts_with(WAL_FILE_NAME))
-            disk_to_drop->removeFile(fs::path(relative_data_path) / file);
     }
 }
 
@@ -135,10 +122,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock)
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(write_mutex);
 
@@ -150,6 +134,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     while (!in->eof())
     {
         MergeTreeData::MutableDataPartPtr part;
+        DataPartStorageBuilderPtr data_part_storage_builder;
         UInt8 version;
         String part_name;
         Block block;
@@ -176,6 +161,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             {
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
                 auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
+                data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
 
                 part = storage.createPart(
                     part_name,
@@ -186,9 +172,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part->uuid = metadata.part_uuid;
 
                 block = block_in.read();
-
-                if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
-                    continue;
             }
             else
             {
@@ -220,6 +203,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
         {
             MergedBlockOutputStream part_out(
                 part,
+                data_part_storage_builder,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
@@ -237,12 +221,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
-                auto temp_part = MergeTreeDataWriter::writeProjectionPart(storage, log, projection_block, projection, part.get());
+                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, data_part_storage_builder, part.get());
                 temp_part.finalize();
                 if (projection_block.rows())
                     part->addProjectionPart(projection.name, std::move(temp_part.part));
             }
-
             part_out.finalizePart(part, false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
@@ -254,15 +237,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     MergeTreeData::MutableDataPartsVector result;
     std::copy_if(parts.begin(), parts.end(), std::back_inserter(result),
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
-
-    /// All parts in WAL had been already committed into the disk -> clear the WAL
-    if (result.empty())
-    {
-        LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
-        disk->removeFile(path);
-        init();
-        return {};
-    }
 
     return result;
 }

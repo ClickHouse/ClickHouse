@@ -5,7 +5,7 @@ SELECT count() > 0 FROM system.stack_trace WHERE query_id != '';
 SELECT countIf(thread_id > 0) > 0 FROM system.stack_trace;
 1
 -- optimization for trace
-SELECT count(trace) > 0 FROM system.stack_trace WHERE length(trace) > 0 LIMIT 1;
+SELECT length(trace) > 0 FROM system.stack_trace LIMIT 1;
 1
 -- optimization for query_id
 SELECT length(query_id) > 0 FROM system.stack_trace WHERE query_id != '' LIMIT 1;

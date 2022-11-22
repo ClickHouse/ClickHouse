@@ -29,11 +29,7 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return (
-        f"docker run "
-        # For sysctl
-        "--privileged "
-        "--network=host "
-        f"--volume={workspace_path}:/workspace "
+        f"docker run --network=host --volume={workspace_path}:/workspace "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
         f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
@@ -69,7 +65,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
@@ -115,7 +111,7 @@ if __name__ == "__main__":
     paths = {
         "runlog.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.gz": os.path.join(workspace_path, "server.log.gz"),
+        "server.log": os.path.join(workspace_path, "server.log"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
         "core.gz": os.path.join(workspace_path, "core.gz"),
@@ -134,8 +130,8 @@ if __name__ == "__main__":
         report_url = paths["runlog.log"]
     if paths["main.log"]:
         report_url = paths["main.log"]
-    if paths["server.log.gz"]:
-        report_url = paths["server.log.gz"]
+    if paths["server.log"]:
+        report_url = paths["server.log"]
     if paths["fuzzer.log"]:
         report_url = paths["fuzzer.log"]
     if paths["report.html"]:

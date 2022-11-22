@@ -27,11 +27,11 @@ StorageXDBC::StorageXDBC(
     const StorageID & table_id_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
-    ColumnsDescription columns_,
-    ConstraintsDescription constraints_,
+    const ColumnsDescription & columns_,
     const String & comment,
     ContextPtr context_,
     const BridgeHelperPtr bridge_helper_)
+    /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(
         "",
         context_,
@@ -39,7 +39,7 @@ StorageXDBC::StorageXDBC(
         IXDBCBridgeHelper::DEFAULT_FORMAT,
         getFormatSettings(context_),
         columns_,
-        constraints_,
+        ConstraintsDescription{},
         comment,
         "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
@@ -106,7 +106,7 @@ Pipe StorageXDBC::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -137,7 +137,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         metadata_snapshot->getSampleBlock(),
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        compression_method);
+        chooseCompressionMethod(uri, compression_method));
 }
 
 bool StorageXDBC::supportsSubsetOfColumns() const
@@ -179,7 +179,6 @@ namespace
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
                 checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
                 args.columns,
-                args.constraints,
                 args.comment,
                 args.getContext(),
                 bridge_helper);

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/enabled-roles
----
 # system.enabled_roles {#system_tables-enabled_roles}
 
 Содержит все активные роли на данный момент, включая текущую роль текущего пользователя и  роли, назначенные для текущей роли.

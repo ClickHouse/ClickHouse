@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/url
 sidebar_position: 41
 sidebar_label: URL
 ---

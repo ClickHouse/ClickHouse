@@ -1944,13 +1944,20 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         }
 
         optimize_read_in_order =
-            settings.optimize_read_in_order && (!settings.query_plan_read_in_order)
+            settings.optimize_read_in_order
             && storage
             && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
+
+        if (storage && optimize_read_in_order)
+        {
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
+        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
@@ -1981,23 +1988,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 }
             }
 
-            // Here we need to set order by expression as required output to avoid
-            // their removal from the ActionsDAG.
-            const auto * select_query = query_analyzer.getSelectQuery();
-            if (select_query->orderBy())
-            {
-                for (auto & child : select_query->orderBy()->children)
-                {
-                    auto * ast = child->as<ASTOrderByElement>();
-                    ASTPtr order_expression = ast->children.at(0);
-                    if (auto * function = order_expression->as<ASTFunction>();
-                        function && (function->is_window_function || function->compute_after_window_functions))
-                        continue;
-                    const String & column_name = order_expression->getColumnName();
-                    chain.getLastStep().addRequiredOutput(column_name);
-                }
-            }
-
             before_window = chain.getLastActions();
             finalize_chain(chain);
 
@@ -2017,6 +2007,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             // produced the expressions required to calculate window functions.
             // They are not needed in the final SELECT result. Knowing the correct
             // list of columns is important when we apply SELECT DISTINCT later.
+            const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
                 step.addRequiredOutput(child->getColumnName());

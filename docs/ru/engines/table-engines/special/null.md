@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/null
 sidebar_position: 38
 sidebar_label: 'Null'
 ---

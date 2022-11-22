@@ -91,13 +91,10 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DataSourceDescription getDataSourceDescription() const override { return DataSourceDescription{DataSourceType::RAM, "", false, false}; }
-
+    DiskType getType() const override { return DiskType::RAM; }
     bool isRemote() const override { return false; }
 
     bool supportZeroCopyReplication() const override { return false; }
-
-    MetadataStoragePtr getMetadataStorage() override;
 
 private:
     void createDirectoriesImpl(const String & path);

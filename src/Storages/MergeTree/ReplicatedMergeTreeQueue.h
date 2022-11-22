@@ -96,7 +96,7 @@ private:
     FuturePartsSet future_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
-    std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
+    bool currently_executing_drop_or_replace_range = false;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
@@ -279,7 +279,7 @@ private:
     /// Very large queue entries may appear occasionally.
     /// We cannot process MAX_MULTI_OPS at once because it will fail.
     /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
-    /// Let's start with one entry per transaction and increase it exponentially towards MAX_MULTI_OPS.
+    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
     /// It will allow to make some progress before failing and remain operational even in extreme cases.
     size_t current_multi_batch_size = 1;
 
@@ -336,10 +336,8 @@ public:
       * And also wait for the completion of their execution, if they are now being executed.
       * covering_entry is as an entry that caused removal of entries in range (usually, DROP_RANGE)
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper,
-                                       const MergeTreePartInfo & part_info,
-                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-                                       const String & fetch_entry_znode);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info,
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -427,7 +425,6 @@ public:
 
     struct Status
     {
-        /// TODO: consider using UInt64 here
         UInt32 future_parts;
         UInt32 queue_size;
         UInt32 inserts_in_queue;

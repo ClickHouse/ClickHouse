@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config.h"
+#include "config_core.h"
 
 namespace DB
 {
@@ -181,19 +181,19 @@ public:
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
     /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
+    ///                   PROJECTION p_hour (SELECT SUM(val) GROUP BY toStartOfHour(dt)));
     ///
-    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
+    /// Query: SELECT toStartOfHour(dt), SUM(val) FROM tbl GROUP BY toStartOfHour(dt);
     ///
     /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       sum(val)
+    /// FUNCTION: toStartOfHour(dt)       SUM(val)
     ///                 ^                   ^
     ///                 |                   |
     /// INPUT:          dt                  val
     ///
     /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
     /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       sum(val)
+    /// INPUT:  toStartOfHour(dt)       SUM(val)
     ///
     /// We don't need aggregate columns from projection because they are matched after DAG.
     /// Currently we use canonical names of each node to find matches. It can be improved after we
@@ -272,11 +272,6 @@ public:
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
-
-    /// The result is similar to merge(*this, second);
-    /// Invariant : no nodes are removed from the first (this) DAG.
-    /// So that pointers to nodes are kept valid.
-    void mergeInplace(ActionsDAG && second);
 
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 

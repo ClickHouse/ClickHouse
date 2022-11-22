@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/named-collections
 sidebar_position: 69
 sidebar_label: "Именованные соединения"
 ---

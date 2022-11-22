@@ -120,7 +120,6 @@ Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<p
     return dumpImpl<priority>(out, x);
 }
 
-// NOLINTNEXTLINE(google-explicit-constructor)
 struct LowPriority { LowPriority(void *) {} };
 
 template <int priority, typename Out, typename T>

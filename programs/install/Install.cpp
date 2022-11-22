@@ -708,7 +708,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
         bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -893,7 +893,7 @@ namespace
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            Int32 pid;
+            UInt64 pid;
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
@@ -982,9 +982,9 @@ namespace
         return 0;
     }
 
-    int isRunning(const fs::path & pid_file)
+    UInt64 isRunning(const fs::path & pid_file)
     {
-        int pid = 0;
+        UInt64 pid = 0;
 
         if (fs::exists(pid_file))
         {
@@ -1057,7 +1057,7 @@ namespace
         if (force && do_not_kill)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
 
-        int pid = isRunning(pid_file);
+        UInt64 pid = isRunning(pid_file);
 
         if (!pid)
             return 0;

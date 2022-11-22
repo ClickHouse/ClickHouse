@@ -78,7 +78,7 @@ Pipe StorageMySQL::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned)
 {
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
@@ -178,7 +178,7 @@ public:
         if (block.rows() <= max_rows)
             return {block};
 
-        const size_t split_block_size = static_cast<size_t>(ceil(block.rows() * 1.0 / max_rows));
+        const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
         Blocks split_blocks(split_block_size);
 
         for (size_t idx = 0; idx < split_block_size; ++idx)

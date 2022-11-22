@@ -1,27 +1,31 @@
 #include "PartMetadataManagerOrdinary.h"
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
 
-std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DataPartStoragePtr & data_part_storage, const String & path)
 {
-    size_t file_size = part->getDataPartStorage().getFileSize(file_name);
-    auto res = part->getDataPartStorage().readFile(file_name, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+    size_t file_size = data_part_storage->getFileSize(path);
+    return data_part_storage->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+}
 
-    if (isCompressedFromFileName(file_name))
-        return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_)
+{
+}
 
-    return res;
+
+std::unique_ptr<SeekableReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
+{
+    return openForReading(part->data_part_storage, file_name);
 }
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const
 {
-    return part->getDataPartStorage().exists(file_name);
+    return part->data_part_storage->exists(file_name);
 }
 
 

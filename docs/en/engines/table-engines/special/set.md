@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---

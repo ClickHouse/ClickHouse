@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/encoding-functions
 sidebar_position: 52
 sidebar_label: Encoding
 ---
@@ -375,6 +374,14 @@ Result:
 │  14 │
 └─────┘
 ```
+
+## UUIDStringToNum(str)
+
+Accepts a string containing 36 characters in the format `123e4567-e89b-12d3-a456-426655440000`, and returns it as a set of bytes in a FixedString(16).
+
+## UUIDNumToString(str)
+
+Accepts a FixedString(16) value. Returns a string containing 36 characters in text format.
 
 ## bitmaskToList(num)
 

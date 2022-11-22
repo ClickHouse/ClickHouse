@@ -36,14 +36,14 @@ struct DecomposedFloat
 {
     using Traits = FloatTraits<T>;
 
-    explicit DecomposedFloat(T x)
+    DecomposedFloat(T x)
     {
         memcpy(&x_uint, &x, sizeof(x));
     }
 
     typename Traits::UInt x_uint;
 
-    bool isNegative() const
+    bool is_negative() const
     {
         return x_uint >> (Traits::bits - 1);
     }
@@ -53,7 +53,7 @@ struct DecomposedFloat
     {
         return (exponent() == 0 && mantissa() == 0)
             ? 0
-            : (isNegative()
+            : (is_negative()
                 ? -1
                 : 1);
     }
@@ -63,7 +63,7 @@ struct DecomposedFloat
         return (x_uint >> (Traits::mantissa_bits)) & (((1ull << (Traits::exponent_bits + 1)) - 1) >> 1);
     }
 
-    int16_t normalizedExponent() const
+    int16_t normalized_exponent() const
     {
         return int16_t(exponent()) - ((1ull << (Traits::exponent_bits - 1)) - 1);
     }
@@ -73,20 +73,20 @@ struct DecomposedFloat
         return x_uint & ((1ull << Traits::mantissa_bits) - 1);
     }
 
-    int64_t mantissaWithSign() const
+    int64_t mantissa_with_sign() const
     {
-        return isNegative() ? -mantissa() : mantissa();
+        return is_negative() ? -mantissa() : mantissa();
     }
 
     /// NOTE Probably floating point instructions can be better.
-    bool isIntegerInRepresentableRange() const
+    bool is_integer_in_representable_range() const
     {
         return x_uint == 0
-            || (normalizedExponent() >= 0  /// The number is not less than one
+            || (normalized_exponent() >= 0  /// The number is not less than one
                 /// The number is inside the range where every integer has exact representation in float
-                && normalizedExponent() <= static_cast<int16_t>(Traits::mantissa_bits)
+                && normalized_exponent() <= static_cast<int16_t>(Traits::mantissa_bits)
                 /// After multiplying by 2^exp, the fractional part becomes zero, means the number is integer
-                && ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0));
+                && ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalized_exponent())) - 1)) == 0));
     }
 
 
@@ -102,15 +102,15 @@ struct DecomposedFloat
             return sign();
 
         /// Different signs
-        if (isNegative() && rhs > 0)
+        if (is_negative() && rhs > 0)
             return -1;
-        if (!isNegative() && rhs < 0)
+        if (!is_negative() && rhs < 0)
             return 1;
 
         /// Fractional number with magnitude less than one
-        if (normalizedExponent() < 0)
+        if (normalized_exponent() < 0)
         {
-            if (!isNegative())
+            if (!is_negative())
                 return rhs > 0 ? -1 : 1;
             else
                 return rhs >= 0 ? -1 : 1;
@@ -121,11 +121,11 @@ struct DecomposedFloat
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
-                assert(isNegative());
+                assert(is_negative());
 
-                if (normalizedExponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                if (normalized_exponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return 1;
-                if (normalizedExponent() > static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+                if (normalized_exponent() > static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return -1;
 
                 if (mantissa() == 0)
@@ -136,44 +136,44 @@ struct DecomposedFloat
         }
 
         /// Too large number: abs(float) > abs(rhs). Also the case with infinities and NaN.
-        if (normalizedExponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
-            return isNegative() ? -1 : 1;
+        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+            return is_negative() ? -1 : 1;
 
         using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
         UInt uint_rhs = rhs < 0 ? -rhs : rhs;
 
         /// Smaller octave: abs(rhs) < abs(float)
         /// FYI, TIL: octave is also called "binade", https://en.wikipedia.org/wiki/Binade
-        if (uint_rhs < (static_cast<UInt>(1) << normalizedExponent()))
-            return isNegative() ? -1 : 1;
+        if (uint_rhs < (static_cast<UInt>(1) << normalized_exponent()))
+            return is_negative() ? -1 : 1;
 
         /// Larger octave: abs(rhs) > abs(float)
-        if (normalizedExponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
-            && uint_rhs >= (static_cast<UInt>(1) << (normalizedExponent() + 1)))
-            return isNegative() ? 1 : -1;
+        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
+            && uint_rhs >= (static_cast<UInt>(1) << (normalized_exponent() + 1)))
+            return is_negative() ? 1 : -1;
 
         /// The same octave
-        /// uint_rhs == 2 ^ normalizedExponent + mantissa * 2 ^ (normalizedExponent - mantissa_bits)
+        /// uint_rhs == 2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits)
 
-        bool large_and_always_integer = normalizedExponent() >= static_cast<int16_t>(Traits::mantissa_bits);
+        bool large_and_always_integer = normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
         UInt a = large_and_always_integer
-            ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
-            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent());
+            ? static_cast<UInt>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits)
+            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
 
-        UInt b = uint_rhs - (static_cast<UInt>(1) << normalizedExponent());
+        UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
 
         if (a < b)
-            return isNegative() ? 1 : -1;
+            return is_negative() ? 1 : -1;
         if (a > b)
-            return isNegative() ? -1 : 1;
+            return is_negative() ? -1 : 1;
 
         /// Float has no fractional part means that the numbers are equal.
-        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0)
+        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalized_exponent())) - 1)) == 0)
             return 0;
         else
             /// Float has fractional part means its abs value is larger.
-            return isNegative() ? -1 : 1;
+            return is_negative() ? -1 : 1;
     }
 
 
