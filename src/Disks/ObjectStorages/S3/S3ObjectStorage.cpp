@@ -658,7 +658,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        S3::URI(Poco::URI(config.getString(config_prefix + ".endpoint"))).endpoint);
+        config.getString(config_prefix + ".endpoint"));
 }
 
 }
