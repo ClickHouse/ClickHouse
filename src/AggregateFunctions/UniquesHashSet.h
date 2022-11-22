@@ -118,7 +118,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return Hash()(key);
+        return static_cast<HashValue>(Hash()(key));
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
@@ -329,7 +329,7 @@ public:
         free();
     }
 
-    void insert(Value x)
+    void ALWAYS_INLINE insert(Value x)
     {
         HashValue hash_value = hash(x);
         if (!good(hash_value))

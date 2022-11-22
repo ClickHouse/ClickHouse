@@ -24,6 +24,8 @@ public:
 
     bool compute_after_window_functions = false;
 
+    bool is_lambda_function = false;
+
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
     // take ASTPtr & and modify it. I don't understand how the latter is
@@ -40,6 +42,18 @@ public:
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
 
+    /// Specifies where this function-like expression is used.
+    enum class Kind
+    {
+        ORDINARY_FUNCTION,
+        WINDOW_FUNCTION,
+        LAMBDA_FUNCTION,
+        TABLE_ENGINE,
+        DATABASE_ENGINE,
+        BACKUP_NAME,
+    };
+    Kind kind = Kind::ORDINARY_FUNCTION;
+
     /** Get text identifying the AST node. */
     String getID(char delim) const override;
 
@@ -52,6 +66,8 @@ public:
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 
     std::string getWindowDescription() const;
+
+    bool hasSecretParts() const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

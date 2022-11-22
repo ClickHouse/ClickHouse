@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #include <Formats/FormatFactory.h>
 
@@ -18,6 +18,8 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 #if USE_HIVE
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
+void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -48,6 +50,8 @@ void registerInputFormatJSONColumns(FormatFactory & factory);
 void registerOutputFormatJSONColumns(FormatFactory & factory);
 void registerInputFormatJSONCompactColumns(FormatFactory & factory);
 void registerOutputFormatJSONCompactColumns(FormatFactory & factory);
+void registerInputFormatBSONEachRow(FormatFactory & factory);
+void registerOutputFormatBSONEachRow(FormatFactory & factory);
 void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
@@ -135,7 +139,7 @@ void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
-
+void registerBSONEachRowSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -153,6 +157,8 @@ void registerFormats()
 #if USE_HIVE
     registerFileSegmentationEngineHiveText(factory);
 #endif
+    registerFileSegmentationEngineLineAsString(factory);
+    registerFileSegmentationEngineBSONEachRow(factory);
 
 
     registerInputFormatNative(factory);
@@ -182,6 +188,8 @@ void registerFormats()
     registerOutputFormatJSONColumns(factory);
     registerInputFormatJSONCompactColumns(factory);
     registerOutputFormatJSONCompactColumns(factory);
+    registerInputFormatBSONEachRow(factory);
+    registerOutputFormatBSONEachRow(factory);
     registerInputFormatJSONColumnsWithMetadata(factory);
     registerOutputFormatJSONColumnsWithMetadata(factory);
     registerInputFormatProtobuf(factory);
@@ -265,6 +273,7 @@ void registerFormats()
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
     registerMySQLSchemaReader(factory);
+    registerBSONEachRowSchemaReader(factory);
 }
 
 }

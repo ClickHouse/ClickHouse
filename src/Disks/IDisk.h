@@ -74,6 +74,10 @@ public:
     /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
 
+    /// Whether this is a disk or a volume.
+    virtual bool isDisk() const { return false; }
+    virtual bool isVolume() const { return false; }
+
     virtual ~Space() = default;
 };
 
@@ -103,16 +107,23 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
-        : executor(executor_)
+    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : name(name_)
+        , executor(executor_)
     {
     }
+
+    /// This is a disk.
+    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
+
+    /// Return disk name.
+    const String & getName() const override { return name; }
 
     /// Total available space on the disk.
     virtual UInt64 getTotalSpace() const = 0;
@@ -174,7 +185,11 @@ public:
     virtual void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir);
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
-    virtual void copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path);
+    virtual void copyFile( /// NOLINT
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const WriteSettings & settings = {});
 
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
@@ -297,14 +312,19 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
+    virtual bool isWriteOnce() const { return false; }
+
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
-    /// Performs action on disk startup.
-    virtual void startup(ContextPtr) {}
+    /// Performs access check and custom action on disk startup.
+    void startup(ContextPtr context, bool skip_access_check);
+
+    /// Performs custom action on disk startup.
+    virtual void startupImpl(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -359,6 +379,14 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
+    virtual ObjectStoragePtr getObjectStorage()
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getObjectStorage() is not implemented for disk type: {}",
+            getDataSourceDescription().type);
+    }
+
     /// Create disk object storage according to disk type.
     /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
     /// for DiskObjectStorage create just a copy.
@@ -379,6 +407,8 @@ public:
 protected:
     friend class DiskDecorator;
 
+    const String name;
+
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
 
@@ -387,8 +417,13 @@ protected:
     /// A derived class may override copy() to provide a faster implementation.
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
+    virtual void checkAccessImpl(const String & path);
+
 private:
     std::shared_ptr<Executor> executor;
+
+    /// Check access to the disk.
+    void checkAccess();
 };
 
 using Disks = std::vector<DiskPtr>;

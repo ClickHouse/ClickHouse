@@ -89,10 +89,10 @@ std::string MarkType::getFileExtension() const
 }
 
 
-std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const DataPartStoragePtr & data_part_storage)
+std::optional<std::string> MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
 {
-    if (data_part_storage->exists())
-        for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
+    if (data_part_storage.exists())
+        for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
             if (it->isFile())
                 if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
                     return ext;
@@ -110,7 +110,7 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData
     fixed_index_granularity = storage.getSettings()->index_granularity;
 }
 
-void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const DataPartStoragePtr & data_part_storage)
+void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)
 {
     auto mrk_ext = getMarksExtensionFromFilesystem(data_part_storage);
     if (mrk_ext && !MarkType(*mrk_ext).adaptive)
