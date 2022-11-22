@@ -647,6 +647,7 @@ static void sanityChecks(Server & server)
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -1147,6 +1148,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
+            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1844,6 +1848,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     return Application::EXIT_OK;
+}
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(

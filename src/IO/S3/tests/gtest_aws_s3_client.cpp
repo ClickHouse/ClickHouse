@@ -76,7 +76,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
 
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
-    DB::S3::URI uri(Poco::URI(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt"));
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
