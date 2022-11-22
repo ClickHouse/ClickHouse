@@ -145,7 +145,7 @@ private:
 class AccessControl::PasswordComplexityRules
 {
 public:
-    void setPasswordComplexityRules(const Poco::Util::AbstractConfiguration & config_)
+    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
     {
         std::lock_guard lock{mutex};
 
@@ -160,19 +160,31 @@ public:
             {
                 if (key == "rule" || key.starts_with("rule["))
                 {
-                    String match(config_.getString("password_complexity." + key + ".match"));
+                    String pattern(config_.getString("password_complexity." + key + ".pattern"));
                     String message(config_.getString("password_complexity." + key + ".message"));
 
-                    auto matcher = std::make_unique<RE2>(match, RE2::Quiet);
+                    auto matcher = std::make_unique<RE2>(pattern, RE2::Quiet);
                     if (!matcher->ok())
                         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                             "Password complexity pattern {} cannot be compiled: {}",
-                            match, matcher->error());
+                            pattern, matcher->error());
 
-                    rules.push_back({std::move(matcher), std::move(message)});
+                    rules.push_back({std::move(matcher), std::move(pattern), std::move(message)});
                 }
             }
         }
+    }
+
+    void addPasswordComplexityRule(std::pair<String, String> rule_)
+    {
+        auto matcher = std::make_unique<RE2>(rule_.first, RE2::Quiet);
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Password complexity pattern {} cannot be compiled: {}",
+                rule_.first, matcher->error());
+
+        std::lock_guard lock{mutex};
+        rules.push_back({std::move(matcher), std::move(rule_.first), std::move(rule_.second)});
     }
 
     void checkPasswordComplexityRules(const String & password_) const
@@ -181,16 +193,16 @@ public:
         bool failed = false;
 
         std::lock_guard lock{mutex};
-        for (const auto & [matcher, message] : rules)
+        for (const auto & rule : rules)
         {
-            if (!RE2::PartialMatch(password_, *matcher))
+            if (!RE2::PartialMatch(password_, *rule.matcher))
             {
                 failed = true;
 
                 if (!exception_text.empty())
                     exception_text += ", ";
 
-                exception_text += message;
+                exception_text += rule.exception_message;
             }
         }
 
@@ -198,8 +210,30 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid password. The password should: {}", exception_text);
     }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules()
+    {
+        std::vector<std::pair<String, String>> result;
+
+        std::lock_guard lock{mutex};
+        result.reserve(rules.size());
+
+        for (const auto & rule : rules)
+            result.push_back({rule.original_pattern, rule.exception_message});
+
+        return result;
+    }
+
 private:
-    std::vector<std::pair<std::unique_ptr<RE2>, String>> rules TSA_GUARDED_BY(mutex);
+    struct Rule
+    {
+        std::unique_ptr<RE2> matcher;
+        String original_pattern;
+        String exception_message;
+    };
+
+    using Rules = std::vector<Rule>;
+
+    Rules rules TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 
@@ -231,7 +265,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
-    setPasswordComplexityRules(config_);
+    setPasswordComplexityRulesFromConfig(config_);
 
     /// Optional improvements in access control system.
     /// The default values are false because we need to be compatible with earlier access configurations
@@ -597,14 +631,24 @@ bool AccessControl::isPlaintextPasswordAllowed() const
     return allow_plaintext_password;
 }
 
-void AccessControl::setPasswordComplexityRules(const Poco::Util::AbstractConfiguration & config_)
+void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)
 {
-    password_rules->setPasswordComplexityRules(config_);
+    password_rules->setPasswordComplexityRulesFromConfig(config_);
+}
+
+void AccessControl::addPasswordComplexityRule(std::pair<String, String> rule_)
+{
+    password_rules->addPasswordComplexityRule(std::move(rule_));
 }
 
 void AccessControl::checkPasswordComplexityRules(const String & password_) const
 {
     password_rules->checkPasswordComplexityRules(password_);
+}
+
+std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules() const
+{
+    return password_rules->getPasswordComplexityRules();
 }
 
 

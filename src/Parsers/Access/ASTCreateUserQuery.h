@@ -47,6 +47,8 @@ public:
     std::optional<AuthenticationData> auth_data;
     bool show_password = true; /// formatImpl() shows a password or hash by default
 
+    mutable std::optional<String> temporary_password_for_checks;
+
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
