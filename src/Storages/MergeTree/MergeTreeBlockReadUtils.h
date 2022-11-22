@@ -78,6 +78,9 @@ struct MergeTreeReadTask
         MergeTreeBlockSizePredictorPtr && size_predictor_);
 };
 
+using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
+
+
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,

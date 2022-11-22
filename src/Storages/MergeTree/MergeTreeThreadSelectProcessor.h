@@ -5,7 +5,8 @@
 namespace DB
 {
 
-class MergeTreeReadPool;
+class IMergeTreeReadPool;
+using MergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
 
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
@@ -16,7 +17,7 @@ class MergeTreeThreadSelectProcessor final : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeThreadSelectProcessor(
         size_t thread_,
-        const std::shared_ptr<MergeTreeReadPool> & pool_,
+        const MergeTreeReadPoolPtr & pool_,
         size_t min_marks_to_read_,
         UInt64 max_block_size_,
         size_t preferred_block_size_bytes_,
@@ -48,7 +49,7 @@ private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
     size_t thread;
 
-    std::shared_ptr<MergeTreeReadPool> pool;
+    MergeTreeReadPoolPtr pool;
     size_t min_marks_to_read;
 
     /// Last part read in this thread

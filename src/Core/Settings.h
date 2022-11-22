@@ -617,6 +617,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, max_query_cache_size, (128UL * 1024 * 1024 * 1024), "Max remote filesystem cache size that can be used by a single query", 0) \
     \
     M(Bool, load_marks_asynchronously, false, "Load MergeTree marks asynchronously", 0) \
+    M(Bool, prefer_canonical_merge_tree_read_pool_for_remote_fs, false, "A setting for testing remote read optimization, allows to turn it off", 0) \
     \
     M(UInt64, use_structure_from_insertion_table_in_table_functions, 2, "Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto", 0) \
     \

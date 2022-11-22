@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeRemoteReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -71,6 +72,16 @@ static const PrewhereInfoPtr & getPrewhereInfoFromQueryInfo(const SelectQueryInf
 {
     return query_info.projection ? query_info.projection->prewhere_info
                                  : query_info.prewhere_info;
+}
+
+static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
+{
+    for (const auto & part : parts)
+    {
+        if (!part.data_part->isStoredOnRemoteDisk())
+            return false;
+    }
+    return true;
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -180,18 +191,36 @@ Pipe ReadFromMergeTree::readFromPool(
     const auto & client_info = context->getClientInfo();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
-    auto pool = std::make_shared<MergeTreeReadPool>(
-        max_streams,
-        sum_marks,
-        min_marks_for_concurrent_read,
-        std::move(parts_with_range),
-        storage_snapshot,
-        prewhere_info,
-        required_columns,
-        virt_column_names,
-        backoff_settings,
-        settings.preferred_block_size_bytes,
-        false);
+    MergeTreeReadPoolPtr pool;
+    if (checkAllPartsOnRemoteFS(parts_with_range)
+        && !settings.prefer_canonical_merge_tree_read_pool_for_remote_fs)
+    {
+        pool = std::make_shared<MergeTreeRemoteReadPool>(
+            max_streams,
+            sum_marks,
+            min_marks_for_concurrent_read,
+            std::move(parts_with_range),
+            storage_snapshot,
+            prewhere_info,
+            required_columns,
+            virt_column_names,
+            settings.preferred_block_size_bytes);
+    }
+    else
+    {
+        pool = std::make_shared<MergeTreeReadPool>(
+            max_streams,
+            sum_marks,
+            min_marks_for_concurrent_read,
+            std::move(parts_with_range),
+            storage_snapshot,
+            prewhere_info,
+            required_columns,
+            virt_column_names,
+            backoff_settings,
+            settings.preferred_block_size_bytes,
+            false);
+    }
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
@@ -339,16 +368,6 @@ struct PartRangesReadInfo
 
     bool use_uncompressed_cache = false;
 
-    static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
-    {
-        for (const auto & part : parts)
-        {
-            if (!part.data_part->isStoredOnRemoteDisk())
-                return false;
-        }
-        return true;
-    }
-
     PartRangesReadInfo(
         const RangesInDataParts & parts,
         const Settings & settings,
@@ -376,14 +395,23 @@ struct PartRangesReadInfo
             index_granularity_bytes);
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
+
+        size_t min_rows_for_concurrent_read;
+        size_t min_bytes_for_concurrent_read;
+        if (all_parts_on_remote_disk)
+        {
+            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem;
+            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem;
+        }
+        else
+        {
+            min_rows_for_concurrent_read = settings.merge_tree_min_rows_for_concurrent_read;
+            min_bytes_for_concurrent_read = settings.merge_tree_min_bytes_for_concurrent_read;
+        }
+
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            all_parts_on_remote_disk ? settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
-                                     : settings.merge_tree_min_rows_for_concurrent_read,
-            all_parts_on_remote_disk ? settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
-                                     : settings.merge_tree_min_bytes_for_concurrent_read,
-            data_settings.index_granularity,
-            index_granularity_bytes,
-            sum_marks);
+            min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
+            data_settings.index_granularity, index_granularity_bytes, sum_marks);
 
         use_uncompressed_cache = settings.use_uncompressed_cache;
         if (sum_marks > max_marks_to_use_cache)
