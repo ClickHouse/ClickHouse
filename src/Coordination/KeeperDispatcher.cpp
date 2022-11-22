@@ -100,7 +100,6 @@ void KeeperDispatcher::requestThread()
                             }
                             else
                             {
-
                                 current_batch.emplace_back(request);
                             }
                         }
