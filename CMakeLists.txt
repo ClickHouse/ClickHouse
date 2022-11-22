@@ -442,8 +442,9 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
 
 if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
