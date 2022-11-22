@@ -46,7 +46,7 @@ ColumnWithTypeAndName convertArrayJoinColumn(const ColumnWithTypeAndName & src_c
     ColumnWithTypeAndName array_col;
     array_col.name = src_col.name;
     array_col.type = getArrayJoinDataType(src_col.type)->shared_from_this();
-    array_col.column = getArrayJoinColumn(src_col.column)->getPtr();
+    array_col.column = getArrayJoinColumn(src_col.column->convertToFullColumnIfConst())->getPtr();
     return array_col;
 }
 
