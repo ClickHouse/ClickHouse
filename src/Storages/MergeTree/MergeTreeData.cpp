@@ -1848,6 +1848,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
+        part_log_elem.table_uuid = table_id.uuid;
 
         for (const auto & part : parts)
         {
@@ -6598,6 +6599,7 @@ try
 
     part_log_elem.database_name = table_id.database_name;
     part_log_elem.table_name = table_id.table_name;
+    part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
