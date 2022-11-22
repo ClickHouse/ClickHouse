@@ -158,7 +158,9 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
 /// and it's more efficient if they don't (as everything is already tokenized)
 void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_column_idx)
 {
-    if (tokens && token_iterator)
+    if (tokens && token_iterator &&
+        /// Make sure the underlying memory hasn't changed because of next() calls in the buffer
+        (*token_iterator)->begin >= buf->buffer().begin() && (*token_iterator)->begin <= buf->buffer().end())
         return;
     skipToNextRow(buf.get(), 0, 1);
     buf->makeContinuousMemoryFromCheckpointToPos();
