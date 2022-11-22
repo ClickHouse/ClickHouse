@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -200,7 +200,10 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         static constexpr size_t value_offset_from_structure = offsetof(SingleValueDataFixed<T>, value);
-        auto * value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, value_offset_from_structure);
+
+        auto * type = toNativeType<T>(builder);
+        auto * value_ptr_with_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, value_offset_from_structure);
+        auto * value_ptr = b.CreatePointerCast(value_ptr_with_offset, type->getPointerTo());
 
         return value_ptr;
     }
@@ -219,7 +222,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         b.CreateStore(b.getInt1(true), has_value_ptr);
 
         auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -237,7 +240,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -262,10 +265,10 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -295,7 +298,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * head = b.GetInsertBlock();
@@ -321,7 +324,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_ptr = aggregate_data_ptr;
+        auto * has_value_ptr = b.CreatePointerCast(aggregate_data_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_value = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 
         auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
@@ -368,12 +371,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * has_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * has_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_dst = b.CreateLoad(b.getInt1Ty(), has_value_dst_ptr);
 
         auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
 
-        auto * has_value_src_ptr = aggregate_data_src_ptr;
+        auto * has_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, b.getInt1Ty()->getPointerTo());
         auto * has_value_src = b.CreateLoad(b.getInt1Ty(), has_value_src_ptr);
 
         auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
@@ -616,7 +619,7 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        Int32 value_size = static_cast<Int32>(value.size);
+        Int32 value_size = value.size;
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
@@ -947,9 +950,8 @@ struct AggregateFunctionMinData : Data
 {
     using Self = AggregateFunctionMinData;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfLess(column, row_num, arena); }
-    bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfLess(to, arena); }
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfLess(column, 0, arena); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfLess(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
 
@@ -975,9 +977,8 @@ struct AggregateFunctionMaxData : Data
 {
     using Self = AggregateFunctionMaxData;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeIfGreater(column, row_num, arena); }
-    bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeIfGreater(to, arena); }
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfGreater(column, 0, arena); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfGreater(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
 
@@ -1004,9 +1005,8 @@ struct AggregateFunctionAnyData : Data
     using Self = AggregateFunctionAnyData;
     static constexpr bool is_any = true;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeFirstTime(column, row_num, arena); }
-    bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeFirstTime(to, arena); }
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeFirstTime(column, 0, arena); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeFirstTime(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
 
@@ -1032,9 +1032,8 @@ struct AggregateFunctionAnyLastData : Data
 {
     using Self = AggregateFunctionAnyLastData;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)     { return this->changeEveryTime(column, row_num, arena); }
-    bool changeIfBetter(const Self & to, Arena * arena)                            { return this->changeEveryTime(to, arena); }
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeEveryTime(column, 0, arena); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeEveryTime(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
 
@@ -1094,8 +1093,6 @@ struct AggregateFunctionSingleValueOrNullData : Data
         }
         return false;
     }
-
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -1171,12 +1168,6 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
-    void addManyDefaults(const IColumn & column, size_t length, Arena * arena)
-    {
-        for (size_t i = 0; i < length; ++i)
-            changeIfBetter(column, 0, arena);
-    }
-
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
         Data::write(buf, serialization);
@@ -1237,22 +1228,8 @@ public:
         this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        size_t length,
-        Arena * arena) const override
-    {
-        this->data(place).addManyDefaults(*columns[0], length, arena);
-    }
-
     void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         if constexpr (is_any)
             if (this->data(place).has())
@@ -1260,7 +1237,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (flags[i])
                 {
@@ -1272,7 +1249,7 @@ public:
         }
         else
         {
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 this->data(place).changeIfBetter(*columns[0], i, arena);
                 if constexpr (is_any)
@@ -1282,8 +1259,7 @@ public:
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
+        size_t batch_size,
         AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
@@ -1297,7 +1273,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (!null_map[i] && flags[i])
                 {
@@ -1309,7 +1285,7 @@ public:
         }
         else
         {
-            for (size_t i = row_begin; i < row_end; ++i)
+            for (size_t i = 0; i < batch_size; ++i)
             {
                 if (!null_map[i])
                 {

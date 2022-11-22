@@ -16,6 +16,7 @@
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -54,7 +55,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
+using FieldMap = std::map<String, Field, std::less<String>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -105,6 +106,10 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 template <typename T>
 class DecimalField
 {
@@ -164,6 +169,9 @@ private:
     T dec;
     UInt32 scale;
 };
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -233,8 +241,7 @@ template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
-requires std::is_enum_v<T>
-struct NearestFieldTypeImpl<T>
+struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
 {
     using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
@@ -339,7 +346,7 @@ public:
     }
 
     /// Create a string inplace.
-    Field(std::string_view str) { create(str.data(), str.size()); } /// NOLINT
+    Field(const std::string_view & str) { create(str.data(), str.size()); } /// NOLINT
     Field(const String & str) { create(std::string_view{str}); } /// NOLINT
     Field(String && str) { create(std::move(str)); } /// NOLINT
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
@@ -396,7 +403,7 @@ public:
         return *this;
     }
 
-    Field & operator= (std::string_view str);
+    Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
     Field & operator= (String && str);
     Field & operator= (const char * str) { return *this = std::string_view{str}; }
@@ -444,9 +451,7 @@ public:
     }
 
     template <typename T> auto & safeGet() const
-    {
-        return const_cast<Field *>(this)->safeGet<T>();
-    }
+    { return const_cast<Field *>(this)->safeGet<T>(); }
 
     template <typename T> auto & safeGet();
 
@@ -544,7 +549,7 @@ public:
             case Types::Float64:
             {
                 // Compare as UInt64 so that NaNs compare as equal.
-                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
+                return bit_cast<UInt64>(get<Float64>()) == bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::String:  return get<String>()  == rhs.get<String>();
@@ -579,6 +584,11 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::UInt256: return f(field.template get<UInt256>());
@@ -602,13 +612,16 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     String dump() const;
-    static Field restoreFromDump(std::string_view dump_);
+    static Field restoreFromDump(const std::string_view & dump_);
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -647,8 +660,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void assignString(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
     {
         assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
@@ -683,8 +695,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void create(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
         new (&storage) String(reinterpret_cast<const char *>(data), size);
         which = Types::String;
@@ -836,6 +847,31 @@ auto & Field::safeGet()
 
 
 template <typename T>
+T get(const Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T get(Field & field)
+{
+    return field.template get<T>();
+}
+
+template <typename T>
+T safeGet(const Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+template <typename T>
+T safeGet(Field & field)
+{
+    return field.template safeGet<T>();
+}
+
+
+template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -858,7 +894,7 @@ Field::operator=(T && rhs)
     return *this;
 }
 
-inline Field & Field::operator=(std::string_view str)
+inline Field & Field::operator=(const std::string_view & str)
 {
     if (which != Types::String)
     {
@@ -940,8 +976,6 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
-String fieldTypeToString(Field::Types::Which type);
-
 }
 
 template <>
@@ -965,3 +999,4 @@ struct fmt::formatter<DB::Field>
         return format_to(ctx.out(), "{}", toString(x));
     }
 };
+

@@ -26,14 +26,14 @@ values ('1', 'John'), ('2', 'Jack'), ('3', 'Daniel'), ('4', 'James'), ('5', 'Ama
 insert into children (id, childName)
 values ('1', 'Robert'), ('1', 'Susan'), ('3', 'Sarah'), ('4', 'David'), ('4', 'Joseph'), ('5', 'Robert');
 
-select * from persons all inner join children using id order by id, name, childName;
-select * from persons all inner join (select * from children) as j using id order by id, name, childName;
-select * from (select * from persons) as s all inner join (select * from children ) as j using id order by id, name, childName;
+select * from persons all inner join children using id;
+select * from persons all inner join (select * from children) as j using id;
+select * from (select * from persons) as s all inner join (select * from children ) as j using id;
 --
 set joined_subquery_requires_alias = 0;
-select * from persons all inner join (select * from children) using id order by id, name, childName;
-select * from (select * from persons) all inner join (select * from children) using id order by id, name, childName;
-select * from (select * from persons) as s all inner join (select * from children) using id order by id, name, childName;
+select * from persons all inner join (select * from children) using id;
+select * from (select * from persons) all inner join (select * from children) using id;
+select * from (select * from persons) as s all inner join (select * from children) using id;
 
 drop table persons;
 drop table children;

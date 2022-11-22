@@ -18,11 +18,10 @@ namespace DB
 
 void CountingTransform::onConsume(Chunk chunk)
 {
-    if (quota)
-        quota->used(QuotaType::WRITTEN_BYTES, chunk.bytes());
-
     Progress local_progress{WriteProgress(chunk.getNumRows(), chunk.bytes())};
     progress.incrementPiecewiseAtomically(local_progress);
+
+    //std::cerr << "============ counting adding progress for " << static_cast<const void *>(thread_status) << ' ' << chunk.getNumRows() << " rows\n";
 
     if (thread_status)
     {

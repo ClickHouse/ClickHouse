@@ -1,1 +1,1 @@
-`a` Nullable(Int64), `b` Nullable(Float64), `c` Nullable(DateTime('Asia/Istanbul')), `index` Nullable(String), `__index_level_1__` Nullable(DateTime('Asia/Istanbul'))
+`a` Nullable(Int64), `b` Nullable(Float64), `c` Nullable(DateTime('Europe/Moscow')), `index` Nullable(String), `__index_level_1__` Nullable(DateTime('Europe/Moscow'))

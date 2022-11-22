@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/select/where
-sidebar_label: WHERE
+toc_title: WHERE
 ---
 
 # WHERE {#select-where}

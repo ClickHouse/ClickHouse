@@ -12,23 +12,10 @@
 #include <Access/SettingsProfile.h>
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
-#include <Common/SettingConstraintWritability.h>
 
 
 namespace DB
 {
-
-const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
-{
-    static const std::vector<std::pair<String, Int8>> values = []
-    {
-        std::vector<std::pair<String, Int8>> res;
-        for (auto value : collections::range(SettingConstraintWritability::MAX))
-            res.emplace_back(toString(value), static_cast<Int8>(value));
-        return res;
-    }();
-    return values;
-}
 
 NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 {
@@ -41,7 +28,7 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues()))},
+        {"readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
         {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
@@ -50,11 +37,8 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 
 void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
     const auto & access_control = context->getAccessControl();
-    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
-        context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
     boost::range::push_back(ids, access_control.findAll<SettingsProfile>());
@@ -75,8 +59,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     auto & column_min_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_max = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_max_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
-    auto & column_writability = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
-    auto & column_writability_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
+    auto & column_readonly = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
+    auto & column_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_inherit_profile = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_inherit_profile_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
 
@@ -113,16 +97,16 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
             inserted_max = true;
         }
 
-        bool inserted_writability = false;
-        if (element.writability && !element.setting_name.empty())
+        bool inserted_readonly = false;
+        if (element.readonly && !element.setting_name.empty())
         {
-            column_writability.insertValue(static_cast<Int8>(*element.writability));
-            column_writability_null_map.push_back(false);
-            inserted_writability = true;
+            column_readonly.push_back(*element.readonly);
+            column_readonly_null_map.push_back(false);
+            inserted_readonly = true;
         }
 
         bool inserted_setting_name = false;
-        if (inserted_value || inserted_min || inserted_max || inserted_writability)
+        if (inserted_value || inserted_min || inserted_max || inserted_readonly)
         {
             const auto & setting_name = element.setting_name;
             column_setting_name.insertData(setting_name.data(), setting_name.size());

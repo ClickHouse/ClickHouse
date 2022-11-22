@@ -1,3 +1,0 @@
-SELECT (\'a\' IS NULL) + (\'b\' IS NOT NULL)
-SELECT (\'a\' IS NULL) = 0
-SELECT CAST(1 IS NULL, \'Int32\')

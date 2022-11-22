@@ -100,7 +100,7 @@ void FindUsedFunctionsMatcher::visit(const ASTPtr & ast, Data & data)
 
 void FindUsedFunctionsMatcher::visit(const ASTFunction & func, Data & data)
 {
-    if (data.names.contains(func.name) && !data.call_stack.empty())
+    if (data.names.count(func.name) && !data.call_stack.empty())
     {
         String alias = func.tryGetAlias();
         if (!alias.empty())
@@ -136,7 +136,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 
     /// We are not sure we could change the type of function result
     /// cause it is present in other function as argument
-    if (data.used_functions.contains(function_node.tryGetAlias()))
+    if (data.used_functions.count(function_node.tryGetAlias()))
         return;
 
     if (function_node.name == "if")

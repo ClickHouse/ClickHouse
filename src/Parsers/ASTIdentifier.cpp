@@ -32,7 +32,7 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, s
     semantic->legacy_compound = true;
     if (!name_params.empty())
     {
-        [[maybe_unused]] size_t params = 0;
+        size_t params = 0;
         for (const auto & part [[maybe_unused]] : name_parts)
         {
             if (part.empty())
@@ -63,7 +63,6 @@ ASTPtr ASTIdentifier::clone() const
 {
     auto ret = std::make_shared<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
-    ret->cloneChildren();
     return ret;
 }
 

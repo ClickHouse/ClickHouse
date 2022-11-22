@@ -34,7 +34,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
         ch_column_to_arrow_column
-            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary, format_settings.arrow.output_string_as_string);
+            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);

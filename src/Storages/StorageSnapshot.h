@@ -22,8 +22,8 @@ struct StorageSnapshot
         virtual ~Data() = default;
     };
 
-    using DataPtr = std::unique_ptr<Data>;
-    DataPtr data;
+    using DataPtr = std::unique_ptr<const Data>;
+    const DataPtr data;
 
     /// Projection that is used in query.
     mutable const ProjectionDescription * projection = nullptr;
@@ -68,8 +68,6 @@ struct StorageSnapshot
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 
-    ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
-
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
     void check(const Names & column_names) const;
@@ -85,12 +83,8 @@ private:
     void init();
 
     std::unordered_map<String, DataTypePtr> virtual_columns;
-
-    /// System columns are not visible in the schema but might be persisted in the data.
-    /// One example of such column is lightweight delete mask '_row_exists'.
-    std::unordered_map<String, DataTypePtr> system_columns;
 };
 
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
 
 }

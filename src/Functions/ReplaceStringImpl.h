@@ -8,17 +8,9 @@
 namespace DB
 {
 
-struct ReplaceStringTraits
-{
-    enum class Replace
-    {
-        First,
-        All
-    };
-};
 /** Replace one or all occurencies of substring 'needle' to 'replacement'. 'needle' and 'replacement' are constants.
   */
-template <ReplaceStringTraits::Replace replace>
+template <bool replace_one = false>
 struct ReplaceStringImpl
 {
     static void vector(
@@ -74,7 +66,7 @@ struct ReplaceStringImpl
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
-                if constexpr (replace == ReplaceStringTraits::Replace::First)
+                if (replace_one)
                     can_finish_current_string = true;
             }
             else
@@ -163,7 +155,7 @@ struct ReplaceStringImpl
                 memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
-                if (replace == ReplaceStringTraits::Replace::First || pos == begin + n * (i + 1))
+                if (replace_one || pos == begin + n * (i + 1))
                     can_finish_current_string = true;
             }
             else

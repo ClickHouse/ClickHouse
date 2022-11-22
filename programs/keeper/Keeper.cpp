@@ -10,8 +10,8 @@
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
-#include <Common/logger_useful.h>
-#include <Common/ErrorHandlers.h>
+#include <base/logger_useful.h>
+#include <base/ErrorHandlers.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
@@ -24,8 +24,8 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
-#include "config.h"
-#include "config_version.h"
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -62,18 +62,17 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int FAILED_TO_GETPWUID;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    const size_t sleep_max_ms = 1000 * seconds_to_wait;
-    const size_t sleep_one_ms = 100;
-    size_t sleep_current_ms = 0;
-    size_t current_connections = 0;
+    const int sleep_max_ms = 1000 * seconds_to_wait;
+    const int sleep_one_ms = 100;
+    int sleep_current_ms = 0;
+    int current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -149,7 +148,19 @@ std::string getUserName(uid_t user_id)
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
+    if (secure)
+        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+        /// https://github.com/pocoproject/poco/pull/2257
+        socket.bind(address, /* reuseAddress = */ true);
+    else
+#endif
+#if POCO_VERSION < 0x01080000
+    socket.bind(address, /* reuseAddress = */ true);
+#else
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+#endif
+
     socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
 
     return address;
@@ -228,18 +239,6 @@ std::string Keeper::getDefaultConfigFileName() const
     return "keeper_config.xml";
 }
 
-void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] const std::string & value) // NOLINT
-{
-    if (arg == "force-recovery")
-    {
-        assert(value.empty());
-        config().setBool("keeper_server.force_recovery", true);
-        return;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument {} provided", arg);
-}
-
 void Keeper::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
@@ -252,12 +251,6 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
             .required(false)
             .repeatable(false)
             .binding("version"));
-    options.addOption(
-        Poco::Util::Option("force-recovery", "force-recovery", "Force recovery mode allowing Keeper to overwrite cluster configuration without quorum")
-        .required(false)
-        .repeatable(false)
-        .noArgument()
-        .callback(Poco::Util::OptionCallback<Keeper>(this, &Keeper::handleCustomArguments)));
     BaseDaemon::defineOptions(options);
 }
 
@@ -348,7 +341,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    tiny_context.initializeKeeperDispatcher(/* start_async = */ true);
+    tiny_context.initializeKeeperDispatcher(/* start_async = */false);
     FourLetterCommandFactory::registerCommands(*tiny_context.getKeeperDispatcher());
 
     auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
@@ -429,7 +422,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         main_config_reloader.reset();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
-        size_t current_connections = 0;
+        int current_connections = 0;
         for (auto & server : *servers)
         {
             server.stop();
@@ -478,9 +471,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 void Keeper::logRevision() const
 {
     Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 

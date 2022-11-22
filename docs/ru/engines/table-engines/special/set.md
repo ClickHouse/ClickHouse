@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/special/set
-sidebar_position: 39
-sidebar_label: Set
+toc_priority: 39
+toc_title: Set
 ---
 
 # Set {#set}

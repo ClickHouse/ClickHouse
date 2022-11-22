@@ -18,6 +18,11 @@
 #include <IO/WriteHelpers.h>
 
 
+#if !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 namespace DB
 {
 struct Settings;
@@ -108,7 +113,7 @@ struct AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.readStrict(data_ptr, count * sizeof(T));
+            rb.read(data_ptr, count * sizeof(T));
     }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
@@ -286,3 +291,7 @@ public:
 
 
 }
+
+#if !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
