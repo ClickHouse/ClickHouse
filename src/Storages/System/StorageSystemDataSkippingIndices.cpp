@@ -128,7 +128,7 @@ protected:
                     if (column_mask[src_index++])
                     {
                         if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>())
-                            res_columns[res_index++]->insert(queryToString(expression->type->clone()));
+                            res_columns[res_index++]->insert(queryToString(expression->type));
                         else
                             res_columns[res_index++]->insertDefault();
                     }
