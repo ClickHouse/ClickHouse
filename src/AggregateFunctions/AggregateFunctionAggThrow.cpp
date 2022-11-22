@@ -93,7 +93,7 @@ public:
     void deserialize(AggregateDataPtr /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         char c = 0;
-        buf.read(c);
+        buf.readStrict(c);
     }
 
     void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override

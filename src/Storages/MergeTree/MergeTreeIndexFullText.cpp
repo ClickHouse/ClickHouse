@@ -57,8 +57,7 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
 
     for (auto & bloom_filter : bloom_filters)
     {
-        istr.read(reinterpret_cast<char *>(
-                bloom_filter.getFilter().data()), params.filter_size);
+        istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), params.filter_size);
     }
     has_elems = true;
 }
