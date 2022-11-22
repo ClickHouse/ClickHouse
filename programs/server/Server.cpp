@@ -647,6 +647,7 @@ static void sanityChecks(Server & server)
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -1847,6 +1848,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     return Application::EXIT_OK;
+}
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
