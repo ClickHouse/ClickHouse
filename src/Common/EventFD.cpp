@@ -1,4 +1,6 @@
 
+#if defined(OS_LINUX)
+
 #include <Common/EventFD.h>
 #include <Common/Exception.h>
 #include <sys/eventfd.h>
@@ -57,3 +59,5 @@ EventFD::~EventFD()
 }
 
 }
+
+#endif
