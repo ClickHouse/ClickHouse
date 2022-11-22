@@ -8,6 +8,7 @@
 
 #include "hasLinuxCapability.h"
 #include <base/unaligned.h>
+#include <Common/logger_useful.h>
 
 #include <cerrno>
 #include <cstdio>
@@ -204,6 +205,20 @@ bool checkPermissionsImpl()
     try
     {
         TaskStatsInfoGetter();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NETLINK_ERROR)
+        {
+            /// This error happens all the time when running inside Docker - consider it ok,
+            /// don't create noise with this error.
+            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", getCurrentExceptionMessage(false));
+        }
+        else
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return false;
     }
     catch (...)
     {
