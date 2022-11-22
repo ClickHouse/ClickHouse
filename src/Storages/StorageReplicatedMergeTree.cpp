@@ -702,6 +702,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
             zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/async_blocks", "",
+            zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
@@ -1012,7 +1014,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     /// NOTE /block_numbers/ actually is not flat, because /block_numbers/<partition_id>/ may have ephemeral children,
     /// but we assume that all ephemeral block locks are already removed when table is being dropped.
-    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
+    static constexpr std::array flat_nodes = {"block_numbers", "blocks", "async_blocks", "leader_election", "log", "mutations", "pinned_part_uuids"};
 
     /// First try to remove paths that are known to be flat
     for (const auto * node : flat_nodes)
@@ -4491,8 +4493,8 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
-    bool async_insert = query_settings.async_insert;
-    if (deduplicate && async_insert)
+    bool async_deduplicate = query_settings.async_insert && storage_settings_ptr->replicated_deduplication_window_for_async_inserts != 0 && query_settings.insert_deduplicate;
+    if (async_deduplicate)
         return std::make_shared<ReplicatedMergeTreeSink<true>>(
             *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
             query_settings.insert_quorum_timeout.totalMilliseconds(),
@@ -6500,16 +6502,23 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
 void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
     Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
 {
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "blocks");
+    getClearBlocksInPartitionOpsImpl(ops, zookeeper, partition_id, min_block_num, max_block_num, "async_blocks");
+}
+
+void StorageReplicatedMergeTree::getClearBlocksInPartitionOpsImpl(
+    Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num, const String & blocks_dir_name)
+{
     Strings blocks;
-    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(fs::path(zookeeper_path) / "blocks", blocks))
-        throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(fs::path(zookeeper_path) / blocks_dir_name, blocks))
+        throw Exception(zookeeper_path + "/" + blocks_dir_name + "blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
     Strings paths_to_get;
 
     for (const String & block_id : blocks)
         if (startsWith(block_id, partition_prefix))
-            paths_to_get.push_back(fs::path(zookeeper_path) / "blocks" / block_id);
+            paths_to_get.push_back(fs::path(zookeeper_path) / blocks_dir_name / block_id);
 
     auto results = zookeeper.tryGet(paths_to_get);
 
