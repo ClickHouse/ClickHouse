@@ -6,6 +6,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/ServerUUID.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
@@ -17,6 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 bool IDisk::isDirectoryEmpty(const String & path) const
@@ -124,6 +127,89 @@ void IDisk::truncateFile(const String &, size_t)
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
+}
+
+void IDisk::startup(ContextPtr context, bool skip_access_check)
+{
+    if (!skip_access_check)
+    {
+        if (isReadOnly())
+        {
+            LOG_DEBUG(&Poco::Logger::get("IDisk"),
+                "Skip access check for disk {} (read-only disk).",
+                getName());
+        }
+        else
+            checkAccess();
+    }
+    startupImpl(context);
+}
+
+void IDisk::checkAccess()
+{
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid == DB::UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
+
+    checkAccessImpl(path);
+}
+
+/// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
+void IDisk::checkAccessImpl(const String & path)
+try
+{
+    const std::string_view payload("test", 4);
+
+    /// write
+    {
+        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        try
+        {
+            file->write(payload.data(), payload.size());
+        }
+        catch (...)
+        {
+            /// Log current exception, because finalize() can throw a different exception.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            file->finalize();
+            throw;
+        }
+    }
+
+    /// read
+    {
+        auto file = readFile(path);
+        String buf(payload.size(), '0');
+        file->readStrict(buf.data(), buf.size());
+        if (buf != payload)
+        {
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Content of {}::{} does not matches after read ({} vs {})", name, path, buf, payload);
+        }
+    }
+
+    /// read with offset
+    {
+        auto file = readFile(path);
+        auto offset = 2;
+        String buf(payload.size() - offset, '0');
+        file->seek(offset, 0);
+        file->readStrict(buf.data(), buf.size());
+        if (buf != payload.substr(offset))
+        {
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Content of {}::{} does not matches after read with offset ({} vs {})", name, path, buf, payload.substr(offset));
+        }
+    }
+
+    /// remove
+    removeFile(path);
+}
+catch (Exception & e)
+{
+    e.addMessage(fmt::format("While checking access for disk {}", name));
+    throw;
 }
 
 }
