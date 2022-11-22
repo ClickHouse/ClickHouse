@@ -4305,10 +4305,7 @@ void StorageReplicatedMergeTree::shutdown()
         return;
 
     session_expired_callback_handler.reset();
-
-    waitForOutdatedPartsToBeLoaded();
-    if (outdated_data_parts_loading_task)
-        outdated_data_parts_loading_task->deactivate();
+    stopOutdatedDataPartsLoadingTask();
 
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();

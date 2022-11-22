@@ -1323,11 +1323,17 @@ protected:
     };
 
     BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
-    std::atomic_bool are_outdated_data_parts_loaded = false;
+
+    mutable std::mutex outdated_data_parts_mutex;
+    mutable std::condition_variable outdated_data_parts_cv;
+
+    std::atomic_bool outdated_data_parts_loading_finished = false;
+    std::atomic_bool outdated_data_parts_loading_canceled = false;
 
     void loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load);
     void waitForOutdatedPartsToBeLoaded() const;
     void startOutdatedDataPartsLoadingTask();
+    void stopOutdatedDataPartsLoadingTask();
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
