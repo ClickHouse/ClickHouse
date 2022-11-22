@@ -30,8 +30,8 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
-    , column_indexes_by_names(header_.getNamesToIndexesMap())
 {
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
