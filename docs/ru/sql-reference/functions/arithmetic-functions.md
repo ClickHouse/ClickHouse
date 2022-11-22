@@ -164,7 +164,7 @@ SELECT min2(-1, 2);
 
 Совершает умножение/деление двух Decimal. Результат будет иметь тип [Decimal256](../../sql-reference/data-types/decimal.md).
 Scale (размер дробной части) результат можно явно задать аргументом `result_scale`  (целочисленная константа из интервала `[0, 76]`).
-Если этот аргумент не задан, то scale результата будет равен scale первого аргумента.
+Если этот аргумент не задан, то scale результата будет равен наибольшему scale обоих аргументов.
 
 **Синтаксис**
 
@@ -190,16 +190,12 @@ divideDecimal(a, b[, result_scale])
 
 Тип: [Decimal256](../../sql-reference/data-types/decimal.md).
 
-**Пример**
-
-Запрос:
+**Примеры**
 
 ```sql
 SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10);
 SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1);
 ```
-
-Результат:
 
 ```text
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
@@ -208,5 +204,34 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1);
 ┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
 │                                                           25.2 │
 └────────────────────────────────────────────────────────────────┘
+```
+
+**Отличие от стандартных функций**
+```sql
+SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
+SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
+```
+
+```text
+┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
+│                                             -5.7 │
+└──────────────────────────────────────────────────┘
+
+┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
+│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
+└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
+SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
+```
+
+```text
+DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
+
+┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
+│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
+└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
