@@ -33,7 +33,7 @@ struct DecimalOpHelpers
      * As soon as intermediate results may not fit Decimal256 (e.g. 1e36, scale 10),
      * we may not operate with Decimals. Later on this big number may be shrunk (e.g. result scale is 0 in the case above).
      * That's why we need to store intermediate results in a flexible extendable storage (here we use std::vector)
-     * Here we operate on numbers using simple digit arithmetics we learned at school.
+     * Here we operate on numbers using simple digit arithmetic.
      * This is the reason these functions are slower than traditional ones.
      *
      * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
