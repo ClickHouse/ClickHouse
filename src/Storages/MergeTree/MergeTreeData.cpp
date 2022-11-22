@@ -1685,6 +1685,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 }
 
 void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
+try
 {
     if (parts_to_load.empty())
         return;
@@ -1699,35 +1700,14 @@ void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
             return;
         }
 
-        std::string_view what;
+        auto res = loadDataPart(part->info, part->name, part->disk, MergeTreeDataPartState::Outdated, data_parts_mutex);
 
-        try
-        {
-            what = "load";
-            auto res = loadDataPart(part->info, part->name, part->disk, MergeTreeDataPartState::Outdated, data_parts_mutex);
-
-            if (res.is_broken)
-            {
-                what = "rename to detached";
-                res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
-            }
-            else if (res.part->is_duplicate)
-            {
-                what = "remove";
-                res.part->remove();
-            }
-            else
-            {
-                what = "prepare for removal";
-                preparePartForRemoval(res.part);
-            }
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Failed to {} outdated data part {}. You need to resolve it manually. Exception: {}",
-                what, part->name, getCurrentExceptionMessage(false));
-            continue;
-        }
+        if (res.is_broken)
+            res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+        else if (res.part->is_duplicate)
+            res.part->remove();
+        else
+            preparePartForRemoval(res.part);
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts", parts_to_load.size());
@@ -1738,6 +1718,13 @@ void MergeTreeData::loadOutdatedDataParts(PartLoadingTreeNodes parts_to_load)
     }
 
     outdated_data_parts_cv.notify_all();
+}
+catch (...)
+{
+    LOG_ERROR(log, "Loading of outdated parts failed. "
+        "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
+        "Exception: ", getCurrentExceptionMessage(true));
+    std::terminate();
 }
 
 void MergeTreeData::waitForOutdatedPartsToBeLoaded() const
@@ -4272,6 +4259,9 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
+    /// Wait for loading of outdated parts
+    /// because partition commands (DROP, MOVE, etc.)
+    /// must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
 
     PartitionCommandsResultInfo result;
