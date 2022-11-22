@@ -216,7 +216,7 @@ static void onExceptionBeforeStart(
 
     const Settings & settings = context->getSettingsRef();
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
 
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;
@@ -892,10 +892,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     if (elem.read_rows != 0)
                     {
-                        double elapsed_seconds = elem.query_duration_ms / 1000;
-                        LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                            elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
-                            static_cast<size_t>(elem.read_rows / elapsed_seconds),
+                        double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
+                        double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
+                        LOG_INFO(
+                            &Poco::Logger::get("executeQuery"),
+                            "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                            elem.read_rows,
+                            ReadableSize(elem.read_bytes),
+                            elapsed_seconds,
+                            rows_per_second,
                             ReadableSize(elem.read_bytes / elapsed_seconds));
                     }
 

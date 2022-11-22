@@ -79,7 +79,7 @@ void MySQLOutputFormat::finalizeImpl()
         CurrentThread::finalizePerformanceCounters();
         QueryStatusInfo info = process_list_elem->getInfo();
         affected_rows = info.written_rows;
-        double elapsed_seconds = info.elapsed_microseconds / 1000000;
+        double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
         human_readable_info = fmt::format(
             "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
             info.read_rows,
