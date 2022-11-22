@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fmt/format.h>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/classification.hpp> /// is_any_of
 
 namespace
@@ -60,6 +61,12 @@ std::pair<std::string, FuzzyFinderType> getFuzzyFinder()
     }
 
     return {"", FUZZY_FINDER_NONE};
+}
+
+String escapeShellArgument(std::string arg)
+{
+    boost::replace_all(arg, "'", "'\\''");
+    return fmt::format("'{}'", arg);
 }
 
 /// See comments in ShellCommand::executeImpl()
@@ -530,7 +537,9 @@ void ReplxxLineReader::openInteractiveHistorySearch()
             /// assertion for !fuzzy_finder.empty() is enough
             break;
     }
-    fuzzy_finder_command += fmt::format(" < {} > {}", history_file.getPath(), output_file.getPath());
+    fuzzy_finder_command += fmt::format(" < {} > {}",
+        escapeShellArgument(history_file.getPath()),
+        escapeShellArgument(output_file.getPath()));
     char * const argv[] = {sh, sh_c, fuzzy_finder_command.data(), nullptr};
 
     try
