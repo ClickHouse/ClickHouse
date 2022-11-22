@@ -53,7 +53,7 @@ public:
     }
 
     /// argument -> list of sum/count/avg functions with this argument
-    QueryTreeNodeConstPtrWithHashMap<std::vector<QueryTreeNodePtr *>> argument_to_functions_mapping;
+    QueryTreeNodePtrWithHashMap<std::vector<QueryTreeNodePtr *>> argument_to_functions_mapping;
 
 private:
     std::unordered_set<String> names_to_collect;
