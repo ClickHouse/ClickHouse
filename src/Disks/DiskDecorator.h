@@ -81,7 +81,7 @@ public:
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     bool supportsCache() const override { return delegate->supportsCache(); }

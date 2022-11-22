@@ -932,4 +932,9 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     return log_info;
 }
 
+bool KeeperServer::requestLeader()
+{
+    return isLeader() || raft_instance->request_leadership();
+}
+
 }
