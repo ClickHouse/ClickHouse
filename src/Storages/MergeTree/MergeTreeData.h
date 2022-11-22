@@ -1281,6 +1281,18 @@ protected:
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
+    /** A structure that explicitly represents a "merge tree" of parts
+     *  which is implicitly presented by min-max block numbers and levels of parts.
+     *  The children of node are parts which are covered by parent part.
+     *  This tree provides the order of loading of parts.
+     *
+     *  We start to traverse tree from the top level and load parts
+     *  corresposponded to nodes. If part is loaded successfully then
+     *  we stop traversal at this node. Otherwise part is broken and we
+     *  traverse its children and try to load covered parts which will
+     *  replace broken covering part. Unloaded nodes represent outdated parts
+     *  nd they are pushed to background task and loaded asynchronoulsy.
+     */
     class PartLoadingTree
     {
     public:
@@ -1303,12 +1315,17 @@ protected:
         using PartLoadingInfo = std::tuple<MergeTreePartInfo, String, DiskPtr>;
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
+        /// Builds a tree from the list of part infos.
         static PartLoadingTree build(PartLoadingInfos nodes);
 
+        /// Traverses a tree and call @func on each node.
+        /// If recursive is false traverses only the top level.
         template <typename Func>
         void traverse(bool recursive, Func && func);
 
     private:
+        /// NOTE: Parts should be added in descending order of their levels
+        /// because rearranging tree to the new root is not supported.
         void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
         std::unordered_map<String, NodePtr> root_by_partition;
     };
