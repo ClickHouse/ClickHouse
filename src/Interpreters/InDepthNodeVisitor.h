@@ -4,7 +4,9 @@
 #include <vector>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 
 namespace DB
@@ -80,7 +82,7 @@ private:
     template <bool with_dump>
     void visitChildren(T & ast)
     {
-        for (auto & child : ast->children)
+        const auto visit_child = [&](auto & child)
         {
             bool need_visit_child = false;
             if constexpr (need_child_accept_data)
@@ -90,6 +92,23 @@ private:
 
             if (need_visit_child)
                 visitImpl<with_dump>(child);
+        };
+
+        for (auto & child : ast->children)
+        {
+            visit_child(child);
+        }
+
+        if constexpr (std::same_as<T, ASTPtr>)
+        {
+            if (auto * col_decl = ast->template as<ASTColumnDeclaration>())
+            {
+                if (col_decl->default_expression)
+                    visit_child(col_decl->default_expression);
+
+                if (col_decl->default_expression)
+                    visit_child(col_decl->default_expression);
+            }
         }
     }
 };

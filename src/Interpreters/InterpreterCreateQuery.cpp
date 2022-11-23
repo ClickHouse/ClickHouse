@@ -470,7 +470,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     for (const auto & ast : columns_ast.children)
     {
-        auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
         {
@@ -523,13 +523,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         /// add column to postprocessing if there is a default_expression specified
         if (col_decl.default_expression)
         {
-            // substitute possible UDFs with their definitions
-            if (!UserDefinedSQLFunctionFactory::instance().empty())
-            {
-                UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-                UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(col_decl.default_expression);
-            }
-
             /** For columns with explicitly-specified type create two expressions:
               * 1. default_expression aliased as column name with _tmp suffix
               * 2. conversion of expression (1) to explicitly-specified type alias as column name
@@ -1164,6 +1157,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.columns_list);
+    }
+
+    // substitute possible UDFs with their definitions
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
+        UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+        UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query_ptr);
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
