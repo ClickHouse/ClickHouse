@@ -17,7 +17,7 @@ Projections will create internally a new hidden table, this means that more IO a
 Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
 :::
 
-You can see more technical details about how projections work internally on this [page]([url](https://clickhouse.com/docs/en/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-multiple/#option-3-projections)).
+You can see more technical details about how projections work internally on this [page](/docs/en/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-multiple.md/#option-3-projections).
 
 ## Example filtering without using primary keys
 
