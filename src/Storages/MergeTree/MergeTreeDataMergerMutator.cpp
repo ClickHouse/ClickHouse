@@ -36,6 +36,9 @@
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 
+#include <Storages/StorageUniqueMergeTree.h>
+#include <Storages/UniqueMergeTree/TableVersion.h>
+
 #include <cmath>
 #include <ctime>
 #include <numeric>
@@ -68,6 +71,10 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_)
     : data(data_), max_tasks_count(max_tasks_count_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Unique)
+	{
+        unique_mergetree = dynamic_cast<StorageUniqueMergeTree *>(&data);
+    }
 }
 
 
@@ -194,6 +201,12 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     const auto data_settings = data.getSettings();
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
+    std::shared_ptr<const TableVersion> table_version = nullptr;
+    if (unique_mergetree)
+    {
+        table_version = unique_mergetree->currentVersion();
+    }
+
     if (data_parts.empty())
     {
         if (out_disable_reason)
@@ -276,8 +289,18 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             }
         }
 
+        size_t deleted_rows = 0;
+        if (table_version)
+        {
+            deleted_rows
+                = unique_mergetree->deleteBitmapCache().getOrCreate(part, table_version->getPartVersion(part->info))->cardinality();
+        }
+
         IMergeSelector::Part part_info;
-        part_info.size = part->getBytesOnDisk();
+        /// TODO leefeng  here size should be replaced by part->getBytesOnDisk * ((total_rows - deleted_rows) / total_rows)
+        part_info.size = (!deleted_rows || !part->rows_count)
+            ? part->getBytesOnDisk()
+            : part->getBytesOnDisk() * (part->rows_count - deleted_rows) / part->rows_count;
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -402,6 +425,10 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    if (table_version)
+	{
+        future_part->table_version = std::move(table_version);
+    }
     future_part->assign(std::move(parts));
     return SelectPartsDecision::SELECTED;
 }
@@ -486,6 +513,10 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    if (unique_mergetree)
+    {
+        future_part->table_version = unique_mergetree->currentVersion();
+    }
     future_part->assign(std::move(parts));
 
     return SelectPartsDecision::SELECTED;
@@ -523,8 +554,9 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
-    IMergeTreeDataPart * parent_part,
-    const String & suffix)
+    const IMergeTreeDataPart * parent_part,
+    const String & suffix,
+    StorageUniqueMergeTree * storage)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -543,7 +575,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         &data,
         this,
         &merges_blocker,
-        &ttl_merges_blocker);
+        &ttl_merges_blocker,
+        storage);
 }
 
 
@@ -579,7 +612,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     MergeTreeData::MutableDataPartPtr & new_data_part,
     const MergeTreeData::DataPartsVector & parts,
     const MergeTreeTransactionPtr & txn,
-    MergeTreeData::Transaction & out_transaction)
+    MergeTreeData::Transaction & out_transaction,
+    TableVersionPtr && new_table_version)
 {
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
@@ -587,7 +621,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, std::move(new_table_version));
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())
@@ -630,7 +664,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     return new_data_part;
 }
-
 
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {

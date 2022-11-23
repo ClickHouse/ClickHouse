@@ -19,6 +19,7 @@ namespace DB
 {
 
 class MergeProgressCallback;
+class StorageUniqueMergeTree;
 
 enum class SelectPartsDecision
 {
@@ -113,8 +114,9 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
-        IMergeTreeDataPart * parent_part = nullptr,
-        const String & suffix = "");
+        const IMergeTreeDataPart * parent_part = nullptr,
+        const String & suffix = "",
+        StorageUniqueMergeTree * storage = nullptr);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MutateTaskPtr mutatePartToTemporaryPart(
@@ -132,8 +134,8 @@ public:
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         const MergeTreeTransactionPtr & txn,
-        MergeTreeData::Transaction & out_transaction);
-
+        MergeTreeData::Transaction & out_transaction,
+        TableVersionPtr && new_table_version = nullptr);
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
@@ -169,6 +171,8 @@ private:
     ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
+
+    StorageUniqueMergeTree * unique_mergetree = nullptr;
 };
 
 

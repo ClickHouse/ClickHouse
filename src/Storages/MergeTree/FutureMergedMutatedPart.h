@@ -24,6 +24,8 @@ struct FutureMergedMutatedPart
     MergeTreeData::DataPartsVector parts;
     MergeType merge_type = MergeType::Regular;
 
+    std::shared_ptr<const TableVersion> table_version = nullptr;
+
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
     FutureMergedMutatedPart() = default;

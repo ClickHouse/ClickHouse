@@ -24,6 +24,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Storages/StorageUniqueMergeTree.h>
 
 namespace DB
 {
@@ -120,6 +121,19 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_
     return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
 }
 
+static void checkDataTypes(const DataTypes data_types)
+{
+    for (const auto & data_type : data_types)
+    {
+        if (!isNativeInteger(*data_type) && !isFloat(*data_type) && !isDateOrDate32(*data_type) && !isDateTime(*data_type)
+            && !isStringOrFixedString(*data_type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of Partition key or Unique key for UniqueMergeTree, only support Native Integer, Float, Date, Date32, "
+                "DateTime, String or FixedString",
+                data_type->getName());
+    }
+}
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
@@ -179,6 +193,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
     else if (name_part == "VersionedCollapsing")
         merging_params.mode = MergeTreeData::MergingParams::VersionedCollapsing;
+    else if (name_part == "Unique")
+        merging_params.mode = MergeTreeData::MergingParams::Unique;
     else if (!name_part.empty())
         throw Exception(
             "Unknown storage " + args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::UNKNOWN_STORAGE);
@@ -241,6 +257,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             break;
         case MergeTreeData::MergingParams::Graphite:
             add_mandatory_param("'config_element_for_graphite_schema'");
+            break;
+        case MergeTreeData::MergingParams::Unique:
+            add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::VersionedCollapsing: {
             add_mandatory_param("sign column");
@@ -382,7 +401,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
 
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+        const bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
 
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         if (!args.attach)
@@ -503,6 +522,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// sorting key.
         merging_param_key_arg = merging_params.version_column;
     }
+    else if (merging_params.mode == MergeTreeData::MergingParams::Unique)
+    {
+        /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+                throw Exception(
+                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+            --arg_cnt;
+        }
+    }
 
     String date_column_name;
 
@@ -563,6 +594,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
+        }
+
+        /// If unique key explicitly defined, than get it from AST
+        if (args.storage_def->unique_key)
+        {
+            metadata.unique_key = KeyDescription::getKeyFromAST(args.storage_def->unique_key->ptr(), metadata.columns, args.getContext());
+        }
+        else /// Otherwise we don't have explicit unique key and copy it from primary key
+        {
+            metadata.unique_key = KeyDescription::getKeyFromAST(
+                args.storage_def->primary_key ? args.storage_def->primary_key->ptr() : args.storage_def->order_by->ptr(),
+                metadata.columns,
+                args.getContext());
+            /// and set it's definition_ast to nullptr
+            metadata.unique_key.definition_ast = nullptr;
         }
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
@@ -647,6 +693,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 
+        metadata.unique_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext());
+        metadata.unique_key.definition_ast = nullptr;
+
         ++arg_num;
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
@@ -667,6 +716,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->ttl_table && !args.attach)
             throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    if (merging_params.mode == MergeTreeData::MergingParams::Unique)
+    {
+        if (metadata.unique_key.column_names.empty())
+            throw Exception("The Unique Key column list for StorageUniqueMergeTree can not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        checkDataTypes(metadata.unique_key.data_types);
+        checkDataTypes(metadata.partition_key.data_types);
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -698,6 +755,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             renaming_restrictions);
     }
     else
+    {
+        if (merging_params.mode == MergeTreeData::MergingParams::Unique)
+            return std::make_shared<StorageUniqueMergeTree>(
+                args.table_id,
+                args.relative_data_path,
+                metadata,
+                args.attach,
+                args.getContext(),
+                date_column_name,
+                merging_params,
+                std::move(storage_settings),
+                args.has_force_restore_data_flag);
+
         return std::make_shared<StorageMergeTree>(
             args.table_id,
             args.relative_data_path,
@@ -708,6 +778,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag);
+    }
 }
 
 
@@ -729,6 +800,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
+    factory.registerStorage("UniqueMergeTree", create, features);
 
     features.supports_replication = true;
     features.supports_deduplication = true;

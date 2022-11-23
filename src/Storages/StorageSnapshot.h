@@ -1,6 +1,8 @@
 #pragma once
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Storages/UniqueMergeTree/TableVersion.h>
+
 namespace DB
 {
 
@@ -14,6 +16,8 @@ struct StorageSnapshot
     const IStorage & storage;
     const StorageMetadataPtr metadata;
     const ColumnsDescription object_columns;
+
+    std::shared_ptr<const TableVersion> table_version = nullptr;
 
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.

@@ -7,6 +7,7 @@ namespace DB
 
 class MergeTreeReadPool;
 
+class StorageUniqueMergeTree;
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
@@ -28,7 +29,8 @@ public:
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & virt_column_names_,
-        std::optional<ParallelReadingExtension> extension_);
+        std::optional<ParallelReadingExtension> extension_,
+        StorageUniqueMergeTree * unique_mergetree_ = nullptr);
 
     String getName() const override { return "MergeTreeThread"; }
 

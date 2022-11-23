@@ -138,12 +138,13 @@ private:
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
-    mutable std::mutex currently_processing_in_background_mutex;
-    mutable std::condition_variable currently_processing_in_background_condition;
+    // The following three members are put in MergeTreeData
+    // mutable std::mutex currently_processing_in_background_mutex;
+    // mutable std::condition_variable currently_processing_in_background_condition;
 
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
-    DataParts currently_merging_mutating_parts;
+    // DataParts currently_merging_mutating_parts;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 

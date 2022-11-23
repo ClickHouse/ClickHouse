@@ -75,6 +75,7 @@ ActionsDAGPtr addMissingDefaults(
         /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
+        /// For UniqueMergeTree, if __delete_op column is not specified, it will be create with default values in here
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
         const auto * col = &actions->addColumn({new_column, column.type, column.name});
         index.push_back(&actions->materializeNode(*col));

@@ -34,6 +34,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
           other.minmax_count_projection ? std::optional<ProjectionDescription>(other.minmax_count_projection->clone()) : std::nullopt)
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
+    , unique_key(other.unique_key)
     , sorting_key(other.sorting_key)
     , sampling_key(other.sampling_key)
     , column_ttls_by_name(other.column_ttls_by_name)
@@ -59,6 +60,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         minmax_count_projection = std::nullopt;
     partition_key = other.partition_key;
     primary_key = other.primary_key;
+    unique_key = other.unique_key;
     sorting_key = other.sorting_key;
     sampling_key = other.sampling_key;
     column_ttls_by_name = other.column_ttls_by_name;
@@ -443,6 +445,23 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
 {
     if (!primary_key.column_names.empty())
         return primary_key.column_names;
+    return {};
+}
+
+bool StorageInMemoryMetadata::hasUniqueKey() const
+{
+    return !unique_key.column_names.empty();
+}
+
+const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
+{
+    return unique_key;
+}
+
+Names StorageInMemoryMetadata::getUniqueKeyColumns() const
+{
+    if (!unique_key.column_names.empty())
+        return unique_key.column_names;
     return {};
 }
 

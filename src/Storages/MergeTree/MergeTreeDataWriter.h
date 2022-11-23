@@ -16,6 +16,8 @@
 namespace DB
 {
 
+struct UniqueMergeTreeWriteState;
+
 struct BlockWithPartition
 {
     Block block;
@@ -43,7 +45,12 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(
+        const Block & block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool has_delete_op = false);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -70,6 +77,12 @@ public:
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
     TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    TemporaryPart writeTempPart(
+        BlockWithPartition & block,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        UniqueMergeTreeWriteState & write_state);
 
     /// For insertion.
     static TemporaryPart writeProjectionPart(

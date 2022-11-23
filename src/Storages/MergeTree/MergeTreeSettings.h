@@ -66,6 +66,9 @@ struct Settings;
     M(Bool, min_age_to_force_merge_on_partition_only, false, "Whether min_age_to_force_merge_seconds should be applied only on the entire partition and not on subset.", false) \
     M(UInt64, merge_tree_enable_clear_old_broken_detached, false, "Enable clearing old broken detached parts operation in background.", 0) \
     M(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
+    M(UInt64, unique_merge_tree_max_primary_index_cache_size, 5 * DEFAULT_INSERT_BLOCK_SIZE, "the max primary index cache size for unique mergetree", 0) \
+    M(UInt64, unique_merge_tree_max_keeped_primary_index, 10, "The number of the primary indexes keeped in LRU cache, keeping 10 partitions primary index in cache by default", 0) \
+    M(UInt64, unique_merge_tree_mininum_delete_buffer_size_to_abort_merge, 65505, "If the delete buffers keys number equal or greater than it, than abort the merge", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 150, "If table contains at least that many active parts in single partition, artificially slow down insert into table.", 0) \

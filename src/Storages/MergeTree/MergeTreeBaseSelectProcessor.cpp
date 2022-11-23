@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Storages/StorageUniqueMergeTree.h>
 
 #include <city.h>
 
@@ -50,7 +51,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_,
-    std::optional<ParallelReadingExtension> extension_)
+    std::optional<ParallelReadingExtension> extension_,
+    StorageUniqueMergeTree * unique_mergetree_)
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -63,6 +65,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
     , extension(extension_)
+    , unique_mergetree(unique_mergetree_)
 {
     header_without_const_virtual_columns = applyPrewhereActions(std::move(header), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
@@ -74,6 +77,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
 
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
+    table_version = storage_snapshot->table_version;
 }
 
 
@@ -305,7 +309,14 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
     /// Add filtering step with lightweight delete mask
     if (reader_settings.apply_deleted_mask && has_lightweight_delete)
     {
-        MergeTreeRangeReader pre_range_reader(pre_reader_for_step[0].get(), prev_reader, &lightweight_delete_filter_step, last_reader, non_const_virtual_column_names);
+        MergeTreeRangeReader pre_range_reader(
+            pre_reader_for_step[0].get(),
+            prev_reader,
+            &lightweight_delete_filter_step,
+            last_reader,
+            non_const_virtual_column_names,
+            unique_mergetree,
+            table_version);
         pre_range_readers.push_back(std::move(pre_range_reader));
         prev_reader = &pre_range_readers.back();
         pre_readers_shift++;
@@ -325,7 +336,14 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
         {
             last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
 
-            MergeTreeRangeReader current_reader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names);
+            MergeTreeRangeReader current_reader(
+                pre_reader_for_step[i + pre_readers_shift].get(),
+                prev_reader,
+                &prewhere_actions->steps[i],
+                last_reader,
+                non_const_virtual_column_names,
+                unique_mergetree,
+                table_version);
 
             pre_range_readers.push_back(std::move(current_reader));
             prev_reader = &pre_range_readers.back();
@@ -334,7 +352,8 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
     if (!last_reader)
     {
-        range_reader = MergeTreeRangeReader(reader, prev_reader, nullptr, true, non_const_virtual_column_names);
+        range_reader
+            = MergeTreeRangeReader(reader, prev_reader, nullptr, true, non_const_virtual_column_names, unique_mergetree, table_version);
     }
     else
     {
@@ -470,6 +489,11 @@ namespace
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
+        void insertInt64Column(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeInt64>(), name});
+        }
+
         void insertUUIDColumn(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
@@ -575,6 +599,16 @@ static void injectPartConstVirtualColumns(
                     column = DataTypeUInt64().createColumn();
 
                 inserter.insertUInt64Column(column, virtual_column_name);
+            }
+            else if (virtual_column_name == "_part_min_block")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt64().createColumnConst(rows, task->data_part->info.min_block)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt64().createColumn();
+
+                inserter.insertInt64Column(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_uuid")
             {

@@ -9,6 +9,9 @@
 #include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
+#include <city.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -183,4 +186,12 @@ private:
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
+struct MergeTreePartInfoHash
+{
+    size_t operator()(const MergeTreePartInfo & info) const
+    {
+        return CityHash_v1_0_2::CityHash64(info.partition_id.data(), info.partition_id.size()) ^ intHash64(info.min_block)
+            ^ sipHash64(info.level);
+    }
+};
 }

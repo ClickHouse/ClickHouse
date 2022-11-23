@@ -64,8 +64,8 @@ namespace ErrorCodes
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, StorageUniqueMergeTree * storage_)
+    : data(data_), storage(storage_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -1260,6 +1260,10 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_part_min_block")
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_partition_id")
         {
             virt_column_names.push_back(name);
@@ -1384,8 +1388,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         max_block_numbers_to_read,
         log,
         merge_tree_select_result_ptr,
-        enable_parallel_reading
-    );
+        enable_parallel_reading,
+        storage);
 
     QueryPlanPtr plan = std::make_unique<QueryPlan>();
     plan->addStep(std::move(read_from_merge_tree));

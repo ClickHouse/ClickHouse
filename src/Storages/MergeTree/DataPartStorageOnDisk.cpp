@@ -347,6 +347,10 @@ void DataPartStorageOnDisk::clearDirectory(
             request.emplace_back(fs::path(dir) / "txn_version.txt", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
+
+        /// Remove deletes bitmap for UniqueMergeTree Data Part
+        if (disk->exists(fs::path(dir) / "deletes"))
+            disk->removeSharedRecursive(fs::path(dir) / "deletes", false, {});
         disk->removeDirectory(dir);
     }
     catch (...)

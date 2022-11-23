@@ -34,6 +34,9 @@ struct StorageInMemoryMetadata
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
     KeyDescription primary_key;
+    /// UNIQUE KEY expression. Used for UniqueMergeTree, if absent, then equal to
+    /// primary_key(order_by_ast if PRIMARY KEY absent).
+    KeyDescription unique_key;
     /// ORDER BY expression. Required field for all MergeTree tables
     /// even in old syntax MergeTree(partition_key, order_by, ...)
     KeyDescription sorting_key;
@@ -209,6 +212,13 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by. For example: 'a', 'x
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
+
+    /// Storage has unique key. It means, that it contains at least one column.
+    bool hasUniqueKey() const;
+
+    /// Returns structure with unique key.
+    const KeyDescription & getUniqueKey() const;
+    Names getUniqueKeyColumns() const;
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;

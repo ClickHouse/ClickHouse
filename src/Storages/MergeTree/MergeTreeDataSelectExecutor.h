@@ -14,6 +14,8 @@ namespace DB
 class KeyCondition;
 struct QueryIdHolder;
 
+class StorageUniqueMergeTree;
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /** Executes SELECT queries on data from the merge tree.
@@ -21,7 +23,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 class MergeTreeDataSelectExecutor
 {
 public:
-    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
+    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_, StorageUniqueMergeTree * storage_ = nullptr);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
@@ -68,6 +70,7 @@ public:
 
 private:
     const MergeTreeData & data;
+    StorageUniqueMergeTree * storage;
     Poco::Logger * log;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.

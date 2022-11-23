@@ -18,14 +18,14 @@ struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPartPtr future_part;
     ReservationSharedPtr reserved_space;
-    StorageMergeTree & storage;
+    MergeTreeData & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
 
     CurrentlyMergingPartsTagger(
         FutureMergedMutatedPartPtr future_part_,
         size_t total_size,
-        StorageMergeTree & storage_,
+        MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot,
         bool is_mutation);
 
