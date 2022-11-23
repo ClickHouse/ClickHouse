@@ -869,8 +869,6 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() c
 
 void StorageReplicatedMergeTree::drop()
 {
-    waitForOutdatedPartsToBeLoaded();
-
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
