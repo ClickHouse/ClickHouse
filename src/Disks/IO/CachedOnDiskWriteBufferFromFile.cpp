@@ -101,7 +101,7 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
     });
 
     size_t reserved_size = file_segment->tryReserve(size, strict);
-    if (strict && reserved_size != size)
+    if (reserved_size == 0 || (strict && reserved_size != size))
     {
         file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         appendFilesystemCacheLog(*file_segment);
@@ -114,8 +114,6 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
         return 0;
     }
 
-    if (reserved_size == 0)
-        return 0;
 
     /// shrink
     size = reserved_size;
@@ -147,10 +145,12 @@ void FileSegmentRangeWriter::finalize(bool clear)
     /// Note: if segments are hold by someone else, it won't be removed
     if (clear)
     {
-        for (auto & file_segment : file_segments)
-            completeFileSegment(*file_segment, FileSegment::State::SKIP_CACHE);
+        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
+        {
+            completeFileSegment(**file_segment_it, FileSegment::State::SKIP_CACHE);
+            file_segments.erase(file_segment_it);
+        }
         finalized = true;
-        return;
     }
 
     if (file_segments.empty() || current_file_segment_it == file_segments.end())
@@ -226,9 +226,8 @@ void FileSegmentRangeWriter::completeFileSegment(FileSegment & file_segment, std
     if (file_segment.isDetached())
         return;
 
-    // if (state.has_value())
-    //     file_segment.setDownloadState(*state);
-    UNUSED(state);
+    if (state.has_value())
+        file_segment.setDownloadState(*state);
 
     file_segment.completeWithoutState();
     appendFilesystemCacheLog(file_segment);

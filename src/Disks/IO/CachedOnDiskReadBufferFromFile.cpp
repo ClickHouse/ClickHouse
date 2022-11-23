@@ -951,7 +951,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             }
             else
             {
-                LOG_TRACE(log, "No space left in cache, will continue without cache download");
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
                 file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 

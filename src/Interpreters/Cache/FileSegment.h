@@ -308,6 +308,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
+    void reset() { file_segments.clear(); }
+
     ~FileSegmentsHolder();
 
     String toString();

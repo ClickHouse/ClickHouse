@@ -89,8 +89,10 @@ public:
     size_t capacity() const { return max_size; }
 
     size_t getUsedCacheSize() const;
+    size_t getTotalMaxSize() const;
 
     size_t getFileSegmentsNum() const;
+    size_t getTotalMaxElements() const;
 
     static bool isReadOnly();
 
