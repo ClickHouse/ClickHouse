@@ -56,6 +56,8 @@ private:
                                                         CharArgument item_delimiter, CharArgument enclosing_character,
                                                         SetArgument value_special_characters_allow_list) const;
 
+//    ColumnPtr build
+
 };
 
 }
