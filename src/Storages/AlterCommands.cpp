@@ -30,6 +30,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 namespace DB
 {
@@ -1023,7 +1025,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
             if (!has_column && command.if_exists)
                 command.ignore = true;
         }
+
+        if (command.default_expression && !UserDefinedSQLFunctionFactory::instance().empty())
+        {
+            UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+            UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(command.default_expression);
+        }
     }
+
     prepared = true;
 }
 
