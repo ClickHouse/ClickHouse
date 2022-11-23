@@ -5,6 +5,7 @@
 #include <stack>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
