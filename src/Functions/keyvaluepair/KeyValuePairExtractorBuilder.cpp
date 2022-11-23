@@ -1,5 +1,7 @@
 #include "KeyValuePairExtractorBuilder.h"
-#include "impl/LazyEscapingKeyValuePairExtractor.h"
+#include <Functions/keyvaluepair/impl/state/KeyStateHandler.h>
+#include <Functions/keyvaluepair/impl/state/ValueStateHandler.h>
+#include <Functions/keyvaluepair/impl//LazyEscapingKeyValuePairExtractor.h>
 
 KeyValuePairExtractorBuilder &KeyValuePairExtractorBuilder::withKeyValuePairDelimiter(char key_value_pair_delimiter_) {
     key_value_pair_delimiter = key_value_pair_delimiter_;
@@ -21,6 +23,15 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEnclosingCharac
     return *this;
 }
 
+KeyValuePairExtractorBuilder &KeyValuePairExtractorBuilder::withValueSpecialCharacterAllowList(std::unordered_set<char> value_special_character_allowlist_) {
+    value_special_character_allowlist = std::move(value_special_character_allowlist_);
+    return *this;
+}
+
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build() {
-    return std::make_shared<LazyEscapingKeyValuePairExtractor>(item_delimiter, key_value_pair_delimiter, escape_character, enclosing_character);
+    KeyStateHandler key_state_handler(key_value_pair_delimiter, escape_character, enclosing_character);
+    ValueStateHandler value_state_handler(escape_character, item_delimiter, enclosing_character, value_special_character_allowlist);
+    KeyValuePairEscapingProcessor escaping_processor(escape_character);
+
+    return std::make_shared<LazyEscapingKeyValuePairExtractor>(key_state_handler, value_state_handler, escaping_processor);
 }

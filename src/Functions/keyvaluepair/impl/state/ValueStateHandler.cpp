@@ -1,8 +1,10 @@
 #include "ValueStateHandler.h"
 
 ValueStateHandler::ValueStateHandler(char escape_character_, char item_delimiter_,
-                                     std::optional<char> enclosing_character_)
-    : StateHandler(escape_character_, enclosing_character_), item_delimiter(item_delimiter_)
+                                     std::optional<char> enclosing_character_,
+                                     std::unordered_set<char> special_character_allowlist_)
+    : StateHandler(escape_character_, enclosing_character_), item_delimiter(item_delimiter_),
+    special_character_allowlist(std::move(special_character_allowlist_))
 {}
 
 NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) const {
@@ -19,7 +21,7 @@ NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) cons
                     pos,
                     State::READING_EMPTY_VALUE
             };
-        } else if (std::isalnum(current_character) || current_character == '_') {
+        } else if (isValidCharacter(current_character)) {
             return {
                     pos,
                     State::READING_VALUE
@@ -46,7 +48,7 @@ NextStateWithElement ValueStateHandler::readValue(const std::string &file, size_
             escape = false;
         } else if (escape_character == current_character) {
             escape = true;
-        } else if (current_character == item_delimiter || (!std::isalnum(current_character) && current_character != '_')) {
+        } else if (current_character == item_delimiter || !isValidCharacter(current_character)) {
             return {
                 {
                     pos,
@@ -103,4 +105,8 @@ NextStateWithElement ValueStateHandler::readEmptyValue(const std::string &, size
         },
         {}
     };
+}
+
+bool ValueStateHandler::isValidCharacter(char character) const {
+    return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
 }
