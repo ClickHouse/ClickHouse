@@ -80,12 +80,19 @@ struct ReplicatedMergeTreeSink<async_insert>::DelayedChunk
 
 namespace
 {
+    /// Convert block id vector to string. Output at most 50 rows.
     template<typename T>
     inline String toString(const std::vector<T> & vec)
     {
         String res = "{";
-        for (const auto & item : vec)
-            res += DB::toString(item) + ",";
+        size_t size = vec.size();
+        if (size > 50) size = 50;
+        for (size_t i = 0; i < size; ++i)
+        {
+            res += DB::toString(vec[i]);
+            if (i + 1 < size)
+                res += ",";
+        }
         return res + "}";
     }
 
@@ -137,7 +144,7 @@ namespace
             idx++;
         }
 
-        LOG_TRACE(log, "New block IDs: {}, new offsets: {}", toString(new_block_ids), toString(new_offsets));
+        LOG_TRACE(log, "New block IDs: {}, new offsets: {}, size: {}", toString(new_block_ids), toString(new_offsets), new_offsets.size());
 
         offsets = std::move(new_offsets);
         partition.block_id = std::move(new_block_ids);
@@ -476,13 +483,14 @@ void ReplicatedMergeTreeSink<true>::finishDelayedChunk(const ZooKeeperWithFaultI
 
     for (auto & partition: delayed_chunk->partitions)
     {
+        int retry_times = 0;
         while (true)
         {
             partition.temp_part.finalize();
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
             if (conflict_block_ids.empty())
                 break;
-            LOG_DEBUG(log, "Found depulicate block IDs: {}", toString(conflict_block_ids));
+            LOG_DEBUG(log, "Found depulicate block IDs: {}, retry times {}", toString(conflict_block_ids), ++retry_times);
             /// partition clean conflict
             rewriteBlock(log, partition, conflict_block_ids);
             if (partition.block_id.empty())
