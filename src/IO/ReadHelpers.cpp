@@ -1278,6 +1278,25 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
+void skipNullTerminated(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\0')
+        {
+            ++buf.position();
+            return;
+        }
+    }
+}
+
+
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
     assert(current >= in.position());
