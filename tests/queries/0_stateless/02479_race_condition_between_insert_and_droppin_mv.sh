@@ -10,20 +10,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 function insert {
-    x=0
     i=0
     offset=500
-    while [ $x -lt $1 ]
+    while true;
     do
-        {
-            ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset"
-        } || {
-            for thread_pid in "${$2[@]}"; do
-                kill $thread_pid
-            done
-        }
+        ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset"
         i=$(( $i + $RANDOM % 100 + 400 ))
-        x=$(( $x + 1 ))
     done
 }
 
@@ -43,34 +35,27 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_landing"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_target (number Int64) Engine=MergeTree ORDER BY number"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_race_condition_landing (number Int64, n String, n2 String) Engine=MergeTree ORDER BY number"
 
-drop_mv_threads=()
-for i in {1..3}
+export -f drop_mv;
+export -f insert;
+
+TIMEOUT=120
+
+for i in {1..4}
 do
-    drop_mv $i &
-    drop_mv_pid=$!
-    drop_mv_threads+=("$drop_mv_pid")
+    timeout $TIMEOUT bash -c drop_mv $i &
 done
 
-insert_threads=()
-for i in {1..3}
+for i in {1..4}
 do
-    insert 20 drop_mv_threads &
-    insert_pid=$!
-    insert_threads+=("$insert_pid")
+    timeout $TIMEOUT bash -c insert 20 &
 done
 
-
-for thread_pid in "${insert_threads[@]}"; do
-    wait $thread_pid
-done
-for thread_pid in "${drop_mv_threads[@]}"; do
-    kill $thread_pid
-done
+wait
 
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_target"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_landing"
-for i in {1..3}
+for i in {1..4}
 do
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_mv_$i"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_race_condition_mv1_$i"
