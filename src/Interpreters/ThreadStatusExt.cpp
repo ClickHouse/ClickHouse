@@ -131,6 +131,12 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     thread_state = ThreadState::AttachedToQuery;
 }
 
+void ThreadStatus::setInternalThread()
+{
+    chassert(!query_profiler_real && !query_profiler_cpu);
+    internal_thread = true;
+}
+
 void ThreadStatus::initializeQuery()
 {
     setupState(std::make_shared<ThreadGroupStatus>());
@@ -177,41 +183,44 @@ void ThreadStatus::initPerformanceCounters()
     // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
-    if (auto query_context_ptr = query_context.lock())
+    if (!internal_thread)
     {
-        const Settings & settings = query_context_ptr->getSettingsRef();
-        if (settings.metrics_perf_events_enabled)
+        if (auto query_context_ptr = query_context.lock())
+        {
+            const Settings & settings = query_context_ptr->getSettingsRef();
+            if (settings.metrics_perf_events_enabled)
+            {
+                try
+                {
+                    current_thread_counters.initializeProfileEvents(
+                        settings.metrics_perf_events_list);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+        }
+
+        if (!taskstats)
         {
             try
             {
-                current_thread_counters.initializeProfileEvents(
-                    settings.metrics_perf_events_list);
+                taskstats = TasksStatsCounters::create(thread_id);
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
             }
         }
+        if (taskstats)
+            taskstats->reset();
     }
-
-    if (!taskstats)
-    {
-        try
-        {
-            taskstats = TasksStatsCounters::create(thread_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-    if (taskstats)
-        taskstats->reset();
 }
 
 void ThreadStatus::finalizePerformanceCounters()
 {
-    if (performance_counters_finalized)
+    if (performance_counters_finalized || internal_thread)
         return;
 
     performance_counters_finalized = true;
@@ -270,7 +279,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_profiler_enabled)
+    if (internal_thread)
         return;
 
     /// query profilers are useless without trace collector

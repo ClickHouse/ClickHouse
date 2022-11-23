@@ -8,6 +8,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/HashUtils.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -48,43 +49,24 @@ public:
             /// Do not apply for `count()` with without arguments or `count(*)`, only `count(x)` is supported.
             return;
 
-        mapping[QueryTreeNodeWithHash(argument_nodes[0])].push_back(&node);
+        argument_to_functions_mapping[argument_nodes[0]].push_back(&node);
     }
 
-    struct QueryTreeNodeWithHash
-    {
-        const QueryTreeNodePtr & node;
-        IQueryTreeNode::Hash hash;
-
-        explicit QueryTreeNodeWithHash(const QueryTreeNodePtr & node_)
-            : node(node_)
-            , hash(node->getTreeHash())
-        {}
-
-        bool operator==(const QueryTreeNodeWithHash & rhs) const
-        {
-            return hash == rhs.hash && node->isEqual(*rhs.node);
-        }
-
-        struct Hash
-        {
-            size_t operator() (const QueryTreeNodeWithHash & key) const { return key.hash.first ^ key.hash.second; }
-        };
-    };
-
     /// argument -> list of sum/count/avg functions with this argument
-    std::unordered_map<QueryTreeNodeWithHash, std::vector<QueryTreeNodePtr *>, QueryTreeNodeWithHash::Hash> mapping;
+    QueryTreeNodePtrWithHashMap<std::vector<QueryTreeNodePtr *>> argument_to_functions_mapping;
 
 private:
     std::unordered_set<String> names_to_collect;
 };
 
-QueryTreeNodePtr createResolvedFunction(ContextPtr context, const String & name, DataTypePtr result_type, QueryTreeNodes arguments)
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, const DataTypePtr & result_type, QueryTreeNodes arguments)
 {
     auto function_node = std::make_shared<FunctionNode>(name);
+
     auto function = FunctionFactory::instance().get(name, context);
     function_node->resolveAsFunction(std::move(function), result_type);
     function_node->getArguments().getNodes() = std::move(arguments);
+
     return function_node;
 }
 
@@ -94,21 +76,20 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
 
     AggregateFunctionProperties properties;
     auto aggregate_function = AggregateFunctionFactory::instance().get(name, {argument->getResultType()}, parameters, properties);
-
     function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
+    function_node->getArguments().getNodes() = { argument };
 
-    function_node->getArgumentsNode() = std::make_shared<ListNode>(QueryTreeNodes{argument});
     return function_node;
 }
 
-QueryTreeNodePtr createTupleElementFunction(ContextPtr context, DataTypePtr result_type, QueryTreeNodePtr argument, UInt64 index)
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, const DataTypePtr & result_type, QueryTreeNodePtr argument, UInt64 index)
 {
-    return createResolvedFunction(context, "tupleElement", result_type, {argument, std::make_shared<ConstantNode>(index)});
+    return createResolvedFunction(context, "tupleElement", result_type, {std::move(argument), std::make_shared<ConstantNode>(index)});
 }
 
-QueryTreeNodePtr createArrayElementFunction(ContextPtr context, DataTypePtr result_type, QueryTreeNodePtr argument, UInt64 index)
+QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, const DataTypePtr & result_type, QueryTreeNodePtr argument, UInt64 index)
 {
-    return createResolvedFunction(context, "arrayElement", result_type, {argument, std::make_shared<ConstantNode>(index)});
+    return createResolvedFunction(context, "arrayElement", result_type, {std::move(argument), std::make_shared<ConstantNode>(index)});
 }
 
 void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_count_node, ContextPtr context)
@@ -151,6 +132,7 @@ FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> n
 {
     Array parameters;
     parameters.reserve(nodes.size());
+
     for (const auto * node : nodes)
     {
         const FunctionNode & function_node = (*node)->as<const FunctionNode &>();
@@ -172,6 +154,7 @@ FunctionNodePtr createFusedQuantilesNode(const std::vector<QueryTreeNodePtr *> n
 
         parameters.push_back(constant_value->getValue());
     }
+
     return createResolvedAggregateFunction("quantiles", argument, parameters);
 }
 
@@ -181,7 +164,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
     FuseFunctionsVisitor visitor({"sum", "count", "avg"});
     visitor.visit(query_tree_node);
 
-    for (auto & [argument, nodes] : visitor.mapping)
+    for (auto & [argument, nodes] : visitor.argument_to_functions_mapping)
     {
         if (nodes.size() < 2)
             continue;
@@ -199,24 +182,22 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     FuseFunctionsVisitor visitor_quantile({"quantile"});
     visitor_quantile.visit(query_tree_node);
-    for (auto & [argument, nodes] : visitor_quantile.mapping)
+
+    for (auto & [argument, nodes] : visitor_quantile.argument_to_functions_mapping)
     {
-        if (nodes.size() < 2)
+        size_t nodes_size = nodes.size();
+        if (nodes_size < 2)
             continue;
 
         auto quantiles_node = createFusedQuantilesNode(nodes, argument.node);
         auto result_array_type = std::dynamic_pointer_cast<const DataTypeArray>(quantiles_node->getResultType());
         if (!result_array_type)
-        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected return type '{}' of function '{}', should be array",
                 quantiles_node->getResultType(), quantiles_node->getFunctionName());
-        }
 
-        for (size_t i = 0; i < nodes.size(); ++i)
-        {
+        for (size_t i = 0; i < nodes_size; ++i)
             *nodes[i] = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, i + 1);
-        }
     }
 }
 
