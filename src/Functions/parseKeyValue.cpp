@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/assert_cast.h>
 #include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
+#include <Functions/ReplaceStringImpl.h>
 
 namespace DB
 {
@@ -179,13 +180,16 @@ ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor> extractor,
         // TODO avoid copying
         auto response = extractor->extract(row.toString());
 
-        for (const auto & [key, value] : response)
+        for (auto & [key, value] : response)
         {
-            keys->insert(key);
-            values->insert(value);
+            keys->insert(std::move(key));
+            values->insert(std::move(value));
 
             row_offset++;
         }
+
+        ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(keys->getChars(), keys->getOffsets(), "\\", "", keys->getChars(), keys->getOffsets());
+        ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(values->getChars(), values->getOffsets(), "\\", "", values->getChars(), values->getOffsets());
 
         offsets->insert(row_offset);
     }

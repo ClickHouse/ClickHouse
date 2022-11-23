@@ -17,7 +17,7 @@ public:
     [[nodiscard]] Response process(const ResponseViews & input) const;
 
 private:
-    const char escape_character;
+    [[maybe_unused]] const char escape_character;
 
     [[nodiscard]] std::string escape(std::string_view element_view) const;
 };
