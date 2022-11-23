@@ -3,6 +3,9 @@
 #include <Functions/keyvaluepair/impl/state/ValueStateHandler.h>
 #include <Functions/keyvaluepair/impl//LazyEscapingKeyValuePairExtractor.h>
 
+namespace DB
+{
+
 KeyValuePairExtractorBuilder &KeyValuePairExtractorBuilder::withKeyValuePairDelimiter(char key_value_pair_delimiter_) {
     key_value_pair_delimiter = key_value_pair_delimiter_;
     return *this;
@@ -34,4 +37,6 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build() {
     KeyValuePairEscapingProcessor escaping_processor(escape_character);
 
     return std::make_shared<LazyEscapingKeyValuePairExtractor>(key_state_handler, value_state_handler, escaping_processor);
+}
+
 }

@@ -5,6 +5,9 @@
 #include <unordered_set>
 #include "KeyValuePairExtractor.h"
 
+namespace DB
+{
+
 class KeyValuePairExtractorBuilder {
 public:
     KeyValuePairExtractorBuilder & withKeyValuePairDelimiter(char key_value_pair_delimiter);
@@ -22,3 +25,5 @@ private:
     std::optional<char> enclosing_character;
     std::unordered_set<char> value_special_character_allowlist;
 };
+
+}

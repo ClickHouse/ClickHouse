@@ -3,6 +3,9 @@
 #include <string>
 #include <unordered_map>
 
+namespace DB
+{
+
 class KeyValuePairEscapingProcessor {
 public:
 
@@ -18,3 +21,5 @@ private:
 
     [[nodiscard]] std::string escape(std::string_view element_view) const;
 };
+
+}

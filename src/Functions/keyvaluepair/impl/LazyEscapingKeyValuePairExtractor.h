@@ -9,6 +9,9 @@
 #include <Functions/keyvaluepair/impl/KeyValuePairEscapingProcessor.h>
 #include <Functions/keyvaluepair/KeyValuePairExtractor.h>
 
+namespace DB
+{
+
 /*
  * Implements key value pair extraction by ignoring escaping and deferring its processing to the end.
  * This strategy allows more efficient memory usage in case of very noisy files because it does not have to
@@ -47,3 +50,6 @@ private:
     std::unordered_map<std::string_view, std::string_view> response_views;
 
 };
+
+}
+

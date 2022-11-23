@@ -1,5 +1,8 @@
 #include "ValueStateHandler.h"
 
+namespace DB
+{
+
 ValueStateHandler::ValueStateHandler(char escape_character_, char item_delimiter_,
                                      std::optional<char> enclosing_character_,
                                      std::unordered_set<char> special_character_allowlist_)
@@ -13,18 +16,18 @@ NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) cons
 
         if (current_character == enclosing_character) {
             return {
-                    pos + 1u,
-                    State::READING_ENCLOSED_VALUE
+                pos + 1u,
+                State::READING_ENCLOSED_VALUE
             };
         } else if (current_character == item_delimiter) {
             return {
-                    pos,
-                    State::READING_EMPTY_VALUE
+                pos,
+                State::READING_EMPTY_VALUE
             };
         } else if (isValidCharacter(current_character)) {
             return {
-                    pos,
-                    State::READING_VALUE
+                pos,
+                State::READING_VALUE
             };
         } else {
             pos++;
@@ -32,8 +35,8 @@ NextState ValueStateHandler::waitValue(const std::string &file, size_t pos) cons
     }
 
     return {
-            pos,
-            State::READING_EMPTY_VALUE
+        pos,
+        State::READING_EMPTY_VALUE
     };
 }
 
@@ -109,4 +112,6 @@ NextStateWithElement ValueStateHandler::readEmptyValue(const std::string &, size
 
 bool ValueStateHandler::isValidCharacter(char character) const {
     return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
+}
+
 }

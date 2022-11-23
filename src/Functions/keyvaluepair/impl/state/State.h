@@ -2,6 +2,9 @@
 
 #include <cstddef>
 
+namespace DB
+{
+
 enum State {
     WAITING_KEY,
     READING_KEY,
@@ -24,3 +27,5 @@ struct NextStateWithElement {
     NextState state;
     std::string_view element;
 };
+
+}

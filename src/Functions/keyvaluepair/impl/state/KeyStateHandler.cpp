@@ -1,5 +1,8 @@
 #include "KeyStateHandler.h"
 
+namespace DB
+{
+
 KeyStateHandler::KeyStateHandler(char key_value_delimiter_, char escape_character_,
                                  std::optional<char> enclosing_character_)
     : StateHandler(escape_character_, enclosing_character_), key_value_delimiter(key_value_delimiter_)
@@ -10,13 +13,13 @@ NextState KeyStateHandler::waitKey(const std::string &file, size_t pos) const {
         const auto current_character = file[pos];
         if (isalpha(current_character)) {
             return {
-                    pos,
-                    State::READING_KEY
+                pos,
+                State::READING_KEY
             };
         } else if (enclosing_character && current_character == enclosing_character) {
             return {
-                    pos + 1u,
-                    State::READING_ENCLOSED_KEY
+                pos + 1u,
+                State::READING_ENCLOSED_KEY
             };
         } else {
             pos++;
@@ -24,8 +27,8 @@ NextState KeyStateHandler::waitKey(const std::string &file, size_t pos) const {
     }
 
     return {
-            pos,
-            State::END
+        pos,
+        State::END
     };
 }
 
@@ -123,3 +126,4 @@ NextState KeyStateHandler::readKeyValueDelimiter(const std::string &file, size_t
     }
 }
 
+}

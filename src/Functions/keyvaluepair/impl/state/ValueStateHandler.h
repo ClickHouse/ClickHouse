@@ -6,6 +6,9 @@
 #include "State.h"
 #include "StateHandler.h"
 
+namespace DB
+{
+
 class ValueStateHandler : StateHandler {
 
 public:
@@ -23,3 +26,5 @@ private:
 
     bool isValidCharacter(char character) const;
 };
+
+}
