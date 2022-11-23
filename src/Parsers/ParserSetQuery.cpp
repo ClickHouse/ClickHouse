@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/SettingValueFromAST.h>
 
@@ -281,7 +282,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.getName());
+        change.getName() = name;
         change.setValue(std::make_unique<SettingValueFromAST>(function_ast));
 
         return true;
@@ -289,8 +290,8 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     else if (!value_p.parse(pos, node, expected))
         return false;
 
-    change.name = name;
-    change.value = node->as<ASTLiteral &>().value;
+    change.getName() = name;
+    change.setValue(node->as<ASTLiteral &>().value);
 
     return true;
 }
