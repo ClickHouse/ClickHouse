@@ -65,7 +65,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto auth_settings = S3::AuthSettings::loadFromConfig(config_prefix, config);
 
         auto endpoint = config.getString(config_prefix + ".endpoint");
-        auto new_uri = S3::URI{Poco::URI(endpoint)};
+        auto new_uri = S3::URI{endpoint};
 
         {
             std::lock_guard client_lock{snapshot_s3_client_mutex};
