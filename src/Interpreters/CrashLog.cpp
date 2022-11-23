@@ -8,7 +8,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Stopwatch.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB

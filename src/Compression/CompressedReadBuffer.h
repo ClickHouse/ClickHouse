@@ -21,7 +21,7 @@ public:
     {
     }
 
-    [[nodiscard]] size_t readBig(char * to, size_t n) override;
+    size_t readBig(char * to, size_t n) override;
 
     /// The compressed size of the current block.
     size_t getSizeCompressed() const

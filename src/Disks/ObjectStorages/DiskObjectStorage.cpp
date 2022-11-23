@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/FileCache.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -82,11 +83,6 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<FakeDiskTransaction>(*this);
 }
 
-ObjectStoragePtr DiskObjectStorage::getObjectStorage()
-{
-    return object_storage;
-}
-
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
@@ -107,11 +103,14 @@ DiskObjectStorage::DiskObjectStorage(
     const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
+    DiskType disk_type_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
-    : IDisk(name_, getAsyncExecutor(log_name, thread_pool_size_))
+    : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
+    , name(name_)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
+    , disk_type(disk_type_)
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
@@ -131,7 +130,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
+            paths_map.emplace_back(local_path, getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -160,8 +159,6 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
-
-            throw;
         }
         catch (const fs::filesystem_error & e)
         {
@@ -219,22 +216,6 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
-
-void DiskObjectStorage::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    /// It's the same object storage disk
-    if (this == to_disk.get())
-    {
-        auto transaction = createObjectStorageTransaction();
-        transaction->copyFile(from_path, to_path);
-        transaction->commit();
-    }
-    else
-    {
-        IDisk::copy(from_path, to_disk, to_path);
-    }
-}
-
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
 {
     moveFile(from_path, to_path, send_metadata);
@@ -256,13 +237,6 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
 {
     auto transaction = createObjectStorageTransaction();
     transaction->removeSharedFile(path, delete_metadata_only);
-    transaction->commit();
-}
-
-void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
-{
-    auto transaction = createObjectStorageTransaction();
-    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
 
@@ -288,10 +262,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
-    {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
         return false;
-    }
 
     auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);
@@ -419,8 +390,9 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startupImpl(ContextPtr context)
+void DiskObjectStorage::startup(ContextPtr context)
 {
+
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
 
@@ -462,26 +434,18 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
 
     if (unreserved_space >= bytes)
     {
-        LOG_TRACE(
-            log,
-            "Reserved {} on remote disk {}, having unreserved {}.",
-            ReadableSize(bytes),
-            backQuote(name),
-            ReadableSize(unreserved_space));
+        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
-    }
-    else
-    {
-        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
     }
 
     return {};
@@ -497,11 +461,6 @@ bool DiskObjectStorage::isReadOnly() const
     return object_storage->isReadOnly();
 }
 
-bool DiskObjectStorage::isWriteOnce() const
-{
-    return object_storage->isWriteOnce();
-}
-
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     return std::make_shared<DiskObjectStorage>(
@@ -510,6 +469,7 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         getName(),
         metadata_storage,
         object_storage,
+        disk_type,
         send_metadata,
         threadpool_size);
 }

@@ -623,7 +623,6 @@ NamesAndTypesList Block::getNamesAndTypesList() const
 NamesAndTypes Block::getNamesAndTypes() const
 {
     NamesAndTypes res;
-    res.reserve(columns());
 
     for (const auto & elem : data)
         res.emplace_back(elem.name, elem.type);

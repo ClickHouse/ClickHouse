@@ -7,10 +7,7 @@ CSVWithNamesAndTypes
 CustomSeparated
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
-JSON
 JSONColumns
-JSONColumnsWithMetadata
-JSONCompact
 JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
@@ -20,7 +17,6 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
 JSONLines
-JSONObjectEachRow
 JSONStringsEachRow
 MsgPack
 NDJSON

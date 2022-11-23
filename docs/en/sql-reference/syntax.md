@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 ---

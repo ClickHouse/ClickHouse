@@ -546,13 +546,10 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 {
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_ident = alias->clone();
-                    if (auto * alias_ident_typed = alias_ident->as<ASTIdentifier>())
-                    {
-                        alias_ident_typed->restoreTable();
-                        bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
-                        if (!alias_equals_column_name)
-                            throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                    }
+                    alias_ident->as<ASTIdentifier>()->restoreTable();
+                    bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
+                    if (!alias_equals_column_name)
+                        throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
                 String short_name = ident->shortName();
                 String original_long_name;

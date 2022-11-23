@@ -18,12 +18,11 @@ public:
     explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
-        EnumerateStreamsSettings & settings,
+        SubstreamPath & path,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
-            const IColumn & column,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 

@@ -2,15 +2,6 @@
 
 #if USE_MSGPACK
 
-/// FIXME: there is some issue with clang-15, that incorrectly detect a
-/// "Attempt to free released memory" in msgpack::unpack(), because of delete
-/// operator for zone (from msgpack/v1/detail/cpp11_zone.hpp), hence NOLINT
-///
-/// NOTE: that I was not able to suppress it locally, only with
-/// NOLINTBEGIN/NOLINTEND
-//
-// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete)
-
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
@@ -128,7 +119,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
+            assert_cast<ColumnUInt32 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::UInt64:
@@ -148,7 +139,7 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         }
         case TypeIndex::Int32:
         {
-            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
+            assert_cast<ColumnInt32 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::Int64:
@@ -512,7 +503,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
@@ -561,8 +552,6 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 }
 
 }
-
-// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 
 #else
 

@@ -13,7 +13,6 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
-#include <Common/KnownObjectNames.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -93,16 +92,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
-    format_settings.json.quote_64bit_floats = settings.output_format_json_quote_64bit_floats;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
-    format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
-    format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
-    format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
-    format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
-    format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.try_infer_objects = context->getSettingsRef().allow_experimental_object_type;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -249,22 +241,13 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
-            settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
-        auto format = std::make_shared<ParallelParsingInputFormat>(params);
-        if (!settings.input_format_record_errors_file_path.toString().empty())
-        {
-            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-        }
-        return format;
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
+               context->getApplicationType() == Context::ApplicationType::SERVER};
+        return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
-    if (!settings.input_format_record_errors_file_path.toString().empty())
-    {
-        format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
-    }
     return format;
 }
 
@@ -304,7 +287,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto element_id = context->getProcessListElement();
+    auto * element_id = context->getProcessListElement();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
@@ -446,7 +429,6 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
     registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -485,7 +467,6 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
     registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
@@ -540,7 +521,6 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
         return getFormatFromFileName(file_path, false);
     return "";
 #else
-    (void)fd;
     return "";
 #endif
 }

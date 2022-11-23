@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/geo
----
 # GEO函数 {#geohan-shu}
 
 ## 大圆形距离 {#greatcircledistance}

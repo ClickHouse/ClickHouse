@@ -26,8 +26,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -104,19 +102,6 @@ std::unique_lock<std::mutex> StorageBuffer::Buffer::lockImpl(bool read) const
 }
 
 
-StoragePtr StorageBuffer::getDestinationTable() const
-{
-    if (!destination_id)
-        return {};
-
-    auto destination = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
-    if (destination.get() == this)
-        throw Exception("Destination table is myself. Will lead to infinite loop.", ErrorCodes::INFINITE_LOOP);
-
-    return destination;
-}
-
-
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -149,7 +134,6 @@ StorageBuffer::StorageBuffer(
     }
     else
         storage_metadata.setColumns(columns_);
-
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -209,8 +193,13 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    if (auto destination = getDestinationTable())
+    if (destination_id)
     {
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
         /// TODO: Find a way to support projections for StorageBuffer
         query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
@@ -228,12 +217,17 @@ void StorageBuffer::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
-    if (auto destination = getDestinationTable())
+    if (destination_id)
     {
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
@@ -336,14 +330,6 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.getInputOrderInfo())
-        {
-            /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
-            });
-        }
     }
 
     if (pipe_from_buffers.empty())
@@ -535,8 +521,8 @@ public:
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        StoragePtr destination = storage.getDestinationTable();
-        if (destination)
+        StoragePtr destination;
+        if (storage.destination_id)
         {
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
@@ -551,7 +537,7 @@ public:
         /// If the block already exceeds the maximum limit, then we skip the buffer.
         if (rows > storage.max_thresholds.rows || bytes > storage.max_thresholds.bytes)
         {
-            if (destination)
+            if (storage.destination_id)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
                 storage.writeBlockToDestination(block, destination);
@@ -642,9 +628,15 @@ SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMet
 bool StorageBuffer::mayBenefitFromIndexForIn(
     const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    if (auto destination = getDestinationTable())
-        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
-    return false;
+    if (!destination_id)
+        return false;
+
+    auto destination = DatabaseCatalog::instance().getTable(destination_id, query_context);
+
+    if (destination.get() == this)
+        throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
 }
 
 
@@ -711,8 +703,11 @@ bool StorageBuffer::optimize(
 
 bool StorageBuffer::supportsPrewhere() const
 {
-    if (auto destination = getDestinationTable())
-        return destination->supportsPrewhere();
+    if (!destination_id)
+        return false;
+    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
+    if (dest && dest.get() != this)
+        return dest->supportsPrewhere();
     return false;
 }
 
@@ -839,7 +834,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, getContext()));
     }
     catch (...)
     {
@@ -1015,10 +1010,14 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(settings);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
 
-    return total_writes.rows + underlying_rows.value_or(0);
+    if (underlying)
+        underlying_rows = underlying->totalRows(settings);
+    if (!underlying_rows)
+        return underlying_rows;
+
+    return total_writes.rows + *underlying_rows;
 }
 
 std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const

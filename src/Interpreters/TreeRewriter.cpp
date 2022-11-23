@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Common/checkStackSize.h>
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -24,13 +25,12 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
-
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -521,15 +521,10 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 ++new_elements_size;
             }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && !select_query->groupBy())
+            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
             {
-                GetAggregatesVisitor::Data data = {};
-                GetAggregatesVisitor(data).visit(elem);
-                if (!data.aggregates.empty())
-                {
-                    new_elements[result_index] = elem;
-                    ++new_elements_size;
-                }
+                new_elements[result_index] = elem;
+                ++new_elements_size;
             }
         }
     }
@@ -611,7 +606,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     }
 }
 
-void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, std::shared_ptr<TableJoin> & analyzed_join)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, ASTTableJoin & out_table_join)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -649,7 +644,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
             throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    analyzed_join->getTableJoin() = table_join;
+    out_table_join = table_join;
 }
 
 /// Evaluate expression and return boolean value if it can be interpreted as bool.
@@ -1025,7 +1020,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     has_explicit_columns = !required.empty();
     if (is_select && !has_explicit_columns)
     {
-        optimize_trivial_count = !columns_context.has_array_join;
+        optimize_trivial_count = true;
 
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
@@ -1236,11 +1231,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (tables_with_columns.size() > 1)
     {
         const auto & right_table = tables_with_columns[1];
-        auto columns_from_joined_table = right_table.columns;
+        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
+        cols_from_joined = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
-        columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
+        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
+
+        result.analyzed_join->deduplicateAndQualifyColumnNames(
+            source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -1251,9 +1249,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     NameSet all_source_columns_set = source_columns_set;
     if (table_join)
     {
-        for (const auto & [name, _] : table_join->columnsFromJoinedTable())
+        for (const auto & [name, _] : table_join->columns_from_joined_table)
             all_source_columns_set.insert(name);
     }
+
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
+
 
     if (getContext()->getSettingsRef().enable_positional_arguments)
     {
@@ -1273,8 +1274,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
         }
     }
-
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1301,7 +1300,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
     setJoinStrictness(
-        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join);
+        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)
