@@ -116,7 +116,7 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
                 processor->cancel();
             return false;
         }
-        processors->insert(processors->end(), new_processors.begin(), new_processors.end());
+        processors.insert(processors.end(), new_processors.begin(), new_processors.end());
     }
 
     uint64_t num_processors = processors.size();
