@@ -12,7 +12,7 @@
             </disk_memory>
             <disk_hdfs>
                 <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/data/</endpoint>
+                <endpoint>hdfs://hdfs1:9000/</endpoint>
             </disk_hdfs>
             <disk_encrypted>
                 <type>encrypted</type>

@@ -60,7 +60,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    std::unordered_map<String, size_t> name_to_index;
+    Block::NameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
