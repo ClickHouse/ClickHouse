@@ -77,6 +77,54 @@ sidebar_label: GROUP BY
 
 您可以使用 `WITH TOTALS` 在子查询中，包括在子查询 [JOIN](../../../sql-reference/statements/select/join.md) 子句（在这种情况下，将各自的总值合并）。
 
+## GROUP BY ALL {#group-by-all}
+
+`GROUP BY ALL` 相当于对所有被查询的并且不被聚合函数使用的字段进行`GROUP BY`。
+
+例如
+
+``` sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY ALL
+```
+
+效果等同于
+
+``` sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY a * 2, b
+```
+
+对于一种特殊情况，如果一个 function 的参数中同时有聚合函数和其他字段，会对参数中能提取的最大非聚合字段进行`GROUP BY`。
+
+例如:
+
+``` sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY ALL
+```
+
+效果等同于
+
+``` sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+```
+
 ## 例子 {#examples}
 
 示例:
