@@ -67,6 +67,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <Common/checkStackSize.h>
+
 namespace DB
 {
 
@@ -517,7 +519,7 @@ public:
 
 private:
     QueryTreeNodes expressions;
-    std::unordered_map<std::string, std::vector<QueryTreeNodePtr>> alias_name_to_expressions;
+    std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 
 /** Projection names is name of query tree node that is used in projection part of query node.
@@ -1099,6 +1101,10 @@ private:
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+
+    static void expandGroupByAll(QueryNode & query_tree_node_typed);
+
+    static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
     /// Resolve identifier functions
 
@@ -1929,6 +1935,68 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             scope.scope_node->formatASTForErrorMessage());
 }
 
+std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
+{
+    checkStackSize();
+
+    if (node->as<ColumnNode>())
+    {
+        into.push_back(node);
+        return {false, 1};
+    }
+
+    auto * function = node->as<FunctionNode>();
+
+    if (!function)
+        return {false, 0};
+
+    if (function->isAggregateFunction())
+        return {true, 0};
+
+    UInt64 pushed_children = 0;
+    bool has_aggregate = false;
+
+    for (auto & child : function->getArguments().getNodes())
+    {
+        auto [child_has_aggregate, child_pushed_children] = recursivelyCollectMaxOrdinaryExpressions(child, into);
+        has_aggregate |= child_has_aggregate;
+        pushed_children += child_pushed_children;
+    }
+
+    /// The current function is not aggregate function and there is no aggregate function in its arguments,
+    /// so use the current function to replace its arguments
+    if (!has_aggregate)
+    {
+        for (UInt64 i = 0; i < pushed_children; i++)
+            into.pop_back();
+
+        into.push_back(node);
+        pushed_children = 1;
+    }
+
+    return {has_aggregate, pushed_children};
+}
+
+/** Expand GROUP BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
+  *
+  * For a special case that if there is a function having both aggregate functions and other fields as its arguments,
+  * the `GROUP BY` keys will contain the maximum non-aggregate fields we can extract from it.
+  *
+  * Example:
+  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t GROUP BY ALL
+  * will expand as
+  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+  */
+void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
+{
+    auto & group_by_nodes = query_tree_node_typed.getGroupBy().getNodes();
+    auto & projection_list = query_tree_node_typed.getProjection();
+
+    for (auto & node : projection_list.getNodes())
+        recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
+
+}
+
 
 /// Resolve identifier functions implementation
 
@@ -2171,18 +2239,19 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
         auto & alias_identifier_node = it->second->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         auto lookup_result = tryResolveIdentifier(IdentifierLookup{identifier, identifier_lookup.lookup_context}, scope, identifier_resolve_settings);
-        if (!lookup_result.isResolved())
+        if (!lookup_result.resolved_identifier)
         {
             std::unordered_set<Identifier> valid_identifiers;
             collectScopeWithParentScopesValidIdentifiersForTypoCorrection(identifier, scope, true, false, false, valid_identifiers);
-
             auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}' in scope {}{}",
-                toStringLowercase(IdentifierLookupContext::EXPRESSION),
+
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {} identifier '{}'. In scope {}{}",
+                toStringLowercase(identifier_lookup.lookup_context),
                 identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage(),
                 getHintsErrorMessageSuffix(hints));
         }
+
         it->second = lookup_result.resolved_identifier;
 
         /** During collection of aliases if node is identifier and has alias, we cannot say if it is
@@ -2193,9 +2262,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
           * If we resolved identifier node as function, we must remove identifier node alias from
           * expression alias map.
           */
-        if (identifier_lookup.isExpressionLookup() && it->second)
+        if (identifier_lookup.isExpressionLookup())
             scope.alias_name_to_lambda_node.erase(identifier_bind_part);
-        else if (identifier_lookup.isFunctionLookup() && it->second)
+        else if (identifier_lookup.isFunctionLookup())
             scope.alias_name_to_expression_node.erase(identifier_bind_part);
 
         scope.expressions_in_resolve_process_stack.popNode();
@@ -3203,11 +3272,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
         if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
-            size_t table_expressions_column_nodes_with_names_stack_size = table_expressions_column_nodes_with_names_stack.size();
-            if (table_expressions_column_nodes_with_names_stack_size < 1)
+            if (table_expressions_column_nodes_with_names_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 1 table expressions on stack before ARRAY JOIN processing. Actual {}",
-                    table_expressions_column_nodes_with_names_stack_size);
+                    "Expected at least 1 table expressions on stack before ARRAY JOIN processing");
 
             auto & table_expression_column_nodes_with_names = table_expressions_column_nodes_with_names_stack.back();
 
@@ -6005,6 +6072,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         node->removeAlias();
     }
+
+    if (query_node_typed.isGroupByAll())
+        expandGroupByAll(query_node_typed);
 
     /** Validate aggregates
       *
