@@ -22,7 +22,7 @@ struct EventFD
 
 }
 
-#elif
+#else
 
 namespace DB
 {
