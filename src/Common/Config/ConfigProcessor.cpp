@@ -96,9 +96,8 @@ static ElementIdentifier getElementIdentifier(Node * element)
 {
     const NamedNodeMapPtr attrs = element->attributes();
     std::vector<std::pair<std::string, std::string>> attrs_kv;
-    for (size_t i = 0, size = attrs->length(); i < size; ++i)
+    for (const Node * node = attrs->item(0); node; node = node->nextSibling())
     {
-        const Node * node = attrs->item(i);
         std::string name = node->nodeName();
         const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
         if (name == "replace" || name == "remove" ||
@@ -123,9 +122,8 @@ static ElementIdentifier getElementIdentifier(Node * element)
 static Node * getRootNode(Document * document)
 {
     const NodeListPtr children = document->childNodes();
-    for (size_t i = 0, size = children->length(); i < size; ++i)
+    for (Node * child = children->item(0); child; child = child->nextSibling())
     {
-        Node * child = children->item(i);
         /// Besides the root element there can be comment nodes on the top level.
         /// Skip them.
         if (child->nodeType() == Node::ELEMENT_NODE)
@@ -145,10 +143,8 @@ static void deleteAttributesRecursive(Node * root)
     const NodeListPtr children = root->childNodes();
     std::vector<Node *> children_to_delete;
 
-    for (size_t i = 0, size = children->length(); i < size; ++i)
+    for (Node * child = children->item(0); child; child = child->nextSibling())
     {
-        Node * child = children->item(i);
-
         if (child->nodeType() == Node::ELEMENT_NODE)
         {
             Element & child_element = dynamic_cast<Element &>(*child);
@@ -189,10 +185,8 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         node = next_node;
     }
 
-    for (size_t i = 0, size = with_nodes->length(); i < size; ++i)
+    for (Node * with_node = with_nodes->item(0); with_node; with_node = with_node->nextSibling())
     {
-        Node * with_node = with_nodes->item(i);
-
         bool merged = false;
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
@@ -342,9 +336,9 @@ void ConfigProcessor::doIncludesRecursive(
             if (node->nodeName() == "include")
             {
                 const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
+                for (Node * child = children->item(0); child; child = child->nextSibling())
                 {
-                    NodePtr new_node = config->importNode(children->item(i), true);
+                    NodePtr new_node = config->importNode(child, true);
                     node->parentNode()->insertBefore(new_node, node);
                 }
 
@@ -366,16 +360,16 @@ void ConfigProcessor::doIncludesRecursive(
                 }
 
                 const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
+                for (Node * child = children->item(0); child; child = child->nextSibling())
                 {
-                    NodePtr new_node = config->importNode(children->item(i), true);
+                    NodePtr new_node = config->importNode(child, true);
                     node->appendChild(new_node);
                 }
 
                 const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+                for (Node * attr = from_attrs->item(0); attr; attr = attr->nextSibling())
                 {
-                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(attr, true)));
                 }
 
                 included_something = true;
@@ -436,7 +430,8 @@ void ConfigProcessor::doIncludesRecursive(
         doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
     else
     {
-        for (Node * child = node->firstChild(); child; child = child->nextSibling())
+        NodeListPtr children = node->childNodes();
+        for (Node * child = children->item(0); child; child = child->nextSibling())
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
 }
