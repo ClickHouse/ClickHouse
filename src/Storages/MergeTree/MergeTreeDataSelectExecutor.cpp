@@ -385,9 +385,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     : static_cast<size_t>(settings.max_threads);
 
                 InputOrderInfoPtr group_by_info = query_info.projection->input_order_info;
+                SortDescription sort_description_for_merging;
                 SortDescription group_by_sort_description;
                 if (group_by_info && settings.optimize_aggregation_in_order)
+                {
                     group_by_sort_description = getSortDescriptionFromGroupBy(select_query);
+                    sort_description_for_merging = group_by_info->sort_description_for_merging;
+                }
                 else
                     group_by_info = nullptr;
 
@@ -406,7 +410,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     temporary_data_merge_threads,
                     /* storage_has_evenly_distributed_read_= */ false,
                     /* group_by_use_nulls */ false,
-                    std::move(group_by_info),
+                    std::move(sort_description_for_merging),
                     std::move(group_by_sort_description),
                     should_produce_results_in_order_of_bucket_number);
                 query_plan->addStep(std::move(aggregating_step));

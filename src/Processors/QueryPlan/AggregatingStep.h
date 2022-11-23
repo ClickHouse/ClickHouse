@@ -37,7 +37,7 @@ public:
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
         bool group_by_use_nulls_,
-        InputOrderInfoPtr group_by_info_,
+        SortDescription sort_description_for_merging_,
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_);
 
@@ -52,7 +52,9 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
-    bool inOrder() const { return group_by_info != nullptr; }
+    bool inOrder() const { return !sort_description_for_merging.empty(); }
+    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
 
 private:
     void updateOutputStream() override;
@@ -68,7 +70,7 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
-    InputOrderInfoPtr group_by_info;
+    SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
     /// It determines if we should resize pipeline to 1 at the end.

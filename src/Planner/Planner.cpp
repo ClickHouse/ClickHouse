@@ -455,6 +455,7 @@ void Planner::buildQueryPlanIfNeeded()
         );
 
         SortDescription group_by_sort_description;
+        SortDescription sort_description_for_merging;
 
         auto merge_threads = settings.max_threads;
         auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -477,7 +478,6 @@ void Planner::buildQueryPlanIfNeeded()
         const bool should_produce_results_in_order_of_bucket_number
             = select_query_options.to_stage == QueryProcessingStage::WithMergeableState && settings.distributed_aggregation_memory_efficient;
 
-        InputOrderInfoPtr input_order_info;
         bool aggregate_final =
             select_query_options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
@@ -493,7 +493,7 @@ void Planner::buildQueryPlanIfNeeded()
             temporary_data_merge_threads,
             storage_has_evenly_distributed_read,
             settings.group_by_use_nulls,
-            std::move(input_order_info),
+            std::move(sort_description_for_merging),
             std::move(group_by_sort_description),
             should_produce_results_in_order_of_bucket_number);
         query_plan.addStep(std::move(aggregating_step));

@@ -112,6 +112,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
+            if (optimization_settings.aggregation_in_order)
+                optimizeAggregationInOrder(*frame.node, nodes);
+
             if (optimization_settings.distinct_in_order)
                 tryDistinctReadInOrder(frame.node);
         }
