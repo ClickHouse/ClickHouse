@@ -86,7 +86,7 @@ AggregatingStep::AggregatingStep(
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
     bool group_by_use_nulls_,
-    InputOrderInfoPtr group_by_info_,
+    SortDescription sort_description_for_merging_,
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_)
     : ITransformingStep(
@@ -100,10 +100,16 @@ AggregatingStep::AggregatingStep(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_use_nulls(group_by_use_nulls_)
-    , group_by_info(std::move(group_by_info_))
+    , sort_description_for_merging(std::move(sort_description_for_merging_))
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
 {
+}
+
+void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
+{
+    sort_description_for_merging = std::move(sort_description_for_merging_);
+    group_by_sort_description = std::move(group_by_sort_description_);
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -116,7 +122,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
     /// optimize_aggregation_in_order
-    if (group_by_info)
+    if (!sort_description_for_merging.empty())
     {
         /// two-level aggregation is not supported anyway for in order aggregation.
         allow_to_use_two_level_group_by = false;
@@ -296,7 +302,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    if (group_by_info)
+    if (!sort_description_for_merging.empty())
     {
         if (pipeline.getNumStreams() > 1)
         {
@@ -316,7 +322,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
-                    group_by_info, group_by_sort_description,
+                    sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
                     many_data, counter++);
             });
@@ -349,7 +355,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
-                    group_by_info, group_by_sort_description,
+                    sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes);
             });
 
