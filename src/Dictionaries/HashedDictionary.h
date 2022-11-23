@@ -33,8 +33,13 @@ struct HashedDictionaryStorageConfiguration
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+class ParallelDictionaryLoader;
+
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 class HashedDictionary final : public IDictionary
 {
+    friend class ParallelDictionaryLoader<dictionary_key_type, sparse, sharded>;
+
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -204,7 +209,7 @@ private:
 
     void createAttributes();
 
-    void blockToAttributes(const Block & block, std::optional<UInt64> current_shard);
+    size_t blockToAttributes(const Block & block);
 
     void updateData();
 
@@ -241,6 +246,8 @@ private:
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const;
 
     void resize(size_t added_rows);
+
+    Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
