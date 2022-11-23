@@ -1,3 +1,5 @@
+#include <TableFunctions/TableFunctionMongoDB.h>
+
 #include <Common/Exception.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -7,7 +9,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <TableFunctions/TableFunctionMongoDB.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/registerTableFunctions.h>
