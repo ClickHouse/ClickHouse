@@ -1,5 +1,8 @@
 #include "KeyValuePairEscapingProcessor.h"
 
+namespace DB
+{
+
 KeyValuePairEscapingProcessor::KeyValuePairEscapingProcessor(char escape_character_)
 : escape_character(escape_character_)
 {}
@@ -34,4 +37,6 @@ std::string KeyValuePairEscapingProcessor::escape(std::string_view element_view)
     }
 
     return element;
+}
+
 }

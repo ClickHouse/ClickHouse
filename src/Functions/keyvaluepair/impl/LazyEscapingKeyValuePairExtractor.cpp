@@ -1,6 +1,9 @@
 #include <optional>
 #include "LazyEscapingKeyValuePairExtractor.h"
 
+namespace DB
+{
+
 LazyEscapingKeyValuePairExtractor::LazyEscapingKeyValuePairExtractor(KeyStateHandler key_state_handler_,
                                                                      ValueStateHandler value_state_handler_,
                                                                      KeyValuePairEscapingProcessor escaping_processor_)
@@ -111,4 +114,6 @@ NextState LazyEscapingKeyValuePairExtractor::flushPair(const std::string &file, 
         pos,
         pos == file.size() ? State::END : State::WAITING_KEY
     };
+}
+
 }

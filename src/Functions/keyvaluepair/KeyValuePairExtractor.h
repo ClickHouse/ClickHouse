@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <string>
 
+namespace DB
+{
 /*
  * Extracts key value pairs from strings. Strings do not need to be key-value pair only,
  * it can contain "noise". The below grammar is a simplified representation of what is expected/ supported:
@@ -24,3 +26,5 @@ struct KeyValuePairExtractor {
 
     virtual Response extract(const std::string & file) = 0;
 };
+
+}
