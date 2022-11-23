@@ -22,10 +22,10 @@ send -- "\$CLICKHOUSE_CLIENT --query 'DROP TABLE IF EXISTS num_processed_rows_te
 send -- "\$CLICKHOUSE_CLIENT --query 'CREATE TABLE num_processed_rows_test_0 (val String) ENGINE = Memory;' >/dev/null 2>&1\r"
 
 ### When requested we should get the count on exit:
-send -- "\$CLICKHOUSE_CLIENT --print-num-processed-rows --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" \r"
+send -- "\$CLICKHOUSE_CLIENT --processed-rows --query \"INSERT INTO num_processed_rows_test_0 VALUES (\'x\');\" \r"
 expect "Processed rows: 1"
 
-send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --print-num-processed-rows --query 'INSERT INTO num_processed_rows_test_0 format TSV\'\r"
+send "yes | head -n7757 | \$CLICKHOUSE_CLIENT --processed-rows --query 'INSERT INTO num_processed_rows_test_0 format TSV\'\r"
 expect "Processed rows: 7757"
 
 
