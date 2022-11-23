@@ -54,9 +54,9 @@ def generate_data(q, total_number):
 def fetch_and_insert_data(q, client):
     while True:
         insert = q.get()
-        client.query(insert, settings = {"async_insert": 1, "wait_for_async_insert": 0, "async_insert_busy_timeout_ms": 1500})
+        client.query(insert, settings = {"async_insert": 1, "wait_for_async_insert": 0, "async_insert_busy_timeout_ms": 1500, "insert_keeper_fault_injection_probability": 0})
         q.task_done()
-        sleep_time = random.randint(300, 1000)
+        sleep_time = random.randint(50, 500)
         time.sleep(sleep_time/1000.0)
 
 # main process
@@ -82,7 +82,7 @@ for i in range(3):
 
 gen.join()
 
-time.sleep(3)
+time.sleep(5)
 
 result = client.query("select count(*) from t_async_insert_dedup")
 print(result, flush=True)
