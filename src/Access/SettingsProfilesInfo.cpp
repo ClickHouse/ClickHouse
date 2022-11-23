@@ -69,7 +69,7 @@ Strings SettingsProfilesInfo::getProfileNames() const
     // see invocations of SettingsProfilesCache::substituteProfiles.
     Strings result;
     result.reserve(profiles_with_implicit.size());
-    for (const auto & profile_id : profiles_with_implicit)
+    for (const auto & profile_id : profiles)
     {
         const auto p = names_of_profiles.find(profile_id);
         if (p == names_of_profiles.end())
