@@ -1027,10 +1027,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
         }
 
         if (command.default_expression && !UserDefinedSQLFunctionFactory::instance().empty())
-        {
-            UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-            UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(command.default_expression);
-        }
+            UserDefinedSQLFunctionVisitor::visit(command.default_expression);
     }
 
     prepared = true;

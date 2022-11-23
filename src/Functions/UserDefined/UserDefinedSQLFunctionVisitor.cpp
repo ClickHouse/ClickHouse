@@ -4,12 +4,13 @@
 #include <unordered_set>
 #include <stack>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include "Parsers/ASTColumnDeclaration.h"
 
 
 namespace DB
@@ -20,24 +21,77 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
-    auto * function = ast->as<ASTFunction>();
-    if (!function)
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        if (replace_result)
+            ast = replace_result;
+
         return;
+    }
 
-    std::unordered_set<std::string> udf_in_replace_process;
-    auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-    if (replace_result)
-        ast = replace_result;
+    if (auto * col_decl = ast->as<ASTColumnDeclaration>())
+    {
+        const auto visit_child = [&](ASTPtr & child)
+        {
+            if (!child)
+                return;
+
+            auto * old_value = child.get();
+            visit(child);
+            ast->setOrReplace(old_value, child);
+        };
+
+        visit_child(col_decl->default_expression);
+        visit_child(col_decl->ttl);
+        return;
+    }
+
+    if (auto * storage = ast->as<ASTStorage>())
+    {
+        const auto visit_child = [&](IAST * child)
+        {
+            if (!child)
+                return;
+
+            if (const auto * function = child->template as<ASTFunction>())
+            {
+                std::unordered_set<std::string> udf_in_replace_process;
+                auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+                if (replace_result)
+                    ast->setOrReplace(child, replace_result);
+
+                return;
+            }
+
+            visit(child);
+        };
+
+        visit_child(storage->partition_by);
+        visit_child(storage->primary_key);
+        visit_child(storage->order_by);
+        visit_child(storage->sample_by);
+        visit_child(storage->ttl_table);
+
+        return;
+    }
+
+    for (auto & child : ast->children)
+        visit(child);
 }
 
-bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
+void UserDefinedSQLFunctionVisitor::visit(IAST * ast)
 {
-    return true;
+    assert(ast && !ast->as<ASTFunction>());
+
+    for (auto & child : ast->children)
+        visit(child);
 }
 
-ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
