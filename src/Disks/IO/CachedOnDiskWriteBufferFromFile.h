@@ -34,7 +34,19 @@ public:
     * it until it is full and then allocate next file segment.
     */
     bool write(const char * data, size_t size, size_t offset, bool is_persistent);
+
+    /* Tries to write data to current file segment.
+     * Size of written data may be less than requested_size, because current file segment may not have enough space.
+     * In strict mode, if current file segment doesn't have enough space, then exception is thrown.
+     *
+     * Returns size of written data.
+     * If returned non zero value, then we can try to write again.
+     * If no space is available, returns zero.
+     */
     size_t tryWrite(const char * data, size_t size, size_t offset, bool is_persistent, bool strict = false);
+
+    /// Same as tryWrite, but doesn't write anything, just reserves some space in cache
+    size_t tryReserve(size_t size, size_t offset, bool is_persistent, bool strict = false);
 
     void finalize(bool clear = false);
 

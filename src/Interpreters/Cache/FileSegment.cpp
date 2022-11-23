@@ -325,6 +325,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
+        /// if `from` is nullptr, then we just allocate and hold space by current segment and it was (or would) be written outside
         if (cache_writer && from != nullptr)
             cache_writer->write(from, size);
 

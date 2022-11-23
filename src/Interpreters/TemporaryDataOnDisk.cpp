@@ -43,6 +43,13 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
+VolumePtr TemporaryDataOnDiskScope::getVolume() const
+{
+    if (!volume)
+        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
+    return volume;
+}
+
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     TemporaryFileStreamPtr tmp_stream;
@@ -54,7 +61,6 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, si
     std::lock_guard lock(mutex);
     return *streams.emplace_back(std::move(tmp_stream));
 }
-
 
 std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams() const
 {

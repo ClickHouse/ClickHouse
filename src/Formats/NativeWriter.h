@@ -27,6 +27,8 @@ public:
         IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0);
 
     Block getHeader() const { return header; }
+
+    /// Returns the number of bytes written.
     size_t write(const Block & block);
     void flush();
 

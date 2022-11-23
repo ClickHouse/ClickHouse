@@ -13,15 +13,21 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_ENOUGH_SPACE;
-}
 
+/* ISpacePlaceholder is a base class for all classes that need to reserve space in some storage.
+ * You should resrve space with call reserveCapacity() before writing to it.
+ * After writing you should call setUsed() to let ISpacePlaceholder know how much space was used.
+ * It can be different because in some cases you don't know exact size of data you will write (because of compression, for example).
+ * It's better to reserve more space in advance not to overuse space.
+ */
 class ISpacePlaceholder
 {
 public:
+    /// Reserve space in storage
     void reserveCapacity(size_t requested_capacity);
+
+    /// Indicate that some space is used
+    /// It uses reserved space if it is possible, otherwise it reserves more space
     void setUsed(size_t size);
 
     virtual ~ISpacePlaceholder() = default;
@@ -33,7 +39,9 @@ private:
     size_t used_space = 0;
 };
 
-
+/* FileCachePlaceholder is a class that reserves space in FileCache.
+ * Data is written externally, and FileCachePlaceholder is only used to hold space in FileCache.
+ */
 class FileCachePlaceholder : public ISpacePlaceholder
 {
 public:
@@ -47,6 +55,7 @@ private:
     std::string key_name;
     FileCache * file_cache;
 
+    /// On each reserveImpl() call we create new FileSegmentRangeWriter that would be hold space
     std::vector<std::unique_ptr<FileSegmentRangeWriter>> cache_writers;
 };
 
