@@ -50,6 +50,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
