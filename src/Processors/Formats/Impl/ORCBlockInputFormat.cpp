@@ -136,7 +136,7 @@ void ORCBlockInputFormat::prepareReader()
     if (is_stopped)
         return;
 
-    stripe_total = file_reader->NumberOfStripes();
+    stripe_total = static_cast<int>(file_reader->NumberOfStripes());
     stripe_current = 0;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
@@ -159,7 +159,7 @@ void ORCBlockInputFormat::prepareReader()
     {
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
+        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {

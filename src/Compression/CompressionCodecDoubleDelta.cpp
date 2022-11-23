@@ -353,7 +353,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return (dest - dest_start) + (writer.count() + 7) / 8;
+    return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
 }
 
 template <typename ValueType>
@@ -414,7 +414,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         if (write_spec.data_bits != 0)
         {
             const UInt8 sign = reader.readBit();
-            double_delta = reader.readBits(write_spec.data_bits - 1) + 1;
+            double_delta = static_cast<UnsignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
             if (sign)
             {
                 /// It's well defined for unsigned data types.

@@ -136,8 +136,8 @@ private:
 
         for (size_t i = 0; i <= size; ++i)
         {
-            previous[i] = i - 1;
-            next[i] = i + 1;
+            previous[i] = static_cast<UInt32>(i - 1);
+            next[i] = static_cast<UInt32>(i + 1);
         }
 
         next[size] = 0;
@@ -157,7 +157,7 @@ private:
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 
         for (size_t i = 0; i + 1 < size; ++i)
-            queue.push({quality(i), i});
+            queue.push({quality(static_cast<UInt32>(i)), i});
 
         while (new_size > max_bins && !queue.empty())
         {
@@ -217,7 +217,7 @@ private:
                 points[left] = points[right];
             }
         }
-        size = left + 1;
+        size = static_cast<UInt32>(left + 1);
     }
 
 public:
@@ -293,7 +293,7 @@ public:
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        buf.read(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
+        buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
 };
 

@@ -658,7 +658,9 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     /// Save non key columns
     for (auto & column : sample_block_with_columns_to_add)
     {
-        if (!saved_block_sample.findByName(column.name))
+        if (auto * col = saved_block_sample.findByName(column.name))
+            *col = column;
+        else
             saved_block_sample.insert(column);
     }
 }

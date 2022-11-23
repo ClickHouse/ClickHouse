@@ -214,8 +214,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             return nullptr;
         auto compression = chooseCompressionMethod(*it, compression_method);
         auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, *it++, ctx->getGlobalContext()->getConfigRef(), ctx->getReadSettings());
-        const auto zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
-        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
+        const Int64 zstd_window_log_max = ctx->getSettingsRef().zstd_window_log_max;
+        return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
     };
 
     ColumnsDescription columns;
@@ -356,8 +356,8 @@ bool HDFSSource::initialize()
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
     auto impl = std::make_unique<ReadBufferFromHDFS>(
         uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    const auto zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, zstd_window_log_max);
+    const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
+    read_buf = wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
 
     auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size);
 
@@ -550,7 +550,7 @@ Pipe StorageHDFS::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     std::shared_ptr<HDFSSource::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)

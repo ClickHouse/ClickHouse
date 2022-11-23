@@ -724,7 +724,7 @@ void ZooKeeperRequest::createLogElements(LogElements & elems) const
     elem.has_watch = has_watch;
     elem.op_num = static_cast<uint32_t>(getOpNum());
     elem.path = getPath();
-    elem.request_idx = elems.size() - 1;
+    elem.request_idx = static_cast<uint32_t>(elems.size() - 1);
 }
 
 
@@ -762,7 +762,7 @@ void ZooKeeperCheckRequest::createLogElements(LogElements & elems) const
 void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 {
     ZooKeeperRequest::createLogElements(elems);
-    elems.back().requests_size = requests.size();
+    elems.back().requests_size = static_cast<uint32_t>(requests.size());
     for (const auto & request : requests)
     {
         auto & req = dynamic_cast<ZooKeeperRequest &>(*request);

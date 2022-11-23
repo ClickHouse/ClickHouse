@@ -875,6 +875,22 @@ def alter_rename_table_with_materialized_mysql_database(
         "1\n2\n3\n4\n5\n",
     )
 
+    mysql_node.query(
+        "ALTER TABLE test_database_rename_table.test_table_4 RENAME test_database_rename_table.test_table_5"
+    )
+    mysql_node.query(
+        "ALTER TABLE test_database_rename_table.test_table_5 RENAME TO test_database_rename_table.test_table_6"
+    )
+    mysql_node.query(
+        "ALTER TABLE test_database_rename_table.test_table_6 RENAME AS test_database_rename_table.test_table_7"
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT * FROM test_database_rename_table.test_table_7 ORDER BY id FORMAT TSV",
+        "1\n2\n3\n4\n5\n",
+    )
+
     clickhouse_node.query("DROP DATABASE test_database_rename_table")
     mysql_node.query("DROP DATABASE test_database_rename_table")
 
@@ -2151,3 +2167,20 @@ def materialized_database_mysql_date_type_to_date32(
         "SELECT b from test_database.a order by a FORMAT TSV",
         "1970-01-01\n1971-02-16\n2101-05-16\n2022-02-16\n" + "2104-06-06\n",
     )
+
+
+def savepoint(clickhouse_node, mysql_node, mysql_host):
+    db = "savepoint"
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY)")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    mysql_node.query("BEGIN")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
+    mysql_node.query("SAVEPOINT savepoint_1")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
+    mysql_node.query("ROLLBACK TO savepoint_1")
+    mysql_node.query("COMMIT")

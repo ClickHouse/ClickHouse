@@ -377,8 +377,8 @@ void TCPHandler::runImpl()
             after_send_progress.restart();
 
             if (state.io.pipeline.pushing())
-            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
             {
+                /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
                 state.io.onFinish();
@@ -390,27 +390,30 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.completed())
             {
-                CompletedPipelineExecutor executor(state.io.pipeline);
-                /// Should not check for cancel in case of input.
-                if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this]()
+                    CompletedPipelineExecutor executor(state.io.pipeline);
+
+                    /// Should not check for cancel in case of input.
+                    if (!state.need_receive_data_for_input)
                     {
-                        std::lock_guard lock(fatal_error_mutex);
+                        auto callback = [this]()
+                        {
+                            std::lock_guard lock(fatal_error_mutex);
 
-                        if (isQueryCancelled())
-                            return true;
+                            if (isQueryCancelled())
+                                return true;
 
-                        sendProgress();
-                        sendSelectProfileEvents();
-                        sendLogs();
+                            sendProgress();
+                            sendSelectProfileEvents();
+                            sendLogs();
 
-                        return false;
-                    };
+                            return false;
+                        };
 
-                    executor.setCancelCallback(callback, interactive_delay / 1000);
+                        executor.setCancelCallback(callback, interactive_delay / 1000);
+                    }
+                    executor.execute();
                 }
-                executor.execute();
 
                 state.io.onFinish();
                 /// Send final progress after calling onFinish(), since it will update the progress.
@@ -841,7 +844,7 @@ void TCPHandler::processTablesStatusRequest()
         if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         {
             status.is_replicated = true;
-            status.absolute_delay = replicated_table->getAbsoluteDelay();
+            status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
         }
         else
             status.is_replicated = false; //-V1048

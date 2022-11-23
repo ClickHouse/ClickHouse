@@ -27,8 +27,8 @@ std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, si
     auto compressed_size = LZ4_compress_default(
         reinterpret_cast<const char *>(data),
         compressed.data(),
-        data_size,
-        max_dest_size);
+        static_cast<int>(data_size),
+        static_cast<int>(max_dest_size));
 
     if (compressed_size <= 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column");
@@ -51,8 +51,8 @@ void ColumnCompressed::decompressBuffer(
     auto processed_size = LZ4_decompress_safe(
         reinterpret_cast<const char *>(compressed_data),
         reinterpret_cast<char *>(decompressed_data),
-        compressed_size,
-        decompressed_size);
+        static_cast<int>(compressed_size),
+        static_cast<int>(decompressed_size));
 
     if (processed_size <= 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress column");

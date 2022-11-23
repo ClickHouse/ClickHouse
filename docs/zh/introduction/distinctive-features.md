@@ -67,7 +67,7 @@ ClickHouse提供各种各样在允许牺牲数据精度的情况下对查询进�
 2.  基于数据的部分样本进行近似查询。这时，仅会从磁盘检索少部分比例的数据。
 3.  不使用全部的聚合条件，通过随机选择有限个数据聚合条件进行聚合。这在数据聚合条件满足某些分布条件下，在提供相当准确的聚合结果的同时降低了计算资源的使用。
 
-## Adaptive Join Algorithm {#adaptive-join-algorithm}
+## 自适应连接算法 {#adaptive-join-algorithm}
 
 ClickHouse支持自定义[JOIN](../sql-reference/statements/select/join.md)多个表，它更倾向于散列连接算法，如果有多个大表，则使用合并-连接算法
 

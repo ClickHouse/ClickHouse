@@ -74,7 +74,7 @@ std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
-int getINodeNumberFromPath(const String & path);
+Int64 getINodeNumberFromPath(const String & path);
 
 }
 

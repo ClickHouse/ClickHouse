@@ -82,8 +82,8 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
         /// Either the numeric interval (8..10) or equivalent expression in brackets
         if (description[i] == '{')
         {
-            int cnt = 1;
-            int last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
+            ssize_t cnt = 1;
+            ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
             size_t m;
             std::vector<String> buffer;
             bool have_splitter = false;

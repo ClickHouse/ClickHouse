@@ -168,8 +168,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     /// We cannot change only offsets, because each string should end with terminating zero byte.
     /// So, we will insert one zero byte when mask value is zero.
 
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = offsets_data.size() - 1;
     /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());

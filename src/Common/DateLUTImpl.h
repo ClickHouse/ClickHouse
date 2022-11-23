@@ -73,7 +73,7 @@ private:
             return LUTIndex(0);
         if (index >= DATE_LUT_SIZE)
             return LUTIndex(DATE_LUT_SIZE - 1);
-        return LUTIndex{index};
+        return LUTIndex{static_cast<UInt32>(index)};
     }
 
     template <typename T>
@@ -229,12 +229,12 @@ private:
         if (t >= lut[guess].date)
         {
             if (guess + 1 >= DATE_LUT_SIZE || t < lut[guess + 1].date)
-                return LUTIndex(guess);
+                return LUTIndex(static_cast<unsigned>(guess));
 
-            return LUTIndex(guess + 1);
+            return LUTIndex(static_cast<unsigned>(guess) + 1);
         }
 
-        return LUTIndex(guess ? guess - 1 : 0);
+        return LUTIndex(guess ? static_cast<unsigned>(guess) - 1 : 0);
     }
 
     static inline LUTIndex toLUTIndex(DayNum d)
@@ -272,11 +272,11 @@ private:
         if (likely(offset_is_whole_number_of_hours_during_epoch))
         {
             if (likely(x >= 0))
-                return x / divisor * divisor;
+                return static_cast<DateOrTime>(x / divisor * divisor);
 
             /// Integer division for negative numbers rounds them towards zero (up).
             /// We will shift the number so it will be rounded towards -inf (down).
-            return (x + 1 - divisor) / divisor * divisor;
+            return static_cast<DateOrTime>((x + 1 - divisor) / divisor * divisor);
         }
 
         Time date = find(x).date;
@@ -285,7 +285,7 @@ private:
         {
             if (unlikely(res < 0))
                 return 0;
-            return res;
+            return static_cast<DateOrTime>(res);
         }
         else
             return res;
@@ -509,7 +509,7 @@ public:
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
 
-        unsigned res = time / 3600;
+        unsigned res = static_cast<unsigned>(time / 3600);
 
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         return res <= 23 ? res : 23;
@@ -548,8 +548,8 @@ public:
         {
             Time res = t % 60;
             if (likely(res >= 0))
-                return res;
-            return res + 60;
+                return static_cast<unsigned>(res);
+            return static_cast<unsigned>(res) + 60;
         }
 
         LUTIndex index = findIndex(t);
@@ -895,6 +895,19 @@ public:
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
+    /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
+    /// It’s needed for correct work of dateDiff function.
+    inline Time toStableRelativeHourNum(Time t) const
+    {
+        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+    }
+
+    template <typename DateOrTime>
+    inline Time toStableRelativeHourNum(DateOrTime v) const
+    {
+        return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
+    }
+
     inline Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
         return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
@@ -960,7 +973,7 @@ public:
         if constexpr (std::is_same_v<Date, DayNum>)
             return DayNum(4 + (d - 4) / days * days);
         else
-            return ExtendedDayNum(4 + (d - 4) / days * days);
+            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
     }
 
     template <typename Date>
@@ -970,9 +983,9 @@ public:
         if (days == 1)
             return toDate(d);
         if constexpr (std::is_same_v<Date, DayNum>)
-            return lut_saturated[toLUTIndex(ExtendedDayNum(d / days * days))].date;
+            return lut_saturated[toLUTIndex(ExtendedDayNum(static_cast<Int32>(d / days * days)))].date;
         else
-            return lut[toLUTIndex(ExtendedDayNum(d / days * days))].date;
+            return lut[toLUTIndex(ExtendedDayNum(static_cast<Int32>(d / days * days)))].date;
     }
 
     template <typename DateOrTime>
@@ -1021,7 +1034,7 @@ public:
         {
             if (unlikely(res < 0))
                 return 0;
-            return res;
+            return static_cast<DateOrTime>(res);
         }
         else
             return res;
@@ -1034,8 +1047,8 @@ public:
         if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             if (likely(t >= 0))
-                return t / divisor * divisor;
-            return (t + 1 - divisor) / divisor * divisor;
+                return static_cast<DateOrTime>(t / divisor * divisor);
+            return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
 
         Time date = find(t).date;
@@ -1044,7 +1057,7 @@ public:
         {
             if (unlikely(res < 0))
                 return 0;
-            return res;
+            return static_cast<UInt32>(res);
         }
         else
             return res;
@@ -1058,7 +1071,7 @@ public:
         if (seconds % 60 == 0)
             return toStartOfMinuteInterval(t, seconds / 60);
 
-        return roundDown(t, seconds);
+        return static_cast<DateOrTime>(roundDown(t, seconds));
     }
 
     inline LUTIndex makeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1236,9 +1249,9 @@ public:
         return lut[new_index].date + time;
     }
 
-    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int32 delta) const
+    inline NO_SANITIZE_UNDEFINED Time addWeeks(Time t, Int64 delta) const
     {
-        return addDays(t, static_cast<Int64>(delta) * 7);
+        return addDays(t, delta * 7);
     }
 
     inline UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1318,9 +1331,9 @@ public:
     }
 
     template <typename DateOrTime>
-    inline auto addQuarters(DateOrTime d, Int32 delta) const
+    inline auto NO_SANITIZE_UNDEFINED addQuarters(DateOrTime d, Int64 delta) const
     {
-        return addMonths(d, static_cast<Int64>(delta) * 3);
+        return addMonths(d, delta * 3);
     }
 
     template <typename DateOrTime>

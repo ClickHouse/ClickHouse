@@ -69,7 +69,7 @@ void SelectStreamFactory::createForShard(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
+    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
@@ -131,7 +131,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
 
         if (local_delay < max_allowed_delay)
         {
@@ -205,7 +205,7 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
         if (!max_allowed_delay)
             return false;
 
-        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
         return local_delay >= max_allowed_delay;
     };
 

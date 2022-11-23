@@ -327,9 +327,9 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
         collected_processors->emplace_back(transform);
 
     left->pipe.output_ports.front() = &transform->getOutputs().front();
-    left->pipe.processors.emplace_back(transform);
+    left->pipe.processors->emplace_back(transform);
 
-    left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
+    left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;
@@ -383,7 +383,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right);
     /// Remember the last step of the right pipeline.
-    ExpressionStep* step = typeid_cast<ExpressionStep*>(right->pipe.processors.back()->getQueryPlanStep());
+    ExpressionStep* step = typeid_cast<ExpressionStep*>(right->pipe.processors->back()->getQueryPlanStep());
     if (!step)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The top step of the right pipeline should be ExpressionStep");
@@ -467,7 +467,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors.emplace_back(std::move(joining));
+        left->pipe.processors->emplace_back(std::move(joining));
     }
 
     if (left->hasTotals())
@@ -482,14 +482,14 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors.emplace_back(std::move(joining));
+        left->pipe.processors->emplace_back(std::move(joining));
     }
 
     /// Move the collected processors to the last step in the right pipeline.
     Processors processors = collector.detachProcessors();
     step->appendExtraProcessors(processors);
 
-    left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
+    left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
@@ -537,7 +537,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     addTransform(std::move(processor));
 }
 
-void QueryPipelineBuilder::setProcessListElement(QueryStatus * elem)
+void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 {
     process_list_element = elem;
 }

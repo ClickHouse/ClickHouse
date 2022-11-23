@@ -287,3 +287,6 @@
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
 	url = https://github.com/corrosion-rs/corrosion.git
+[submodule "contrib/morton-nd"]
+	path = contrib/morton-nd
+	url = https://github.com/morton-nd/morton-nd
