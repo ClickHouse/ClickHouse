@@ -1,7 +1,7 @@
 #include "KeyValuePairExtractorBuilder.h"
-#include <Functions/keyvaluepair/impl/state/KeyStateHandler.h>
-#include <Functions/keyvaluepair/impl/state/ValueStateHandler.h>
-#include <Functions/keyvaluepair/impl//LazyEscapingKeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/src/impl/state/KeyStateHandler.h>
+#include <Functions/keyvaluepair/src/impl/state/ValueStateHandler.h>
+#include <Functions/keyvaluepair/src/impl/LazyEscapingKeyValuePairExtractor.h>
 
 namespace DB
 {

@@ -6,7 +6,7 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp extractTimeZoneFromFunctionArguments.cpp FunctionsLogical.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h extractTimeZoneFromFunctionArguments.h FunctionsLogical.h)
 
-add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_sources} parseKeyValue.cpp parseKeyValue.h)
+add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_sources})
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
 
@@ -108,7 +108,7 @@ add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
 
 add_subdirectory(keyvaluepair)
-list (APPEND PRIVATE_LIBS KeyValuePairExtractorLib)
+list (APPEND PRIVATE_LIBS clickhouse_functions_parsekeyvalue)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

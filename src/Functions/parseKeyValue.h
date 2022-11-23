@@ -5,7 +5,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
-#include <Functions/keyvaluepair/KeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/src/KeyValuePairExtractor.h>
 
 namespace DB {
 
@@ -56,8 +56,7 @@ private:
                                                         CharArgument item_delimiter, CharArgument enclosing_character,
                                                         SetArgument value_special_characters_allow_list) const;
 
-//    ColumnPtr build
-
+    ColumnPtr parse(std::shared_ptr<KeyValuePairExtractor> extractor, ColumnPtr data_column) const;
 };
 
 }

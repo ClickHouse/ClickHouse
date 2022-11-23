@@ -1,3 +1,1 @@
-add_library(KeyValuePairExtractorLib impl/LazyEscapingKeyValuePairExtractor.cpp KeyValuePairExtractor.h impl/state/KeyStateHandler.cpp impl/state/KeyStateHandler.h impl/state/State.h impl/state/ValueStateHandler.cpp impl/state/ValueStateHandler.h impl/state/StateHandler.cpp impl/state/StateHandler.h impl/KeyValuePairEscapingProcessor.h impl/KeyValuePairEscapingProcessor.cpp KeyValuePairExtractorBuilder.cpp KeyValuePairExtractorBuilder.h)
-
-target_link_libraries(KeyValuePairExtractorLib PRIVATE dbms)
+add_subdirectory(src)
