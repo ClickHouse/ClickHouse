@@ -144,9 +144,9 @@ StoragePtr TemporaryTableHolder::getTable() const
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
-    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
-    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
-    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
+    unused_dir_hide_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_hide_timeout_sec", unused_dir_hide_timeout_sec);
+    unused_dir_rm_timeout_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_rm_timeout_sec", unused_dir_rm_timeout_sec);
+    unused_dir_cleanup_period_sec = getContext()->getConfigRef().getInt64("database_catalog_unused_dir_cleanup_period_sec", unused_dir_cleanup_period_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);

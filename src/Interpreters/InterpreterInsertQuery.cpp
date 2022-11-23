@@ -292,7 +292,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
         out.addSource(std::make_shared<SquashingChunksTransform>(
             out.getInputHeader(),
             table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
+            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
     }
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());

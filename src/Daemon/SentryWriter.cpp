@@ -189,7 +189,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                     sentry_value_set_by_key(sentry_frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
 
                 if (current_frame.line.has_value())
-                    sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
+                    sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(static_cast<int32_t>(current_frame.line.value())));
 
                 sentry_value_append(sentry_frames, sentry_frame);
             }

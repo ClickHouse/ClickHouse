@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -463,6 +464,9 @@ bool tryInferDate(const std::string_view & field)
 
 bool tryInferDateTime(const std::string_view & field, const FormatSettings & settings)
 {
+    if (field.empty())
+        return false;
+
     ReadBufferFromString buf(field);
     Float64 tmp_float;
     /// Check if it's just a number, and if so, don't try to infer DateTime from it,
@@ -830,17 +834,23 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
     return data_types;
 }
 
+String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
+{
+    return fmt::format(
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
+        settings.schema_inference_hints,
+        settings.max_rows_to_read_for_schema_inference);
+}
+
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
 {
-    String result;
+    String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
-    result = fmt::format(
-        "schema_inference_hints={}, try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, max_rows_to_read_for_schema_inference={}",
-        settings.schema_inference_hints,
+    result += fmt::format(
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes,
-        settings.max_rows_to_read_for_schema_inference);
+        settings.try_infer_datetimes);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
@@ -858,7 +868,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
                 " null_representation={}, delimiter={}, tuple_delimiter={}",
-                settings.tsv.use_best_effort_in_schema_inference,
+                settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,
@@ -873,6 +883,21 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     }
 
     return result;
+}
+
+
+void checkSupportedDelimiterAfterField(FormatSettings::EscapingRule escaping_rule, const String & delimiter, const DataTypePtr & type)
+{
+    if (escaping_rule != FormatSettings::EscapingRule::Escaped)
+        return;
+
+    bool is_supported_delimiter_after_string = !delimiter.empty() && (delimiter.front() == '\t' || delimiter.front() == '\n');
+    if (is_supported_delimiter_after_string)
+        return;
+
+    /// Nullptr means that field is skipped and it's equivalent to String
+    if (!type || isString(removeNullable(removeLowCardinality(type))))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'Escaped' serialization requires delimiter after String field to start with '\\t' or '\\n'");
 }
 
 }

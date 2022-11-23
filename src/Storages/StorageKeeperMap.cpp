@@ -408,7 +408,7 @@ Pipe StorageKeeperMap::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     checkTable<true>();
     storage_snapshot->check(column_names);

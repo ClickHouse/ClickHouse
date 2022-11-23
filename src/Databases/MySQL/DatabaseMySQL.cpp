@@ -164,8 +164,13 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
         ast_storage->settings = nullptr;
     }
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage,
+                                                            table_storage_define,
+                                                            true,
+                                                            max_parser_depth,
+                                                            throw_on_error);
     return create_table_query;
 }
 

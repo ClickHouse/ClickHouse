@@ -675,7 +675,7 @@ public:
             pointers.push_back(&requests.back());
         }
 
-        AIOContext aio_context(read_from_file_buffer_blocks_size);
+        AIOContext aio_context(static_cast<unsigned>(read_from_file_buffer_blocks_size));
 
         PaddedPODArray<bool> processed(requests.size(), false);
         PaddedPODArray<io_event> events;
@@ -735,7 +735,8 @@ public:
                 ++to_pop;
 
             /// add new io tasks
-            const int new_tasks_count = std::min(read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push);
+            const int new_tasks_count = static_cast<int>(std::min(
+                read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push));
 
             int pushed = 0;
             while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) <= 0)

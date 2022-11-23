@@ -72,7 +72,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -100,6 +100,8 @@ public:
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
+
+    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 

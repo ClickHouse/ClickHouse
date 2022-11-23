@@ -1,5 +1,9 @@
 1
 1
+abandonable_lock-insert
+abandonable_lock-insert
+abandonable_lock-other
+abandonable_lock-other
 alter_partition_version
 alter_partition_version
 block_numbers
