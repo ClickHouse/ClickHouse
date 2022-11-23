@@ -10,11 +10,6 @@ set -e
 set -u
 set -o pipefail
 
-trap "exit" INT TERM
-# The watchdog is in the separate process group, so we have to kill it separately
-# if the script terminates earlier.
-trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
-
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
@@ -110,26 +105,6 @@ function configure
 EOL
 }
 
-function watchdog
-{
-    sleep 1800
-
-    echo "Fuzzing run has timed out"
-    for _ in {1..10}
-    do
-        # Only kill by pid the particular client that runs the fuzzing, or else
-        # we can kill some clickhouse-client processes this script starts later,
-        # e.g. for checking server liveness.
-        if ! kill $fuzzer_pid
-        then
-            break
-        fi
-        sleep 1
-    done
-
-    kill -9 -- $fuzzer_pid ||:
-}
-
 function filter_exists_and_template
 {
     local path
@@ -175,8 +150,6 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
-    # interferes with gdb
-    export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
     clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
     server_pid=$!
@@ -214,7 +187,7 @@ detach
 quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid  &
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
     sleep 5
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
@@ -242,22 +215,12 @@ quit
         --stacktrace \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
-        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
+        --queries-file $(ls -1 tests/queries/0_stateless/ | grep -Fa ".sql" | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
-
-    # Start a watchdog that should kill the fuzzer on timeout.
-    # The shell won't kill the child sleep when we kill it, so we have to put it
-    # into a separate process group so that we can kill them all.
-    set -m
-    watchdog &
-    watchdog_pid=$!
-    set +m
-    # Check that the watchdog has started.
-    kill -0 $watchdog_pid
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
@@ -265,8 +228,6 @@ quit
     fuzzer_exit_code=0
     wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
-
-    kill -- -$watchdog_pid ||:
 
     # If the server dies, most often the fuzzer returns code 210: connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
