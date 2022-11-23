@@ -20,34 +20,42 @@ String ParseKeyValue::getName() const
     return name;
 }
 
-ColumnPtr ParseKeyValue::executeImpl([[maybe_unused]] const ColumnsWithTypeAndName & arguments, [[maybe_unused]] const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const
+ColumnPtr ParseKeyValue::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     auto column = return_type->createColumn();
     [[maybe_unused]] auto * map_column = assert_cast<ColumnMap *>(column.get());
 
     auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list] = parseArguments(arguments);
 
+    auto extractor = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
+
+    auto offsets = ColumnUInt64::create();
+
+    auto keys = ColumnString::create();
+    auto values = ColumnString::create();
+
+    auto row_offset = 0u;
+
     for (auto i = 0u; i < data_column->size(); i++)
     {
         auto row = data_column->getDataAt(i);
 
-        auto extractor = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
-
         auto response = extractor->extract(row.toString());
 
-        for (auto & pair : response) {
-            std::cout<<pair.first<<": "<<pair.second<<"\n";
+        for (const auto & [key, value] : response)
+        {
+            keys->insert(key);
+            values->insert(value);
+
+            row_offset++;
         }
+
+        offsets->insert(row_offset);
     }
 
+    ColumnPtr keys_ptr = std::move(keys);
 
-
-    ColumnUInt64::MutablePtr offsets = ColumnUInt64::create();
-
-    [[maybe_unused]] auto keys = ColumnString::create();
-    [[maybe_unused]] auto values = ColumnString::create();
-
-    return nullptr;
+    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
 }
 
 bool ParseKeyValue::isVariadic() const
