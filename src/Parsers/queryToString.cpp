@@ -8,6 +8,11 @@ namespace DB
         return queryToString(*query);
     }
 
+    String queryToString(const IAST * query)
+    {
+        return queryToString(*query);
+    }
+
     String queryToString(const IAST & query)
     {
         return serializeAST(query);
