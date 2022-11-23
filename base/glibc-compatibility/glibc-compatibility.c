@@ -220,13 +220,13 @@ struct statx {
 	uint32_t stx_dev_minor;
 	uint64_t spare[14];
 };
-#endif
 
 int statx(int fd, const char *restrict path, int flag,
                  unsigned int mask, struct statx *restrict statxbuf)
 {
 	return syscall(SYS_statx, fd, path, flag, mask, statxbuf);
 }
+#endif
 
 
 #include <syscall.h>
