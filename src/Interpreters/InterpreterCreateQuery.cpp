@@ -71,6 +71,9 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+
 
 #define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
@@ -467,7 +470,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     for (const auto & ast : columns_ast.children)
     {
-        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
         {
@@ -520,6 +523,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         /// add column to postprocessing if there is a default_expression specified
         if (col_decl.default_expression)
         {
+            // substitute possible UDFs with their definitions
+            if (!UserDefinedSQLFunctionFactory::instance().empty())
+            {
+                UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+                UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(col_decl.default_expression);
+            }
+
             /** For columns with explicitly-specified type create two expressions:
               * 1. default_expression aliased as column name with _tmp suffix
               * 2. conversion of expression (1) to explicitly-specified type alias as column name
