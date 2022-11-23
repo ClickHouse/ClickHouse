@@ -436,9 +436,7 @@ void ConfigProcessor::doIncludesRecursive(
         doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
     else
     {
-        NodeListPtr children = node->childNodes();
-        Node * child = nullptr;
-        for (size_t i = 0; (child = children->item(i)); ++i)
+        for (Node * child = node->firstChild(); child; child = child->nextSibling())
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
 }
