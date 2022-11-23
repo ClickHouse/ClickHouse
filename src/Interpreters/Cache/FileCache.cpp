@@ -542,9 +542,6 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     assertCacheCorrectness(key, cache_lock);
 #endif
 
-    if (size > max_file_segment_size)
-        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
-
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
@@ -1001,9 +998,17 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
-            if (!key_it->is_directory())
+            if (key_it->is_regular_file())
             {
-                LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                if (key_prefix_it->path().filename() == "tmp" && startsWith(key_it->path().filename(), "tmp"))
+                {
+                    LOG_DEBUG(log, "Found temporary file '{}', will remove it", key_it->path().string());
+                    fs::remove(key_it->path());
+                }
+                else
+                {
+                    LOG_DEBUG(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                }
                 continue;
             }
 
@@ -1179,6 +1184,16 @@ size_t FileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_l
 size_t FileCache::getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
     return max_size - getUsedCacheSizeUnlocked(cache_lock);
+}
+
+size_t FileCache::getTotalMaxSize() const
+{
+    return max_size;
+}
+
+size_t FileCache::getTotalMaxElements() const
+{
+    return max_element_size;
 }
 
 size_t FileCache::getFileSegmentsNum() const

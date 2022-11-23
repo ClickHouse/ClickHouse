@@ -36,7 +36,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
     size_t new_consumprion = stat.compressed_size + compressed_delta;
     if (compressed_delta > 0 && limit && new_consumprion > limit)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES, "Limit for temporary files size exceeded");
+        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumprion, limit);
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
@@ -149,6 +150,9 @@ struct TemporaryFileStream::InputReader
 
 TemporaryFileStreamPtr TemporaryFileStream::create(const VolumePtr & volume, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_)
 {
+    if (!volume)
+        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
+
     DiskPtr disk;
     if (max_file_size > 0)
     {
@@ -173,7 +177,7 @@ TemporaryFileStreamPtr TemporaryFileStream::create(FileCache * cache, const Bloc
     auto cache_placeholder = std::make_unique<FileCachePlaceholder>(cache, tmp_file->getPath());
     cache_placeholder->reserveCapacity(max_file_size);
 
-    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header,  std::move(cache_placeholder), parent_);
+    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, std::move(cache_placeholder), parent_);
 }
 
 TemporaryFileStream::TemporaryFileStream(
@@ -194,7 +198,7 @@ size_t TemporaryFileStream::write(const Block & block)
     if (!out_writer)
         throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
 
-    size_t block_size_in_memory = block.allocatedBytes();
+    size_t block_size_in_memory = block.bytes();
 
     if (space_holder)
         space_holder->reserveCapacity(block_size_in_memory);

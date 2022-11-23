@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Common/filesystemHelpers.h>
+#include <Poco/TemporaryFile.h>
 
 namespace DB
 {
@@ -10,18 +10,12 @@ namespace DB
 class TemporaryFileInPath : public ITemporaryFile
 {
 public:
-    explicit TemporaryFileInPath(const String & folder_path)
-        : tmp_file(createTemporaryFile(folder_path))
-    {
-        chassert(tmp_file);
-    }
+    explicit TemporaryFileInPath(const String & folder_path);
+    String getPath() const override;
 
-    String getPath() const override { return tmp_file->path(); }
-
+    ~TemporaryFileInPath() override;
 private:
-    std::unique_ptr<TemporaryFile> tmp_file;
+    std::unique_ptr<Poco::TemporaryFile> tmp_file;
 };
-
-
 
 }
