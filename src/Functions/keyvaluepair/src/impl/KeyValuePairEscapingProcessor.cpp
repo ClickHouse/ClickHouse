@@ -20,18 +20,18 @@ KeyValuePairEscapingProcessor::Response KeyValuePairEscapingProcessor::process(c
 }
 
 std::string KeyValuePairEscapingProcessor::escape(std::string_view element_view) const {
-    bool escape = false;
+    [[maybe_unused]] bool escape = false;
     std::string element;
 
     element.reserve(element_view.size());
 
     for (char character : element_view) {
-        if (escape) {
-            escape = false;
-        } else if (character == escape_character) {
-            escape = true;
-            continue;
-        }
+//        if (escape) {
+//            escape = false;
+//        } else if (character == escape_character) {
+//            escape = true;
+//            continue;
+//        }
 
         element.push_back(character);
     }
