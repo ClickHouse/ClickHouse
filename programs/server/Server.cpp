@@ -1,5 +1,6 @@
 #include "Server.h"
 
+#include <cerrno>
 #include <memory>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -652,7 +653,8 @@ static void sanityChecks(Server & server)
 }
 
 #if defined(OS_LINUX)
-/// Sends notification to systemd, analogous to sd_notify from libsystemd
+/// Sends notification to systemd, analogous to sd_notify from libsystemd.
+/// See https://man7.org/linux/man-pages/man3/sd_notify.3.html for more information on the supported notifications.
 static void systemdNotify(const std::string_view & command)
 {
     const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
@@ -680,7 +682,7 @@ static void systemdNotify(const std::string_view & command)
 
     size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
 
-    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
+    /// '@' means this is Linux abstract socket, per documentation sun_path[0] must be set to '\0' for it.
     if (path[0] == '@')
         addr.sun_path[0] = 0;
     else if (path[0] == '/')
@@ -690,9 +692,20 @@ static void systemdNotify(const std::string_view & command)
 
     const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
 
-    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
-        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
-
+    size_t sent_bytes_total = 0;
+    while (sent_bytes_total < command.size())
+    {
+        auto sent_bytes = sendto(s, command.data() + sent_bytes_total, command.size() - sent_bytes_total, 0, sock_addr, static_cast<socklen_t>(addrlen));
+        if (sent_bytes == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            else
+                throwFromErrno("Failed to notify systemd, sendto returned error.", ErrorCodes::SYSTEM_ERROR);
+        }
+        else
+            sent_bytes_total += sent_bytes;
+    }
 }
 #endif
 
@@ -1831,6 +1844,7 @@ try
         }
 
 #if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
         systemdNotify("READY=1\n");
 #endif
 
