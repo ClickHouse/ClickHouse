@@ -51,12 +51,7 @@ public:
 
     /// TODO: remove
     /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
-    VolumePtr getVolume() const
-    {
-        if (!volume)
-            throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
-        return volume;
-    }
+    VolumePtr getVolume() const;
 
 protected:
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);

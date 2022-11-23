@@ -3,13 +3,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
+
 void ISpacePlaceholder::reserveCapacity(size_t requested_capacity)
 {
     chassert(used_space <= capacity);
 
     size_t remaining_space = capacity - used_space;
-    /// TODO LOG_TEST
-    LOG_DEBUG(&Poco::Logger::get("ISpacePlaceholder"), "reserving {} bytes (used_space: {}, capacity: {})", requested_capacity, used_space, capacity);
+    LOG_TEST(&Poco::Logger::get("ISpacePlaceholder"), "Reserving {} bytes (used_space: {}, capacity: {})", requested_capacity, used_space, capacity);
 
     if (requested_capacity <= remaining_space)
         return;
@@ -21,8 +25,7 @@ void ISpacePlaceholder::reserveCapacity(size_t requested_capacity)
 
 void ISpacePlaceholder::setUsed(size_t size)
 {
-    /// TODO LOG_TEST
-    LOG_DEBUG(&Poco::Logger::get("ISpacePlaceholder"), "using {} bytes ({} already used, {} capacity)", size, used_space, capacity);
+    LOG_TEST(&Poco::Logger::get("ISpacePlaceholder"), "Using {} bytes ({} already used, {} capacity)", size, used_space, capacity);
 
     if (used_space + size > capacity)
     {
@@ -31,7 +34,6 @@ void ISpacePlaceholder::setUsed(size_t size)
     }
 
     used_space = used_space + size;
-
 }
 
 FileCachePlaceholder::FileCachePlaceholder(FileCache * cache, const String & name)
@@ -40,9 +42,9 @@ FileCachePlaceholder::FileCachePlaceholder(FileCache * cache, const String & nam
 {
 }
 
-
 void FileCachePlaceholder::reserveImpl(size_t requested_size)
 {
+    /// We create new cache_writer and will try to reserve requested_size in it
     String key = fmt::format("{}_{}", key_name, cache_writers.size());
     auto cache_writer = std::make_unique<FileSegmentRangeWriter>(file_cache,
                                                                  file_cache->hash(key),
@@ -50,10 +52,15 @@ void FileCachePlaceholder::reserveImpl(size_t requested_size)
                                                                  /* query_id_ */ "",
                                                                  /* source_path_ */ key);
 
+    /* Sometimes several calls of tryReserve are required,
+     * because it allocates space in current segment and its size may be less than requested_size.
+     * If we can't write any data, we need to free all space occupied by current reservation.
+     * To do this we will just destroy current cache_writer.
+     */
     while (requested_size > 0)
     {
         size_t current_offset = cache_writer->currentOffset();
-        size_t written = cache_writer->tryWrite(nullptr, requested_size, current_offset, /* is_persistent */ false, /* strict */ false);
+        size_t written = cache_writer->tryReserve(requested_size, current_offset, /* is_persistent */ false, /* strict */ false);
         if (written == 0)
         {
             cache_writer->finalize(/* clear */ true);

@@ -114,7 +114,6 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
         return 0;
     }
 
-
     /// shrink
     size = reserved_size;
 
@@ -132,6 +131,11 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
     current_file_segment_write_offset += size;
 
     return size;
+}
+
+size_t FileSegmentRangeWriter::tryReserve(size_t size, size_t offset, bool is_persistent, bool strict)
+{
+    return tryWrite(nullptr, size, offset, is_persistent, strict);
 }
 
 void FileSegmentRangeWriter::finalize(bool clear)
