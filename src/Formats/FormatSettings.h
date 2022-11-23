@@ -303,6 +303,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }
