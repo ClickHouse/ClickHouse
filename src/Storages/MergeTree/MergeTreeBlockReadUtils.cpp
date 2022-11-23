@@ -316,6 +316,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         /// 2. Columns for prewhere
         Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+
         injectRequiredColumns(
             storage, storage_snapshot, data_part, with_subcolumns, all_pre_column_names);
 
