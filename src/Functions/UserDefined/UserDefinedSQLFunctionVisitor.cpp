@@ -23,16 +23,6 @@ namespace ErrorCodes
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
-    if (const auto * function = ast->template as<ASTFunction>())
-    {
-        std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-        if (replace_result)
-            ast = replace_result;
-
-        return;
-    }
-
     if (auto * col_decl = ast->as<ASTColumnDeclaration>())
     {
         const auto visit_child = [&](ASTPtr & child)
@@ -52,7 +42,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 
     if (auto * storage = ast->as<ASTStorage>())
     {
-        const auto visit_child = [&](IAST * child)
+        const auto visit_child = [&](IAST * & child)
         {
             if (!child)
                 return;
@@ -63,8 +53,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
                 auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
                 if (replace_result)
                     ast->setOrReplace(child, replace_result);
-
-                return;
             }
 
             visit(child);
@@ -79,13 +67,22 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
         return;
     }
 
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        if (replace_result)
+            ast = replace_result;
+    }
+
     for (auto & child : ast->children)
         visit(child);
 }
 
 void UserDefinedSQLFunctionVisitor::visit(IAST * ast)
 {
-    assert(ast && !ast->as<ASTFunction>());
+    if (!ast)
+        return;
 
     for (auto & child : ast->children)
         visit(child);
