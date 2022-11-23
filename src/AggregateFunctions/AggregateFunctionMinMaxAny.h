@@ -465,7 +465,7 @@ struct Compatibility
         auto res = column.getDataAt(n);
         /// ColumnString always reserves extra byte for null-character after string.
         /// But getDataAt returns StringRef without the null-character. Let's add it.
-        chassert(res.data[res.size] == '\0');
+        assert(res.data[res.size] == '\0');
         ++res.size;
         return res;
     }
@@ -474,8 +474,8 @@ struct Compatibility
     {
         /// String already has terminating null-character.
         /// But insertData will add another one unconditionally. Trim existing null-character to avoid duplication.
-        chassert(0 < length);
-        chassert(pos[length - 1] == '\0');
+        assert(0 < length);
+        assert(pos[length - 1] == '\0');
         column.insertData(pos, length - 1);
     }
 };
@@ -518,8 +518,8 @@ private:
     {
         const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
         /// It must always be terminated with null-character
-        chassert(0 < size);
-        chassert(data_ptr[size - 1] == '\0');
+        assert(0 < size);
+        assert(data_ptr[size - 1] == '\0');
         return data_ptr;
     }
 
