@@ -426,6 +426,7 @@ void MergeTreeData::checkProperties(
             ErrorCodes::BAD_ARGUMENTS);
 
     NameSet primary_key_columns_set;
+    bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -439,7 +440,7 @@ void MergeTreeData::checkProperties(
                     + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                     ErrorCodes::BAD_ARGUMENTS);
 
-            if (!primary_key_columns_set.emplace(pk_column).second)
+            if (!primary_key_columns_set.emplace(pk_column).second && !allow_suspicious_indices && !attach)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
         }
@@ -501,6 +502,17 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
+            if (!allow_suspicious_indices && !attach)
+            {
+                NameSet index_key_columns_set;
+                const auto & column_names = index.column_names;
+
+                for (size_t i = 0; i < column_names.size(); ++i)
+                {
+                    if(!index_key_columns_set.emplace(column_names[i]).second)
+                        throw Exception("Secondary indices contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
+                }
+             }
 
             MergeTreeIndexFactory::instance().validate(index, attach);
 
