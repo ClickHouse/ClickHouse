@@ -107,3 +107,14 @@ SELECT 'fuzz2', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '01' 
 SELECT 'fuzz3', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '00' || 'ffffffffffffffff'), 'AggregateFunction(argMax, String, UInt64)')) as x, length(x); -- { serverError CORRUPTED_DATA }
 SELECT 'fuzz4', finalizeAggregation(CAST(unhex('04000000' || '30313233' || '00'), 'AggregateFunction(argMax, String, UInt64)')) as x, length(x); -- { serverError CORRUPTED_DATA }
 SELECT 'fuzz5', finalizeAggregation(CAST(unhex('0100000000000000000FFFFFFFF0'), 'AggregateFunction(argMax, UInt64, String)')); -- { serverError CORRUPTED_DATA }
+
+
+drop table if exists aggr;
+create table aggr (n int, s AggregateFunction(max, String)) engine=MergeTree order by n;
+insert into aggr select 1, maxState('');
+insert into aggr select 2, maxState('\0');
+insert into aggr select 3, maxState('\0\0\0\0');
+insert into aggr select 4, maxState('abrac\0dabra\0');
+select n, maxMerge(s) as x, length(x) from aggr group by n order by n;
+select maxMerge(s) as x, length(x) from aggr;
+drop table aggr;

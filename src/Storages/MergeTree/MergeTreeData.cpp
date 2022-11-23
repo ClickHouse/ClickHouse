@@ -1848,6 +1848,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
+        part_log_elem.table_uuid = table_id.uuid;
 
         for (const auto & part : parts)
         {
@@ -6598,6 +6599,7 @@ try
 
     part_log_elem.database_name = table_id.database_name;
     part_log_elem.table_name = table_id.table_name;
+    part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
@@ -6648,7 +6650,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
 MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
 {
     std::lock_guard lock(data.moving_parts_mutex);
-    for (const auto & moving_part : parts_to_move)
+    for (auto & moving_part : parts_to_move)
     {
         /// Something went completely wrong
         if (!data.currently_moving_parts.contains(moving_part.part))
@@ -6773,6 +6775,14 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 {moving_part.part},
                 nullptr);
         };
+
+        // Register in global moves list (StorageSystemMoves)
+        auto moves_list_entry = getContext()->getMovesList().insert(
+            getStorageID(),
+            moving_part.part->name,
+            moving_part.reserved_space->getDisk()->getName(),
+            moving_part.reserved_space->getDisk()->getPath(),
+            moving_part.part->getBytesOnDisk());
 
         try
         {
