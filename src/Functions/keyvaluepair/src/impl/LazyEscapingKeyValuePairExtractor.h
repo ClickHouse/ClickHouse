@@ -4,10 +4,10 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <Functions/keyvaluepair/impl/state/KeyStateHandler.h>
-#include <Functions/keyvaluepair/impl/state/ValueStateHandler.h>
-#include <Functions/keyvaluepair/impl/KeyValuePairEscapingProcessor.h>
-#include <Functions/keyvaluepair/KeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/src/impl/state/KeyStateHandler.h>
+#include <Functions/keyvaluepair/src/impl/state/ValueStateHandler.h>
+#include <Functions/keyvaluepair/src/impl/KeyValuePairEscapingProcessor.h>
+#include <Functions/keyvaluepair/src/KeyValuePairExtractor.h>
 
 namespace DB
 {

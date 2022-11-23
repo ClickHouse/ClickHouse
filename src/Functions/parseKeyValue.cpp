@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/assert_cast.h>
-#include <Functions/keyvaluepair/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
 
 namespace DB
 {
@@ -22,40 +22,11 @@ String ParseKeyValue::getName() const
 
 ColumnPtr ParseKeyValue::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto column = return_type->createColumn();
-    [[maybe_unused]] auto * map_column = assert_cast<ColumnMap *>(column.get());
-
     auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list] = parseArguments(arguments);
 
     auto extractor = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
 
-    auto offsets = ColumnUInt64::create();
-
-    auto keys = ColumnString::create();
-    auto values = ColumnString::create();
-
-    auto row_offset = 0u;
-
-    for (auto i = 0u; i < data_column->size(); i++)
-    {
-        auto row = data_column->getDataAt(i);
-
-        auto response = extractor->extract(row.toString());
-
-        for (const auto & [key, value] : response)
-        {
-            keys->insert(key);
-            values->insert(value);
-
-            row_offset++;
-        }
-
-        offsets->insert(row_offset);
-    }
-
-    ColumnPtr keys_ptr = std::move(keys);
-
-    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
+    return parse(extractor, data_column);
 }
 
 bool ParseKeyValue::isVariadic() const
@@ -190,6 +161,38 @@ std::shared_ptr<KeyValuePairExtractor> ParseKeyValue::getExtractor(
     builder.withValueSpecialCharacterAllowList(value_special_characters_allow_list);
 
     return builder.build();
+}
+
+ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor> extractor, ColumnPtr data_column) const
+{
+    auto offsets = ColumnUInt64::create();
+
+    auto keys = ColumnString::create();
+    auto values = ColumnString::create();
+
+    auto row_offset = 0u;
+
+    for (auto i = 0u; i < data_column->size(); i++)
+    {
+        auto row = data_column->getDataAt(i);
+
+        // TODO avoid copying
+        auto response = extractor->extract(row.toString());
+
+        for (const auto & [key, value] : response)
+        {
+            keys->insert(key);
+            values->insert(value);
+
+            row_offset++;
+        }
+
+        offsets->insert(row_offset);
+    }
+
+    ColumnPtr keys_ptr = std::move(keys);
+
+    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
 }
 
 REGISTER_FUNCTION(ParseKeyValue)
