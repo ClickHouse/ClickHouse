@@ -70,7 +70,7 @@ public:
     /// Get entry with latest config in logstore
     nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
 
-    void setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server);
+    void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 
 private:
     mutable std::mutex changelog_lock;

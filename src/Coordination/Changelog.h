@@ -138,7 +138,7 @@ public:
         return last_durable_idx;
     }
 
-    void setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server_);
+    void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_);
 
     /// Fsync log to disk
     ~Changelog();
@@ -205,12 +205,11 @@ private:
     ThreadFromGlobalPool write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
-
     mutable std::mutex durable_idx_mutex;
     std::condition_variable durable_idx_cv;
     uint64_t last_durable_idx{0};
 
-    nuraft::ptr<nuraft::raft_server> raft_server{nullptr};
+    nuraft::wptr<nuraft::raft_server> raft_server;
 };
 
 }
