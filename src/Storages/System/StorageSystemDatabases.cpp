@@ -54,11 +54,11 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         auto * ast_create = ast->as<ASTCreateQuery>();
         String engine_full;
 
-        if (ast_create && ast_create->storage) 
+        if (ast_create && ast_create->storage)
         {
             engine_full = ast_create->storage->formatWithSecretsHidden();
             static const char *const extra_head = " ENGINE = ";
-          
+
             if (startsWith(engine_full, extra_head))
                 engine_full = engine_full.substr(strlen(extra_head));
         }
