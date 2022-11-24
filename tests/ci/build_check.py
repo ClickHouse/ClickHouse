@@ -58,7 +58,7 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
-    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
+    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DUSE_UNWIND=0"
     cmd = (
         f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
