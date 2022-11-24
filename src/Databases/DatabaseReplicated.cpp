@@ -702,7 +702,18 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// We will drop or move tables which exist only in local metadata
     Strings tables_to_detach;
-    std::unordered_map<String, String> replicated_tables_to_rename;
+
+    struct RenameEdge
+    {
+        String from;
+        String intermediate;
+        String to;
+    };
+
+    /// This is needed to generate intermediate name
+    String salt = toString(thread_local_rng());
+
+    std::vector<RenameEdge> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
@@ -719,8 +730,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
+                    String intermediate_name = fmt::format("{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
-                    replicated_tables_to_rename[name] = it->second;
+                    replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
                 continue;
             }
@@ -844,25 +856,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
     /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
     /// 2) EXCHANGE TABLE. This query swaps two names atomically and could not be represented with two separate RENAMEs
-    while (!replicated_tables_to_rename.empty())
+    auto rename_table = [&](String from, String to)
     {
-        auto edge = replicated_tables_to_rename.begin();
-        auto reverse_edge = replicated_tables_to_rename.find(edge->second);
-
-        const String & from = edge->first;
-        const String & to = edge->second;
-        bool exchange = false;
-
-        if (reverse_edge != replicated_tables_to_rename.end() && edge->first == reverse_edge->second)
-        {
-            /// This means that table X renames to Y and Y renames to X
-            /// So we need to use EXCHANGE here
-            exchange = true;
-            replicated_tables_to_rename.erase(reverse_edge);
-        }
-        replicated_tables_to_rename.erase(edge);
-
-        LOG_DEBUG(log, "Will {} TABLE {} TO {}", exchange ? "EXCHANGE" : "RENAME", backQuoteIfNeed(from), backQuoteIfNeed(to));
+        LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
 
@@ -871,10 +867,21 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String statement = readMetadataFile(from);
         new_digest -= DB::getMetadataHash(from, statement);
         new_digest += DB::getMetadataHash(to, statement);
-        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, exchange, false);
+        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
         tables_metadata_digest = new_digest;
         assert(checkDigestValid(getContext()));
-    }
+    };
+
+
+    LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermidiate names");
+    for (auto & [from, intermediate, _] : replicated_tables_to_rename)
+        rename_table(from, intermediate);
+
+    LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermidiate to desired names");
+    for (auto & [_, intermediate, to] : replicated_tables_to_rename)
+        rename_table(intermediate, to);
+
+    LOG_DEBUG(log, "Renames completed succesessfully");
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
