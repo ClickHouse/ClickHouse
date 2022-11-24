@@ -592,9 +592,7 @@ def test_alters_from_different_replicas(started_cluster):
 
 def create_some_tables(db):
     settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query(
-        f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings
-    )
+    main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
     dummy_node.query(
         f"CREATE TABLE {db}.t2 (s String) ENGINE=Memory", settings=settings
     )
@@ -648,7 +646,7 @@ def create_table_for_exchanges(db):
     for table in ["a1", "a2", "a3", "a4", "a5", "a6"]:
         main_node.query(
             f"CREATE TABLE {db}.{table} (s String) ENGINE=ReplicatedMergeTree order by s",
-            settings=settings
+            settings=settings,
         )
 
 
@@ -771,10 +769,7 @@ def test_recover_staled_replica(started_cluster):
     # Check that Database Replicated renamed all the tables correctly
     for i, table in enumerate(["a2", "a8", "a5", "a7", "a4", "a3"]):
         assert (
-            dummy_node.query(
-                f"SELECT * FROM recover.{table}"
-            )
-            == f"{str(i + 1) * 10}\n"
+            dummy_node.query(f"SELECT * FROM recover.{table}") == f"{str(i + 1) * 10}\n"
         )
 
     for table in [
@@ -818,16 +813,13 @@ def test_recover_staled_replica(started_cluster):
         "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}")
-        == "42\n"
+        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
     )
     table = dummy_node.query(
         "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_41_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query(
-            f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}"
-        )
+        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")
         == "42\n"
     )
 
