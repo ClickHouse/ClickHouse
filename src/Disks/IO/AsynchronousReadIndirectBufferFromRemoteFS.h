@@ -3,6 +3,7 @@
 #include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadSettings.h>
 #include <utility>
 
 namespace Poco { class Logger; }
@@ -11,7 +12,6 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
-struct ReadSettings;
 
 /**
  * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -64,7 +64,9 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    AsynchronousReaderPtr reader;
+    ReadSettings read_settings;
+
+    IAsynchronousReader & reader;
 
     Int32 priority;
 
