@@ -153,9 +153,10 @@ struct DivideDecimalsImpl
         if (a.value == 0)
             return Decimal256(0);
 
-        bool result_is_negative = (a.value < 0) ^ (b.value < 0);
+        Int256 sign_a = a.value < 0 ? -1 : 1;
+        Int256 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value > 0 ? a.value : -a.value);
+        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
 
         while (scale_a < scale_b + result_scale)
         {
@@ -172,11 +173,11 @@ struct DivideDecimalsImpl
         if (a_digits.empty())
             return Decimal256(0);
 
-        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value > 0 ? b.value : -b.value);
+        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
-        return Decimal256(result_is_negative ? -DecimalOpHelpers::fromDigits(divided) : DecimalOpHelpers::fromDigits(divided));
+        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(divided));
     }
 };
 
@@ -192,11 +193,11 @@ struct MultiplyDecimalsImpl
         if (a.value == 0 || b.value == 0)
             return Decimal256(0);
 
-        bool a_is_negative = a.value < 0;
-        bool b_is_negative = b.value < 0;
+        Int256 sign_a = a.value < 0 ? -1 : 1;
+        Int256 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a_is_negative ? -a.value : a.value);
-        std::vector<UInt8> b_digits = DecimalOpHelpers::toDigits(b_is_negative ? -b.value : b.value);
+        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
+        std::vector<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
 
         std::vector<UInt8> multiplied = DecimalOpHelpers::multiply(a_digits, b_digits);
 
@@ -219,7 +220,7 @@ struct MultiplyDecimalsImpl
         if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
 
-        return Decimal256((a_is_negative ^ b_is_negative) ? -DecimalOpHelpers::fromDigits(multiplied) : DecimalOpHelpers::fromDigits(multiplied));
+        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
 };
 
