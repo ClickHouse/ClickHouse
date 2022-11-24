@@ -10,19 +10,19 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>, WithContext
+class FunctionDateOrDateTimeToDateOrDate32 : public IFunctionDateOrDateTime<Transform>
 {
-public:
+private:
     const bool enable_extended_results_for_datetime_functions = false;
 
+public:
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionDateOrDateTimeToDateOrDate32>(context_);
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : WithContext(context_)
-        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
     }
 
@@ -37,9 +37,9 @@ public:
         /// only validate the time_zone part if the number of arguments is 2.
         if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
             && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0).empty())
-            throw Exception(
-                "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                this->getName());
 
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
@@ -55,10 +55,12 @@ public:
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
+        {
             if (enable_extended_results_for_datetime_functions)
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
             else
                 return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
+        }
         else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
@@ -72,8 +74,9 @@ public:
                 return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), this->getName());
     }
 
 };

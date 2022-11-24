@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
@@ -39,7 +40,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 }
 
@@ -414,7 +415,7 @@ APPLY_FOR_TOKENS(M)
 #undef M
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

@@ -49,9 +49,10 @@ public:
     void restoreTable();  // TODO(ilezhankin): get rid of this
     std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
-protected:
     String full_name;
     std::vector<String> name_parts;
+
+protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

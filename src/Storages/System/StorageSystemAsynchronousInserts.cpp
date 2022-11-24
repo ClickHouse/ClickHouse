@@ -24,7 +24,6 @@ NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
         {"table", std::make_shared<DataTypeString>()},
         {"format", std::make_shared<DataTypeString>()},
         {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
-        {"last_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
         {"total_bytes", std::make_shared<DataTypeUInt64>()},
         {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
@@ -77,7 +76,6 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
         res_columns[i++]->insert(insert_query.format);
         res_columns[i++]->insert(time_in_microseconds(elem->data->first_update));
-        res_columns[i++]->insert(time_in_microseconds(elem->data->last_update));
         res_columns[i++]->insert(elem->data->size);
 
         Array arr_query_id;

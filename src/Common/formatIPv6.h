@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <utility>
 #include <base/range.h>
+#include <base/unaligned.h>
 #include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -55,8 +56,11 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
     }
     if (*(src - 1) != '\0')
         return false;
-
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    reverseMemcpy(dst, &result, sizeof(result));
+#else
     memcpy(dst, &result, sizeof(result));
+#endif
     return true;
 }
 

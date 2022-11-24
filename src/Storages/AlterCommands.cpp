@@ -757,6 +757,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
         if (nullable_to)
         {
+            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
             from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;

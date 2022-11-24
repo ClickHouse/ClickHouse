@@ -58,7 +58,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
         if (left_float < 0 || right_float > 63)
             return {};
 
-        return { .is_monotonic = true };
+        return { .is_monotonic = true, .is_strict = true, };
     }
 };
 

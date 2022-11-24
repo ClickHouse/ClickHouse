@@ -314,12 +314,15 @@ void registerInputFormatCSV(FormatFactory & factory)
     registerWithNamesAndTypes("CSV", register_func);
 }
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
 {
     char * pos = in.position();
     bool quotes = false;
     bool need_more_data = true;
     size_t number_of_rows = 0;
+
+    if (max_rows && (max_rows < min_rows))
+        max_rows = min_rows;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -346,30 +349,30 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
             else if (pos == in.buffer().end())
                 continue;
-            else if (*pos == '"')
+
+            if (*pos == '"')
             {
                 quotes = true;
                 ++pos;
+                continue;
             }
-            else if (*pos == '\n')
+
+            ++number_of_rows;
+            if ((number_of_rows >= min_rows)
+                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+                need_more_data = false;
+
+            if (*pos == '\n')
             {
-                ++number_of_rows;
-                if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size && number_of_rows >= min_rows)
-                    need_more_data = false;
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\r')
                     ++pos;
             }
             else if (*pos == '\r')
             {
-                if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size && number_of_rows >= min_rows)
-                    need_more_data = false;
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                {
                     ++pos;
-                    ++number_of_rows;
-                }
             }
         }
     }
@@ -383,9 +386,9 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
         size_t min_rows = 1 + int(with_names) + int(with_types);
-        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
         {
-            return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, min_rows);
+            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows);
         });
     };
 

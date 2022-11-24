@@ -1,8 +1,7 @@
-position: 10
+position: 1
 label: 'Example Datasets'
 collapsible: true
 collapsed: true
 link:
-  type: generated-index
-  title: Example Datasets
-  slug: /en/getting-started/example-datasets
+  type: doc
+  id: en/getting-started/example-datasets/

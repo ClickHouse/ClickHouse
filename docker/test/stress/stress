@@ -286,9 +286,7 @@ if __name__ == "__main__":
                 # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                 "--client-option",
                 "max_untracked_memory=1Gi",
-                "--client-option",
                 "max_memory_usage_for_user=0",
-                "--client-option",
                 "memory_profiler_step=1Gi",
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",

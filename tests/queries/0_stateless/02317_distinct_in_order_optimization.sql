@@ -95,3 +95,23 @@ select count() as diff from (select distinct * from distinct_in_order except sel
 drop table if exists distinct_in_order;
 drop table if exists ordinary_distinct;
 drop table if exists distinct_cardinality_low;
+
+-- bug 42185
+drop table if exists sorting_key_empty_tuple;
+drop table if exists sorting_key_contain_function;
+
+select '-- bug 42185, distinct in order and empty sort description';
+select '-- distinct in order, sorting key tuple()';
+create table sorting_key_empty_tuple (a int, b int) engine=MergeTree() order by tuple();
+insert into sorting_key_empty_tuple select number % 2, number % 5 from numbers(1,10);
+select distinct a from sorting_key_empty_tuple;
+
+select '-- distinct in order, sorting key contains function';
+create table sorting_key_contain_function (datetime DateTime, a int) engine=MergeTree() order by (toDate(datetime));
+insert into sorting_key_contain_function values ('2000-01-01', 1);
+insert into sorting_key_contain_function values ('2000-01-01', 2);
+select distinct datetime from sorting_key_contain_function;
+select distinct toDate(datetime) from sorting_key_contain_function;
+
+drop table sorting_key_empty_tuple;
+drop table sorting_key_contain_function;

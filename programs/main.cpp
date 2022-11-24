@@ -219,7 +219,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -345,7 +345,7 @@ struct Checker
 ;
 
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
+#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -408,6 +408,7 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 /// 3rd-party uncontrolled dangerous libraries into the process address space,
 /// because it is insane.
 
+#if !defined(USE_MUSL)
 extern "C"
 {
     void * dlopen(const char *, int)
@@ -430,6 +431,7 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#endif
 
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -455,7 +457,7 @@ int main(int argc_, char ** argv_)
     /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
+#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 

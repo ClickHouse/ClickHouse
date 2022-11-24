@@ -23,7 +23,7 @@ namespace
 {
 
 /// Trim ending whitespace inplace
-void trim(String & s)
+void rightTrim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
@@ -151,7 +151,7 @@ public:
     {
         size_t dot_pos = path.rfind('.');
         if (dot_pos != std::string::npos)
-            fd = ::mkstemps(path.data(), path.size() - dot_pos);
+            fd = ::mkstemps(path.data(), static_cast<int>(path.size() - dot_pos));
         else
             fd = ::mkstemp(path.data());
 
@@ -408,7 +408,7 @@ ReplxxLineReader::ReplxxLineReader(
             // In a simplest case use simple comment.
             commented_line = fmt::format("-- {}", state.text());
         }
-        rx.set_state(replxx::Replxx::State(commented_line.c_str(), commented_line.size()));
+        rx.set_state(replxx::Replxx::State(commented_line.c_str(), static_cast<int>(commented_line.size())));
 
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
@@ -441,7 +441,7 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 
-    trim(input);
+    rightTrim(input);
     return INPUT_LINE;
 }
 
@@ -480,7 +480,7 @@ void ReplxxLineReader::openEditor()
         if (executeCommand(argv) == 0)
         {
             const std::string & new_query = readFile(editor_file.getPath());
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
         }
     }
     catch (const std::runtime_error & e)
@@ -512,6 +512,9 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     /// NOTE: You can use one of the following to configure the behaviour additionally:
     /// - SKIM_DEFAULT_OPTIONS
     /// - FZF_DEFAULT_OPTS
+    ///
+    /// And also note, that fzf and skim is 95% compatible (at least option
+    /// that is used here)
     std::string fuzzy_finder_command = fmt::format(
         "{} --read0 --tac --no-sort --tiebreak=index --bind=ctrl-r:toggle-sort --height=30% < {} > {}",
         fuzzy_finder, history_file.getPath(), output_file.getPath());
@@ -521,8 +524,9 @@ void ReplxxLineReader::openInteractiveHistorySearch()
     {
         if (executeCommand(argv) == 0)
         {
-            const std::string & new_query = readFile(output_file.getPath());
-            rx.set_state(replxx::Replxx::State(new_query.c_str(), new_query.size()));
+            std::string new_query = readFile(output_file.getPath());
+            rightTrim(new_query);
+            rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
         }
     }
     catch (const std::runtime_error & e)

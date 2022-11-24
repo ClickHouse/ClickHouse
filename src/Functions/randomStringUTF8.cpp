@@ -116,8 +116,8 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt32 code_point1 = generate_code_point(rand);
-                UInt32 code_point2 = generate_code_point(rand >> 32);
+                UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
+                UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
 
                 /// We have padding in column buffers that we can overwrite.
                 size_t length1 = UTF8::convertCodePointToUTF8(code_point1, pos, sizeof(int));
