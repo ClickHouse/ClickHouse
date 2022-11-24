@@ -842,7 +842,7 @@ ActiveDataPartSet getPartNamesToMutate(
             for (const auto & part_to_drop : entry_representation.dropped_parts)
             {
                 auto part_to_drop_info = MergeTreePartInfo::fromPartName(part_to_drop, format_version);
-                if (part_to_drop_info.partition_id == partition_id && part_to_drop_info.getDataVersion() < block_num)
+                if (part_to_drop_info.partition_id == partition_id)
                     result.removePartAndCoveredParts(part_to_drop);
             }
 
