@@ -188,11 +188,11 @@ ColumnPtr ParseKeyValue::parse(std::shared_ptr<KeyValuePairExtractor> extractor,
             row_offset++;
         }
 
-        ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(keys->getChars(), keys->getOffsets(), "\\", "", keys->getChars(), keys->getOffsets());
-        ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(values->getChars(), values->getOffsets(), "\\", "", values->getChars(), values->getOffsets());
-
         offsets->insert(row_offset);
     }
+
+    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(keys->getChars(), keys->getOffsets(), "\\", "", keys->getChars(), keys->getOffsets());
+    ReplaceStringImpl<ReplaceStringTraits::Replace::All>::vector(values->getChars(), values->getOffsets(), "\\", "", values->getChars(), values->getOffsets());
 
     ColumnPtr keys_ptr = std::move(keys);
 
