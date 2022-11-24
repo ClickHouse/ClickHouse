@@ -2728,13 +2728,18 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
     {
         const Settings & settings = context->getSettingsRef();
 
-        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         UInt64 limit_for_distinct = 0;
 
-        /// If after this stage of DISTINCT ORDER BY is not executed,
+        /// If after this stage of DISTINCT,
+        /// (1) ORDER BY is not executed
+        /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
         /// then you can get no more than limit_length + limit_offset of different rows.
-        if ((!query.orderBy() || !before_order) && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-            limit_for_distinct = limit_length + limit_offset;
+        if ((!query.orderBy() || !before_order) && !query.limitBy())
+        {
+            auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+            if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+                limit_for_distinct = limit_length + limit_offset;
+        }
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
