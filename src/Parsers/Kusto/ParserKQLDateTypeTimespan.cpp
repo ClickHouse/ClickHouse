@@ -90,25 +90,25 @@ bool ParserKQLDateTypeTimespan :: parseConstKQLTimespan(const String & text)
         {"ticks", KQLTimespanUint::tick}
     };
 
-    uint16_t days = 0, hours = 0, minutes = 0, seconds = 0 , sec_scale_len = 0;
+    int days = 0, hours = 0, minutes = 0, seconds = 0, sec_scale_len = 0;
     double nanoseconds = 00.00;
 
     const char * ptr = text.c_str();
     bool sign = false;
 
-    auto scanDigit = [&](const char *start)
+    auto scanDigit = [&](const char *start) -> int
     {
         auto index = start;
         while (isdigit(*index))
             ++index;
-        return index > start ? index - start : -1;
+        return index > start ? static_cast<int>(index - start) : -1;
     };
     if (*ptr == '-')
     {
         sign = true;
         ++ptr;
     }
-    int number_len = scanDigit(ptr);
+    auto number_len = scanDigit(ptr);
     if (number_len <= 0)
       return false;
 

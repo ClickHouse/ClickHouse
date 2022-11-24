@@ -158,9 +158,12 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     }
     else
     {
-        auto dot_pos = res.find(".");
-        if (dot_pos != String::npos)
-            scale = (precision - (res.substr(0,dot_pos-1)).length()) > 0 ? precision - (res.substr(0,dot_pos-1)).length() : 0;
+        if (const auto dot_pos = res.find("."); dot_pos != String::npos)
+        {
+            const auto tmp = res.substr(0, dot_pos - 1);
+            const auto tmp_length  = static_cast<int>(std::ssize(tmp));
+            scale = std::max(precision - tmp_length, 0);
+        }
         if (scale < 0)
             out = "NULL";
         else
