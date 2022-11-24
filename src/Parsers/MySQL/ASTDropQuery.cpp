@@ -30,7 +30,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_view("VIEW");
     ParserKeyword on("ON");
-    ParserIdentifier name_p(true);
+    ParserIdentifier name_p(false);
 
     ParserKeyword s_event("EVENT");
     ParserKeyword s_function("FUNCTION");
@@ -40,7 +40,6 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
-    
     ASTDropQuery::QualifiedNames names;
     bool if_exists = false;
     bool is_truncate = false;
