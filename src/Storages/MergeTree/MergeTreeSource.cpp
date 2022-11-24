@@ -64,6 +64,10 @@ struct MergeTreeSource::AsyncReadingState
 
     private:
 
+        /// Executor requires file descriptor (which can be polled) to be returned for async execution.
+        /// We are using EventFD here.
+        /// Thread from background pool writes to fd when task is finished.
+        /// Working thread should read from fd when task is finished or canceled to wait for bg thread.
         EventFD event;
         std::atomic<Stage> stage = Stage::NotStarted;
 

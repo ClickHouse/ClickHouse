@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 EventFD::EventFD()
 {
-    fd = eventfd(0, 0);
+    fd = eventfd(0 /* initval */, 0 /* flags */);
     if (fd == -1)
         throwFromErrno("Cannot create eventfd", ErrorCodes::CANNOT_PIPE);
 }
