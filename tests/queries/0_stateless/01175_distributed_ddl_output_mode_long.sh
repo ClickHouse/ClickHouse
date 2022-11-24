@@ -37,7 +37,7 @@ RAND_COMMENT="01175_DDL_$RANDOM"
 LOG_COMMENT="${CLICKHOUSE_LOG_COMMENT}_$RAND_COMMENT"
 
 CLICKHOUSE_CLIENT_WITH_SETTINGS=${CLICKHOUSE_CLIENT/--log_comment ${CLICKHOUSE_LOG_COMMENT}/--log_comment ${LOG_COMMENT}}
-CLICKHOUSE_CLIENT_WITH_SETTINGS+=" --output_format_parallel_formatting=0 "
+CLICKHOUSE_CLIENT_WITH_SETTINGS+=" --output_format_parallel_formatting=0 --database_atomic_wait_for_drop_and_detach_synchronously=0 "
 
 CLIENT=${CLICKHOUSE_CLIENT_WITH_SETTINGS}
 CLIENT+=" --distributed_ddl_task_timeout=$TIMEOUT "
