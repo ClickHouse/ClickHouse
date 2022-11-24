@@ -1315,7 +1315,19 @@ struct ConvertThroughParsing
                     }
                     else
                     {
-                        parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        do
+                        {
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
+                            {
+                                if (fixed_string_size == IPV6_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    break;
+                                }
+                            }
+
+                            parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        } while(false);
                     }
                 }
 
@@ -1370,7 +1382,22 @@ struct ConvertThroughParsing
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
                     else
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                    {
+                        do
+                        {
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
+                            {
+                                if (fixed_string_size == IPV6_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    parsed = true;
+                                    break;
+                                }
+                            }
+
+                            parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                        } while(false);
+                    }
                 }
 
                 if (!isAllRead(read_buffer))

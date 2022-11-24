@@ -176,90 +176,6 @@ struct NumComparisonImpl
 
 
 template <typename Op>
-struct IPv6ComparisonImpl
-{
-    using Container = PaddedPODArray<IPv6>;
-
-    static void NO_INLINE ipv6_vector_ipv6_vector( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        size_t size = a_data.size();
-
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::apply(memcmp16(reinterpret_cast<const unsigned char *>(&a_data[i]), reinterpret_cast<const unsigned char *>(&b_data[i])), 0);
-    }
-
-    static void NO_INLINE ipv6_vector_constant( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        size_t size = a_data.size();
-
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::apply(memcmp16(reinterpret_cast<const unsigned char *>(&a_data[i]), reinterpret_cast<const unsigned char *>(b_data.data())), 0);
-    }
-
-    static void constant_ipv6_vector( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        IPv6ComparisonImpl<typename Op::SymmetricOp>::ipv6_vector_constant(b_data, a_data, c);
-    }
-};
-
-/// Comparisons for equality/inequality are implemented slightly more efficient.
-template <bool positive>
-struct IPv6EqualsImpl
-{
-    using Container = PaddedPODArray<IPv6>;
-
-    static void NO_INLINE ipv6_vector_ipv6_vector( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        size_t size = a_data.size();
-
-        for (size_t i = 0; i < size; ++i)
-            c[i] = positive == memequal16(
-                &a_data[i],
-                &b_data[i]);
-    }
-
-    static void NO_INLINE ipv6_vector_constant( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        size_t size = a_data.size();
-
-        for (size_t i = 0; i < size; ++i)
-            c[i] = positive == memequal16(
-                &a_data[i],
-                b_data.data());
-    }
-
-        static void constant_ipv6_vector( /// NOLINT
-        const Container & a_data,
-        const Container & b_data,
-        PaddedPODArray<UInt8> & c)
-    {
-        ipv6_vector_constant(b_data, a_data, c);
-    }
-};
-
-template <typename A, typename B>
-struct IPv6ComparisonImpl<EqualsOp<A, B>> : IPv6EqualsImpl<true> {};
-
-template <typename A, typename B>
-struct IPv6ComparisonImpl<NotEqualsOp<A, B>> : IPv6EqualsImpl<false> {};
-
-
-template <typename Op>
 struct StringComparisonImpl
 {
     static void NO_INLINE string_vector_string_vector( /// NOLINT
@@ -1331,6 +1247,15 @@ public:
         const bool left_is_float = which_left.isFloat();
         const bool right_is_float = which_right.isFloat();
 
+        const bool left_is_ipv6 = which_left.isIPv6();
+        const bool right_is_ipv6 = which_right.isIPv6();
+        const bool left_is_fixed_string = which_left.isFixedString();
+        const bool right_is_fixed_string = which_right.isFixedString();
+        size_t fixed_string_size =
+            left_is_fixed_string ?
+                assert_cast<const DataTypeFixedString &>(*left_type).getN() :
+                (right_is_fixed_string ? assert_cast<const DataTypeFixedString &>(*right_type).getN() : 0);
+
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1372,6 +1297,17 @@ public:
                 input_rows_count)))
         {
             return res;
+        }
+        else if (((left_is_ipv6 && right_is_fixed_string) || (right_is_ipv6 && left_is_fixed_string)) && fixed_string_size == IPV6_BINARY_LENGTH)
+        {
+            /// Special treatment for FixedString(16) as a binary representation of IPv6 -
+            /// CAST is customized for this case
+            ColumnPtr left_column = left_is_ipv6 ?
+                col_with_type_and_name_left.column : castColumn(col_with_type_and_name_left, right_type);
+            ColumnPtr right_column = right_is_ipv6 ?
+                col_with_type_and_name_right.column : castColumn(col_with_type_and_name_right, left_type);
+
+            return executeGenericIdenticalTypes(left_column.get(), right_column.get());
         }
         else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {

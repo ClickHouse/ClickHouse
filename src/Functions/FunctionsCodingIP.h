@@ -50,6 +50,47 @@ namespace detail
             vec_null_map_to = &col_null_map_to->getData();
         }
 
+        /// This is a special treatment for source column of type FixedString(16)
+        /// to preserve previous behavior when IPv6 was a domain type of FixedString(16)
+        if constexpr (std::is_same_v<StringColumnType, ColumnFixedString>)
+        {
+            if (string_column.getN() == IPV6_BINARY_LENGTH)
+            {
+                if constexpr (std::is_same_v<ToColumn, ColumnFixedString>)
+                {
+                    auto col_res = ColumnFixedString::create(string_column);
+
+                    if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                    {
+                        col_null_map_to = ColumnUInt8::create(column_size, false);
+                        if (null_map)
+                            memcpy(col_null_map_to->getData().data(), null_map->data(), column_size);
+                        return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+                    }
+
+                    return col_res;
+                }
+                else
+                {
+                    auto col_res = ColumnIPv6::create();
+                    auto & vec_res = col_res->getData();
+
+                    vec_res.resize(column_size);
+                    memcpy(vec_res.data(), string_column.getChars().data(), column_size * IPV6_BINARY_LENGTH);
+
+                    if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                    {
+                        col_null_map_to = ColumnUInt8::create(column_size, false);
+                        if (null_map)
+                            memcpy(col_null_map_to->getData().data(), null_map->data(), column_size);
+                        return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+                    }
+
+                    return col_res;
+                }
+            }
+        }
+
         auto column_create = []() -> typename ToColumn::MutablePtr
         {
             if constexpr (std::is_same_v<ToColumn, ColumnFixedString>)
