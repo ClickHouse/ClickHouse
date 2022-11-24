@@ -872,12 +872,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         assert(checkDigestValid(getContext()));
     };
 
-
-    LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermidiate names");
+    LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
     for (auto & [from, intermediate, _] : replicated_tables_to_rename)
         rename_table(from, intermediate);
 
-    LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermidiate to desired names");
+    LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermediate to desired names");
     for (auto & [_, intermediate, to] : replicated_tables_to_rename)
         rename_table(intermediate, to);
 
