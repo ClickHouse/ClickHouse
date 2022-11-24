@@ -557,10 +557,13 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
         auto rewritten_query = std::make_shared<ASTDropQuery>();
         rewritten_query->setTable(table.shortName);
         rewritten_query->setDatabase(mapped_to_database);
-        if (!drop_query.is_drop)
+        if (drop_query.is_truncate)
             rewritten_query->kind = ASTDropQuery::Kind::Truncate;
+        else
+            rewritten_query->kind = ASTDropQuery::Kind::Drop;
         rewritten_query->is_view = false;
-        rewritten_query->if_exists = drop_query.if_exists;
+        //To avoid failure, we always set exists
+        rewritten_query->if_exists = true;
         rewritten_querys.push_back(rewritten_query);
     }
     return rewritten_querys;

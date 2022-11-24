@@ -16,12 +16,7 @@ ASTPtr ASTDropQuery::clone() const
 {
     auto res = std::make_shared<ASTDropQuery>(*this);
     res->children.clear();
-    if (database)
-        res->database = database;
-    if (index)
-        res->index = index;
-    res->is_temporary = is_temporary;
-    res->is_drop = is_drop;
+    res->is_truncate = is_truncate;
     res->if_exists = if_exists;
     return res;
 }
@@ -31,7 +26,6 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_drop("DROP");
     ParserKeyword s_truncate("TRUNCATE");
     ParserKeyword s_table("TABLE");
-    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_view("VIEW");
@@ -46,17 +40,14 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
-
-    ASTPtr database;
-    ASTPtr index;
+    
     ASTDropQuery::QualifiedNames names;
     bool if_exists = false;
-    bool is_drop = true;
-    bool is_temporary = false;
+    bool is_truncate = false;
 
     if (s_truncate.ignore(pos, expected) && s_table.ignore(pos, expected))
     {
-        is_drop = false;
+        is_truncate = true;
         query->kind = ASTDropQuery::Kind::Table;
         ASTDropQuery::QualifiedName name;
         if (parseDatabaseAndTableName(pos, expected, name.schema, name.shortName))
@@ -71,7 +62,7 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
             query->kind = ASTDropQuery::Kind::Database;
             if (s_if_exists.ignore(pos, expected))
                 if_exists = true;
-
+            ASTPtr database;
             if (!name_p.parse(pos, database, expected))
                 return false;
         }
@@ -79,15 +70,11 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
         {
             if (s_view.ignore(pos, expected))
                 query->kind = ASTDropQuery::Kind::View;
-            else if (s_temporary.ignore(pos, expected) && s_table.ignore(pos, expected))
-            {
-                is_temporary = true;
-                query->kind = ASTDropQuery::Kind::Table;
-            }
             else if (s_table.ignore(pos, expected))
                 query->kind = ASTDropQuery::Kind::Table;
             else if (s_index.ignore(pos, expected))
             {
+                ASTPtr index;
                 query->kind = ASTDropQuery::Kind::Index;
                 if (!(name_p.parse(pos, index, expected) && on.ignore(pos, expected)))
                     return false;
@@ -122,11 +109,8 @@ bool ParserDropQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     query->if_exists = if_exists;
-    query->database = database;
-    query->index = index;
     query->names = names;
-    query->is_drop = is_drop;
-    query->is_temporary = is_temporary;
+    query->is_truncate = is_truncate;
 
     return true;
 }

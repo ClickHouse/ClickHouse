@@ -37,12 +37,9 @@ public:
 
     using QualifiedNames = std::vector<QualifiedName>;
     QualifiedNames names;
-    ASTPtr database;
-    ASTPtr index;
     bool if_exists{false};
-    bool is_temporary{false};
     //drop or truncate
-    bool is_drop{true};
+    bool is_truncate{false};
 
     ASTPtr clone() const override;
     String getID(char /*delim*/) const override {return "ASTDropQuery" ;}
