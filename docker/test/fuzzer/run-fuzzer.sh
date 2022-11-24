@@ -294,6 +294,8 @@ quit
         pigz core.*
         mv core.*.gz core.gz
     fi
+
+    dmesg -T | grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
