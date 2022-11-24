@@ -1026,8 +1026,20 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
 
-        if (command.default_expression && !UserDefinedSQLFunctionFactory::instance().empty())
-            UserDefinedSQLFunctionVisitor::visit(command.default_expression);
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+        {
+            if (command.default_expression)
+                UserDefinedSQLFunctionVisitor::visit(command.default_expression);
+
+            if (command.order_by)
+                UserDefinedSQLFunctionVisitor::visit(command.order_by);
+
+            if (command.sample_by)
+                UserDefinedSQLFunctionVisitor::visit(command.sample_by);
+
+            if (command.ttl)
+                UserDefinedSQLFunctionVisitor::visit(command.ttl);
+        }
     }
 
     prepared = true;

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS 02483_substitute_udf;
 DROP FUNCTION IF EXISTS 02483_plusone;
 DROP FUNCTION IF EXISTS 02483_plustwo;
