@@ -441,7 +441,8 @@ std::vector<DNSResolver::CacheEntry> DNSResolver::cacheEntries() const
 {
     std::vector<DNSResolver::CacheEntry> entries;
 
-    for (const auto & host : impl->known_hosts) {
+    for (const auto & host : impl->known_hosts)
+    {
         const DB::String &hostname = host.first;
 
         DB::DNSResolver::IPAddressesPtr lookup_result = impl->cache_host.get(hostname);
