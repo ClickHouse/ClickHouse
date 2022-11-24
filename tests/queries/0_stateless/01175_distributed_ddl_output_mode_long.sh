@@ -22,7 +22,7 @@ function run_until_out_contains()
     PATTERN=$1
     shift
 
-    for ((i=MIN_TIMEOUT; i<10; i++))
+    for ((i=MIN_TIMEOUT; i<33; i=i*2))
     do
         "$@" --distributed_ddl_task_timeout="$i" > "$TMP_OUT" 2>&1
         if grep -q "$PATTERN" "$TMP_OUT"
