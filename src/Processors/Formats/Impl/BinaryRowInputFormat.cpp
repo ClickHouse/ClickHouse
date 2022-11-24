@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_SKIP_UNKNOWN_FIELD;
 }
 
-BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
         header,
         in_,
