@@ -29,7 +29,8 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
     {
         const std::string &hostname = entry.first;
 
-        for (const auto & address : entry.second) {
+        for (const auto & address : entry.second)
+        {
             std::string ip = address.toString();
 
             // Cache might report the same ip address multiple times. Report only one of them.
@@ -39,7 +40,7 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
             reported_elements.insert(HostIPPair(hostname, ip));
 
             std::string family_str;
-            switch(address.family())
+            switch (address.family())
             {
                 case Poco::Net::AddressFamily::IPv4:
                     family_str = "IPv4";
