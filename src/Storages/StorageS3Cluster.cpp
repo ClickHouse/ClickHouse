@@ -104,6 +104,7 @@ Pipe StorageS3Cluster::read(
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
