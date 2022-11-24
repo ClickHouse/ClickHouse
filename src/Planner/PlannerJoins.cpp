@@ -87,8 +87,8 @@ void JoinClause::dump(WriteBuffer & buffer) const
         {
             const auto & asof_condition = asof_conditions[i];
 
-            buffer << "key_index: " << asof_condition.key_index;
-            buffer << "inequality: " << toString(asof_condition.asof_inequality);
+            buffer << " key_index: " << asof_condition.key_index;
+            buffer << " inequality: " << toString(asof_condition.asof_inequality);
 
             if (i + 1 != asof_conditions_size)
                 buffer << ',';
