@@ -248,6 +248,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     size_t entry_data_size = entry->bytes.size();
 
+    ++data->query_number;
     data->size += entry_data_size;
     data->entries.emplace_back(entry);
 
@@ -262,7 +263,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     /// Here we check whether we hit the limit on maximum data size in the buffer.
     /// And use setting from query context!
     /// It works, because queries with the same set of settings are already grouped together.
-    if (data->size > it->first.settings.async_insert_max_data_size)
+    if (data->size > it->first.settings.async_insert_max_data_size || data->query_number > it->first.settings.async_insert_max_query_number)
         scheduleDataProcessingJob(it->first, std::move(data), getContext());
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
