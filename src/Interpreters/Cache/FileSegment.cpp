@@ -249,6 +249,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
             return nullptr;
     }
 
+    LOG_TRACE(log, "Extracted reader from file segment");
     return std::move(remote_file_reader);
 }
 

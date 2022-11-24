@@ -2,7 +2,6 @@ import os
 import pytest
 import socket
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import time
 
 
@@ -63,6 +62,37 @@ def get_fake_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
+def get_keeper_socket(node_name):
+    hosts = cluster.get_instance_ip(node_name)
+    client = socket.socket()
+    client.settimeout(10)
+    client.connect((hosts, 9181))
+    return client
+
+
+def send_4lw_cmd(node_name, cmd="ruok"):
+    client = None
+    try:
+        client = get_keeper_socket(node_name)
+        client.send(cmd.encode())
+        data = client.recv(100_000)
+        data = data.decode()
+        return data
+    finally:
+        if client is not None:
+            client.close()
+
+
+def wait_until_connected(node_name):
+    while send_4lw_cmd(node_name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG:
+        time.sleep(0.1)
+
+
+def wait_nodes(nodes):
+    for node in nodes:
+        wait_until_connected(node.name)
+
+
 def wait_and_assert_data(zk, path, data):
     while zk.retry(zk.exists, path) is None:
         time.sleep(0.1)
@@ -74,6 +104,9 @@ def close_zk(zk):
     zk.close()
 
 
+NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
+
+
 def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
@@ -81,7 +114,7 @@ def test_cluster_recovery(started_cluster):
         for node in nodes[CLUSTER_SIZE:]:
             node.stop_clickhouse()
 
-        keeper_utils.wait_nodes(cluster, nodes[:CLUSTER_SIZE])
+        wait_nodes(nodes[:CLUSTER_SIZE])
 
         node_zks = [get_fake_zk(node.name) for node in nodes[:CLUSTER_SIZE]]
 
@@ -119,7 +152,7 @@ def test_cluster_recovery(started_cluster):
             wait_and_assert_data(node_zk, "/test_force_recovery_extra", "somedataextra")
 
         nodes[0].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        wait_until_connected(nodes[0].name)
         node_zks[0] = get_fake_zk(nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
 
@@ -134,7 +167,8 @@ def test_cluster_recovery(started_cluster):
             node.stop_clickhouse()
 
         # wait for node1 to lose quorum
-        keeper_utils.wait_until_quorum_lost(cluster, nodes[0])
+        while send_4lw_cmd(nodes[0].name, "mntr") != NOT_SERVING_REQUESTS_ERROR_MSG:
+            time.sleep(0.2)
 
         nodes[0].copy_file_to_container(
             os.path.join(CONFIG_DIR, "recovered_keeper1.xml"),
@@ -143,15 +177,9 @@ def test_cluster_recovery(started_cluster):
 
         nodes[0].query("SYSTEM RELOAD CONFIG")
 
-        assert (
-            keeper_utils.send_4lw_cmd(cluster, nodes[0], "mntr")
-            == keeper_utils.NOT_SERVING_REQUESTS_ERROR_MSG
-        )
-        keeper_utils.send_4lw_cmd(cluster, nodes[0], "rcvr")
-        assert (
-            keeper_utils.send_4lw_cmd(cluster, nodes[0], "mntr")
-            == keeper_utils.NOT_SERVING_REQUESTS_ERROR_MSG
-        )
+        assert send_4lw_cmd(nodes[0].name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG
+        send_4lw_cmd(nodes[0].name, "rcvr")
+        assert send_4lw_cmd(nodes[0].name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG
 
         # add one node to restore the quorum
         nodes[CLUSTER_SIZE].copy_file_to_container(
@@ -163,10 +191,10 @@ def test_cluster_recovery(started_cluster):
         )
 
         nodes[CLUSTER_SIZE].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[CLUSTER_SIZE])
+        wait_until_connected(nodes[CLUSTER_SIZE].name)
 
         # node1 should have quorum now and accept requests
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        wait_until_connected(nodes[0].name)
 
         node_zks.append(get_fake_zk(nodes[CLUSTER_SIZE].name))
 
@@ -178,7 +206,7 @@ def test_cluster_recovery(started_cluster):
                 f"/etc/clickhouse-server/config.d/enable_keeper{i+1}.xml",
             )
             node.start_clickhouse()
-            keeper_utils.wait_until_connected(cluster, node)
+            wait_until_connected(node.name)
             node_zks.append(get_fake_zk(node.name))
 
         # refresh old zk sessions
@@ -195,7 +223,7 @@ def test_cluster_recovery(started_cluster):
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        wait_until_connected(nodes[0].name)
         node_zks[0] = get_fake_zk(nodes[0].name)
         for zk in node_zks[:nodes_left]:
             assert_all_data(zk)

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 
 #if USE_AWS_S3

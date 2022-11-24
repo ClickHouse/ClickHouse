@@ -16,7 +16,7 @@
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 
 namespace DB

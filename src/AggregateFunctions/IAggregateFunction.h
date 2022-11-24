@@ -10,7 +10,7 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #include <cstddef>
 #include <memory>

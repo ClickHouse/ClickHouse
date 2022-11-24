@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>

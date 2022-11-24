@@ -1516,19 +1516,12 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorage
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
-    auto storage_settings = storage.getSettings();
-
-    /// In case of zero-copy replication we copy directory instead of hardlinks
-    /// because hardlinks tracking doesn't work for detached parts.
-    bool copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && storage_settings->allow_remote_fs_zero_copy_replication;
-
     data_part_storage->freeze(
         storage.relative_data_path,
         getRelativePathForDetachedPart(prefix),
         /*make_source_readonly*/ true,
         {},
-        copy_instead_of_hardlink,
-        {});
+        /*copy_instead_of_hardlink*/ false);
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const

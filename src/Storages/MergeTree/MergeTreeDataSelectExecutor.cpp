@@ -310,7 +310,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.group_by_two_level_threshold_bytes,
                 settings.max_bytes_before_external_group_by,
                 settings.empty_result_for_aggregation_by_empty_set,
-                context->getTempDataOnDisk(),
+                context->getTemporaryVolume(),
                 settings.max_threads,
                 settings.min_free_disk_space_for_temporary_data,
                 settings.compile_aggregate_expressions,
@@ -1273,6 +1273,7 @@ static void selectColumnNames(
 
 MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
+    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1297,7 +1298,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        query_info.prewhere_info,
+        prewhere_info,
         added_filter_nodes,
         metadata_snapshot_base,
         metadata_snapshot,

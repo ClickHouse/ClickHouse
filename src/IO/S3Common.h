@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -114,7 +114,6 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
-    explicit URI(const std::string & uri_) : URI(Poco::URI(uri_)) {}
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };

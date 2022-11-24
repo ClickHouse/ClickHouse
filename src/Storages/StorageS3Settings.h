@@ -7,7 +7,6 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/HeaderCollection.h>
 
 namespace Poco::Util
 {
@@ -16,6 +15,15 @@ class AbstractConfiguration;
 
 namespace DB
 {
+struct HttpHeader
+{
+    String name;
+    String value;
+
+    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
+};
+
+using HeaderCollection = std::vector<HttpHeader>;
 
 struct Settings;
 
@@ -41,23 +49,6 @@ struct S3Settings
                 && headers == other.headers
                 && use_environment_credentials == other.use_environment_credentials
                 && use_insecure_imds_request == other.use_insecure_imds_request;
-        }
-
-        void updateFrom(const AuthSettings & from)
-        {
-            /// Update with check for emptyness only parameters which
-            /// can be passed not only from config, but via ast.
-
-            if (!from.access_key_id.empty())
-                access_key_id = from.access_key_id;
-            if (!from.secret_access_key.empty())
-                secret_access_key = from.secret_access_key;
-
-            headers = from.headers;
-            region = from.region;
-            server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
-            use_environment_credentials = from.use_environment_credentials;
-            use_insecure_imds_request = from.use_insecure_imds_request;
         }
     };
 
@@ -103,6 +94,7 @@ struct S3Settings
 class StorageS3Settings
 {
 public:
+    StorageS3Settings() = default;
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
     S3Settings getSettings(const String & endpoint) const;

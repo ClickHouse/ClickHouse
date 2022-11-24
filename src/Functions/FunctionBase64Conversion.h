@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
@@ -19,7 +19,6 @@ using namespace GatherUtils;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
@@ -60,22 +59,34 @@ class FunctionBase64Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBase64Conversion>(); }
-    String getName() const override { return Func::name; }
-    size_t getNumberOfArguments() const override { return 1; }
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionBase64Conversion>();
+    }
+
+    String getName() const override
+    {
+        return Func::name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}: 1 expected.", getName());
-
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Must be String.",
-                arguments[0].type->getName(), getName());
+                "Illegal type " + arguments[0].type->getName() + " of 1st argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -87,9 +98,8 @@ public:
 
         if (!input)
             throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}, must be of type String",
-                arguments[0].column->getName(), getName());
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be of type String",
+                ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
         auto & dst_data = dst_column->getChars();
@@ -135,10 +145,7 @@ public:
 #endif
 
                     if (!outlen)
-                        throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Failed to {} input '{}'",
-                                getName(), String(reinterpret_cast<const char *>(source), srclen));
+                        throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }
             }
             else

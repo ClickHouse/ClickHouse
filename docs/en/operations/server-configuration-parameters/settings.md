@@ -666,7 +666,6 @@ Keys:
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
--   `environment` - An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.
 
 **Recommended way to use**
 
@@ -1499,7 +1498,7 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 - `move_factor` is ignored.
 - `keep_free_space_bytes` is ignored.
 - `max_data_part_size_bytes` is ignored.
-- Policy should have exactly one volume with local disks.
+- Уou must have exactly one volume in that policy.
 :::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}

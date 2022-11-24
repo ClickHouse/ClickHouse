@@ -7,8 +7,6 @@
 namespace DB
 {
 
-constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
-
 /** SET query
   */
 class ASTSetQuery : public IAST

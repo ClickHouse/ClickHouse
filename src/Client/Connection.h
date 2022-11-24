@@ -4,7 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 

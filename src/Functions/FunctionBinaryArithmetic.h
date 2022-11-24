@@ -899,10 +899,10 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
-        new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+        if (WhichDataType(new_arguments[1].type).isInterval())
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
@@ -1766,12 +1766,12 @@ public:
                     return {true, is_constant_positive, true};
                 }
             }
-            return {false, true, false, false};
+            return {false, true, false};
         }
 
         // For simplicity, we treat every single value interval as positive monotonic.
         if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
-            return {true, true, false, false};
+            return {true, true, false};
 
         if (name_view == "minus" || name_view == "plus")
         {
@@ -1797,18 +1797,18 @@ public:
                     // Check if there is an overflow
                     if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                             == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                        return {true, true, false, true};
+                        return {true, true, false};
                     else
-                        return {false, true, false, false};
+                        return {false, true, false};
                 }
                 else
                 {
                     // Check if there is an overflow
                     if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                             != applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                        return {true, false, false, true};
+                        return {true, false, false};
                     else
-                        return {false, false, false, false};
+                        return {false, false, false};
                 }
             }
             // variable +|- constant
@@ -1829,33 +1829,31 @@ public:
                 // Check if there is an overflow
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
-                    return {true, true, false, true};
+                    return {true, true, false};
                 else
-                    return {false, true, false, false};
+                    return {false, true, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
         {
-            bool is_strict = name_view == "divide";
-
             // const / variable
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
+                    return {true, true, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0))
                     && applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
                 {
-                    return {true, is_constant_positive, false, is_strict};
+                    return {true, is_constant_positive, false};
                 }
                 else if (
                     applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
-                    return {true, !is_constant_positive, false, is_strict};
+                    return {true, !is_constant_positive, false};
                 }
             }
             // variable / constant
@@ -1863,11 +1861,11 @@ public:
             {
                 auto constant = (*right.column)[0];
                 if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
-                    return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+                    return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
-                return {true, is_constant_positive, true, is_strict};
+                return {true, is_constant_positive, true};
             }
         }
         return {false, true, false};

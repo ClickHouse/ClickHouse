@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #include <Common/logger_useful.h>
 #include <IO/ReadHelpers.h>

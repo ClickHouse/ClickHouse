@@ -6,7 +6,7 @@
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NURAFT
 #include <Poco/ConsoleChannel.h>

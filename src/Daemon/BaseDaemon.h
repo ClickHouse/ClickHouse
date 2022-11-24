@@ -172,8 +172,7 @@ protected:
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
-    String build_id;
-    String git_hash;
+    String build_id_info;
     String stored_binary_hash;
 
     std::vector<int> handled_signals;

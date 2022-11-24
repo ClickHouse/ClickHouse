@@ -1,6 +1,6 @@
 #include "getNumberOfPhysicalCPUCores.h"
 
-#include "config.h"
+#include <Common/config.h>
 #if defined(OS_LINUX)
 #    include <cmath>
 #    include <fstream>

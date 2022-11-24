@@ -1,7 +1,7 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #include <chrono>
 #include <filesystem>
@@ -705,7 +705,7 @@ void KeeperServer::waitInit()
 
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
-        LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
+        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 
 std::vector<int64_t> KeeperServer::getDeadSessions()

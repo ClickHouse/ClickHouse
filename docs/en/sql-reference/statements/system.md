@@ -159,7 +159,7 @@ Provides possibility to stop background merges for tables in the MergeTree famil
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-:::note
+:::note    
 `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
 :::
 
@@ -303,7 +303,7 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-:::warning
+:::warning    
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
 
@@ -345,11 +345,3 @@ SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ### RESTART REPLICAS
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
-
-### DROP FILESYSTEM CACHE
-
-Allows to drop filesystem cache.
-
-```sql
-SYSTEM DROP FILESYSTEM CACHE
-```

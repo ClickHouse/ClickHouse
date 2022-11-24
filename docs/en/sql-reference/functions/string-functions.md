@@ -565,10 +565,6 @@ Result:
 └────────────────────────────┘
 ```
 
-## tryBase58Decode(s)
-
-Similar to base58Decode, but returns an empty string in case of error.
-
 ## base64Encode(s)
 
 Encodes ‘s’ string into base64
@@ -583,7 +579,7 @@ Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s)
 
-Similar to base64Decode, but returns an empty string in case of error.
+Similar to base64Decode, but in case of error an empty string would be returned.
 
 ## endsWith(s, suffix)
 

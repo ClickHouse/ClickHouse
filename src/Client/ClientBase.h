@@ -147,6 +147,7 @@ private:
     String prompt() const;
 
     void resetOutput();
+    void outputQueryInfo(bool echo_query_);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
@@ -197,7 +198,6 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
@@ -251,7 +251,6 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
-    int create_query_fuzzer_runs = 0;
 
     struct
     {

@@ -33,7 +33,7 @@ install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-ke
 add_dependencies(clickhouse-keeper-lib clickhouse_keeper_configs)
 
 if (BUILD_STANDALONE_KEEPER)
-    # Straight list of all required sources
+    # Sraight list of all required sources
     set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/ACLMap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Coordination/Changelog.cpp
@@ -92,7 +92,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/BaseDaemon.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/SentryWriter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/GraphiteWriter.cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/../../src/Daemon/GitHash.generated.cpp
 
         Keeper.cpp
         TinyContext.cpp

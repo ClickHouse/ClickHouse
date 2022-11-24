@@ -77,21 +77,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }

@@ -8,7 +8,6 @@
 #include <Poco/Util/Application.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
-#include <Common/EventNotifier.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -30,15 +29,10 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskDecorator.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/ThreadPoolReader.h>
-#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -190,7 +184,7 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;          /// Temporary files that occur when processing the request accounted here.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -232,12 +226,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
-
-    mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
-    mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
-    mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
-
-    mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
@@ -322,76 +310,23 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
-        /// Wait for thread pool for background reads and writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
-        if (asynchronous_remote_fs_reader)
+        try
         {
-            try
+            /// Wait for thread pool for background writes,
+            /// since it may use per-user MemoryTracker which will be destroyed here.
+            IObjectStorage::getThreadPoolWriter().wait();
+            /// Make sure that threadpool is destructed before this->process_list
+            /// because thread_status, which was created for threads inside threadpool,
+            /// relies on it.
+            if (load_marks_threadpool)
             {
-                LOG_DEBUG(log, "Desctructing remote fs threadpool reader");
-                asynchronous_remote_fs_reader->wait();
-                asynchronous_remote_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (asynchronous_local_fs_reader)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
-                asynchronous_local_fs_reader->wait();
-                asynchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (synchronous_local_fs_reader)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Desctructing local fs threadpool reader");
-                synchronous_local_fs_reader->wait();
-                synchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (threadpool_writer)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Desctructing threadpool writer");
-                threadpool_writer->wait();
-                threadpool_writer.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (load_marks_threadpool)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
             }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
         try
@@ -575,7 +510,6 @@ void Context::initGlobal()
     assert(!global_context_instance);
     global_context_instance = shared_from_this();
     DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -683,27 +617,10 @@ Strings Context::getWarnings() const
     return common_warnings;
 }
 
-/// TODO: remove, use `getTempDataOnDisk`
 VolumePtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
-    if (shared->temp_data_on_disk)
-        return shared->temp_data_on_disk->getVolume();
-    return nullptr;
-}
-
-TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
-{
-    auto lock = getLock();
-    if (this->temp_data_on_disk)
-        return this->temp_data_on_disk;
-    return shared->temp_data_on_disk;
-}
-
-void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
-{
-    auto lock = getLock();
-    this->temp_data_on_disk = std::move(temp_data_on_disk_);
+    return shared->tmp_volume;
 }
 
 void Context::setPath(const String & path)
@@ -712,7 +629,7 @@ void Context::setPath(const String & path)
 
     shared->path = path;
 
-    if (shared->tmp_path.empty() && !shared->temp_data_on_disk)
+    if (shared->tmp_path.empty() && !shared->tmp_volume)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -731,10 +648,9 @@ void Context::setPath(const String & path)
         shared->user_defined_path = shared->path + "user_defined/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name, size_t max_size)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
-    VolumePtr volume;
 
     if (policy_name.empty())
     {
@@ -743,41 +659,21 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
+        shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     }
     else
     {
         StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
-        volume = tmp_policy->getVolume(0);
+                "Policy '{} is used temporary files, such policy should have exactly one volume", policy_name);
+        shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (volume->getDisks().empty())
+    if (shared->tmp_volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    for (const auto & disk : volume->getDisks())
-    {
-        if (!disk)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Temporary disk is null");
-
-        /// Check that underlying disk is local (can be wrapped in decorator)
-        DiskPtr disk_ptr = disk;
-        if (const auto * disk_decorator = dynamic_cast<const DiskDecorator *>(disk_ptr.get()))
-            disk_ptr = disk_decorator->getNestedDisk();
-
-        if (dynamic_cast<const DiskLocal *>(disk_ptr.get()) == nullptr)
-        {
-            const auto * disk_raw_ptr = disk_ptr.get();
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                "Disk '{}' ({}) is not local and can't be used for temporary files",
-                disk_ptr->getName(), typeid(*disk_raw_ptr).name());
-        }
-    }
-
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-    return volume;
+    return shared->tmp_volume;
 }
 
 void Context::setFlagsPath(const String & path)
@@ -2665,16 +2561,6 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->cache_log;
 }
 
-std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->asynchronous_insert_log;
-}
-
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -2947,13 +2833,14 @@ void Context::shutdown()
         }
     }
 
-    /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->temp_data_on_disk;
-    if (tmp_data && tmp_data->getVolume())
+    // Special volumes might also use disks that require shutdown.
+    if (shared->tmp_volume)
     {
-        auto & disks = tmp_data->getVolume()->getDisks();
+        auto & disks = shared->tmp_volume->getDisks();
         for (auto & disk : disks)
+        {
             disk->shutdown();
+        }
     }
 
     shared->shutdown();
@@ -3489,66 +3376,6 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
-IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
-{
-    const auto & config = getConfigRef();
-
-    auto lock = getLock();
-
-    switch (type)
-    {
-        case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
-        {
-            if (!shared->asynchronous_remote_fs_reader)
-            {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
-                auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
-
-                shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-            }
-
-            return *shared->asynchronous_remote_fs_reader;
-        }
-        case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
-        {
-            if (!shared->asynchronous_local_fs_reader)
-            {
-                auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
-                auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
-
-                shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
-            }
-
-            return *shared->asynchronous_local_fs_reader;
-        }
-        case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
-        {
-            if (!shared->synchronous_local_fs_reader)
-            {
-                shared->synchronous_local_fs_reader = std::make_unique<SynchronousReader>();
-            }
-
-            return *shared->synchronous_local_fs_reader;
-        }
-    }
-}
-
-ThreadPool & Context::getThreadPoolWriter() const
-{
-    const auto & config = getConfigRef();
-
-    auto lock = getLock();
-
-    if (!shared->threadpool_writer)
-    {
-        auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
-        auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
-
-        shared->threadpool_writer = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
-    }
-
-    return *shared->threadpool_writer;
-}
 
 ReadSettings Context::getReadSettings() const
 {
@@ -3616,6 +3443,7 @@ WriteSettings Context::getWriteSettings() const
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
 

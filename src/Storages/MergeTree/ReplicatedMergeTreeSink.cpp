@@ -315,7 +315,12 @@ void ReplicatedMergeTreeSink::commitPart(
     DataPartStorageBuilderPtr builder,
     size_t replicas_num)
 {
-    metadata_snapshot->check(part->getColumns());
+    /// It is possible that we alter a part with different types of source columns.
+    /// In this case, if column was not altered, the result type will be different with what we have in metadata.
+    /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
+    ///
+    /// metadata_snapshot->check(part->getColumns());
+
     assertSessionIsNotExpired(zookeeper);
 
     String temporary_part_relative_path = part->data_part_storage->getPartDirectory();

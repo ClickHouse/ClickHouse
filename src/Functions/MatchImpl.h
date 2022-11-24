@@ -7,7 +7,8 @@
 #include <Core/ColumnNumbers.h>
 #include "Regexps.h"
 
-#include "config.h"
+#include "config_functions.h"
+#include <Common/config.h>
 #include <re2_st/re2.h>
 
 

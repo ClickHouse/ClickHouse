@@ -214,25 +214,20 @@ Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
-    ThreadStatusesHolderPtr thread_status_holder,
+    ThreadStatus * thread_status,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Block & query_sample_block,
-    ThreadStatusesHolderPtr thread_status_holder,
+    ThreadStatus * thread_status,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
-    ThreadStatus * thread_status = current_thread;
-
-    if (!thread_status_holder)
-        thread_status = nullptr;
-
     auto context_ptr = getContext();
     const ASTInsertQuery * query = nullptr;
     if (query_ptr)
@@ -257,7 +252,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     }
     else
     {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status_holder, elapsed_counter_ms);
+        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status, elapsed_counter_ms);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -331,7 +326,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && settings.parallel_distributed_insert_select)
+    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 

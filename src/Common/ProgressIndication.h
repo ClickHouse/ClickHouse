@@ -62,6 +62,8 @@ public:
     void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
 private:
+    size_t getUsedThreadsCount() const;
+
     double getCPUUsage();
 
     struct MemoryUsage

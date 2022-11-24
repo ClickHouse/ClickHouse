@@ -11,11 +11,12 @@
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/config.h>
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
 
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -10,7 +10,6 @@
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/StorageS3.h>
 
 namespace DB
@@ -18,15 +17,20 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorageCluster
+class StorageS3Cluster : public IStorage
 {
 public:
     StorageS3Cluster(
-        const StorageS3ClusterConfiguration & configuration_,
+        const String & filename_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
         const StorageID & table_id_,
+        String cluster_name_,
+        const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_);
+        ContextPtr context_,
+        const String & compression_method_);
 
     std::string getName() const override { return "S3Cluster"; }
 
@@ -38,11 +42,9 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
-    ClusterPtr getCluster(ContextPtr context) const override;
-
 private:
     StorageS3::S3Configuration s3_configuration;
+
     String filename;
     String cluster_name;
     String format_name;

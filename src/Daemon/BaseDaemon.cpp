@@ -59,7 +59,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -266,8 +266,8 @@ private:
     {
         size_t pos = message.find('\n');
 
-        LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id, thread_num, message.substr(0, pos));
+        LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
 
         /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
@@ -315,14 +315,14 @@ private:
 
         if (query_id.empty())
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (no query) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
                 thread_num, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, build id: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id,
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
+                VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
                 thread_num, query_id, query, strsignal(sig), sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context)
         }
 
@@ -838,7 +838,6 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -871,14 +870,12 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
-        build_id = "";
+        build_id_info = "no build id";
     else
-        build_id = build_id_hex;
+        build_id_info = "build id: " + build_id_hex;
 #else
-    build_id = "";
+    build_id_info = "no build id";
 #endif
-
-    git_hash = getGitHash();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -891,9 +888,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 void BaseDaemon::logRevision() const
 {
     Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
+        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
+        + ", " + build_id_info
         + ", PID " + std::to_string(getpid()));
 }
 

@@ -24,13 +24,13 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path)
+void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings) /// NOLINT
 {
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
     auto in = readFile(from_file_path);
-    auto out = to_disk.writeFile(to_file_path);
+    auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
     copyData(*in, *out);
     out->finalize();
 }
@@ -56,15 +56,15 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
 
 using ResultsCollector = std::vector<std::future<void>>;
 
-void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir)
+void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_path, Executor & exec, ResultsCollector & results, bool copy_root_dir, const WriteSettings & settings)
 {
     if (from_disk.isFile(from_path))
     {
         auto result = exec.execute(
-            [&from_disk, from_path, &to_disk, to_path]()
+            [&from_disk, from_path, &to_disk, to_path, &settings]()
             {
                 setThreadName("DiskCopier");
-                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path));
+                from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), settings);
             });
 
         results.push_back(std::move(result));
@@ -80,7 +80,7 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
         }
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true);
+            asyncCopy(from_disk, it->path(), to_disk, dest, exec, results, true, settings);
     }
 }
 
@@ -89,7 +89,12 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
     auto & exec = to_disk->getExecutor();
     ResultsCollector results;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir);
+    WriteSettings settings;
+    /// Disable parallel write. We already copy in parallel.
+    /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
+    settings.s3_allow_parallel_part_upload = false;
+
+    asyncCopy(*this, from_path, *to_disk, to_path, exec, results, copy_root_dir, settings);
 
     for (auto & result : results)
         result.wait();

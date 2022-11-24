@@ -865,12 +865,6 @@ class TestCase:
                 stdout=PIPE,
                 universal_newlines=True,
             ).communicate()[0]
-            if diff.startswith("Binary files "):
-                diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "r")
-                diff += str(file.read())
-                file.close()
-                diff += "==================="
             description += f"\n{diff}\n"
             if debug_log:
                 description += "\n"

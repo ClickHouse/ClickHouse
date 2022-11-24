@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_RAPIDJSON
 #    include <base/types.h>

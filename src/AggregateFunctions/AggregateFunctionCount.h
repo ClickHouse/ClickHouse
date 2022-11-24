@@ -12,7 +12,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>

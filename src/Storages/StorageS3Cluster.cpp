@@ -1,6 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -46,17 +46,22 @@
 namespace DB
 {
 StorageS3Cluster::StorageS3Cluster(
-    const StorageS3ClusterConfiguration & configuration_,
+    const String & filename_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
     const StorageID & table_id_,
+    String cluster_name_,
+    const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
-    : IStorageCluster(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
-    , filename(configuration_.url)
-    , cluster_name(configuration_.cluster_name)
-    , format_name(configuration_.format)
-    , compression_method(configuration_.compression_method)
+    ContextPtr context_,
+    const String & compression_method_)
+    : IStorage(table_id_)
+    , s3_configuration{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, {}, {}, S3Settings::ReadWriteSettings(context_->getSettingsRef())}
+    , filename(filename_)
+    , cluster_name(cluster_name_)
+    , format_name(format_name_)
+    , compression_method(compression_method_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
     StorageInMemoryMetadata storage_metadata;
@@ -101,8 +106,11 @@ Pipe StorageS3Cluster::read(
 {
     StorageS3::updateS3Configuration(context, s3_configuration);
 
-    auto cluster = getCluster(context);
-    auto extension = getTaskIteratorExtension(query_info.query, context);
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+        *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
+    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -127,6 +135,7 @@ Pipe StorageS3Cluster::read(
                 node.secure
             );
 
+
             /// For unknown reason global context is passed to IStorage::read() method
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -138,7 +147,7 @@ Pipe StorageS3Cluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                extension);
+                RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -160,19 +169,6 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-
-ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
-{
-    return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-}
-
-RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
-{
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
-}
 
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {

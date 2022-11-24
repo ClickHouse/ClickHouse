@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #include <Disks/DiskFactory.h>
 

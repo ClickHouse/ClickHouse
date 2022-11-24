@@ -816,6 +816,7 @@ class ClickHouseCluster:
             env_variables[f"keeper_config_dir{i}"] = configs_dir
             env_variables[f"keeper_db_dir{i}"] = coordination_dir
             self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+        logging.debug(f"DEBUG KEEPER: {self.zookeeper_dirs_to_create}")
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", keeper_docker_compose_path])
@@ -4107,9 +4108,6 @@ class ClickHouseInstance:
     def get_backuped_s3_objects(self, disk, backup_name):
         path = f"/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store"
         self.wait_for_path_exists(path, 10)
-        return self.get_s3_objects(path)
-
-    def get_s3_objects(self, path):
         command = [
             "find",
             path,
@@ -4122,44 +4120,7 @@ class ClickHouseInstance:
             "{}",
             ";",
         ]
-
         return self.exec_in_container(command).split("\n")
-
-    def get_s3_data_objects(self, path):
-        command = [
-            "find",
-            path,
-            "-type",
-            "f",
-            "-name",
-            "*.bin",
-            "-exec",
-            "grep",
-            "-o",
-            "r[01]\\{64\\}-file-[[:lower:]]\\{32\\}",
-            "{}",
-            ";",
-        ]
-        return self.exec_in_container(command).split("\n")
-
-    def get_table_objects(self, table, database=None):
-        objects = []
-        database_query = ""
-        if database:
-            database_query = f"AND database='{database}'"
-        data_paths = self.query(
-            f"""
-            SELECT arrayJoin(data_paths)
-            FROM system.tables
-            WHERE name='{table}'
-            {database_query}
-            """
-        )
-        paths = data_paths.split("\n")
-        for path in paths:
-            if path:
-                objects = objects + self.get_s3_data_objects(path)
-        return objects
 
 
 class ClickHouseKiller(object):
