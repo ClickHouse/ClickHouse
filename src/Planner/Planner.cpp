@@ -498,17 +498,6 @@ void Planner::buildQueryPlanIfNeeded()
             should_produce_results_in_order_of_bucket_number);
         query_plan.addStep(std::move(aggregating_step));
 
-        if (query_node.isGroupByWithRollup())
-        {
-            auto rollup_step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
-            query_plan.addStep(std::move(rollup_step));
-        }
-        else if (query_node.isGroupByWithCube())
-        {
-            auto cube_step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
-            query_plan.addStep(std::move(cube_step));
-        }
-
         if (query_node.isGroupByWithTotals())
         {
             const auto & having_analysis_result = expression_analysis_result.getHaving();
@@ -527,6 +516,17 @@ void Planner::buildQueryPlanIfNeeded()
                 final);
 
             query_plan.addStep(std::move(totals_having_step));
+        }
+
+        if (query_node.isGroupByWithRollup())
+        {
+            auto rollup_step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(rollup_step));
+        }
+        else if (query_node.isGroupByWithCube())
+        {
+            auto cube_step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(aggregator_params), true /*final*/, settings.group_by_use_nulls);
+            query_plan.addStep(std::move(cube_step));
         }
     }
 

@@ -74,12 +74,14 @@ public:
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }
     bool isRemote() const override { return delegate->isRemote(); }
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     bool supportsCache() const override { return delegate->supportsCache(); }

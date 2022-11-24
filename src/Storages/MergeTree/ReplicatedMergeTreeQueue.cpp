@@ -1015,7 +1015,8 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
+    const String & fetch_entry_znode)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1029,22 +1030,40 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part || !fetch_entry_znode.empty());
+
+    auto is_simple_part_producing_op = [](const ReplicatedMergeTreeLogEntryData & data)
+    {
+        return data.type == LogEntry::GET_PART ||
+               data.type == LogEntry::ATTACH_PART ||
+               data.type == LogEntry::MERGE_PARTS ||
+               data.type == LogEntry::MUTATE_PART;
+    };
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
-        auto type = (*it)->type;
-        bool is_simple_producing_op = type == LogEntry::GET_PART ||
-                                      type == LogEntry::ATTACH_PART ||
-                                      type == LogEntry::MERGE_PARTS ||
-                                      type == LogEntry::MUTATE_PART;
+        /// Skipping currently processing entry
+        if (!fetch_entry_znode.empty() && (*it)->znode_name == fetch_entry_znode)
+        {
+            ++it;
+            continue;
+        }
+
+        bool is_simple_producing_op = is_simple_part_producing_op(**it);
 
         bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
             if ((*it)->currently_executing)
+            {
+                bool is_covered_by_simple_op = covering_entry && is_simple_part_producing_op(*covering_entry);
+                bool is_fetching_covering_part = !fetch_entry_znode.empty();
+                if (is_covered_by_simple_op || is_fetching_covering_part)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove covered entry {} producing parts {}, it's a bug",
+                                    (*it)->znode_name, fmt::join((*it)->getVirtualPartNames(format_version), ", "));
                 to_wait.push_back(*it);
+            }
             auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
             if (code != Coordination::Error::ZOK)
                 LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
@@ -1110,7 +1129,12 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         /// Parts are not disjoint. They can be even intersecting and it's not a problem,
         /// because we may have two queue entries producing intersecting parts if there's DROP_RANGE between them (so virtual_parts are ok).
 
-        /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
+        /// Give priority to DROP_RANGEs and allow processing them even if covered entries are currently executing.
+        /// DROP_RANGE will cancel covered operations and will wait for them in removePartProducingOpsInRange.
+        if (result_part.isFakeDropRangePart() && result_part.contains(future_part))
+            continue;
+
+        /// In other cases we cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
         /// while any covered or covering parts are processed.
         /// But we also cannot simply return true and postpone entry processing, because it may lead to kind of livelock.
         /// Since queue is processed in multiple threads, it's likely that there will be at least one thread
