@@ -212,7 +212,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String arg;
-    int scale = 0, length = 0;
+    int scale = 0;
     int precision = 34;
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
@@ -239,11 +239,10 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
         return true;
     }
 
-    auto dot_pos = arg.find(".");
-    if (dot_pos != String::npos)
+    if (const auto dot_pos = arg.find("."); dot_pos != String::npos)
     {
-        length = arg.substr(0, dot_pos - 1).length();
-        scale = (precision - length) > 0 ? precision - length : 0;
+        const auto length = static_cast<int>(std::ssize(arg.substr(0, dot_pos - 1)));
+        scale = std::max(precision - length, 0);
     }
     if (is_string)
         throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
