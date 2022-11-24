@@ -76,7 +76,6 @@ SELECT '--';
 
 SET cast_ipv4_ipv6_default_on_conversion_error = 0;
 
-SELECT toFixedString('::ffff:127.0.0.1', 16) as value, cast(value, 'IPv6'), toIPv6(value);
 SELECT toFixedString('::1', 5) as value, cast(value, 'IPv6'), toIPv6(value);
-SELECT toFixedString('', 16) as value, cast(value, 'IPv6'); --{serverError 672}
-SELECT toFixedString('', 16) as value, toIPv6(value); --{serverError 672}
+SELECT toFixedString('', 16) as value, cast(value, 'IPv6');
+SELECT toFixedString('', 16) as value, toIPv6(value);
