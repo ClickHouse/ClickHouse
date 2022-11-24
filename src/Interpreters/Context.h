@@ -63,6 +63,7 @@ using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
+class MovesList;
 class ReplicatedFetchList;
 class Cluster;
 class Compiler;
@@ -774,6 +775,9 @@ public:
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
+
+    MovesList & getMovesList();
+    const MovesList & getMovesList() const;
 
     ReplicatedFetchList & getReplicatedFetchList();
     const ReplicatedFetchList & getReplicatedFetchList() const;

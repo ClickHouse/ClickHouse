@@ -165,7 +165,7 @@ struct QueryASTSettings
 
 struct QueryTreeSettings
 {
-    bool run_passes = false;
+    bool run_passes = true;
     bool dump_passes = false;
     bool dump_ast = false;
     Int64 passes = -1;
