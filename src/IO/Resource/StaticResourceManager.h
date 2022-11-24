@@ -41,7 +41,6 @@ private:
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names
     };
 
-private:
     SchedulerRoot scheduler;
     std::unordered_map<String, Resource> resources; // by name
     std::unique_ptr<ClassifiersConfig> classifiers;
