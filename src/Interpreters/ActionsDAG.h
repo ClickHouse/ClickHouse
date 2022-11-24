@@ -324,6 +324,8 @@ public:
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
 
 private:
+    NodeRawConstPtrs getParents(const Node * target) const;
+
     Node & addNode(Node node);
 
 #if USE_EMBEDDED_COMPILER
