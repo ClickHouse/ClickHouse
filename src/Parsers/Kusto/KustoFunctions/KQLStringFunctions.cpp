@@ -1,13 +1,14 @@
+#include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
-#include <format>
-#include <cstdlib>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
+
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
 #include <Poco/String.h>
+
+#include <format>
 
 
 namespace DB::ErrorCodes
@@ -24,31 +25,21 @@ namespace DB
 
 bool Base64EncodeToString::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out,pos,"base64Encode");
+    return directMapping(out, pos, "base64Encode");
 }
 
 bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
 {
-    const String fn_name = getKQLFunctionName(pos);
-    if (fn_name.empty())
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
         return false;
-        
-    String guid;
 
-    ++pos;
-    if(pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-    {
-        --pos;
-        const String arg = getArgument(fn_name, pos);
-        guid = kqlCallToExpression("guid", {arg}, pos.max_depth);
-    }
-    else
-    {
-        guid = getConvertedArgument(fn_name, pos);
-    }
-
-    out = std::format("base64Encode(toString({}))", guid);
-
+    const auto argument = getArgument(function_name, pos);
+    out = std::format(
+        "if(toTypeName({0}) not in ['UUID', 'Nullable(UUID)'], toString(throwIf(true, 'Expected guid as argument')), "
+        "base64Encode(UUIDStringToNum(toString({0}), 2)))",
+        argument,
+        generateUniqueIdentifier());
     return true;
 }
 
@@ -73,7 +64,14 @@ bool Base64DecodeToArray::convertImpl(String & out, IParser::Pos & pos)
 
 bool Base64DecodeToGuid::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "base64Decode");
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto argument = getArgument(function_name, pos);
+    out = std::format("toUUIDOrNull(UUIDNumToString(toFixedString(base64Decode({}), 16), 2))", argument);
+
+    return true;
 }
 
 bool CountOf::convertImpl(String & out, IParser::Pos & pos)

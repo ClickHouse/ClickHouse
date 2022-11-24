@@ -115,12 +115,6 @@ print '';
 print '-- Customers | where FirstName !startswith_cs \'pet\'';
 Customers | where FirstName !startswith_cs 'pet'| order by LastName;
 print '';
-print '-- Customers | project base64_encode_tostring(\'Kusto1\') | take 1';
-Customers | project base64_encode_tostring('Kusto1') | take 1;
-print '';
-print '-- Customers | project base64_decode_tostring(\'S3VzdG8x\') | take 1';
-Customers | project base64_decode_tostring('S3VzdG8x') | take 1;
-print '';
 print '-- Customers | where isempty(LastName)';
 Customers | where isempty(LastName);
 print '';
@@ -224,12 +218,22 @@ Customers | project indexof('abcdefg','cde') | take 1;
 Customers | project indexof('abcdefg','cde',2) | take 1;
 Customers | project indexof('abcdefg','cde',6) | take 1;
 print '-- base64_encode_fromguid()';
+-- print base64_encode_fromguid(guid(null));
 print base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'));
--- print base64_encode_fromguid("abcd1231"); exception is expected
+print base64_encode_fromguid(dynamic(null)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+print base64_encode_fromguid("abcd1231"); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 print '-- base64_decode_toarray()';
+print base64_decode_toarray('');
 print base64_decode_toarray('S3VzdG8=');
 print '-- base64_decode_toguid()';
+print base64_decode_toguid("JpbpECu8dUy7Pv5gbeJXAA==");
 print base64_decode_toguid(base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) == guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
+print '-- base64_encode_tostring';
+print base64_encode_tostring('');
+print base64_encode_tostring('Kusto1');
+print '-- base64_decode_tostring';
+print base64_decode_tostring('');
+print base64_decode_tostring('S3VzdG8x');
 print '-- parse_url()';
 print parse_url('scheme://username:password@host:1234/this/is/a/path?k1=v1&k2=v2#fragment');
 print '-- parse_urlquery()';
