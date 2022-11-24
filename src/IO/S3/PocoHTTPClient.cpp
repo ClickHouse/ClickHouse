@@ -11,6 +11,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -76,12 +77,16 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         bool enable_s3_requests_logging_,
-        bool for_disk_s3_)
+        bool for_disk_s3_,
+        const ThrottlerPtr & get_request_throttler_,
+        const ThrottlerPtr & put_request_throttler_)
     : force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
+    , get_request_throttler(get_request_throttler_)
+    , put_request_throttler(put_request_throttler_)
 {
 }
 
@@ -128,6 +133,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
+    , get_request_throttler(client_configuration.get_request_throttler)
+    , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
 }
@@ -244,6 +251,23 @@ void PocoHTTPClient::makeRequestInternal(
     auto uri = request.GetUri().GetURIString();
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", uri);
+
+    switch (request.GetMethod())
+    {
+        case Aws::Http::HttpMethod::HTTP_GET:
+        case Aws::Http::HttpMethod::HTTP_HEAD:
+            if (get_request_throttler)
+                get_request_throttler->add(1);
+            break;
+        case Aws::Http::HttpMethod::HTTP_PUT:
+        case Aws::Http::HttpMethod::HTTP_POST:
+        case Aws::Http::HttpMethod::HTTP_PATCH:
+            if (put_request_throttler)
+                put_request_throttler->add(1);
+            break;
+        case Aws::Http::HttpMethod::HTTP_DELETE:
+            break; // Not throttled
+    }
 
     addMetric(request, S3MetricType::Count);
     CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
