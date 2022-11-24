@@ -2023,8 +2023,7 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             const auto & extension = fs::path(it->name()).extension();
-            if (extension == getIndexExtension(false)
-                    || extension == getIndexExtension(true))
+            if (extension == getIndexExtension(true))
                 return extension;
         }
     }
