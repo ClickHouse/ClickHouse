@@ -47,7 +47,7 @@ struct SchedulerNodeInfo
 
     SchedulerNodeInfo() = default;
 
-    SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
     {
         setWeight(config.getDouble(config_prefix + ".weight", weight));
         setPriority(config.getInt64(config_prefix + ".priority", priority));
@@ -63,7 +63,7 @@ struct SchedulerNodeInfo
         weight = value;
     }
 
-    void setPriority(int value)
+    void setPriority(Int64 value)
     {
         priority = value;
     }
