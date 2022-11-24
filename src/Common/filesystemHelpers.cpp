@@ -347,11 +347,19 @@ bool canExecute(const std::string & path)
     DB::throwFromErrnoWithPath("Cannot check execute access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
-time_t getModificationTime(const std::string & path)
+std::optional<time_t> tryGetModificationTime(const std::string & path) noexcept
 {
     struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
+    return {};
+}
+
+time_t getModificationTime(const std::string & path)
+{
+    auto time = tryGetModificationTime(path);
+    if (time)
+        return *time;
     DB::throwFromErrnoWithPath("Cannot check modification time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
 }
 
@@ -361,6 +369,14 @@ time_t getChangeTime(const std::string & path)
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
     DB::throwFromErrnoWithPath("Cannot check change time for file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+std::optional<Poco::Timestamp> tryGetModificationTimestamp(const std::string & path)
+{
+    auto time = tryGetModificationTime(path);
+    if (time)
+        return Poco::Timestamp::fromEpochTime(*time);
+    return {};
 }
 
 Poco::Timestamp getModificationTimestamp(const std::string & path)

@@ -88,7 +88,9 @@ bool canWrite(const std::string & path);
 bool canExecute(const std::string & path);
 
 /// st_mtime
+std::optional<time_t> tryGetModificationTime(const std::string & path) noexcept;
 time_t getModificationTime(const std::string & path);
+std::optional<Poco::Timestamp> tryGetModificationTimestamp(const std::string & path);
 Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
 /// st_ctime

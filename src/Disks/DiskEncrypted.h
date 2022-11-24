@@ -193,6 +193,12 @@ public:
         delegate->setLastModified(wrapped_path, timestamp);
     }
 
+    std::optional<Poco::Timestamp> tryGetLastModified(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->tryGetLastModified(wrapped_path);
+    }
+
     Poco::Timestamp getLastModified(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);

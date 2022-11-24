@@ -389,6 +389,10 @@ void DiskObjectStorage::setLastModified(const String & path, const Poco::Timesta
     transaction->commit();
 }
 
+std::optional<Poco::Timestamp> DiskObjectStorage::tryGetLastModified(const String & path) const
+{
+    return metadata_storage->tryGetLastModified(path);
+}
 
 Poco::Timestamp DiskObjectStorage::getLastModified(const String & path) const
 {

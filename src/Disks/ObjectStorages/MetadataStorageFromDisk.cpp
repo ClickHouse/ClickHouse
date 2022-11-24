@@ -41,6 +41,11 @@ bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
     return disk->isDirectory(path);
 }
 
+std::optional<Poco::Timestamp> MetadataStorageFromDisk::tryGetLastModified(const std::string & path) const
+{
+    return disk->tryGetLastModified(path);
+}
+
 Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
 {
     return disk->getLastModified(path);

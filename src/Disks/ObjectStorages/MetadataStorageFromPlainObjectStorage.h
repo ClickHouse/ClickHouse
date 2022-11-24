@@ -55,6 +55,11 @@ public:
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
 
+    std::optional<Poco::Timestamp> tryGetLastModified(const std::string & /* path */) const override
+    {
+        return {};
+    }
+
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree

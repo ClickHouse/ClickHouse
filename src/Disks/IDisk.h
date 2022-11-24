@@ -281,6 +281,11 @@ public:
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
     /// Get last modified time of file or directory at `path`.
+    /// Does not throw exceptions if an error occurs when it's trying to access `path`.
+    /// May throw exceptions for other reasons.
+    virtual std::optional<Poco::Timestamp> tryGetLastModified(const String & path) const = 0;
+
+    /// Get last modified time of file or directory at `path`.
     virtual Poco::Timestamp getLastModified(const String & path) const = 0;
 
     /// Get last changed time of file or directory at `path`.

@@ -277,6 +277,12 @@ void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestam
     DiskDecorator::setLastModified(path, timestamp);
 }
 
+std::optional<Poco::Timestamp> DiskRestartProxy::tryGetLastModified(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::tryGetLastModified(path);
+}
+
 Poco::Timestamp DiskRestartProxy::getLastModified(const String & path) const
 {
     ReadLock lock (mutex);

@@ -89,6 +89,8 @@ public:
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
+    std::optional<Poco::Timestamp> tryGetLastModified(const String & path) const override;
+
     Poco::Timestamp getLastModified(const String & path) const override;
 
     time_t getLastChanged(const String & path) const override;

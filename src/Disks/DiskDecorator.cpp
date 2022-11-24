@@ -184,6 +184,11 @@ void DiskDecorator::setLastModified(const String & path, const Poco::Timestamp &
     delegate->setLastModified(path, timestamp);
 }
 
+std::optional<Poco::Timestamp> DiskDecorator::tryGetLastModified(const String & path) const
+{
+    return delegate->tryGetLastModified(path);
+}
+
 Poco::Timestamp DiskDecorator::getLastModified(const String & path) const
 {
     return delegate->getLastModified(path);

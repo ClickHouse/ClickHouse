@@ -415,6 +415,11 @@ void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & tim
     FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
 }
 
+std::optional<Poco::Timestamp> DiskLocal::tryGetLastModified(const String & path) const
+{
+    return FS::tryGetModificationTimestamp(fs::path(disk_path) / path);
+}
+
 Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
     return FS::getModificationTimestamp(fs::path(disk_path) / path);

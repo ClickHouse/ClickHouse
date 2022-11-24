@@ -58,6 +58,7 @@ public:
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+    std::optional<Poco::Timestamp> tryGetLastModified(const String & path) const override;
     Poco::Timestamp getLastModified(const String & path) const override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;

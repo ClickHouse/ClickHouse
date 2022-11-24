@@ -46,6 +46,11 @@ public:
 
     struct stat stat(const String & /* path */) const override { return {}; }
 
+    std::optional<Poco::Timestamp> tryGetLastModified(const std::string & /* path */) const override
+    {
+        return {};
+    }
+
     Poco::Timestamp getLastModified(const std::string & /* path */) const override
     {
         /// Required by MergeTree

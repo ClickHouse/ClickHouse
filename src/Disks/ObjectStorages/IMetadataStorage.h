@@ -158,6 +158,8 @@ public:
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
 
+    virtual std::optional<Poco::Timestamp> tryGetLastModified(const std::string & path) const = 0;
+
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
     virtual time_t getLastChanged(const std::string & /* path */) const

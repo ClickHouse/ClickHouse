@@ -48,6 +48,11 @@ bool FakeMetadataStorageFromDisk::isDirectory(const std::string & path) const
     return disk->isDirectory(path);
 }
 
+std::optional<Poco::Timestamp> FakeMetadataStorageFromDisk::tryGetLastModified(const std::string & path) const
+{
+    return disk->tryGetLastModified(path);
+}
+
 Poco::Timestamp FakeMetadataStorageFromDisk::getLastModified(const std::string & path) const
 {
     return disk->getLastModified(path);
