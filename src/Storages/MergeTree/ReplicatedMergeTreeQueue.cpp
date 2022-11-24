@@ -846,7 +846,7 @@ ActiveDataPartSet getPartNamesToMutate(
                     result.removePartAndCoveredParts(part_to_drop);
             }
 
-            /// After we have to add parts if entry add them
+            /// After we have to add parts if entry adds them
             for (const auto & part_to_add : entry_representation.produced_parts)
             {
                 auto part_to_add_info = MergeTreePartInfo::fromPartName(part_to_add, format_version);
