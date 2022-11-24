@@ -702,7 +702,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     /// We will drop or move tables which exist only in local metadata
     Strings tables_to_detach;
-    std::vector<std::pair<String, String>> replicated_tables_to_rename;
+    std::unordered_map<String, String> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
@@ -720,7 +720,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 if (name != it->second)
                 {
                     /// Need just update table name
-                    replicated_tables_to_rename.emplace_back(name, it->second);
+                    replicated_tables_to_rename[name] = it->second;
                 }
                 continue;
             }
@@ -840,13 +840,29 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
 
     /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
-    for (const auto & old_to_new : replicated_tables_to_rename)
+    /// We have to take into account that tables names could be changed with two general queries
+    /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
+    /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
+    /// 2) EXCHANGE TABLE. This query swaps two names atomically and could not be represented with two separate RENAMEs
+    while (!replicated_tables_to_rename.empty())
     {
-        const String & from = old_to_new.first;
-        const String & to = old_to_new.second;
+        auto edge = replicated_tables_to_rename.begin();
+        auto reverse_edge = replicated_tables_to_rename.find(edge->second);
 
-        LOG_DEBUG(log, "Will RENAME TABLE {} TO {}", backQuoteIfNeed(from), backQuoteIfNeed(to));
-        /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
+        const String & from = edge->first;
+        const String & to = edge->second;
+        bool exchange = false;
+
+        if (reverse_edge != replicated_tables_to_rename.end() && edge->first == reverse_edge->second)
+        {
+            /// This means that table X renames to Y and Y renames to X
+            /// So we need to use EXCHANGE here
+            exchange = true;
+            replicated_tables_to_rename.erase(reverse_edge);
+        }
+        replicated_tables_to_rename.erase(edge);
+
+        LOG_DEBUG(log, "Will {} TABLE {} TO {}", exchange ? "EXCHANGE" : "RENAME", backQuoteIfNeed(from), backQuoteIfNeed(to));
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
 
@@ -855,7 +871,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String statement = readMetadataFile(from);
         new_digest -= DB::getMetadataHash(from, statement);
         new_digest += DB::getMetadataHash(to, statement);
-        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
+        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, exchange, false);
         tables_metadata_digest = new_digest;
         assert(checkDigestValid(getContext()));
     }
