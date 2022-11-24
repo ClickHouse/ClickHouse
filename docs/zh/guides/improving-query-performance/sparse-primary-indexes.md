@@ -164,7 +164,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 <li><font face = "monospace">index_granularity</font>: 显式设置为其默认值8192。这意味着对于每一组8192行，主索引将有一个索引条目，例如，如果表包含16384行，那么索引将有两个索引条目。
 </li>
 <br/>
-<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="blue">字适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
+<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="blue">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
 <ul>
 <li>如果n小于8192，但n行的合并行数据大小大于或等于10MB (index_granularity_bytes的默认值)或</li>
 <li>n达到8192</li>

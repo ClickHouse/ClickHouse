@@ -30,11 +30,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
-UnionNode::UnionNode()
+UnionNode::UnionNode(SelectUnionMode union_mode_)
     : IQueryTreeNode(children_size)
+    , union_mode(union_mode_)
 {
+    if (union_mode == SelectUnionMode::UNION_DEFAULT ||
+        union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
+        union_mode == SelectUnionMode::INTERSECT_DEFAULT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
+
     children[queries_child_index] = std::make_shared<ListNode>();
 }
 
@@ -101,27 +108,7 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", constant_value_type: " << constant_value->getType()->getName();
     }
 
-    if (table_expression_modifiers)
-    {
-        buffer << ", ";
-        table_expression_modifiers->dump(buffer);
-    }
-
     buffer << ", union_mode: " << toString(union_mode);
-
-    size_t union_modes_size = union_modes.size();
-    buffer << '\n' << std::string(indent + 2, ' ') << "UNION MODES " << union_modes_size << '\n';
-
-    for (size_t i = 0; i < union_modes_size; ++i)
-    {
-        buffer << std::string(indent + 4, ' ');
-
-        auto query_union_mode = union_modes[i];
-        buffer << toString(query_union_mode);
-
-        if (i + 1 != union_modes_size)
-            buffer << '\n';
-    }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -137,15 +124,8 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     else if (!constant_value && rhs_typed.constant_value)
         return false;
 
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
-        return false;
-
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name &&
-        union_mode == rhs_typed.union_mode && union_modes == rhs_typed.union_modes;
+        union_mode == rhs_typed.union_mode;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state) const
@@ -158,10 +138,6 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
 
     state.update(static_cast<size_t>(union_mode));
 
-    state.update(union_modes.size());
-    for (const auto & query_union_mode : union_modes)
-        state.update(static_cast<size_t>(query_union_mode));
-
     if (constant_value)
     {
         auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
@@ -172,23 +148,16 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
         state.update(constant_value_type_name.size());
         state.update(constant_value_type_name);
     }
-
-    if (table_expression_modifiers)
-        table_expression_modifiers->updateTreeHash(state);
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>();
+    auto result_union_node = std::make_shared<UnionNode>(union_mode);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
     result_union_node->cte_name = cte_name;
-    result_union_node->union_mode = union_mode;
-    result_union_node->union_modes = union_modes;
-    result_union_node->union_modes_set = union_modes_set;
     result_union_node->constant_value = constant_value;
-    result_union_node->table_expression_modifiers = table_expression_modifiers;
 
     return result_union_node;
 }
@@ -197,14 +166,7 @@ ASTPtr UnionNode::toASTImpl() const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
-
-    if (union_mode != SelectUnionMode::UNION_DEFAULT &&
-        union_mode != SelectUnionMode::EXCEPT_DEFAULT &&
-        union_mode != SelectUnionMode::INTERSECT_DEFAULT)
-        select_with_union_query->is_normalized = true;
-
-    select_with_union_query->list_of_modes = union_modes;
-    select_with_union_query->set_of_modes = union_modes_set;
+    select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST());
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 

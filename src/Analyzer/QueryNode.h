@@ -176,22 +176,16 @@ public:
         is_group_by_with_grouping_sets = is_group_by_with_grouping_sets_value;
     }
 
-    /// Return true if query node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
+    /// Returns true, if query node has GROUP BY ALL modifier, false otherwise
+    bool isGroupByAll() const
     {
-        return table_expression_modifiers.has_value();
+        return is_group_by_all;
     }
 
-    /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    /// Set query node GROUP BY ALL modifier value
+    void setIsGroupByAll(bool is_group_by_all_value)
     {
-        return table_expression_modifiers;
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
+        is_group_by_all = is_group_by_all_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -598,11 +592,11 @@ private:
     bool is_group_by_with_rollup = false;
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
+    bool is_group_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
     ConstantValuePtr constant_value;
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;

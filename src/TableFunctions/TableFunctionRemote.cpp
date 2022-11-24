@@ -94,6 +94,30 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     }
     else
     {
+        /// Supported signatures:
+        ///
+        /// remote('addresses_expr', db.table)
+        /// remote('addresses_expr', 'db', 'table')
+        /// remote('addresses_expr', db.table, 'user')
+        /// remote('addresses_expr', 'db', 'table', 'user')
+        /// remote('addresses_expr', db.table, 'user', 'password')
+        /// remote('addresses_expr', 'db', 'table', 'user', 'password')
+        /// remote('addresses_expr', db.table, sharding_key)
+        /// remote('addresses_expr', 'db', 'table', sharding_key)
+        /// remote('addresses_expr', db.table, 'user', sharding_key)
+        /// remote('addresses_expr', 'db', 'table', 'user', sharding_key)
+        /// remote('addresses_expr', db.table, 'user', 'password', sharding_key)
+        /// remote('addresses_expr', 'db', 'table', 'user', 'password', sharding_key)
+        ///
+        /// remoteSecure() - same as remote()
+        ///
+        /// cluster('cluster_name', db.table)
+        /// cluster('cluster_name', 'db', 'table')
+        /// cluster('cluster_name', db.table, sharding_key)
+        /// cluster('cluster_name', 'db', 'table', sharding_key)
+        ///
+        /// clusterAllReplicas() - same as cluster()
+
         if (args.size() < 2 || args.size() > max_args)
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -318,13 +342,12 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         is_cluster_function ? " [, sharding_key]" : " [, username[, password], sharding_key]");
 }
 
-
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
     factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
-    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
-    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); });
+    factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.documentation = {}, .allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.documentation = {}, .allow_readonly = true}});
 }
 
 }
