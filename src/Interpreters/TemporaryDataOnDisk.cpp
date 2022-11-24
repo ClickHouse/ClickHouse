@@ -7,7 +7,6 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
-#include <fmt/format.h>
 
 #include <Common/logger_useful.h>
 

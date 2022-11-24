@@ -15,6 +15,7 @@ namespace CurrentMetrics
     extern const Metric TotalTemporaryFiles;
 }
 
+
 namespace DB
 {
 
@@ -23,15 +24,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
+    : TemporaryFileOnDisk(disk_, "")
+{}
+
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope)
     : TemporaryFileOnDisk(disk_)
 {
     sub_metric_increment.emplace(metric_scope);
 }
-
-TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_)
-    : TemporaryFileOnDisk(disk_, "")
-{}
 
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix)
     : disk(disk_)

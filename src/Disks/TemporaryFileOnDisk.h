@@ -5,7 +5,6 @@
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
 
-
 namespace DB
 {
 using DiskPtr = std::shared_ptr<IDisk>;
