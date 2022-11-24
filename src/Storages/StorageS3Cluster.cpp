@@ -103,16 +103,14 @@ Pipe StorageS3Cluster::read(
     auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-
+    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    ASTPtr query_to_send = query_info.original_query->clone();
+    ASTPtr query_to_send = interpreter.getQueryInfo().original_query->clone();
     if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
@@ -128,7 +126,7 @@ Pipe StorageS3Cluster::read(
                     shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
-                    header,
+                    interpreter.getSampleBlock(),
                     context,
                     /*throttler=*/nullptr,
                     scalars,
