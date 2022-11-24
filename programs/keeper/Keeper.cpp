@@ -262,6 +262,7 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
 }
 
 int Keeper::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -472,6 +473,12 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     waitForTerminationRequest();
 
     return Application::EXIT_OK;
+}
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
 }
 
 
