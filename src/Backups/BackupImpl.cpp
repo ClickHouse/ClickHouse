@@ -22,6 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/DOMParser.h>
 
 
 namespace DB
@@ -352,8 +353,181 @@ void BackupImpl::writeBackupMetadata()
     increaseUncompressedSize(str.size());
 }
 
+/// TODO: move this to some common place instead of copy-pasting from ConfigProcessor?
+namespace XMLHelpers
+{
+
+using namespace Poco;
+using namespace Poco::XML;
+
+using XMLDocumentPtr = AutoPtr<Document>;
+
+Node * getRootNode(Document * document)
+{
+    for (Node * child = document->firstChild(); child; child = child->nextSibling())
+    {
+        /// Besides the root element there can be comment nodes on the top level.
+        /// Skip them.
+        if (child->nodeType() == Node::ELEMENT_NODE)
+            return child;
+    }
+
+    throw Poco::Exception("No root node in document");
+}
+
+int parseInt(const std::string& value)
+{
+    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
+        return static_cast<int>(NumberParser::parseHex(value));
+    else
+        return NumberParser::parse(value);
+}
+
+/*
+unsigned parseUInt(const std::string& value)
+{
+    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
+        return NumberParser::parseHex(value);
+    else
+        return NumberParser::parseUnsigned(value);
+}
+
+
+Int64 parseInt64(const std::string& value)
+{
+    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
+        return static_cast<Int64>(NumberParser::parseHex64(value));
+    else
+        return NumberParser::parse64(value);
+}
+*/
+
+UInt64 parseUInt64(const std::string& value)
+{
+    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
+        return NumberParser::parseHex64(value);
+    else
+        return NumberParser::parseUnsigned64(value);
+}
+
+
+bool parseBool(const std::string& value)
+{
+    int n;
+    if (NumberParser::tryParse(value, n))
+        return n != 0;
+    else if (icompare(value, "true") == 0)
+        return true;
+    else if (icompare(value, "yes") == 0)
+        return true;
+    else if (icompare(value, "on") == 0)
+        return true;
+    else if (icompare(value, "false") == 0)
+        return false;
+    else if (icompare(value, "no") == 0)
+        return false;
+    else if (icompare(value, "off") == 0)
+        return false;
+    else
+        throw SyntaxException("Cannot convert to boolean", value);
+}
+
+/*
+const Node * getValueNode(const Node * node, const std::string & path)
+{
+    const auto * path_node = node->getNodeByPath(path);
+    if (!path_node)
+        return nullptr;
+    for (const auto * child = path_node->firstChild(); child; child = child->nextSibling())
+    {
+        if (child->)
+    }
+}
+*/
+std::string getString(const Node * node, const std::string & path, std::optional<std::string> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return value_node->innerText();
+}
+/*
+Int64 getInt64(const Node * node, const std::string & path, std::optional<Int64> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return parseInt64(value_node->nodeValue());
+}
+*/
+UInt64 getUInt64(const Node * node, const std::string & path, std::optional<UInt64> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return parseUInt64(value_node->innerText());
+}
+
+int getInt(const Node * node, const std::string & path, std::optional<int> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return parseInt(value_node->innerText());
+}
+
+/*
+unsigned getUInt(const Node * node, const std::string & path, std::optional<unsigned> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return parseUInt(value_node->nodeValue());
+}
+*/
+bool getBool(const Node * node, const std::string & path, std::optional<bool> default_value = std::nullopt)
+{
+    const auto * value_node = node->getNodeByPath(path);
+    if (!value_node)
+    {
+        if (default_value)
+            return *default_value;
+        else
+            throw Poco::NotFoundException(path);
+    }
+    return parseBool(value_node->innerText());
+}
+}
+
 void BackupImpl::readBackupMetadata()
 {
+    using namespace XMLHelpers;
+
     std::unique_ptr<ReadBuffer> in;
     if (use_archives)
     {
@@ -372,40 +546,39 @@ void BackupImpl::readBackupMetadata()
     String str;
     readStringUntilEOF(str, *in);
     increaseUncompressedSize(str.size());
-    std::istringstream stream(str); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->load(stream);
+    Poco::XML::DOMParser dom_parser;
+    XMLDocumentPtr config = dom_parser.parseMemory(str.data(), str.size());
+    const Poco::XML::Node * config_root = getRootNode(config);
 
-    version = config->getInt("version");
+    version = getInt(config_root, "version");
     if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
         throw Exception(
             ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name_for_logging, version);
 
-    timestamp = parse<LocalDateTime>(config->getString("timestamp")).to_time_t();
-    uuid = parse<UUID>(config->getString("uuid"));
+    timestamp = parse<::LocalDateTime>(getString(config_root, "timestamp")).to_time_t();
+    uuid = parse<UUID>(getString(config_root, "uuid"));
 
-    if (config->has("base_backup") && !base_backup_info)
-        base_backup_info = BackupInfo::fromString(config->getString("base_backup"));
+    if (config_root->getNodeByPath("base_backup") && !base_backup_info)
+        base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
 
-    if (config->has("base_backup_uuid"))
-        base_backup_uuid = parse<UUID>(config->getString("base_backup_uuid"));
+    if (config_root->getNodeByPath("base_backup_uuid"))
+        base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
 
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("contents", keys);
-    for (const auto & key : keys)
+    const auto * contents = config_root->getNodeByPath("contents");
+    for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
     {
-        if ((key == "file") || key.starts_with("file["))
+        if (child->nodeName() == "file")
         {
-            String prefix = "contents." + key + ".";
+            const Poco::XML::Node * file_config = child;
             FileInfo info;
-            info.file_name = config->getString(prefix + "name");
-            info.size = config->getUInt64(prefix + "size");
+            info.file_name = getString(file_config, "name");
+            info.size = getUInt64(file_config, "size");
             if (info.size)
             {
-                info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
+                info.checksum = unhexChecksum(getString(file_config, "checksum"));
 
-                bool use_base = config->getBool(prefix + "use_base", false);
-                info.base_size = config->getUInt64(prefix + "base_size", use_base ? info.size : 0);
+                bool use_base = getBool(file_config, "use_base", false);
+                info.base_size = getUInt64(file_config, "base_size", use_base ? info.size : 0);
                 if (info.base_size)
                     use_base = true;
 
@@ -423,14 +596,14 @@ void BackupImpl::readBackupMetadata()
                     if (info.base_size == info.size)
                         info.base_checksum = info.checksum;
                     else
-                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
+                        info.base_checksum = unhexChecksum(getString(file_config, "base_checksum"));
                 }
 
                 if (info.size > info.base_size)
                 {
-                    info.data_file_name = config->getString(prefix + "data_file", info.file_name);
-                    info.archive_suffix = config->getString(prefix + "archive_suffix", "");
-                    info.pos_in_archive = config->getUInt64(prefix + "pos_in_archive", static_cast<UInt64>(-1));
+                    info.data_file_name = getString(file_config, "data_file", info.file_name);
+                    info.archive_suffix = getString(file_config, "archive_suffix", "");
+                    info.pos_in_archive = getUInt64(file_config, "pos_in_archive", static_cast<UInt64>(-1));
                 }
             }
 
