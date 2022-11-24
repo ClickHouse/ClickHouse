@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-
+#include <Core/Types.h>
 
 /// Maps 0..15 to 0..9A..F or 0..9a..f correspondingly.
 
@@ -50,17 +50,32 @@ inline void writeBinByte(UInt8 byte, void * out)
 template <typename TUInt>
 inline void writeHexUIntImpl(TUInt uint_, char * out, const char * const table)
 {
-    union
+    if constexpr (is_integer<TUInt>)
     {
-        TUInt value;
-        UInt8 uint8[sizeof(TUInt)];
-    };
+        /// For integer types, use endian indepentant way for conversion
+        TUInt value = uint_;
 
-    value = uint_;
+        for (size_t i = 0; i < sizeof(TUInt); ++i)
+        {
+            memcpy(out + (sizeof(TUInt) - 1 - i) * 2, &table[static_cast<size_t>(value % 256) * 2], 2);
+            value /= 256;
+        }
+    }
+    else
+    {
+        /// For non-integer types, access memory directly for conversion to keep back-compatibility
+        union
+        {
+            TUInt value;
+            UInt8 uint8[sizeof(TUInt)];
+        };
 
-    /// Use little endian
-    for (size_t i = 0; i < sizeof(TUInt); ++i)
-        memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
+        value = uint_;
+
+        /// Use little endian
+        for (size_t i = 0; i < sizeof(TUInt); ++i)
+            memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
+    }
 }
 
 template <typename TUInt>
