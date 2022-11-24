@@ -19,3 +19,5 @@ DROP TABLE 02484_substitute_udf;
 DROP FUNCTION 02484_plusone;
 DROP FUNCTION 02484_plustwo;
 DROP FUNCTION 02484_plusthree;
+DROP FUNCTION 02484_plusthreemonths;
+DROP FUNCTION 02484_plusthreedays;

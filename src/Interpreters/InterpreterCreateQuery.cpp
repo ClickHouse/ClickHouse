@@ -371,6 +371,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
         column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column_declaration->children.push_back(column_declaration->default_expression);
 
         columns_list->children.emplace_back(column_declaration);
     }
