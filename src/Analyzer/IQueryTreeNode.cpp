@@ -153,7 +153,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(bool withAlias) const
 {
     HashState hash_state;
 
@@ -177,10 +177,13 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         node_to_identifier.emplace(node_to_process, node_to_identifier.size());
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (!node_to_process->alias.empty())
+        if (withAlias)
         {
-            hash_state.update(node_to_process->alias.size());
-            hash_state.update(node_to_process->alias);
+            if (!node_to_process->alias.empty())
+            {
+                hash_state.update(node_to_process->alias.size());
+                hash_state.update(node_to_process->alias);
+            }
         }
 
         node_to_process->updateTreeHashImpl(hash_state);
@@ -211,6 +214,12 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
     hash_state.get128(result);
 
     return result;
+}
+
+String IQueryTreeNode::getTreeHashAsString(bool withAlias) const
+{
+    Hash hash = getTreeHash(withAlias);
+    return toString(hash.first)+"_"+toString(hash.second);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const

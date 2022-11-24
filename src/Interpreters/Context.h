@@ -18,6 +18,7 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/ColumnsDescription.h>
+#include <Analyzer/ConstantValue.h>
 
 
 #include "config.h"
@@ -203,7 +204,6 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -245,7 +245,10 @@ private:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+
     Scalars scalars;
+    std::unordered_map<String, std::shared_ptr<ConstantValue>> analyzer_scalars;
+
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -577,6 +580,11 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    const std::unordered_map<String, std::shared_ptr<ConstantValue>> & getAnalyzerScalars() const;
+    const std::shared_ptr<ConstantValue> & getAnalyzerScalar(const String & hash) const;
+    void addAnalyzerScalar(const String & hash, const std::shared_ptr<ConstantValue> & constant_value);
+    bool hasAnalyzerScalar(const String & hash) const;
 
     const Block * tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
