@@ -53,7 +53,7 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Nullable; }
     MutableColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
-    bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
+    bool isNullAt(size_t n) const override { return has_null && assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
@@ -77,6 +77,7 @@ public:
     {
         getNestedColumn().insertDefault();
         getNullMapData().push_back(1);
+        has_null = true;
     }
 
     void popBack(size_t n) override;
@@ -202,9 +203,12 @@ public:
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
+    bool hasNull() const { return has_null; }
+    void setNull() { has_null = true; }
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
+    bool has_null;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map);
@@ -216,6 +220,22 @@ private:
 
     void updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
+    static void checkAndMaySetNull(ColumnNullable * c)
+    {
+        if (!c) return;
+        if (!c->has_null)
+        {
+            for (auto i: c->getNullMapData())
+            {
+                if (i)
+                {
+                    c->setNull();
+                    break;
+                }
+            }
+        }
+    }
+
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);

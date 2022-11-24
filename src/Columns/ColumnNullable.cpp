@@ -39,6 +39,16 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
 
     if (isColumnConst(*null_map))
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
+
+    has_null = false;
+    for (auto i: assert_cast<ColumnUInt8 &>(*null_map).getData())
+    {
+        if (i)
+        {
+            has_null = true;
+            break;
+        }
+    }
 }
 
 StringRef ColumnNullable::getDataAt(size_t n) const
@@ -125,6 +135,7 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     {
         getNestedColumn().insertDefault();
         getNullMapData().push_back(1);
+        has_null = true;
     }
     else
     {
@@ -160,7 +171,10 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
     if (val == 0)
         pos = getNestedColumn().deserializeAndInsertFromArena(pos);
     else
+    {
         getNestedColumn().insertDefault();
+        has_null = true;
+    }
 
     return pos;
 }
@@ -181,6 +195,7 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
+    checkAndMaySetNull(this);
 }
 
 void ColumnNullable::insert(const Field & x)
@@ -189,6 +204,7 @@ void ColumnNullable::insert(const Field & x)
     {
         getNestedColumn().insertDefault();
         getNullMapData().push_back(1);
+        has_null = true;
     }
     else
     {
@@ -202,6 +218,7 @@ void ColumnNullable::insertFrom(const IColumn & src, size_t n)
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
     getNullMapData().push_back(src_concrete.getNullMapData()[n]);
+    has_null = src_concrete.hasNull();
 }
 
 void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
@@ -239,6 +256,7 @@ void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
     null_map->expand(mask, inverted);
+    checkAndMaySetNull(this);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
@@ -722,7 +740,17 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map)
         throw Exception{"Inconsistent sizes of ColumnNullable objects", ErrorCodes::LOGICAL_ERROR};
 
     for (size_t i = 0, size = arr.size(); i < size; ++i)
+    {
         arr[i] |= negative ^ map[i];
+    }
+    for (auto i : arr)
+    {
+        if (i)
+        {
+            has_null = true;
+            break;
+        }
+    }
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
