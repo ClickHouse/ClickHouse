@@ -10,7 +10,4 @@ target_include_directories(xxHash SYSTEM BEFORE INTERFACE "${LIBRARY_DIR}")
 # https://github.com/Cyan4973/xxHash/tree/v0.8.1#build-modifiers
 target_compile_definitions(xxHash PUBLIC XXH_INLINE_ALL)
 
-# clang produces a bullshit warning, see https://lists.llvm.org/pipermail/cfe-dev/2020-May/065416.html
-target_compile_options(xxHash PUBLIC -Wno-used-but-marked-unused)
-
 add_library(ch_contrib::xxHash ALIAS xxHash)

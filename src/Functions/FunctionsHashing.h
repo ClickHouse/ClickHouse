@@ -4,11 +4,16 @@
 #include <farmhash.h>
 #include <metrohash.h>
 #include <wyhash.h>
-#include <xxhash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
 
 #include "config.h"
+
+#ifdef __clang__
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#endif
+#include <xxhash.h>
 
 #if USE_BLAKE3
 #    include <blake3.h>
@@ -1530,3 +1535,7 @@ using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }
+
+#ifdef __clang__
+#    pragma clang diagnostic pop
+#endif
