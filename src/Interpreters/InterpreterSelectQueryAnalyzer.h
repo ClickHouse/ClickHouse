@@ -39,6 +39,8 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
+    QueryPipelineBuilder buildQueryPipeline();
+
 private:
     ASTPtr query;
     QueryTreeNodePtr query_tree;

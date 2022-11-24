@@ -22,6 +22,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <atomic>
 #include <chrono>
@@ -309,8 +310,15 @@ Chain buildPushingToViewsChain(
             target_name = inner_table_id.getFullTableName();
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
+            Block header;
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                header = InterpreterSelectQueryAnalyzer(query, SelectQueryOptions().analyze(), select_context).getSampleBlock();
+            }
+            else
+            {
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+            }
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -459,8 +467,17 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
-    InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-    auto pipeline = select.buildQueryPipeline();
+    QueryPipelineBuilder pipeline;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer select(view.query, SelectQueryOptions(), local_context);
+        pipeline = select.buildQueryPipeline();
+    }
+    else
+    {
+        InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+        pipeline = select.buildQueryPipeline();
+    }
     pipeline.resize(1);
     pipeline.dropTotalsAndExtremes();
 

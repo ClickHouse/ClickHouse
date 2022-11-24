@@ -33,6 +33,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
 namespace DB
@@ -72,11 +73,22 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            InterpreterSelectWithUnionQuery interpreter_select{
-                query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
-            table_function_ptr->setStructureHint(structure_hint);
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
+                    query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), getContext());
+                auto tmp_pipeline = interpreter_analyzer_select.buildQueryPipeline();
+                ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+                table_function_ptr->setStructureHint(structure_hint);
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+                table_function_ptr->setStructureHint(structure_hint);
+            }
         }
 
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
@@ -383,16 +395,34 @@ BlockIO InterpreterInsertQuery::execute()
                 new_context->setSettings(new_settings);
                 new_context->setInsertionTable(getContext()->getInsertionTable());
 
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
+                        query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), new_context);
+                    pipeline = interpreter_analyzer_select.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select{
+                        query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
             else
             {
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_analyzer_select(
+                        query.select, SelectQueryOptions(QueryProcessingStage::Complete, 1), getContext());
+                    pipeline = interpreter_analyzer_select.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select{
+                        query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
 
             pipeline.dropTotalsAndExtremes();

@@ -117,4 +117,13 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
     elem.query_kind = "Select";
 }
 
+QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
+{
+    planner.buildQueryPlanIfNeeded();
+    auto & query_plan = planner.getQueryPlan();
+
+    return std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(getContext()), BuildQueryPipelineSettings::fromContext(getContext())));
+}
+
 }
