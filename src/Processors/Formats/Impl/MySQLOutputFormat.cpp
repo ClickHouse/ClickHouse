@@ -65,7 +65,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
 {
     for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
-        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
+        ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), static_cast<int>(i));
         packet_endpoint->sendPacket(row_packet);
     }
 }
@@ -74,7 +74,7 @@ void MySQLOutputFormat::finalizeImpl()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;
-    if (QueryStatus * process_list_elem = getContext()->getProcessListElement())
+    if (QueryStatusPtr process_list_elem = getContext()->getProcessListElement())
     {
         CurrentThread::finalizePerformanceCounters();
         QueryStatusInfo info = process_list_elem->getInfo();

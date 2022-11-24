@@ -492,7 +492,7 @@ Field Field::restoreFromDump(std::string_view dump_)
     }
 
     show_error();
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

@@ -506,8 +506,16 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
         DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
 
-        if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
+        if (!re2->Match(
+            StringPieceType(subject, subject_size),
+            0,
+            subject_size,
+            RegexType::UNANCHORED,
+            pieces.data(),
+            static_cast<int>(pieces.size())))
+        {
             return 0;
+        }
         else
         {
             matches.resize(limit);

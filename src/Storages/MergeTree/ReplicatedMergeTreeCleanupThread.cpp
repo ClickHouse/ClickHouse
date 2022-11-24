@@ -419,14 +419,14 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
     }
 
-    zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;
+    std::vector<std::string> exists_paths;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
         if (it == cached_block_stats.end())
         {
             /// New block. Fetch its stat asynchronously.
-            exists_futures.emplace_back(block, zookeeper.asyncExists(storage.zookeeper_path + "/blocks/" + block));
+            exists_paths.emplace_back(storage.zookeeper_path + "/blocks/" + block);
         }
         else
         {
@@ -436,14 +436,18 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         }
     }
 
+    auto exists_size = exists_paths.size();
+    auto exists_results = zookeeper.exists(exists_paths);
+
     /// Put fetched stats into the cache
-    for (auto & elem : exists_futures)
+    for (size_t i = 0; i < exists_size; ++i)
     {
-        auto status = elem.second.get();
+        auto status = exists_results[i];
         if (status.error != Coordination::Error::ZNONODE)
         {
-            cached_block_stats.emplace(elem.first, std::make_pair(status.stat.ctime, status.stat.version));
-            timed_blocks.emplace_back(elem.first, status.stat.ctime, status.stat.version);
+            auto node_name = fs::path(exists_paths[i]).filename();
+            cached_block_stats.emplace(node_name, std::make_pair(status.stat.ctime, status.stat.version));
+            timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.version);
         }
     }
 

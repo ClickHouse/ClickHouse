@@ -10,6 +10,8 @@
 namespace DB
 {
 
+/// Store metadata on a separate disk
+/// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:

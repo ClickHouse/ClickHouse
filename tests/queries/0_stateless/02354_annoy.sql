@@ -44,3 +44,71 @@ ORDER BY L2Distance(embedding, [0.0, 0.0])
 LIMIT 3; -- { serverError 80 }
 
 DROP TABLE IF EXISTS 02354_annoy;
+
+-- ------------------------------------
+-- Check that weird base columns are rejected
+
+-- Index spans >1 column
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Array(Float32),
+    INDEX annoy_index (embedding, id) TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 7 }
+
+-- Index must be created on Array(Float32) or Tuple(Float32)
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Float32,
+    INDEX annoy_index embedding TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 44 }
+
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Array(Float64),
+    INDEX annoy_index embedding TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 44 }
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Tuple(Float32, Float64),
+    INDEX annoy_index embedding TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 44 }
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Array(LowCardinality(Float32)),
+    INDEX annoy_index embedding TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 44 }
+
+CREATE TABLE 02354_annoy
+(
+    id Int32,
+    embedding Array(Nullable(Float32)),
+    INDEX annoy_index embedding TYPE annoy(100) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity=5; -- {serverError 44 }

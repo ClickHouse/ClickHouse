@@ -7,6 +7,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <QueryPipeline/Pipe.h>
+#include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -26,7 +27,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -96,6 +97,20 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
         new_settings.limit.changed = false;
     }
 
+    /// Setting additional_table_filters may be applied to Distributed table.
+    /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
+    /// We need to propagate the setting, but change the table name from distributed to source.
+    ///
+    /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
+    /// It's just easier to add this filter for a source table.
+    if (query_info && query_info->additional_filter_ast)
+    {
+        Tuple tuple;
+        tuple.push_back(main_table.getShortName());
+        tuple.push_back(queryToString(query_info->additional_filter_ast));
+        new_settings.additional_table_filters.value.push_back(std::move(tuple));
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
@@ -121,12 +136,12 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, log);
+    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, main_table, &query_info, log);
 
     new_context->getClientInfo().distributed_depth += 1;
 
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context->getProcessListElement())
+    if (auto process_list_element = context->getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
@@ -165,7 +180,7 @@ void executeQuery(
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, shards);
+            new_context, plans, remote_shards, static_cast<UInt32>(shards));
     }
 
     if (!remote_shards.empty())
@@ -228,7 +243,7 @@ void executeQueryWithParallelReplicas(
     const Settings & settings = context->getSettingsRef();
 
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context->getProcessListElement())
+    if (auto process_list_element = context->getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
@@ -269,7 +284,8 @@ void executeQueryWithParallelReplicas(
             query_ast_for_shard = query_ast;
 
         auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr, throttler, context, shards, query_info.storage_limits);
+            query_ast_for_shard, main_table, table_func_ptr, throttler, context,
+            static_cast<UInt32>(shards), query_info.storage_limits);
 
         if (!shard_plans.local_plan && !shard_plans.remote_plan)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");

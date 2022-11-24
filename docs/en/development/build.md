@@ -38,13 +38,13 @@ For other Linux distribution - check the availability of the [prebuild packages]
 #### Use the latest clang for Builds
 
 ``` bash
-export CC=clang-14
-export CXX=clang++-14
+export CC=clang-15
+export CXX=clang++-15
 ```
 
-In this example we use version 14 that is the latest as of Feb 2022.
+In this example we use version 15 that is the latest as of Sept 2022.
 
-Gcc can also be used though it is discouraged.
+Gcc cannot be used.
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
@@ -105,7 +105,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make clang-c++ python3
+sudo yum --nogpg install git cmake make clang python3 ccache
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse

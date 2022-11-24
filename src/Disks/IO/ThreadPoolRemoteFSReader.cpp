@@ -1,12 +1,12 @@
 #include "ThreadPoolRemoteFSReader.h"
 
+#include "config.h"
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
-#include <Common/config.h>
 #include <IO/SeekableReadBuffer.h>
 
 #include <future>

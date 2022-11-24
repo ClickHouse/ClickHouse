@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include "ConfigProcessor.h"
 #include "YAMLParser.h"
 

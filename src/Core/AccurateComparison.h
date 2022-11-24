@@ -67,7 +67,7 @@ bool lessOp(A a, B b)
 
     static_assert(is_integer<A> || std::is_floating_point_v<A>);
     static_assert(is_integer<B> || std::is_floating_point_v<B>);
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 template <typename A, typename B>

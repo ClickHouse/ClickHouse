@@ -384,7 +384,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -625,7 +625,7 @@ UInt128 sipHash128(Polygon && polygon)
 
     auto hash_ring = [&hash](const auto & ring)
     {
-        UInt32 size = ring.size();
+        UInt32 size = static_cast<UInt32>(ring.size());
         hash.update(size);
         hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
     };

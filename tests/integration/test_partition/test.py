@@ -2,9 +2,15 @@ import pytest
 import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    main_configs=[
+        "configs/testkeeper.xml",
+    ],
+)
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
 
@@ -379,7 +385,7 @@ def test_system_detached_parts(drop_detached_parts_table):
         )
 
     res = q(
-        "select * from system.detached_parts where table like 'sdp_%' order by table, name"
+        "select system.detached_parts.* except (bytes_on_disk, `path`) from system.detached_parts where table like 'sdp_%' order by table, name"
     )
     assert (
         res == "default\tsdp_0\tall\tall_1_1_0\tdefault\t\t1\t1\t0\n"
@@ -478,3 +484,86 @@ def test_detached_part_dir_exists(started_cluster):
         == "all_1_1_0\nall_1_1_0_try1\nall_2_2_0\nall_2_2_0_try1\n"
     )
     q("drop table detached_part_dir_exists")
+
+
+def test_make_clone_in_detached(started_cluster):
+    q(
+        "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n"
+    )
+
+    path = path_to_data + "data/default/clone_in_detached/"
+
+    # broken part already detached
+    q("insert into clone_in_detached values (42, '¯\_(ツ)_/¯')")
+    instance.exec_in_container(["rm", path + "all_0_0_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_0_0_0", path + "detached/broken_all_0_0_0"]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert ["broken_all_0_0_0",] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )
+
+    # there's a directory with the same name, but different content
+    q("insert into clone_in_detached values (43, '¯\_(ツ)_/¯')")
+    instance.exec_in_container(["rm", path + "all_1_1_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_1_1_0", path + "detached/broken_all_1_1_0"]
+    )
+    instance.exec_in_container(["rm", path + "detached/broken_all_1_1_0/primary.idx"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_1_1_0", path + "detached/broken_all_1_1_0_try0"]
+    )
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'broken' > {}".format(
+                path + "detached/broken_all_1_1_0_try0/checksums.txt"
+            ),
+        ]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert [
+        "broken_all_0_0_0",
+        "broken_all_1_1_0",
+        "broken_all_1_1_0_try0",
+        "broken_all_1_1_0_try1",
+    ] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )
+
+    # there are directories with the same name, but different content, and part already detached
+    q("insert into clone_in_detached values (44, '¯\_(ツ)_/¯')")
+    instance.exec_in_container(["rm", path + "all_2_2_0/data.bin"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0"]
+    )
+    instance.exec_in_container(["rm", path + "detached/broken_all_2_2_0/primary.idx"])
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0_try0"]
+    )
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'broken' > {}".format(
+                path + "detached/broken_all_2_2_0_try0/checksums.txt"
+            ),
+        ]
+    )
+    instance.exec_in_container(
+        ["cp", "-r", path + "all_2_2_0", path + "detached/broken_all_2_2_0_try1"]
+    )
+    assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
+    assert [
+        "broken_all_0_0_0",
+        "broken_all_1_1_0",
+        "broken_all_1_1_0_try0",
+        "broken_all_1_1_0_try1",
+        "broken_all_2_2_0",
+        "broken_all_2_2_0_try0",
+        "broken_all_2_2_0_try1",
+    ] == sorted(
+        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+    )

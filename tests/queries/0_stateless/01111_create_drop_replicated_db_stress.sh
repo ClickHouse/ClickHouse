@@ -26,8 +26,8 @@ function drop_db()
 {
     while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
-        if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then return; fi
-        if [ -z "$database" ]; then return; fi
+        if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
+        if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT -n --query \
         "drop database if exists $database" 2>&1| grep -Fa "Exception: "
         sleep 0.$RANDOM
@@ -38,7 +38,7 @@ function sync_db()
 {
     while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
-        if [ -z "$database" ]; then return; fi
+        if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --receive_timeout=1 -q \
         "system sync database replica $database" 2>&1| grep -Fa "Exception: " | grep -Fv TIMEOUT_EXCEEDED | grep -Fv "only with Replicated engine" | grep -Fv UNKNOWN_DATABASE
         sleep 0.$RANDOM
@@ -49,7 +49,7 @@ function create_table()
 {
     while true; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
-        if [ -z "$database" ]; then return; fi
+        if [ -z "$database" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
         "create table $database.rmt_${RANDOM}_${RANDOM}_${RANDOM} (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' and empty arguments" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE
@@ -61,9 +61,9 @@ function alter_table()
 {
     while true; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
-        if [ -z "$table" ]; then return; fi
+        if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT --distributed_ddl_task_timeout=0 -q \
-        "alter table $table on cluster $database update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
+        "alter table $table update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY
         sleep 0.$RANDOM
     done
@@ -73,7 +73,7 @@ function insert()
 {
     while true; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
-        if [ -z "$table" ]; then return; fi
+        if [ -z "$table" ]; then continue; fi
         $CLICKHOUSE_CLIENT -q \
         "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY
     done

@@ -5,7 +5,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -272,6 +272,11 @@ public:
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
+
+    /// The result is similar to merge(*this, second);
+    /// Invariant : no nodes are removed from the first (this) DAG.
+    /// So that pointers to nodes are kept valid.
+    void mergeInplace(ActionsDAG && second);
 
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 

@@ -53,18 +53,25 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, std::uniqu
     std::vector<UInt8> column_in_format(header_.columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
-        if (row_format.format_idx_to_column_idx[i])
+        const auto & column_index = row_format.format_idx_to_column_idx[i];
+        if (column_index)
         {
-            if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
-                row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
+            if (header_.columns() <= *column_index)
+                row_format.throwInvalidFormat("Column index " + std::to_string(*column_index) +
                                               " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
             if (row_format.escaping_rules[i] == EscapingRule::None)
                 row_format.throwInvalidFormat("Column is not skipped, but deserialization type is None", i);
 
-            size_t col_idx = *row_format.format_idx_to_column_idx[i];
+            size_t col_idx = *column_index;
             if (column_in_format[col_idx])
                 row_format.throwInvalidFormat("Duplicate column", i);
             column_in_format[col_idx] = true;
+
+            checkSupportedDelimiterAfterField(row_format.escaping_rules[i], row_format.delimiters[i + 1], data_types[*column_index]);
+        }
+        else
+        {
+            checkSupportedDelimiterAfterField(row_format.escaping_rules[i], row_format.delimiters[i + 1], nullptr);
         }
     }
 

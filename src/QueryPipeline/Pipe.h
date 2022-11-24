@@ -5,6 +5,7 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/SizeLimits.h>
 
+
 namespace DB
 {
 
@@ -27,13 +28,13 @@ class Pipe
 public:
     /// Default constructor creates empty pipe. Generally, you cannot do anything with it except to check it is empty().
     /// You cannot get empty pipe in any other way. All transforms check that result pipe is not empty.
-    Pipe() = default;
+    Pipe();
     /// Create from source. Source must have no input ports and single output.
     explicit Pipe(ProcessorPtr source);
     /// Create from source with specified totals end extremes (may be nullptr). Ports should be owned by source.
     explicit Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes);
     /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
-    explicit Pipe(Processors processors_);
+    explicit Pipe(std::shared_ptr<Processors> processors_);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
@@ -41,7 +42,7 @@ public:
     Pipe & operator=(Pipe && other) = default;
 
     const Block & getHeader() const { return header; }
-    bool empty() const { return processors.empty(); }
+    bool empty() const { return processors->empty(); }
     size_t numOutputPorts() const { return output_ports.size(); }
     size_t maxParallelStreams() const { return max_parallel_streams; }
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
@@ -96,15 +97,15 @@ public:
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
 
-    /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
-    static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+    /// Get processors from Pipe. Use it with caution, it is easy to lose totals and extremes ports.
+    static Processors detachProcessors(Pipe pipe) { return *std::move(pipe.processors); }
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return *processors; }
 
 private:
     /// Header is common for all output below.
     Block header;
-    Processors processors;
+    std::shared_ptr<Processors> processors;
 
     /// Output ports. Totals and extremes are allowed to be empty.
     OutputPortRawPtrs output_ports;

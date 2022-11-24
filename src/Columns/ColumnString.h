@@ -210,7 +210,7 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
-    virtual void insertManyDefaults(size_t length) override
+    void insertManyDefaults(size_t length) override
     {
         chars.resize_fill(chars.size() + length);
         for (size_t i = 0; i < length; ++i)

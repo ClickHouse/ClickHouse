@@ -45,7 +45,6 @@ public:
     std::optional<String> new_name;
 
     std::optional<AuthenticationData> auth_data;
-    bool show_password = true; /// formatImpl() will show the password or hash.
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -60,6 +59,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 };
 }

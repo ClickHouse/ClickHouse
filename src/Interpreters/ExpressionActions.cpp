@@ -1073,8 +1073,8 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column_name);
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
 
     for (const auto & column : result_columns)
     {

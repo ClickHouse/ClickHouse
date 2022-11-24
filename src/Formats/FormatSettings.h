@@ -158,6 +158,11 @@ struct FormatSettings
 
     struct
     {
+        String column_for_object_name;
+    } json_object_each_row;
+
+    struct
+    {
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
@@ -298,6 +303,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }
