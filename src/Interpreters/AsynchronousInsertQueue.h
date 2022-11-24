@@ -72,6 +72,7 @@ private:
 
         std::list<EntryPtr> entries;
         size_t size = 0;
+        size_t query_number = 0;
 
         /// Timestamp of the first insert into queue, or after the last queue dump.
         /// Used to detect for how long the queue is active, so we can dump it by timer.
