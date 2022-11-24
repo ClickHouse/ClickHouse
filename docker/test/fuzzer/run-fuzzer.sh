@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010
 
 set -x
 
