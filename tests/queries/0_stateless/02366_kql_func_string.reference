@@ -134,12 +134,6 @@ Theodore	Diaz	Skilled Manual	Bachelors	28
 Stephanie	Cox	Management abcd defg	Bachelors	33
 Apple		Skilled Manual	Bachelors	28
 
--- Customers | project base64_encode_tostring(\'Kusto1\') | take 1
-S3VzdG8x
-
--- Customers | project base64_decode_tostring(\'S3VzdG8x\') | take 1
-Kusto1
-
 -- Customers | where isempty(LastName)
 Apple		Skilled Manual	Bachelors	28
 
@@ -283,11 +277,19 @@ iPhone
 2
 -1
 -- base64_encode_fromguid()
-YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi
+8jMxriJurkmwahbmqbIS6w==
 -- base64_decode_toarray()
+[]
 [75,117,115,116,111]
 -- base64_decode_toguid()
+10e99626-bc2b-4c75-bb3e-fe606de25700
 1
+-- base64_encode_tostring
+
+S3VzdG8x
+-- base64_decode_tostring
+
+Kusto1
 -- parse_url()
 {"Scheme":"scheme","Host":"","Port":"0","Path":"/this/is/a/path","Username":"username","Password":"password","Query Parameters":{"k1":"v1","k2":"v2"},"Fragment":"fragment"}
 -- parse_urlquery()

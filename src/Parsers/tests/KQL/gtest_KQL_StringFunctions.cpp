@@ -7,12 +7,12 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_String, ParserTest,
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
-            "print Quine = base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb')",
-            "SELECT base64Encode(toString(toUUIDOrNull('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) AS Quine"
+            "print base64_encode_fromguid(A)",
+            "SELECT if(toTypeName(A) NOT IN ['UUID', 'Nullable(UUID)'], toString(throwIf(true, 'Expected guid as argument')), base64Encode(UUIDStringToNum(toString(A), 2)))"
         },
         {
-            "print base64_decode_toguid('YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi')",
-            "SELECT base64Decode('YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi')"
+            "print base64_decode_toguid(A)",
+            "SELECT toUUIDOrNull(UUIDNumToString(toFixedString(base64Decode(A), 16), 2))"
         },
         {
             "print base64_decode_toarray('S3VzdG8=')",
