@@ -887,6 +887,12 @@ void StorageReplicatedMergeTree::drop()
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings());
     }
 
+    /// Wait for loading of all outdated parts because
+    /// in case of zero copy recursive removal of
+    /// directory is not supported.
+    if (canUseZeroCopyReplication())
+        waitForOutdatedPartsToBeLoaded();
+
     dropAllData();
 }
 
