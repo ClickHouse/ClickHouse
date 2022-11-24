@@ -66,6 +66,9 @@ RoleCache::~RoleCache() = default;
 std::shared_ptr<const EnabledRoles>
 RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
 {
+    /// Declared before `lock` to send notifications after the mutex will be unlocked.
+    scope_guard notifications;
+
     std::lock_guard lock{mutex};
     EnabledRoles::Params params;
     params.current_roles.insert(roles.begin(), roles.end());
@@ -80,13 +83,13 @@ RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UU
     }
 
     auto res = std::shared_ptr<EnabledRoles>(new EnabledRoles(params));
-    collectEnabledRoles(*res, nullptr);
+    collectEnabledRoles(*res, notifications);
     enabled_roles.emplace(std::move(params), res);
     return res;
 }
 
 
-void RoleCache::collectEnabledRoles(scope_guard * notifications)
+void RoleCache::collectEnabledRoles(scope_guard & notifications)
 {
     /// `mutex` is already locked.
 
@@ -104,7 +107,7 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
 }
 
 
-void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard * notifications)
+void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard & notifications)
 {
     /// `mutex` is already locked.
 
@@ -167,7 +170,7 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
         return;
     role_from_cache->first = changed_role;
     cache.update(role_id, role_from_cache);
-    collectEnabledRoles(&notifications);
+    collectEnabledRoles(notifications);
 }
 
 
@@ -178,7 +181,7 @@ void RoleCache::roleRemoved(const UUID & role_id)
 
     std::lock_guard lock{mutex};
     cache.remove(role_id);
-    collectEnabledRoles(&notifications);
+    collectEnabledRoles(notifications);
 }
 
 }

@@ -1,10 +1,9 @@
 ---
-slug: /en/development/continuous-integration
-sidebar_position: 62
-sidebar_label: Continuous Integration Checks
-title: Continuous Integration Checks
-description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
+toc_priority: 62
+toc_title: Continuous Integration Checks
 ---
+
+# Continuous Integration Checks
 
 When you submit a pull request, some automated checks are ran for your code by
 the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
@@ -31,7 +30,7 @@ If you are not sure what to do, ask a maintainer for help.
 ## Merge With Master
 
 Verifies that the PR can be merged to master. If not, it will fail with the
-message `Cannot fetch mergecommit`. To fix this check, resolve the conflict as
+message 'Cannot fetch mergecommit'. To fix this check, resolve the conflict as
 described in the [GitHub
 documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github),
 or merge the `master` branch to your pull request branch using git.
@@ -57,7 +56,7 @@ You have to specify a changelog category for your change (e.g., Bug Fix), and
 write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
-## Push To DockerHub
+## Push To Dockerhub
 
 Builds docker images used for build and tests, then pushes them to DockerHub.
 
@@ -118,7 +117,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Split** `splitted` is a [split build](../development/build.md#split-build)
+- **Splitted** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
@@ -149,7 +148,7 @@ checks page](../development/build.md#you-dont-have-to-build-clickhouse), or buil
 
 
 ## Functional Stateful Tests
-Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
+Runs [stateful functional tests](tests.md#functional-tests). Treat them in the same way as the functional stateless tests. The difference is that they require `hits` and `visits` tables from the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) to run.
 
 
 ## Integration Tests
@@ -171,11 +170,11 @@ concurrency-related errors. If it fails:
 
 ## Split Build Smoke Test
 
-Checks that the server build in [split build](../development/developer-instruction.md#split-build)
+Checks that the server build in [split build](../development/build.md#split-build)
 configuration can start and run simple queries.  If it fails:
 
     * Fix other test errors first;
-    * Build the server in [split build](../development/developer-instruction.md#split-build) configuration
+    * Build the server in [split build](../development/build.md#split-build) configuration
       locally and check whether it can start and run `select 1`.
 
 

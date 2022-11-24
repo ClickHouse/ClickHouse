@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/sort.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -130,7 +130,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

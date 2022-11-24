@@ -4,7 +4,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(FromUnixTimestamp64Milli)
+void registerFromUnixTimestamp64Milli(FunctionFactory & factory)
 {
     factory.registerFunction("fromUnixTimestamp64Milli",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(

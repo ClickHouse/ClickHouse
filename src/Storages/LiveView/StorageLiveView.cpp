@@ -21,19 +21,24 @@ limitations under the License. */
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/logger_useful.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <base/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include "QueryPipeline/printPipeline.h"
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
 #include <Storages/LiveView/LiveViewSink.h>
 #include <Storages/LiveView/LiveViewEventsSource.h>
 #include <Storages/LiveView/StorageBlocks.h>
+#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
 #include <Storages/StorageFactory.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
@@ -306,6 +311,12 @@ StorageLiveView::StorageLiveView(
 
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
+    if (query.live_view_timeout)
+    {
+        is_temporary = true;
+        temporary_live_view_timeout = Seconds {*query.live_view_timeout};
+    }
+
     if (query.live_view_periodic_refresh)
     {
         is_periodically_refreshed = true;
@@ -316,7 +327,7 @@ StorageLiveView::StorageLiveView(
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
+    periodic_refresh_task = getContext()->getSchedulePool().createTask("LieViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
     periodic_refresh_task->deactivate();
 }
 
@@ -370,8 +381,8 @@ bool StorageLiveView::getNewBlocks()
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
     /// can't set mergeable_blocks here or anywhere else outside the writeIntoLiveView function
-    /// as there could be a race condition when the new block has been inserted into
-    /// the source table by the PushingToViews chain and this method
+    /// as there could be a race codition when the new block has been inserted into
+    /// the source table by the PushingToViewsBlockOutputStream and this method
     /// called before writeIntoLiveView function is called which can lead to
     /// the same block added twice to the mergeable_blocks leading to
     /// inserted data to be duplicated
@@ -444,6 +455,9 @@ void StorageLiveView::checkTableCanBeDropped() const
 
 void StorageLiveView::startup()
 {
+    if (is_temporary)
+        TemporaryLiveViewCleaner::instance().addView(std::static_pointer_cast<StorageLiveView>(shared_from_this()));
+
     if (is_periodically_refreshed)
         periodic_refresh_task->activate();
 }
@@ -531,7 +545,7 @@ Pipe StorageLiveView::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     std::lock_guard lock(mutex);
 
@@ -556,7 +570,7 @@ Pipe StorageLiveView::watch(
     ContextPtr local_context,
     QueryProcessingStage::Enum & processed_stage,
     size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
@@ -567,7 +581,7 @@ Pipe StorageLiveView::watch(
     if (query.limit_length)
     {
         has_limit = true;
-        limit = typeid_cast<ASTLiteral &>(*query.limit_length).value.safeGet<UInt64>();
+        limit = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
     }
 
     if (query.is_watch_events)
@@ -611,7 +625,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
+        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });
 }
 

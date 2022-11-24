@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 import subprocess
-import atexit
 
 from github import Github
 
@@ -15,7 +14,7 @@ from pr_info import PRInfo
 from build_download_helper import download_unit_tests
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, update_mergeable_check
+from commit_status_helper import post_commit_status
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -115,9 +114,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
-
-    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+    gh = Github(get_best_robot_token())
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -150,7 +147,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
     state, description, test_results, additional_logs = process_result(test_output)
 
     ch_helper = ClickHouseHelper()
@@ -176,8 +173,4 @@ if __name__ == "__main__":
         report_url,
         check_name,
     )
-
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "error":
-        sys.exit(1)
