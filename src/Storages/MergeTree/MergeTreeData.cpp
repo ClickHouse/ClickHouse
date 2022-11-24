@@ -24,6 +24,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ConcatReadBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -39,10 +40,12 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -504,13 +507,20 @@ void MergeTreeData::checkProperties(
         {
             if (!allow_suspicious_indices && !attach)
             {
-                NameSet index_key_columns_set;
-                const auto & column_names = index.column_names;
+                NameSet index_key_set;
+                const auto * index_ast = index.definition_ast->as<ASTIndexDeclaration>();
 
-                for (size_t i = 0; i < column_names.size(); ++i)
+                if (const auto * tuple_ast = index_ast->expr->as<ASTFunction>())
                 {
-                    if(!index_key_columns_set.emplace(column_names[i]).second)
-                        throw Exception("Secondary indices contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
+                    for (const auto & child : tuple_ast->arguments->children)
+                    {
+                        const auto &tree_hash = child->getTreeHash();
+                        const String key = toString(tree_hash.first) + "_" +toString(tree_hash.second);
+
+                        if (!index_key_set.emplace(key).second)
+                            throw Exception(
+                                "Secondary indices contains duplicate columns",ErrorCodes::BAD_ARGUMENTS);
+                  }
                 }
              }
 
