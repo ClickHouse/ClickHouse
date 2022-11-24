@@ -437,6 +437,20 @@ void DNSResolver::addToNewAddresses(const Poco::Net::IPAddress & address)
     impl->new_addresses.insert({address, consecutive_failures});
 }
 
+std::vector<DNSResolver::CacheEntry> DNSResolver::cacheEntries() const
+{
+    std::vector<DNSResolver::CacheEntry> entries;
+
+    for (const auto & host : impl->known_hosts) {
+        const DB::String &hostname = host.first;
+
+        DB::DNSResolver::IPAddressesPtr lookup_result = impl->cache_host.get(hostname);
+        if (lookup_result)
+            entries.push_back(DNSResolver::CacheEntry(hostname, *lookup_result));
+    }
+    return entries;
+}
+
 DNSResolver::~DNSResolver() = default;
 
 DNSResolver & DNSResolver::instance()
