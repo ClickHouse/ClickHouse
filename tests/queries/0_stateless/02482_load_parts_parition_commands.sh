@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -42,7 +42,7 @@ function test_case
         "
 
         $CLICKHOUSE_CLIENT --max_block_size=1 --max_insert_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -n --query "
-            INSERT INTO $table SELECT 1, number FROM numbers(100);
+            INSERT INTO $table SELECT 1, number FROM numbers(500);
 
             SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = '$table' AND active;
 
@@ -62,15 +62,19 @@ function test_case
         SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src' AND active;
     "
 
+    if [[ "$engine" != "MergeTree" ]]; then
+        $CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src' AND NOT active"
+    fi
+
     $CLICKHOUSE_CLIENT --query "$partition_command"
 
     $CLICKHOUSE_CLIENT -n --query "
-        SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src' AND active;
+        SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src' AND level = 0;
 
         DETACH TABLE load_parts_drop_partition_src;
         ATTACH TABLE load_parts_drop_partition_src;
 
-        SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src';
+        SELECT count() FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_drop_partition_src' AND level = 0;
     "
 
     for table in $tables; do
