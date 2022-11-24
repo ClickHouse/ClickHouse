@@ -3587,6 +3587,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         in_subquery->getJoinTree() = exists_subquery_argument;
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
         in_subquery->resolveProjectionColumns({NameAndTypePair("1", constant_data_type)});
+        in_subquery->setIsSubquery(true);
 
         function_node_ptr = std::make_shared<FunctionNode>("in");
         function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
