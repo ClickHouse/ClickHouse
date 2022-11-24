@@ -293,14 +293,18 @@ TEST_P(CoordinationTest, ChangelogReadWrite)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 1000, true, params.enable_compression);
     changelog.init(1, 0);
+
+    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
-        changelog.append(entry);
+        last_entry_idx = changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 10);
+
+    waitDurableIndex(changelog, last_entry_idx);
 
     DB::KeeperLogStore changelog_reader("./logs", 1000, true, params.enable_compression);
     changelog_reader.init(1, 0);

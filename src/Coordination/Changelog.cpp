@@ -577,14 +577,10 @@ void Changelog::writeThread()
                 durable_idx_cv.notify_all();
 
                 // we shouldn't start the raft_server before sending it here
-                if (raft_server)
-                {
-                    raft_server->notify_log_append_completion(true);
-                }
+                if (auto raft_server_locked = raft_server.lock())
+                    raft_server_locked->notify_log_append_completion(true);
                 else
-                {
                     LOG_WARNING(log, "Raft server is not set in LogStore.");
-                }
             }
         }, write_operation);
     }
@@ -853,10 +849,10 @@ void Changelog::cleanLogThread()
     }
 }
 
-void Changelog::setRaftServer(nuraft::ptr<nuraft::raft_server> raft_server_)
+void Changelog::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_)
 {
     assert(raft_server_);
-    raft_server = std::move(raft_server_);
+    raft_server = raft_server_;
 }
 
 }
