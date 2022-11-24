@@ -178,7 +178,7 @@ function fuzz
     # interferes with gdb
     export CLICKHOUSE_WATCHDOG_ENABLE=0
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > >(tail -100000 > server.log) 2>&1 &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db  2>&1 | pigz > server.log.gz &
     server_pid=$!
 
     kill -0 $server_pid
@@ -297,7 +297,7 @@ quit
         # The server has died.
         task_exit_code=210
         echo "failure" > status.txt
-        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! zgrep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log.gz > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -391,8 +391,9 @@ th { cursor: pointer; }
 
 <h1>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</h1>
 <p class="links">
+<a href="runlog.log">runlog.log</a>
 <a href="fuzzer.log">fuzzer.log</a>
-<a href="server.log">server.log</a>
+<a href="server.log.gz">server.log.gz</a>
 <a href="main.log">main.log</a>
 ${CORE_LINK}
 </p>

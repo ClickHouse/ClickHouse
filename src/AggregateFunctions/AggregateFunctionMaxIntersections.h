@@ -130,7 +130,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -3,7 +3,7 @@
 SET enable_filesystem_cache_on_write_operations=1;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='_storagePolicy', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='_storagePolicy', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false;
 SYSTEM STOP MERGES test;
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size, state

@@ -60,6 +60,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Storages/NamedCollections.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
@@ -98,6 +99,10 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
+#    include <cstddef>
+#    include <cstdlib>
+#    include <sys/socket.h>
+#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
@@ -282,6 +287,7 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -351,19 +357,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
-    if (secure)
-        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
-        /// https://github.com/pocoproject/poco/pull/2257
-        socket.bind(address, /* reuseAddress = */ true);
-    else
-#endif
-#if POCO_VERSION < 0x01080000
-    socket.bind(address, /* reuseAddress = */ true);
-#else
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
-#endif
-
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
@@ -667,7 +661,53 @@ static void sanityChecks(Server & server)
     }
 }
 
+#if defined(OS_LINUX)
+/// Sends notification to systemd, analogous to sd_notify from libsystemd
+static void systemdNotify(const std::string_view & command)
+{
+    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
+
+    if (path == nullptr)
+        return; /// not using systemd
+
+    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+    if (s == -1)
+        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+
+    SCOPE_EXIT({ close(s); });
+
+    const size_t len = strlen(path);
+
+    struct sockaddr_un addr;
+
+    addr.sun_family = AF_UNIX;
+
+    if (len < 2 || len > sizeof(addr.sun_path) - 1)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
+
+    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
+
+    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
+
+    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
+    if (path[0] == '@')
+        addr.sun_path[0] = 0;
+    else if (path[0] == '/')
+        addrlen += 1; /// non-abstract-addresses should be zero terminated.
+    else
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
+
+    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
+
+    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
+        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
+
+}
+#endif
+
 int Server::main(const std::vector<std::string> & /*args*/)
+try
 {
     Poco::Logger * log = &logger();
 
@@ -700,7 +740,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
 
@@ -741,6 +781,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
+
+    NamedCollectionFactory::instance().initialize(config());
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -815,41 +857,43 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
         /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
-
-        String calculated_binary_hash = getHashOfLoadedBinaryHex();
-
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read."
-                " (calculated checksum: {})", calculated_binary_hash);
-        }
-        else if (calculated_binary_hash == stored_binary_hash)
-        {
-            LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
         }
         else
         {
-            /// If program is run under debugger, ptrace will fail.
-            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            String calculated_binary_hash = getHashOfLoadedBinaryHex();
+            if (calculated_binary_hash == stored_binary_hash)
             {
-                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
             }
             else
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable {2} was changed just after startup;"
-                    " - the executable {2} was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file {2} was intentionally modified;"
-                    " - a logical error in the code."
-                    , calculated_binary_hash, stored_binary_hash, executable_path);
+                /// If program is run under debugger, ptrace will fail.
+                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                {
+                    /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                    global_context->addWarningMessage(fmt::format(
+                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                        calculated_binary_hash));
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Calculated checksum of the executable ({0}) does not correspond"
+                        " to the reference checksum stored in the executable ({1})."
+                        " This may indicate one of the following:"
+                        " - the executable {2} was changed just after startup;"
+                        " - the executable {2} was corrupted on disk due to faulty hardware;"
+                        " - the loaded executable was corrupted in memory due to faulty hardware;"
+                        " - the file {2} was intentionally modified;"
+                        " - a logical error in the code.",
+                        calculated_binary_hash,
+                        stored_binary_hash,
+                        executable_path);
+                }
             }
         }
     }
@@ -1165,6 +1209,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
+            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
+
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
@@ -1289,6 +1336,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
+            NamedCollectionFactory::instance().reload(*config);
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1496,11 +1544,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     SCOPE_EXIT({
-        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
-        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
-        main_config_reloader.reset();
-        access_control.stopPeriodicReloading();
-
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1797,11 +1840,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
             tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
+#if defined(OS_LINUX)
+        systemdNotify("READY=1\n");
+#endif
+
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            /// Stop reloading of the main config. This must be done before everything else because it
+            /// can try to access/modify already deleted objects.
+            /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            main_config_reloader.reset();
+            access_control.stopPeriodicReloading();
 
             is_cancelled = true;
+
+            LOG_DEBUG(log, "Waiting for current connections to close.");
 
             size_t current_connections = 0;
             {
@@ -1858,6 +1912,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     return Application::EXIT_OK;
+}
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(

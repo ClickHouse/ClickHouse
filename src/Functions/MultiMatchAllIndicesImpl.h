@@ -91,7 +91,7 @@ struct MultiMatchAllIndicesImpl
         hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -203,7 +203,7 @@ struct MultiMatchAllIndicesImpl
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
-                throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
