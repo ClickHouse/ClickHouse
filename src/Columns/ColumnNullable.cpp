@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -40,15 +41,8 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     if (isColumnConst(*null_map))
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 
-    has_null = false;
-    for (auto i: assert_cast<ColumnUInt8 &>(*null_map).getData())
-    {
-        if (i)
-        {
-            has_null = true;
-            break;
-        }
-    }
+    auto & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
+    has_null = !memoryIsZero(null_map_data.raw_data(), 0, null_map_data.size() * sizeof(UInt8));
 }
 
 StringRef ColumnNullable::getDataAt(size_t n) const
@@ -195,7 +189,7 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
-    checkAndMaySetNull(this);
+    has_null |= nullable_col.hasNull();
 }
 
 void ColumnNullable::insert(const Field & x)
@@ -256,7 +250,8 @@ void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);
     null_map->expand(mask, inverted);
-    checkAndMaySetNull(this);
+    auto & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
+    has_null = !memoryIsZero(null_map_data.raw_data(), 0, null_map_data.size() * sizeof(UInt8));
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
@@ -742,14 +737,8 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map)
     for (size_t i = 0, size = arr.size(); i < size; ++i)
     {
         arr[i] |= negative ^ map[i];
-    }
-    for (auto i : arr)
-    {
-        if (i)
-        {
+        if (arr[i] && !has_null)
             has_null = true;
-            break;
-        }
     }
 }
 

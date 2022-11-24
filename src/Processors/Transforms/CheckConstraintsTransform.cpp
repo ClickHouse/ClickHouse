@@ -59,14 +59,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
             {
-                const auto & nested_column = column_nullable->getNestedColumnPtr();
-
-                /// Check if constraint value is nullable
-                const auto & null_map = column_nullable->getNullMapColumn();
-                const PaddedPODArray<UInt8> & null_map_data = null_map.getData();
-                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), 0, null_map_data.size() * sizeof(UInt8));
-
-                if (null_map_contains_null)
+                if (column_nullable->hasNull())
                     throw Exception(
                         ErrorCodes::VIOLATED_CONSTRAINT,
                         "Constraint {} for table {} is violated. Expression: ({})."\
@@ -75,6 +68,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         table_id.getNameForLogs(),
                         serializeAST(*(constraint_ptr->expr), true));
 
+                const auto & nested_column = column_nullable->getNestedColumnPtr();
                 result_column = nested_column;
             }
 

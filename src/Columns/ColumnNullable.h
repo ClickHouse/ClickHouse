@@ -204,7 +204,6 @@ public:
     void checkConsistency() const;
 
     bool hasNull() const { return has_null; }
-    void setNull() { has_null = true; }
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
@@ -220,22 +219,6 @@ private:
 
     void updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
-    static void checkAndMaySetNull(ColumnNullable * c)
-    {
-        if (!c) return;
-        if (!c->has_null)
-        {
-            for (auto i: c->getNullMapData())
-            {
-                if (i)
-                {
-                    c->setNull();
-                    break;
-                }
-            }
-        }
-    }
-
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);
