@@ -801,7 +801,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
     return result;
 }
 
-/// Try to understand which part we need to mutate to finish mutation. In ReplicatedQueue we have two set of parts:
+/// Try to understand which part we need to mutate to finish mutation. In ReplicatedQueue we have two sets of parts:
 /// current parts -- set of parts which we actually have (on disk)
 /// virtual parts -- set of parts which we will have after we will execute our queue
 ///
