@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/SensitiveDataMasker.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
@@ -55,7 +56,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>
@@ -352,6 +352,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ASTPtr ast;
     String query;
     String query_for_logging;
+    size_t log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
 
     /// Parse the query from string.
     try
@@ -392,15 +393,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
+        if (ast->hasSecretParts())
+        {
+            /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
+            query_for_logging = ast->formatForLogging(log_queries_cut_to_length);
+        }
+        else
+        {
+            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+        }
     }
     catch (...)
     {
         /// Anyway log the query.
         if (query.empty())
             query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-        query_for_logging = maskSensitiveInfoInQueryForLogging(query, ast, context);
 
+        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
