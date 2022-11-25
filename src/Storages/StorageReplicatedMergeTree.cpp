@@ -4552,10 +4552,11 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception("OPTIMIZE cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-    auto handle_noop = [&] (const String & message)
+    auto handle_noop = [&] (const char * fmt_string, auto ...args)
     {
+        LOG_DEBUG(log, fmt::runtime(fmt_string), args...);
         if (query_context->getSettingsRef().optimize_throw_if_noop)
-            throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+            throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, fmt::runtime(fmt_string), args...);
         return false;
     };
 
@@ -4575,9 +4576,16 @@ bool StorageReplicatedMergeTree::optimize(
             std::lock_guard merge_selecting_lock(merge_selecting_mutex);
             PartitionIdsHint partition_ids_hint;
             if (partition_id.empty())
+            {
                 partition_ids_hint = getAllPartitionIds();
+            }
             else
+            {
+                auto parts_lock = lockParts();
+                if (!getAnyPartInPartition(partition_id, parts_lock))
+                    handle_noop("Cannot select parts for optimization: there are no parts in partition {}", partition_id);
                 partition_ids_hint.insert(partition_id);
+            }
             ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
             auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
@@ -4611,9 +4619,7 @@ bool StorageReplicatedMergeTree::optimize(
                 assert(disable_reason != unknown_disable_reason);
                 if (!partition_id.empty())
                     disable_reason += fmt::format(" (in partition {})", partition_id);
-                String message = fmt::format(message_fmt, disable_reason);
-                LOG_INFO(log, fmt::runtime(message));
-                return handle_noop(message);
+                return handle_noop(message_fmt, disable_reason);
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
@@ -4625,9 +4631,8 @@ bool StorageReplicatedMergeTree::optimize(
 
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
-                String message = "Can't create merge queue node in ZooKeeper, because some parts are missing";
-                LOG_TRACE(log, fmt::runtime(message));
-                return handle_noop(message);
+                constexpr const char * message_fmt = "Can't create merge queue node in ZooKeeper, because some parts are missing";
+                return handle_noop(message_fmt);
             }
 
             if (create_result == CreateMergeEntryResult::LogUpdated)
@@ -4638,9 +4643,8 @@ bool StorageReplicatedMergeTree::optimize(
         }
 
         assert(try_no == max_retries);
-        String message = fmt::format("Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries", try_no);
-        LOG_TRACE(log, fmt::runtime(message));
-        return handle_noop(message);
+        constexpr const char * message_fmt = "Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries";
+        return handle_noop(message_fmt, try_no);
     };
 
     bool assigned = false;
