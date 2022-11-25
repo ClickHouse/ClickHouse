@@ -61,11 +61,11 @@ bool ZlibInflatingReadBuffer::nextImpl()
         {
             in->nextIfAtEnd();
             zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
-            zstr.avail_in = in->buffer().end() - in->position();
+            zstr.avail_in = static_cast<unsigned>(in->buffer().end() - in->position());
         }
         /// init output bytes (place, where decompressed data will be)
         zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-        zstr.avail_out = internal_buffer.size();
+        zstr.avail_out = static_cast<unsigned>(internal_buffer.size());
 
         int rc = inflate(&zstr, Z_NO_FLUSH);
 

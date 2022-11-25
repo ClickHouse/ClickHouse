@@ -1336,17 +1336,13 @@
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
-    -->
     <query_masking_rules>
         <rule>
             <name>hide encrypt/decrypt arguments</name>
             <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
-            <!-- or more secure, but also more invasive:
-                (aes_\w+)\s*\(.*\)
-            -->
             <replace>\1(???)</replace>
         </rule>
-    </query_masking_rules>
+    </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
         rules are checked from top to bottom, first match runs the handler

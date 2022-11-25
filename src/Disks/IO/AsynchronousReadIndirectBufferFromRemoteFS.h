@@ -68,7 +68,7 @@ private:
 
     IAsynchronousReader & reader;
 
-    Int32 priority;
+    Int64 priority;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 

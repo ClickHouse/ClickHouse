@@ -15,6 +15,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <xxhash.h>
 
@@ -636,10 +637,10 @@ struct ImplBLAKE3
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         #if defined(MEMORY_SANITIZER)
-            auto err_msg = blake3_apply_shim_msan_compat(begin, size, out_char_data);
+            auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
             __msan_unpoison(out_char_data, length);
         #else
-            auto err_msg = blake3_apply_shim(begin, size, out_char_data);
+            auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
         #endif
         if (err_msg != nullptr)
         {

@@ -18,19 +18,6 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
     }
 }
 
-void formatUUID(const UInt8 * src16, UInt8 * dst36)
-{
-    formatHex(&src16[0], &dst36[0], 4);
-    dst36[8] = '-';
-    formatHex(&src16[4], &dst36[9], 2);
-    dst36[13] = '-';
-    formatHex(&src16[6], &dst36[14], 2);
-    dst36[18] = '-';
-    formatHex(&src16[8], &dst36[19], 2);
-    dst36[23] = '-';
-    formatHex(&src16[10], &dst36[24], 6);
-}
-
 /** Function used when byte ordering is important when parsing uuid
  *  ex: When we create an UUID type
  */

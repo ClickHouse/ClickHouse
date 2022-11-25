@@ -22,6 +22,7 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::hashidsxx
+        ch_contrib::morton_nd
 )
 
 list (APPEND PRIVATE_LIBS

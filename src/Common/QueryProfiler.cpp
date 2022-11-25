@@ -132,11 +132,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         sev.sigev_signo = pause_signal;
 
 #if defined(OS_FREEBSD)
-        sev._sigev_un._threadid = thread_id;
+        sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
-        sev.sigev_notify_thread_id = thread_id;
+        sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
 #else
-        sev._sigev_un._tid = thread_id;
+        sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
         timer_t local_timer_id;
         if (timer_create(clock_type, &sev, &local_timer_id))

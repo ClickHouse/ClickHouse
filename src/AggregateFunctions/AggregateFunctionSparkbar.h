@@ -165,7 +165,7 @@ private:
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
                     value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
@@ -173,7 +173,7 @@ private:
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
+                    value += getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
             }
         }
         else
@@ -202,7 +202,7 @@ private:
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(min_x_local + static_cast<X>(i));
                     bool found = (it != data.points.end());
                     if (found && proportion > 0)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
@@ -229,7 +229,7 @@ private:
                 }
                 else
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(min_x_local + static_cast<X>(i));
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -267,8 +267,8 @@ public:
         if (params.size() == 3)
         {
             specified_min_max_x = true;
-            min_x = params.at(1).safeGet<X>();
-            max_x = params.at(2).safeGet<X>();
+            min_x = static_cast<X>(params.at(1).safeGet<X>());
+            max_x = static_cast<X>(params.at(2).safeGet<X>());
         }
         else
         {

@@ -30,7 +30,7 @@ public:
     std::string getName() const override { return "S3Cluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -46,6 +46,7 @@ private:
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
+    bool add_columns_structure_to_query = false;
 };
 
 

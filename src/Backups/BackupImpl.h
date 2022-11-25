@@ -35,14 +35,14 @@ public:
     };
 
     BackupImpl(
-        const String & backup_name_,
+        const String & backup_name_for_logging_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_);
 
     BackupImpl(
-        const String & backup_name_,
+        const String & backup_name_for_logging_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
@@ -53,7 +53,7 @@ public:
 
     ~BackupImpl() override;
 
-    const String & getName() const override { return backup_name; }
+    const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
@@ -107,7 +107,7 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    const String backup_name;
+    const String backup_name_for_logging;
     const ArchiveParams archive_params;
     const bool use_archives;
     const OpenMode open_mode;

@@ -864,7 +864,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     write_function = [this](std::string_view str) { writeInt(stringToProtobufEnumValue(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(readInt(), str); };
+                    read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(static_cast<int>(readInt()), str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_enum()->name(); };
                     break;
                 }
@@ -1029,7 +1029,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     this->write_function = [this](NumberType value) { writeInt(enumDataTypeValueToProtobufEnumValue(value)); };
-                    this->read_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(readInt()); };
+                    this->read_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(static_cast<NumberType>(readInt())); };
                     this->default_function = [this]() -> NumberType { return protobufEnumValueToEnumDataTypeValue(this->field_descriptor.default_value_enum()->number()); };
                     break;
                 }
@@ -1539,10 +1539,13 @@ namespace
                     read_function = [this]() -> UInt32
                     {
                         readStr(text_buffer);
-                        return stringToDateTime(text_buffer, date_lut);
+                        return static_cast<UInt32>(stringToDateTime(text_buffer, date_lut));
                     };
 
-                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string(), date_lut); };
+                    default_function = [this]() -> UInt32
+                    {
+                        return static_cast<UInt32>(stringToDateTime(field_descriptor.default_value_string(), date_lut));
+                    };
                     break;
                 }
 

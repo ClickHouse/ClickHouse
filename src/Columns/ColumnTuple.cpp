@@ -495,17 +495,17 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
-        callback(column);
+        callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
@@ -568,6 +568,17 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
+}
+
+void ColumnTuple::finalize()
+{
+    for (auto & column : columns)
+        column->finalize();
+}
+
+bool ColumnTuple::isFinalized() const
+{
+    return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
 }

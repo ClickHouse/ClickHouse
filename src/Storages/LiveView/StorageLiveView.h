@@ -143,7 +143,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     Pipe watch(
         const Names & column_names,
@@ -151,7 +151,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }

@@ -53,7 +53,7 @@ public:
     VolumePtr getVolume() const { return volume; }
 
 protected:
-    void deltaAllocAndCheck(int compressed_delta, int uncompressed_delta);
+    void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
     VolumePtr volume;

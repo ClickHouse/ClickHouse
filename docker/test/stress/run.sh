@@ -254,7 +254,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start
 
-./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
+./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
 
@@ -270,10 +270,6 @@ start
 clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
-
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
-echo $previous_release_tag
 
 stop
 
@@ -332,6 +328,10 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --version | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | get_previous_release_tag)
+echo $previous_release_tag
+
 echo "Clone previous release repository"
 git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
@@ -387,6 +387,11 @@ else
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
+
+    # Turn on after 22.12
+    rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
+    # it uses recently introduced settings which previous versions may not have
+    rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
     start
 
@@ -448,11 +453,12 @@ else
     # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
     # NOTE  Incompatibility was introduced in https://github.com/ClickHouse/ClickHouse/pull/39263, it's expected
     #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
+    # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
     echo "Check for Error messages in server log:"
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
-               -e "REPLICA_IS_ALREADY_EXIST" \
+               -e "REPLICA_ALREADY_EXISTS" \
                -e "ALL_REPLICAS_LOST" \
                -e "DDLWorker: Cannot parse DDL task query" \
                -e "RaftInstance: failed to accept a rpc connection due to error 125" \
@@ -480,6 +486,9 @@ else
                -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
                -e "The set of parts restored in place of" \
                -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
+               -e "Code: 269. DB::Exception: Destination table is myself" \
+               -e "Coordination::Exception: Connection loss" \
+               -e "MutateFromLogEntryTask" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv

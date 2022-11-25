@@ -48,7 +48,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::sync() const
 
 MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const String & escaped_column_name_,
-    const DataPartStorageBuilderPtr & data_part_storage_builder,
+    const MutableDataPartStoragePtr & data_part_storage,
     const String & data_path_,
     const std::string & data_file_extension_,
     const std::string & marks_path_,
@@ -61,11 +61,11 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(data_part_storage_builder->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
+    plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_),
     compressed_hashing(compressor),
-    marks_file(data_part_storage_builder->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
+    marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
     marks_compressed_hashing(marks_compressor),
@@ -96,8 +96,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
 
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
-    const MergeTreeData::DataPartPtr & data_part_,
-    DataPartStorageBuilderPtr data_part_storage_builder_,
+    const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
@@ -105,8 +104,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(data_part_, std::move(data_part_storage_builder_),
-        columns_list_, metadata_snapshot_, settings_, index_granularity_)
+    : IMergeTreeDataPartWriter(data_part_, columns_list_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
@@ -116,8 +114,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
-    if (!data_part_storage_builder->exists())
-        data_part_storage_builder->createDirectories();
+    if (!data_part->getDataPartStorage().exists())
+        data_part->getDataPartStorage().createDirectories();
 
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
@@ -178,7 +176,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
-        index_file_stream = data_part_storage_builder->writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+        index_file_stream = data_part->getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
@@ -204,7 +202,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
-                        data_part_storage_builder,
+                        data_part->getDataPartStoragePtr(),
                         stream_name, index_helper->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
