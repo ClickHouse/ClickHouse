@@ -681,25 +681,53 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
             case 0:
                 break;
             case 1:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 1);
+#else
+                reverseMemcpy(&value, pos, 1);
+#endif
                 break;
             case 2:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 2);
+#else
+                reverseMemcpy(&value, pos, 2);
+#endif
                 break;
             case 3:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 3);
+#else
+                reverseMemcpy(&value, pos, 3);
+#endif
                 break;
             case 4:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 4);
+#else
+                reverseMemcpy(&value, pos, 4);
+#endif
                 break;
             case 5:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 5);
+#else
+                reverseMemcpy(&value, pos, 5);
+#endif
                 break;
             case 6:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 6);
+#else
+                reverseMemcpy(&value, pos, 6);
+#endif
                 break;
             case 7:
+#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
                 __builtin_memcpy(&value, pos, 7);
+#else
+                reverseMemcpy(&value, pos, 7);
+#endif
                 break;
             default:
                 UNREACHABLE();
@@ -712,7 +740,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     const auto * end = pos + size;
     while (pos + 8 <= end)
     {
-        auto word = unalignedLoad<UInt64>(pos);
+        auto word = unalignedLoadLE<UInt64>(pos);
         updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
 
         pos += 8;
@@ -724,7 +752,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
         DB::UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
-        auto word = unalignedLoad<UInt64>(end - 8);
+        auto word = unalignedLoadLE<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
         word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
