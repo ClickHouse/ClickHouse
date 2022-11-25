@@ -44,7 +44,7 @@ public:
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!isString(arguments[1]))
+        if (!isString(arguments[1]) && !isArray(arguments[1]))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -55,10 +55,13 @@ public:
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
+        // assert(isArray(arguments[1].type));
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
-        if (!col_needle)
-            throw Exception("Second argument of function " + getName() + " must be constant string", ErrorCodes::ILLEGAL_COLUMN);
+        const ColumnArray * col_const_array = checkAndGetColumnConstData<ColumnArray>(column_needle.get());
+
+        if (!col_needle && !col_const_array)
+            throw Exception("Second argument of function " + getName() + " must be constant string or constant array", ErrorCodes::ILLEGAL_COLUMN);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -66,8 +69,28 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
+            if (!col_const_array)
+            {
+                vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
+            }
+            else
+            {
+                size_t arr_size = col_const_array->size();
+                assert(arr_size>0);
 
+                size_t data_size = col_const_array->getData().size();
+                assert(data_size>0);
+
+                for (size_t i = 0; i < data_size; ++i)
+                {
+                    auto field = col_const_array->getData()[i];
+                    // auto typename_ = field.getTypeName();
+                    // assert(typename_ != "");
+                    auto field_value = field.get<String>();
+                    assert(field_value != "");
+                    vector(col->getChars(), col->getOffsets(), field_value, vec_res, offsets_res);
+                }
+            }
             return col_res;
         }
         else
