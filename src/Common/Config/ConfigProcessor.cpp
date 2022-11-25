@@ -185,8 +185,9 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         node = next_node;
     }
 
-    for (Node * with_node = with_nodes->item(0); with_node; with_node = with_node->nextSibling())
+    for (Node * with_node = with_nodes->item(0), * next_with_node = nullptr; with_node; with_node = next_with_node)
     {
+        next_with_node = with_node->nextSibling();
         bool merged = false;
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
@@ -336,8 +337,9 @@ void ConfigProcessor::doIncludesRecursive(
             if (node->nodeName() == "include")
             {
                 const NodeListPtr children = node_to_include->childNodes();
-                for (Node * child = children->item(0); child; child = child->nextSibling())
+                for (Node * child = children->item(0), * next_child = nullptr; child; child = next_child)
                 {
+                    next_child = child->nextSibling();
                     NodePtr new_node = config->importNode(child, true);
                     node->parentNode()->insertBefore(new_node, node);
                 }
@@ -360,15 +362,17 @@ void ConfigProcessor::doIncludesRecursive(
                 }
 
                 const NodeListPtr children = node_to_include->childNodes();
-                for (Node * child = children->item(0); child; child = child->nextSibling())
+                for (Node * child = children->item(0), * next_child = nullptr; child; child = next_child)
                 {
+                    next_child = child->nextSibling();
                     NodePtr new_node = config->importNode(child, true);
                     node->appendChild(new_node);
                 }
 
                 const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-                for (Node * attr = from_attrs->item(0); attr; attr = attr->nextSibling())
+                for (Node * attr = from_attrs->item(0), * next_attr = nullptr; attr; attr = next_attr)
                 {
+                    next_attr = attr->nextSibling();
                     element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(attr, true)));
                 }
 
@@ -431,8 +435,11 @@ void ConfigProcessor::doIncludesRecursive(
     else
     {
         NodeListPtr children = node->childNodes();
-        for (Node * child = children->item(0); child; child = child->nextSibling())
+        for (Node * child = children->item(0), * next_child = nullptr; child; child = next_child)
+        {
+            next_child = child->nextSibling();
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
+        }
     }
 }
 
