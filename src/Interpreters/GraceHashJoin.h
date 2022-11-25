@@ -33,8 +33,8 @@ class HashJoin;
  * The first bucket is joined in-memory via HashJoin::joinBlock, and the remaining buckets are written to the disk.
  *
  * 3) When the last thread reading left table block finishes, the last stage begins.
- * Each @DelayedJoiningBlocksProcessor calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
- * Inside @getDelayedBlocks we select the next not processed bucket, load right table blocks from disk into in-memory HashJoin,
+ * Each @DelayedJoinedBlocksTransform calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
+ * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into in-memory HashJoin,
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
