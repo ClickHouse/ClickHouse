@@ -401,7 +401,7 @@ jobs:
       - BuilderDebTsan
       - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
-    if: always()
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
