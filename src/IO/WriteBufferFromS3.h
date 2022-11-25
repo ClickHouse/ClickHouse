@@ -50,7 +50,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -88,7 +88,7 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::ReadWriteSettings s3_settings;
+    const S3Settings::RequestSettings request_settings;
     const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 

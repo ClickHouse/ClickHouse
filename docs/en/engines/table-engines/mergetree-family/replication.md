@@ -20,7 +20,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/docs/en/sql-reference/statements/alter/index.md/#query_language_queries_alter)).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/docs/en/sql-reference/statements/alter/index.md#query_language_queries_alter)).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -85,7 +85,7 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 </auxiliary_zookeepers>
 ```
 
-To store table datameta in a auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
+To store table metadata in an auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
 ReplicatedMergeTree engine as follow:
 
 ```
