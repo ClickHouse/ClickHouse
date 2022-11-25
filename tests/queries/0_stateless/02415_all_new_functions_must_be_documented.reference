@@ -734,9 +734,11 @@ toHour
 toIPv4
 toIPv4OrDefault
 toIPv4OrNull
+toIPv4OrZero
 toIPv6
 toIPv6OrDefault
 toIPv6OrNull
+toIPv6OrZero
 toISOWeek
 toISOYear
 toInt128
