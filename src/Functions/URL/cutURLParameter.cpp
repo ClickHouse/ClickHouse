@@ -69,28 +69,7 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            if (!col_const_array)
-            {
-                vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
-            }
-            else
-            {
-                size_t arr_size = col_const_array->size();
-                assert(arr_size>0);
-
-                size_t data_size = col_const_array->getData().size();
-                assert(data_size>0);
-
-                for (size_t i = 0; i < data_size; ++i)
-                {
-                    auto field = col_const_array->getData()[i];
-                    // auto typename_ = field.getTypeName();
-                    // assert(typename_ != "");
-                    auto field_value = field.get<String>();
-                    assert(field_value != "");
-                    vector(col->getChars(), col->getOffsets(), field_value, vec_res, offsets_res);
-                }
-            }
+            vector(col->getChars(), col->getOffsets(), col_needle, col_const_array, vec_res, offsets_res);
             return col_res;
         }
         else
@@ -99,24 +78,15 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    static void vector(const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+    static void cutURL(const ColumnString::Chars & data,
         std::string pattern,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t prev_offset, size_t cur_offset, size_t & res_offset, size_t offset_index)
     {
-        res_data.reserve(data.size());
-        res_offsets.resize(offsets.size());
 
         pattern += '=';
         const char * param_str = pattern.c_str();
         size_t param_len = pattern.size();
-
-        size_t prev_offset = 0;
-        size_t res_offset = 0;
-
-        for (size_t i = 0; i < offsets.size(); ++i)
-        {
-            size_t cur_offset = offsets[i];
 
             const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * url_end = reinterpret_cast<const char *>(&data[cur_offset]) - 1;
@@ -159,8 +129,49 @@ public:
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset] + (begin_pos - url_begin), end_pos, url_end - end_pos);
             res_offset += cut_length + 1;
             res_data[res_offset - 1] = 0;
-            res_offsets[i] = res_offset;
+            res_offsets[offset_index] = res_offset;
+    }
 
+    static void vector(const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        const ColumnConst * col_needle,
+        const ColumnArray * col_const_array,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+    {
+        res_data.reserve(data.size());
+        res_offsets.resize(offsets.size());
+
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
+        size_t prev_res_offset = 0;
+
+
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            size_t cur_offset = offsets[i];
+
+            if (!col_const_array)
+            {
+                cutURL(data, col_needle->getValue<String>(), res_data, res_offsets, prev_offset, cur_offset, res_offset, i);
+            }
+            else
+            {
+                size_t data_size = col_const_array->getData().size();
+                // assert(data_size>0);
+
+                res_offset = 0;
+                for (size_t j = 0; j < data_size; ++j)
+                {
+                    res_offset = prev_res_offset;
+                    auto field = col_const_array->getData()[j];
+                    // auto typename_ = field.getTypeName();
+                    // assert(typename_ != "");
+                    auto pattern = field.get<String>();
+                    assert(pattern != "");
+                    cutURL(data, pattern, res_data, res_offsets, prev_offset, cur_offset, res_offset, i);
+                }
+                prev_res_offset = res_offset;
+            }
             prev_offset = cur_offset;
         }
     }
