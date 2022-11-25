@@ -65,7 +65,8 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
         .apply_deleted_mask = context->applyDeletedMask(),
-        .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree && settings.max_streams_to_max_threads_ratio > 1,
+        .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
+            && (settings.max_streams_to_max_threads_ratio > 1 || settings.allow_asynchronous_read_from_io_pool_for_merge_tree),
     };
 }
 
@@ -125,6 +126,21 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
+
+    const auto & settings = context->getSettingsRef();
+    if (settings.max_streams_for_merge_tree_reading)
+    {
+        if (settings.allow_asynchronous_read_from_io_pool_for_merge_tree)
+        {
+            /// When async reading is enabled, allow to read using more streams.
+            /// Will add resize to output_streams_limit to reduce memory usage.
+            output_streams_limit = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+            requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+        }
+        else
+            /// Just limit requested_num_streams otherwise.
+            requested_num_streams = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+    }
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
@@ -231,7 +247,10 @@ Pipe ReadFromMergeTree::readFromPool(
         pipes.emplace_back(std::move(source));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
+        pipe.resize(output_streams_limit);
+    return pipe;
 }
 
 template<typename Algorithm>
@@ -1094,6 +1113,11 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         query_info.input_order_info = order_info;
 
     reader_settings.read_in_order = true;
+
+    /// In case or read-in-order, don't create too many reading streams.
+    /// Almost always we are reading from a single stream at a time because of merge sort.
+    if (output_streams_limit)
+        requested_num_streams = output_streams_limit;
 
     /// update sort info for output stream
     SortDescription sort_description;
