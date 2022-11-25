@@ -34,7 +34,7 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
             std::string ip = address.toString();
 
             // Cache might report the same ip address multiple times. Report only one of them.
-            if (reported_elements.count(HostIPPair(hostname, ip)))
+            if (reported_elements.contains(HostIPPair(hostname, ip)))
                 continue;
 
             reported_elements.insert(HostIPPair(hostname, ip));
