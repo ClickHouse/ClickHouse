@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <stack>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -23,20 +24,20 @@ namespace ErrorCodes
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
+    const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
+    {
+        if (!child)
+            return;
+
+        auto * old_value = child.get();
+        visit(child);
+        ast->setOrReplace(old_value, child);
+    };
+
     if (auto * col_decl = ast->as<ASTColumnDeclaration>())
     {
-        const auto visit_child = [&](ASTPtr & child)
-        {
-            if (!child)
-                return;
-
-            auto * old_value = child.get();
-            visit(child);
-            ast->setOrReplace(old_value, child);
-        };
-
-        visit_child(col_decl->default_expression);
-        visit_child(col_decl->ttl);
+        visit_child_with_shared_ptr(col_decl->default_expression);
+        visit_child_with_shared_ptr(col_decl->ttl);
         return;
     }
 
@@ -63,6 +64,28 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
         visit_child(storage->order_by);
         visit_child(storage->sample_by);
         visit_child(storage->ttl_table);
+
+        return;
+    }
+
+    if (auto * alter = ast->as<ASTAlterCommand>())
+    {
+        visit_child_with_shared_ptr(alter->col_decl);
+        visit_child_with_shared_ptr(alter->column);
+        visit_child_with_shared_ptr(alter->partition);
+        visit_child_with_shared_ptr(alter->order_by);
+        visit_child_with_shared_ptr(alter->sample_by);
+        visit_child_with_shared_ptr(alter->index_decl);
+        visit_child_with_shared_ptr(alter->index);
+        visit_child_with_shared_ptr(alter->constraint_decl);
+        visit_child_with_shared_ptr(alter->constraint);
+        visit_child_with_shared_ptr(alter->projection_decl);
+        visit_child_with_shared_ptr(alter->projection);
+        visit_child_with_shared_ptr(alter->predicate);
+        visit_child_with_shared_ptr(alter->update_assignments);
+        visit_child_with_shared_ptr(alter->values);
+        visit_child_with_shared_ptr(alter->ttl);
+        visit_child_with_shared_ptr(alter->select);
 
         return;
     }
