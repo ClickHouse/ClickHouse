@@ -3,6 +3,7 @@
 #endif
 #include <unistd.h>
 #include <base/safeExit.h>
+#include <base/defines.h>
 
 [[noreturn]] void safeExit(int code)
 {
@@ -10,7 +11,7 @@
     /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
     /// while connection handling threads are still run.
     (void)syscall(SYS_exit_group, code);
-    UNREACHABLE();
+    __builtin_unreachable();
 #else
     _exit(code);
 #endif

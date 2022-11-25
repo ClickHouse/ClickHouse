@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/current-roles
----
 # system.current_roles {#system_tables-current_roles}
 
 包含当前用户的激活角色. `SET ROLE` 修改该表的内容.

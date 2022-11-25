@@ -1,10 +1,9 @@
 ---
-slug: /en/operations/system-tables/
-sidebar_position: 52
-sidebar_label: System Tables
+toc_priority: 52
+toc_title: System Tables
 ---
 
-# System Tables
+# System Tables {#system-tables}
 
 ## Introduction {#system-tables-introduction}
 

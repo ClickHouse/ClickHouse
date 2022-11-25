@@ -1,9 +1,9 @@
 ---
-slug: /en/operations/troubleshooting
-sidebar_position: 46
-sidebar_label: Troubleshooting
-title: Troubleshooting
+toc_priority: 46
+toc_title: Troubleshooting
 ---
+
+# Troubleshooting {#troubleshooting}
 
 -   [Installation](#troubleshooting-installation-errors)
 -   [Connecting to the server](#troubleshooting-accepts-no-connections)
@@ -15,34 +15,7 @@ title: Troubleshooting
 ### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Check firewall settings.
--   If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
-
-### You Cannot Update Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
-
-- The issue may be happened when the GPG key is changed.
-
-Please use the following scripts to resolve the issue:
-
-```bash
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-sudo apt-get update
-```
-
-### You Get the Unsupported Architecture Warning with Apt-get {#you-get-the-unsupported-architecture-warning-with-apt-get}
-
-- The completed warning message is as follows:
-
-```
-N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
-```
-
-To resolve the above issue, please use the following script:
-
-```bash
-sudo rm /var/lib/apt/lists/packages.clickhouse.com_* /var/lib/dpkg/arch
-sudo apt-get clean
-sudo apt-get autoclean
-```
+-   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting-started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
@@ -53,7 +26,7 @@ Possible issues:
 
 ### Server Is Not Running {#server-is-not-running}
 
-**Check if server is running**
+**Check if server is runnnig**
 
 Command:
 

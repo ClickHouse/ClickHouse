@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/corr
-sidebar_position: 107
+toc_priority: 107
 ---
 
 # corr {#corrx-y}

@@ -13,15 +13,14 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -40,22 +39,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ThreadStatusesHolder::~ThreadStatusesHolder()
-{
-    auto * original_thread = current_thread;
-    SCOPE_EXIT({ current_thread = original_thread; });
-
-    while (!thread_statuses.empty())
-    {
-        current_thread = thread_statuses.front().get();
-        thread_statuses.pop_front();
-    }
-}
-
 struct ViewsData
 {
-    /// A separate holder for thread statuses, needed for proper destruction order.
-    ThreadStatusesHolderPtr thread_status_holder;
     /// Separate information for every view.
     std::list<ViewRuntimeData> views;
     /// Some common info about source storage.
@@ -71,9 +56,8 @@ struct ViewsData
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
 
-    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
-        : thread_status_holder(std::move(thread_status_holder_))
-        , context(std::move(context_))
+    ViewsData(ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
+        : context(std::move(context_))
         , source_storage_id(std::move(source_storage_id_))
         , source_metadata_snapshot(std::move(source_metadata_snapshot_))
         , source_storage(std::move(source_storage_))
@@ -192,28 +176,20 @@ Chain buildPushingToViewsChain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    ThreadStatusesHolderPtr thread_status_holder,
+    ThreadStatus * thread_status,
     std::atomic_uint64_t * elapsed_counter_ms,
     const Block & live_view_header)
 {
     checkStackSize();
     Chain result_chain;
 
-    ThreadStatus * thread_status = current_thread;
-
-    if (!thread_status_holder)
-    {
-        thread_status_holder = std::make_shared<ThreadStatusesHolder>();
-        thread_status = nullptr;
-    }
-
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
     auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
                                          : metadata_snapshot->getSampleBlock();
 
-    /** TODO This is a very important line. At any insertion into the table one of chains should own lock.
-      * Although now any insertion into the table is done via PushingToViews chain,
+    /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
+      * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
     result_chain.addTableLock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
@@ -248,7 +224,7 @@ Chain buildPushingToViewsChain(
         if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
 
-        views_data = std::make_shared<ViewsData>(thread_status_holder, select_context, table_id, metadata_snapshot, storage);
+        views_data = std::make_shared<ViewsData>(select_context, table_id, metadata_snapshot, storage);
     }
 
     std::vector<Chain> chains;
@@ -286,17 +262,15 @@ Chain buildPushingToViewsChain(
         };
         view_thread_status_ptr->attachQuery(running_group);
 
-        auto * view_thread_status = view_thread_status_ptr.get();
-        views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
-
         auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
         runtime_stats->target_name = database_table.getFullTableName();
-        runtime_stats->thread_status = view_thread_status;
+        runtime_stats->thread_status = std::move(view_thread_status_ptr);
         runtime_stats->event_time = std::chrono::system_clock::now();
         runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
 
         auto & type = runtime_stats->type;
         auto & target_name = runtime_stats->target_name;
+        auto * view_thread_status = runtime_stats->thread_status.get();
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
@@ -325,7 +299,7 @@ Chain buildPushingToViewsChain(
             }
 
             InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
+            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, view_thread_status, view_counter_ms);
             out.addStorageHolder(dependent_table);
             out.addStorageHolder(inner_table);
         }
@@ -334,18 +308,18 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms, storage_header);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
         else if (auto * window_view = dynamic_cast<StorageWindowView *>(dependent_table.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
         else
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
 
         views_data->views.emplace_back(ViewRuntimeData{ //-V614
             std::move(query),
@@ -419,7 +393,7 @@ Chain buildPushingToViewsChain(
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
+        auto sink = std::make_shared<PushingToWindowViewSink>(live_view_header, *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
@@ -436,14 +410,6 @@ Chain buildPushingToViewsChain(
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
-    if (result_chain.getOutputHeader().columns() != 0)
-    {
-        /// Convert result header to empty block.
-        auto dag = ActionsDAG::makeConvertingActions(result_chain.getOutputHeader().getColumnsWithTypeAndName(), {}, ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
-        result_chain.addSink(std::make_shared<ConvertingTransform>(result_chain.getOutputHeader(), std::move(actions)));
-    }
-
     return result_chain;
 }
 
@@ -455,13 +421,25 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
-    local_context->addViewSource(std::make_shared<StorageValues>(
+    local_context->addViewSource(StorageValues::create(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
+    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+    ///
+    /// - We copy Context inside InterpreterSelectQuery to support
+    ///   modification of context (Settings) for subqueries
+    /// - InterpreterSelectQuery lives shorter than query pipeline.
+    ///   It's used just to build the query pipeline and no longer needed
+    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+    ///   **can** take a reference to Context from InterpreterSelectQuery
+    ///   (the problem raises only when function uses context from the
+    ///    execute*() method, like FunctionDictGet do)
+    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
+
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
     pipeline.dropTotalsAndExtremes();
@@ -620,10 +598,9 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-
-    if (auto process = context->getProcessListElement())
+    auto * process = context->getProcessListElement();
+    if (process)
         process->updateProgressIn(local_progress);
-
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -644,10 +621,9 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-
-    if (auto process = context->getProcessListElement())
+    auto * process = context->getProcessListElement();
+    if (process)
         process->updateProgressIn(local_progress);
-
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -746,7 +722,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return std::current_exception();
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void FinalizingViewsTransform::work()

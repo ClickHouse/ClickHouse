@@ -6,7 +6,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Core/SettingsEnums.h>
 
 
 namespace DB
@@ -18,11 +17,7 @@ class ASTSelectWithUnionQuery;
 class SelectIntersectExceptQueryMatcher
 {
 public:
-    struct Data
-    {
-        const SetOperationMode intersect_default_mode;
-        const SetOperationMode except_default_mode;
-    };
+    struct Data {};
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 

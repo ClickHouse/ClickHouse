@@ -23,6 +23,20 @@ ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(contex
 {
 }
 
+template <typename F>
+inline void forEachTable(F && f, ContextPtr context)
+{
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            if (auto table = iterator->table())
+                f(table);
+}
+
+void ActionLocksManager::add(StorageActionBlockType action_type, ContextPtr context_)
+{
+    forEachTable([&](const StoragePtr & table) { add(table, action_type); }, context_);
+}
+
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
     if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
@@ -40,6 +54,14 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
     }
 }
 
+void ActionLocksManager::remove(StorageActionBlockType action_type)
+{
+    std::lock_guard lock(mutex);
+
+    for (auto & storage_elem : storage_locks)
+        storage_elem.second.erase(action_type);
+}
+
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
     if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
@@ -50,7 +72,7 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 {
     std::lock_guard lock(mutex);
 
-    if (storage_locks.contains(table.get()))
+    if (storage_locks.count(table.get()))
         storage_locks[table.get()].erase(action_type);
 }
 

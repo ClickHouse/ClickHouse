@@ -1,10 +1,9 @@
 ---
-slug: /en/operations/settings/permissions-for-queries
-sidebar_position: 58
-sidebar_label: Permissions for Queries
+toc_priority: 58
+toc_title: Permissions for Queries
 ---
 
-# Permissions for Queries
+# Permissions for Queries {#permissions_for_queries}
 
 Queries in ClickHouse can be divided into several types:
 
@@ -37,7 +36,8 @@ After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl`
 
 When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
 
-Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
+Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
+from changing only specific settings, for details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
 
 Default value: 0
 

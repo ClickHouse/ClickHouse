@@ -6,7 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
@@ -336,12 +336,7 @@ public:
     Int32 size() const override
     {
         // message length part + (1 + sizes of other fields + 1) + null byte in the end of the message
-        return static_cast<Int32>(
-            4 +
-            (1 + enum_to_string[severity].size() + 1) +
-            (1 + sql_state.size() + 1) +
-            (1 + message.size() + 1) +
-            1);
+        return 4 + (1 + enum_to_string[severity].size() + 1) + (1 + sql_state.size() + 1) + (1 + message.size() + 1) + 1;
     }
 
     MessageType getMessageType() const override
@@ -523,7 +518,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(4 + name.size() + 1 + value.size() + 1);
+        return 4 + name.size() + 1 + value.size() + 1;
     }
 
     MessageType getMessageType() const override
@@ -638,7 +633,7 @@ public:
         // + object ID of the table (Int32 and always zero) + attribute number of the column (Int16 and always zero)
         // + type object id (Int32) + data type size (Int16)
         // + type modifier (Int32 and always -1) + format code (Int16)
-        return static_cast<Int32>((name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2);
+        return (name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2;
     }
 };
 
@@ -687,7 +682,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(str.size());
+        return str.size();
     }
 };
 
@@ -767,7 +762,7 @@ public:
 
     Int32 size() const override
     {
-        return static_cast<Int32>(4 + value.size() + 1);
+        return 4 + value.size() + 1;
     }
 
     MessageType getMessageType() const override

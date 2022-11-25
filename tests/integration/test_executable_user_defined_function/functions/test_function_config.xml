@@ -289,37 +289,4 @@
         <command>input_sum_json_named_args.py</command>
     </function>
 
-    <function>
-        <type>executable</type>
-        <name>test_function_nullable_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>Nullable(UInt64)</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>input_nullable.py</command>
-    </function>
-
-    <function>
-        <type>executable_pool</type>
-        <name>test_function_nullable_pool_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>Nullable(UInt64)</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>input_nullable.py</command>
-    </function>
-
-    <function>
-        <type>executable</type>
-        <name>test_function_parameter_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>input_parameter.py {test_parameter:UInt64}</command>
-    </function>
-
 </functions>

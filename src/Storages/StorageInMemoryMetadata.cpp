@@ -239,7 +239,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
         auto required_columns = expression->getRequiredColumns();
         for (const auto & dependency : required_columns)
         {
-            if (updated_columns.contains(dependency))
+            if (updated_columns.count(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
@@ -605,7 +605,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
 
     for (const auto & column : block)
     {
-        if (names_in_block.contains(column.name))
+        if (names_in_block.count(column.name))
             throw Exception("Duplicate column " + column.name + " in block", ErrorCodes::DUPLICATE_COLUMN);
 
         names_in_block.insert(column.name);
@@ -634,7 +634,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     {
         for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.contains(available_column.name))
+            if (!names_in_block.count(available_column.name))
                 throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }

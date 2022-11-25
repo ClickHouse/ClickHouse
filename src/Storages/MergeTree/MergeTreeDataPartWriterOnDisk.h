@@ -8,8 +8,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseQuery.h>
+
 
 namespace DB
 {
@@ -50,33 +49,27 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
-            const DataPartStorageBuilderPtr & data_part_storage_builder,
+            DiskPtr disk_,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_,
-            const CompressionCodecPtr & marks_compression_codec_,
-            size_t marks_compress_block_size_,
-            const WriteSettings & query_write_settings);
+            size_t max_compress_block_size_);
 
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;
 
-        /// compressed_hashing -> compressor -> plain_hashing -> plain_file
+        /// compressed -> compressed_buf -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressor;
-        HashingWriteBuffer compressed_hashing;
+        CompressedWriteBuffer compressed_buf;
+        HashingWriteBuffer compressed;
 
-        /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
+        /// marks -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        HashingWriteBuffer marks_hashing;
-        CompressedWriteBuffer marks_compressor;
-        HashingWriteBuffer marks_compressed_hashing;
-        bool compress_marks;
+        HashingWriteBuffer marks;
 
         bool is_prefinalized = false;
 
@@ -93,7 +86,6 @@ public:
 
     MergeTreeDataPartWriterOnDisk(
         const MergeTreeData::DataPartPtr & data_part_,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -135,6 +127,7 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
+    const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 
@@ -145,11 +138,7 @@ protected:
     std::vector<size_t> skip_index_accumulated_marks;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
-    std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
-    std::unique_ptr<CompressedWriteBuffer> index_compressor_stream;
-    std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
-    bool compress_primary_key;
-
+    std::unique_ptr<HashingWriteBuffer> index_stream;
     DataTypes index_types;
     /// Index columns from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method

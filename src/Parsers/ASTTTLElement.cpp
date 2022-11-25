@@ -93,7 +93,7 @@ void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
     {
         if (pos == -1)
         {
-            pos = static_cast<int>(children.size());
+            pos = children.size();
             children.emplace_back(ast);
         }
         else

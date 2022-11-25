@@ -11,10 +11,11 @@ using FunctionRand = FunctionRandom<UInt32, NameRand>;
 
 }
 
-REGISTER_FUNCTION(Rand)
+void registerFunctionRand(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRand>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRand>(FunctionFactory::CaseInsensitive);
     factory.registerAlias("rand32", NameRand::name);
 }
 
 }
+

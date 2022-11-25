@@ -16,12 +16,11 @@ namespace DB
 }
 
 /// Double quote the string.
-String doubleQuoteString(StringRef x);
+String doubleQuoteString(const StringRef & x);
 
 /// Quote the identifier with backquotes.
-String backQuote(StringRef x);
+String backQuote(const StringRef & x);
 
 /// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(StringRef x);
-
+String backQuoteIfNeed(const StringRef & x);
 }

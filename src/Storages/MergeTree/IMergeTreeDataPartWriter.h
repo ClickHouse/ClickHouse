@@ -23,7 +23,6 @@ class IMergeTreeDataPartWriter : private boost::noncopyable
 public:
     IMergeTreeDataPartWriter(
         const MergeTreeData::DataPartPtr & data_part_,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeWriterSettings & settings_,
@@ -43,7 +42,6 @@ public:
 protected:
 
     const MergeTreeData::DataPartPtr data_part;
-    DataPartStorageBuilderPtr data_part_storage_builder;
     const MergeTreeData & storage;
     const StorageMetadataPtr metadata_snapshot;
     const NamesAndTypesList columns_list;

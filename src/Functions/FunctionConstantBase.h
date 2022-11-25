@@ -14,7 +14,7 @@ class FunctionConstantBase : public IFunction
 public:
     template <typename U>
     explicit FunctionConstantBase(U && constant_value_, bool is_distributed_ = false)
-        : constant_value(static_cast<T>(std::forward<U>(constant_value_))), is_distributed(is_distributed_)
+        : constant_value(std::forward<U>(constant_value_)), is_distributed(is_distributed_)
     {
     }
 
@@ -41,9 +41,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(input_rows_count, constant_value);
+        return ColumnT().createColumnConst(input_rows_count, constant_value);
     }
 
 private:
@@ -52,3 +52,4 @@ private:
 };
 
 }
+
