@@ -30,9 +30,38 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
 
+/*
+ * FileSegmentKind is used to specify the eviction policy for file segments.
+ */
+enum class FileSegmentKind
+{
+    /* `Regular` file segment is still in cache after usage, and can be evicted
+     * (unless there're some holders).
+     */
+    Regular,
+
+    /* `Persistent` file segment can't be evicted from cache,
+     * it should be removed manually.
+     */
+    Persistent,
+
+    /* `Temporary` file segment is removed right after relesing.
+     * Also corresponding files are removed during cache loading (if any).
+     */
+    Temporary,
+};
+
+String toString(FileSegmentKind type);
+
 struct CreateFileSegmentSettings
 {
-    bool is_persistent = false;
+    FileSegmentKind type = FileSegmentKind::Regular;
+
+    CreateFileSegmentSettings() = default;
+
+    explicit CreateFileSegmentSettings(FileSegmentKind type_)
+        : type(type_)
+    {}
 };
 
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
@@ -127,7 +156,8 @@ public:
 
     size_t offset() const { return range().left; }
 
-    bool isPersistent() const { return is_persistent; }
+    FileSegmentKind getKind() const { return segment_kind; }
+    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
@@ -188,8 +218,13 @@ public:
      */
 
     /// Try to reserve exactly `size` bytes.
+    /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
-    size_t tryReserve(size_t size_to_reserve, bool strict);
+
+    /// Try to reserve at max `size` bytes.
+    /// Returns actual size reserved.
+    /// In strict mode throws an error on attempt to reserve space too much space
+    size_t tryReserve(size_t size_to_reserve, bool strict = false);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -295,7 +330,7 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    bool is_persistent;
+    FileSegmentKind segment_kind;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };

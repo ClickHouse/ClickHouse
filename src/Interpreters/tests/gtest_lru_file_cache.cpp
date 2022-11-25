@@ -100,7 +100,10 @@ public:
 
     void SetUp() override
     {
-        setupLogs(TEST_LOG_LEVEL);
+        if(const char * test_log_level = std::getenv("TEST_LOG_LEVEL"))
+            setupLogs(test_log_level);
+        else
+            setupLogs(TEST_LOG_LEVEL);
 
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
@@ -561,24 +564,21 @@ TEST_F(FileCacheTest, rangeWriter)
 
     std::string data(100, '\xf0');
 
-    /// Write first segment
-    ASSERT_EQ(writer.tryWrite(data.data(), 5, 0, false, false), 5);
-    ASSERT_EQ(writer.tryWrite(data.data(), 3, 5, false, false), 3);
-    ASSERT_EQ(writer.tryWrite(data.data(), 1, 8, false, false), 1);
-    ASSERT_EQ(writer.tryWrite(data.data(), 1, 9, false, false), 1);
+    size_t total_written = 0;
+    for (const size_t size : {3, 5, 8, 1, 1, 3})
+    {
+        total_written += size;
+        ASSERT_EQ(writer.tryWrite(data.data(), size, writer.currentOffset()), size);
+    }
+    ASSERT_LT(total_written, settings.max_size);
 
-    /// Second segment starts
-    ASSERT_EQ(writer.tryWrite(data.data(), 1, 10, false, false), 1);
-    ASSERT_EQ(writer.tryWrite(data.data(), 1, 11, false, false), 1);
-    /// Can't write 10 bytes into the rest of current segment
-    ASSERT_EQ(writer.tryWrite(data.data(), 10, 12, false, false), 8);
+    size_t offset_before_unsuccessful_write = writer.currentOffset();
+    size_t space_left = settings.max_size - total_written;
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left + 1, writer.currentOffset()), 0);
 
-    /// Rest can be written into the next segment
-    ASSERT_EQ(writer.tryWrite(data.data(), 2, 20, false, false), 2);
-    /// Only 3 bytes left, can't write 4 and nothing should be written
-    ASSERT_EQ(writer.tryWrite(data.data(), 4, 22, false, false), 0);
-    ASSERT_EQ(writer.tryWrite(data.data(), 4, 22, false, false), 0);
-    ASSERT_EQ(writer.tryWrite(data.data(), 3, 22, false, false), 3);
+    ASSERT_EQ(writer.currentOffset(), offset_before_unsuccessful_write);
+
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left, writer.currentOffset()), space_left);
 
     writer.finalize();
 }

@@ -80,7 +80,7 @@ public:
 
     static Key hash(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
 
     String getPathInLocalCache(const Key & key) const;
 
