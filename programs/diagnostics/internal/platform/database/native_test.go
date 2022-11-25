@@ -7,23 +7,22 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 	"testing"
 
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/database"
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/test"
+	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func TestMain(m *testing.M) {
+func createClickHouseContainer(t *testing.T, ctx context.Context) (testcontainers.Container, nat.Port) {
 	// create a ClickHouse container
-	ctx := context.Background()
 	cwd, err := os.Getwd()
 	if err != nil {
-		// can't test without container
+		// can't test without current directory
 		panic(err)
 	}
 
@@ -57,17 +56,17 @@ func TestMain(m *testing.M) {
 	}
 
 	p, _ := clickhouseContainer.MappedPort(ctx, "9000")
+	if err != nil {
+		// can't test without container's port
+		panic(err)
+	}
 
-	os.Setenv("CLICKHOUSE_DB_PORT", p.Port())
-	defer clickhouseContainer.Terminate(ctx) //nolint
-	os.Exit(m.Run())
+	t.Setenv("CLICKHOUSE_DB_PORT", p.Port())
+
+	return clickhouseContainer, p
 }
 
-func getClient(t *testing.T) *database.ClickhouseNativeClient {
-	mappedPort, err := strconv.Atoi(os.Getenv("CLICKHOUSE_DB_PORT"))
-	if err != nil {
-		t.Fatal("Unable to read port value from environment")
-	}
+func getClient(t *testing.T, mappedPort int) *database.ClickhouseNativeClient {
 	clickhouseClient, err := database.NewNativeClient("localhost", uint16(mappedPort), "", "")
 	if err != nil {
 		t.Fatalf("unable to build client : %v", err)
@@ -76,7 +75,11 @@ func getClient(t *testing.T) *database.ClickhouseNativeClient {
 }
 
 func TestReadTableNamesForDatabase(t *testing.T) {
-	clickhouseClient := getClient(t)
+	ctx := context.Background()
+	clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+	defer clickhouseContainer.Terminate(ctx) //nolint
+
+	clickhouseClient := getClient(t, mappedPort.Int())
 	t.Run("client can read tables for a database", func(t *testing.T) {
 		tables, err := clickhouseClient.ReadTableNamesForDatabase("system")
 		require.Nil(t, err)
@@ -86,8 +89,13 @@ func TestReadTableNamesForDatabase(t *testing.T) {
 }
 
 func TestReadTable(t *testing.T) {
-	clickhouseClient := getClient(t)
 	t.Run("client can get all rows for system.disks table", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		// we read the table system.disks as this should contain only 1 row
 		frame, err := clickhouseClient.ReadTable("system", "disks", []string{}, data.OrderBy{}, 10)
 		require.Nil(t, err)
@@ -116,6 +124,12 @@ func TestReadTable(t *testing.T) {
 	})
 
 	t.Run("client can get all rows for system.databases table", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		// we read the table system.databases as this should be small and consistent on fresh db instances
 		frame, err := clickhouseClient.ReadTable("system", "databases", []string{}, data.OrderBy{}, 10)
 		require.Nil(t, err)
@@ -146,12 +160,24 @@ func TestReadTable(t *testing.T) {
 	})
 
 	t.Run("client can get all rows for system.databases table with except", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		frame, err := clickhouseClient.ReadTable("system", "databases", []string{"data_path", "comment"}, data.OrderBy{}, 10)
 		require.Nil(t, err)
 		require.ElementsMatch(t, frame.Columns(), [4]string{"name", "engine", "metadata_path", "uuid"})
 	})
 
 	t.Run("client can limit rows for system.databases", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		frame, err := clickhouseClient.ReadTable("system", "databases", []string{}, data.OrderBy{}, 1)
 		require.Nil(t, err)
 		require.ElementsMatch(t, frame.Columns(), [6]string{"name", "engine", "data_path", "metadata_path", "uuid", "comment"})
@@ -177,6 +203,12 @@ func TestReadTable(t *testing.T) {
 	})
 
 	t.Run("client can order rows for system.databases", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		frame, err := clickhouseClient.ReadTable("system", "databases", []string{}, data.OrderBy{
 			Column: "engine",
 			Order:  data.Asc,
@@ -212,8 +244,13 @@ func TestReadTable(t *testing.T) {
 }
 
 func TestExecuteStatement(t *testing.T) {
-	clickhouseClient := getClient(t)
 	t.Run("client can execute any statement", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		statement := "SELECT path, count(*) as count FROM system.disks GROUP BY path;"
 		frame, err := clickhouseClient.ExecuteStatement("engines", statement)
 		require.Nil(t, err)
@@ -238,8 +275,13 @@ func TestExecuteStatement(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	clickhouseClient := getClient(t)
 	t.Run("client can read version", func(t *testing.T) {
+		ctx := context.Background()
+		clickhouseContainer, mappedPort := createClickHouseContainer(t, ctx)
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		clickhouseClient := getClient(t, mappedPort.Int())
+
 		version, err := clickhouseClient.Version()
 		require.Nil(t, err)
 		require.NotEmpty(t, version)

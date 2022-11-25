@@ -17,10 +17,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
-}
-
 func getProcessesInContainer(t *testing.T, container testcontainers.Container) ([]string, error) {
 	result, reader, err := container.Exec(context.Background(), []string{"ps", "-aux"})
 	if err != nil {
