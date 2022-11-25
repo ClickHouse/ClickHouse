@@ -147,7 +147,7 @@ private:
 class DelayedJoinedBlocksWorkerTransform : public IProcessor
 {
 public:
-    DelayedJoinedBlocksWorkerTransform(Block output_header);
+    explicit DelayedJoinedBlocksWorkerTransform(Block output_header);
 
     String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
 

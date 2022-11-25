@@ -415,7 +415,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
         {
             Chunk chunk;
             chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
-            output.pushData({.chunk = std::move(chunk), .exception = {}});
+            output.push(std::move(chunk));
             output.finish();
         }
 
@@ -428,7 +428,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
         {
             Chunk chunk;
             chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
-            output.pushData({.chunk = std::move(chunk), .exception = {}});
+            output.push(std::move(chunk));
         }
         delayed_blocks = nullptr;
         return Status::PortFull;
