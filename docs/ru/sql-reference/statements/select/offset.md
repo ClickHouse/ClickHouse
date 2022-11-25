@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/offset
 sidebar_label: OFFSET
 ---
 

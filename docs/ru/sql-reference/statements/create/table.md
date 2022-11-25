@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: "Таблица"
 ---

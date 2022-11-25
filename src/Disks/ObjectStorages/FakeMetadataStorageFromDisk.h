@@ -9,7 +9,6 @@
 namespace DB
 {
 
-/// Store metadata in the disk itself.
 class FakeMetadataStorageFromDisk final : public IMetadataStorage
 {
 private:

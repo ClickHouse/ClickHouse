@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -34,7 +35,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
@@ -154,7 +154,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     continue;
                 }
             }
-            /// don't optimize functions that shadow any of it's arguments, e.g.:
+            /// don't optimise functions that shadow any of it's arguments, e.g.:
             /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
             if (!function->alias.empty())
             {
@@ -418,7 +418,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         return;
 
     std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
-    std::unordered_set<std::string_view> selected_names;
+    std::unordered_set<String> selected_names;
 
     /// Check source column names from select list (ignore aliases and table names)
     for (const auto & id : select.select()->children)
@@ -427,11 +427,11 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
         if (!identifier)
             return;
 
-        const String & name = identifier->shortName();
+        String name = identifier->shortName();
         if (!distinct_names.contains(name))
             return; /// Not a distinct column, keep DISTINCT for it.
 
-        selected_names.emplace(name);
+        selected_names.insert(name);
     }
 
     /// select columns list != distinct columns list
@@ -453,7 +453,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         return;
 
     /// Do not apply optimization for Distributed and Merge storages,
-    /// because we can't get the sorting key of their underlying tables
+    /// because we can't get the sorting key of their undelying tables
     /// and we can break the matching of the sorting key for `read_in_order`
     /// optimization by removing monotonous functions from the prefix of key.
     if (result.is_remote_storage || (result.storage && result.storage->getName() == "Merge"))
@@ -632,7 +632,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
         if (!cnf_form)
             return false;
 
-        cnf_form->pushNotInFunctions();
+        cnf_form->pushNotInFuntions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
         return true;
     }

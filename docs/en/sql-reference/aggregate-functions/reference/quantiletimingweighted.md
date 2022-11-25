@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiletimingweighted
 sidebar_position: 205
 ---
 

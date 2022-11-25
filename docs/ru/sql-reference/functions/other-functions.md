@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/other-functions
 sidebar_position: 66
 sidebar_label: "Прочие функции"
 ---
@@ -568,7 +567,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -1722,13 +1721,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
+
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.
+
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-`custom_message` - необязательный параметр, константная строка, задает текст сообщения об ошибке.
-`error_code` - необязательный параметр, константное число, задает код ошибки.
-
-Чтобы использовать аргумент `error_code`, должен быть включен параметр конфигурации `allow_custom_error_code_in_throwif`.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -2015,10 +2017,9 @@ countDigits(x)
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note "Примечание"
+     :::note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
-:::
- 
+    :::
 **Пример**
 
 Запрос:

@@ -18,25 +18,16 @@
 
 namespace Poco
 {
-    class Logger;
+class Logger;
 }
 
 namespace DB
 {
 
+class ProtocolServerAdapter;
 class ReadBuffer;
 
-struct AsynchronousMetricValue
-{
-    double value;
-    const char * documentation;
-
-    template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_)
-        : value(static_cast<double>(value_)), documentation(documentation_) {}
-    AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
-};
-
+using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 struct ProtocolServerMetrics
@@ -51,9 +42,6 @@ struct ProtocolServerMetrics
   *
   * This includes both ClickHouse-related metrics (like memory usage of ClickHouse process)
   *  and common OS-related metrics (like total memory usage on the server).
-  *
-  * All the values are either gauge type (like the total number of tables, the current memory usage).
-  * Or delta-counters representing some accumulation during the interval of time.
   */
 class AsynchronousMetrics : WithContext
 {
@@ -62,7 +50,6 @@ public:
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
-        int heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     ~AsynchronousMetrics();
@@ -76,11 +63,7 @@ public:
     AsynchronousMetricValues getValues() const;
 
 private:
-    using Duration = std::chrono::seconds;
-    using TimePoint = std::chrono::system_clock::time_point;
-
-    const Duration update_period;
-    const Duration heavy_metric_update_period;
+    const std::chrono::seconds update_period;
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     mutable std::mutex mutex;
@@ -91,16 +74,7 @@ private:
     /// Some values are incremental and we have to calculate the difference.
     /// On first run we will only collect the values to subtract later.
     bool first_run = true;
-    TimePoint previous_update_time;
-    TimePoint heavy_metric_previous_update_time;
-
-    struct DetachedPartsStats
-    {
-        size_t count;
-        size_t detached_by_user;
-    };
-
-    DetachedPartsStats detached_parts_stats{};
+    std::chrono::system_clock::time_point previous_update_time;
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
@@ -211,10 +185,7 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
-    void update(TimePoint update_time);
-
-    void updateDetachedPartsStats();
-    void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values);
+    void update(std::chrono::system_clock::time_point update_time);
 
     Poco::Logger * log;
 };

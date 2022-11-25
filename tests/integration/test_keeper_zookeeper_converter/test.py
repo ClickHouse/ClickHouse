@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 from kazoo.client import KazooClient, KazooState
 from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import (
@@ -61,7 +60,6 @@ def stop_clickhouse():
 
 def start_clickhouse():
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
 
 
 def copy_zookeeper_data(make_zk_snapshots):

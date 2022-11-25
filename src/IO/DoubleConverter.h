@@ -5,7 +5,6 @@
 #pragma clang diagnostic ignored "-Wdouble-promotion"
 #endif
 
-#include <base/defines.h>
 #include <double-conversion/double-conversion.h>
 #include <boost/noncopyable.hpp>
 
