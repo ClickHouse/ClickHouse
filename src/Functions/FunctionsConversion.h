@@ -2173,10 +2173,6 @@ struct ToNumberMonotonicity
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
-        /// Do not support 128 bit integers and decimals for now.
-        if (size_of_from > sizeof(Int64))
-            return {};
-
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
             : (left.get<Int64>() >= 0);
@@ -2828,31 +2824,6 @@ private:
         };
     }
 
-#define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
-            case IntervalKind::INTERVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
-
-    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
-    {
-        switch (kind)
-        {
-            GENERATE_INTERVAL_CASE(Nanosecond)
-            GENERATE_INTERVAL_CASE(Microsecond)
-            GENERATE_INTERVAL_CASE(Millisecond)
-            GENERATE_INTERVAL_CASE(Second)
-            GENERATE_INTERVAL_CASE(Minute)
-            GENERATE_INTERVAL_CASE(Hour)
-            GENERATE_INTERVAL_CASE(Day)
-            GENERATE_INTERVAL_CASE(Week)
-            GENERATE_INTERVAL_CASE(Month)
-            GENERATE_INTERVAL_CASE(Quarter)
-            GENERATE_INTERVAL_CASE(Year)
-        }
-        throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion to unexpected IntervalKind: {}", kind.toString()};
-    }
-
-#undef GENERATE_INTERVAL_CASE
-
     template <typename ToDataType>
     requires IsDataTypeDecimal<ToDataType>
     WrapperType createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
@@ -3385,8 +3356,9 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
-                res->finalize();
+                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count);
+                auto & res_object = assert_cast<ColumnObject &>(res->assumeMutableRef());
+                res_object.finalize();
                 return res;
             };
         }
@@ -3878,8 +3850,6 @@ private:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
-            case TypeIndex::Interval:
-                return createIntervalWrapper(from_type, checkAndGetDataType<DataTypeInterval>(to_type.get())->getKind());
             default:
                 break;
         }

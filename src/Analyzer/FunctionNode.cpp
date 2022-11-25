@@ -93,6 +93,27 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
+String FunctionNode::getName() const
+{
+    String name = function_name;
+
+    const auto & parameters = getParameters();
+    const auto & parameters_nodes = parameters.getNodes();
+    if (!parameters_nodes.empty())
+    {
+        name += '(';
+        name += parameters.getName();
+        name += ')';
+    }
+
+    const auto & arguments = getArguments();
+    name += '(';
+    name += arguments.getName();
+    name += ')';
+
+    return name;
+}
+
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
@@ -166,12 +187,7 @@ ASTPtr FunctionNode::toASTImpl() const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
-
-    if (isWindowFunction())
-    {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
-    }
+    function_ast->is_window_function = isWindowFunction();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())

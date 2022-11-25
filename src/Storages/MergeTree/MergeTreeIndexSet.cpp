@@ -74,9 +74,8 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        const auto & column = *block.getByPosition(i).column;
-        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(column, 0, size(), settings, state);
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
 }

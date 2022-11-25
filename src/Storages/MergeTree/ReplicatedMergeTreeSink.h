@@ -3,8 +3,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
-#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
 
 
 namespace Poco { class Logger; }
@@ -62,10 +60,10 @@ public:
     }
 
 private:
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
+        String is_active_node_value;
         int is_active_node_version = -1;
         int host_node_version = -1;
     };
@@ -74,24 +72,21 @@ private:
 
     /// Checks active replicas.
     /// Returns total number of replicas.
-    size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    size_t checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        zkutil::ZooKeeperPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id,
-        size_t replicas_num,
-        bool writing_existing_part);
+        DataPartStorageBuilderPtr part_builder,
+        size_t replicas_num);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
     void waitForQuorum(
-        const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::string & part_name,
-        const std::string & quorum_path,
-        int is_active_node_version,
-        size_t replicas_num) const;
+        zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
+        const std::string & quorum_path, const std::string & is_active_node_value, size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -123,7 +118,7 @@ private:
     struct DelayedChunk;
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
 };
 
 }

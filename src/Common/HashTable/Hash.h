@@ -161,9 +161,14 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
-    DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
-    return intHash64(out);
+    union
+    {
+        T in;
+        DB::UInt64 out;
+    } u;
+    u.out = 0;
+    u.in = key;
+    return intHash64(u.out);
 }
 
 
@@ -219,9 +224,14 @@ template <typename T>
 requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
-    DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
-    return intHashCRC32(out, updated_value);
+    union
+    {
+        T in;
+        DB::UInt64 out;
+    } u;
+    u.out = 0;
+    u.in = key;
+    return intHashCRC32(u.out, updated_value);
 }
 
 template <typename T>
@@ -436,9 +446,14 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
-            DB::UInt64 out {0};
-            std::memcpy(&out, &key, sizeof(T));
-            return intHash32<salt>(out);
+            union
+            {
+                T in;
+                DB::UInt64 out;
+            } u;
+            u.out = 0;
+            u.in = key;
+            return intHash32<salt>(u.out);
         }
 
         UNREACHABLE();

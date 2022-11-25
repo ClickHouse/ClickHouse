@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int REPLICA_ALREADY_EXISTS;
+    extern const int REPLICA_IS_ALREADY_EXIST;
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -297,7 +297,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             if (is_create_query || replica_host_id != host_id)
             {
                 throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
+                    ErrorCodes::REPLICA_IS_ALREADY_EXIST,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
             }
@@ -1214,7 +1214,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         String table_name = unescapeForFileName(escaped_table_name);
         if (!filter(table_name))
             continue;
-
         String zk_metadata;
         if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
@@ -1234,10 +1233,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
             if (storage)
                 storage->adjustCreateQueryForBackup(create_table_query);
         }
-
-        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
-        /// but it has not been created on this replica yet.
-
         res.emplace_back(create_table_query, storage);
     }
 

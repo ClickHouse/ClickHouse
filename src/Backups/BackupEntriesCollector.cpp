@@ -442,7 +442,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 if (it != database_info.tables.end())
                 {
                     const auto & partitions = it->second.partitions;
-                    if (partitions && storage && !storage->supportsBackupPartition())
+                    if (partitions && !storage->supportsBackupPartition())
                     {
                         throw Exception(
                             ErrorCodes::CANNOT_BACKUP_TABLE,

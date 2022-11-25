@@ -270,11 +270,10 @@ void SerializationMap::enumerateStreams(
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkStatePrefix(extractNestedColumn(column), settings, state);
+    nested->serializeBinaryBulkStatePrefix(settings, state);
 }
 
 void SerializationMap::serializeBinaryBulkStateSuffix(

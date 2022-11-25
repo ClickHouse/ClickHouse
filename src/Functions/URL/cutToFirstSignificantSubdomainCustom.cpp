@@ -42,41 +42,10 @@ using FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC = FunctionCutToFirs
 
 REGISTER_FUNCTION(CutToFirstSignificantSubdomainCustom)
 {
-    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustom>(
-        {
-        R"(
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom TLD list name.
-
-Can be useful if you need fresh TLD list or you have custom.
-        )",
-        Documentation::Examples{
-            {"cutToFirstSignificantSubdomainCustom", "SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');"},
-        },
-        Documentation::Categories{"URL"}
-        });
-    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>(
-        {
-        R"(
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
-Accepts custom TLD list name from config.
-
-Can be useful if you need fresh TLD list or you have custom.
-        )",
-        Documentation::Examples{{"cutToFirstSignificantSubdomainCustomWithWWW", "SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')"}},
-        Documentation::Categories{"URL"}
-        });
-    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>(
-        {
-        R"(Similar to `cutToFirstSignificantSubdomainCustom` but follows stricter rules according to RFC 3986.)",
-        Documentation::Examples{},
-        Documentation::Categories{"URL"}
-        });
-    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC>(
-        {
-        R"(Similar to `cutToFirstSignificantSubdomainCustomWithWWW` but follows stricter rules according to RFC 3986.)",
-        Documentation::Examples{},
-        Documentation::Categories{"URL"}
-        });
+    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustom>();
+    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWW>();
+    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomRFC>();
+    factory.registerFunction<FunctionCutToFirstSignificantSubdomainCustomWithWWWRFC>();
 }
 
 }

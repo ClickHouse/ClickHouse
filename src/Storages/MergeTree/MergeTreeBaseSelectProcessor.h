@@ -45,7 +45,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension_ = {});
+        std::optional<ParallelReadingExtension> extension = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
@@ -189,11 +189,12 @@ private:
     /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
     bool getDelayedTasks();
 
-    /// It will form a request to coordinator and
+    /// It will form a request a request to coordinator and
     /// then reinitialize the mark ranges of this->task object
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
     void splitCurrentTaskRangesAndFillBuffer();
+
 };
 
 }

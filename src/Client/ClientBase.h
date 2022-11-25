@@ -15,7 +15,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
 
-
 namespace po = boost::program_options;
 
 
@@ -36,20 +35,9 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
-enum ProgressOption
-{
-    DEFAULT,
-    OFF,
-    TTY,
-    ERR,
-};
-ProgressOption toProgressOption(std::string progress);
-std::istream& operator>> (std::istream & in, ProgressOption & progress);
-
 void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
-class WriteBufferFromFileDescriptor;
 
 class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
@@ -169,13 +157,6 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
-
-    /// Should be one of the first, to be destroyed the last,
-    /// since other members can use them.
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
-
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
     bool delayed_interactive = false;
@@ -213,6 +194,9 @@ protected:
     /// Settings specified via command line args
     Settings cmd_settings;
 
+    SharedContextHolder shared_context;
+    ContextMutablePtr global_context;
+
     /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
 
@@ -233,10 +217,6 @@ protected:
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
     std::unique_ptr<InternalTextLogs> logs_out_stream;
-
-    /// /dev/tty if accessible or std::cerr - for progress bar.
-    /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
-    std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
     String home_path;
     String history_file; /// Path to a file containing command history.

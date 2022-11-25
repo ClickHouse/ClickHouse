@@ -355,33 +355,27 @@ private:
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
-
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
+            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            String calculated_binary_hash = getHashOfLoadedBinaryHex();
-            if (calculated_binary_hash == daemon.stored_binary_hash)
-            {
-                LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
-            }
-            else
-            {
-                LOG_FATAL(
-                    log,
-                    "Calculated checksum of the executable ({0}) does not correspond"
-                    " to the reference checksum stored in the executable ({1})."
-                    " This may indicate one of the following:"
-                    " - the executable was changed just after startup;"
-                    " - the executable was corrupted on disk due to faulty hardware;"
-                    " - the loaded executable was corrupted in memory due to faulty hardware;"
-                    " - the file was intentionally modified;"
-                    " - a logical error in the code.",
-                    calculated_binary_hash,
-                    daemon.stored_binary_hash);
-            }
+            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+                " to the reference checksum stored in the executable ({1})."
+                " This may indicate one of the following:"
+                " - the executable was changed just after startup;"
+                " - the executable was corrupted on disk due to faulty hardware;"
+                " - the loaded executable was corrupted in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - a logical error in the code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
 
