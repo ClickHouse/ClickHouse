@@ -4714,6 +4714,21 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
     return affected_partition_ids;
 }
 
+std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+{
+    std::unordered_set<String> res;
+    String prev_id;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (prev_id == part->info.partition_id)
+            continue;
+
+        res.insert(part->info.partition_id);
+        prev_id = part->info.partition_id;
+    }
+    return res;
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
     const DataPartStates & affordable_states, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
