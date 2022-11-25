@@ -99,32 +99,24 @@ Pipe StorageHDFSCluster::read(
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 
-    for (const auto & replicas : cluster->getShardsAddresses())
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
+        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
         {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
-                "HDFSClusterInititiator",
-                node.compression,
-                node.secure
-            );
-
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_to_send),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                    shard_info.pool,
+                    std::vector<IConnectionPool::Entry>{try_result},
+                    queryToString(query_to_send),
+                    header,
+                    context,
+                    /*throttler=*/nullptr,
+                    scalars,
+                    Tables(),
+                    processed_stage,
+                    RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
