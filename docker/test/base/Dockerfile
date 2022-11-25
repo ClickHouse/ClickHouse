@@ -25,6 +25,7 @@ RUN echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_supp
 ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080'
 ENV UBSAN_OPTIONS='print_stacktrace=1'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
+ENV LSAN_OPTIONS='verbosity=1:log_threads=1'
 
 ENV TZ=Europe/Moscow
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
