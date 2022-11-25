@@ -55,14 +55,16 @@ public:
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
 
     /// Check if table function needs a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// It's used for schema inference.
     virtual bool needStructureHint() const { return false; }
 
     /// Set a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// This hint could be used not to repeat schema in function arguments.
     virtual void setStructureHint(const ColumnsDescription &) {}
+
+    virtual bool supportsReadingSubsetOfColumns() { return true; }
 
     /// Create storage according to the query.
     StoragePtr
@@ -84,6 +86,16 @@ private:
 struct TableFunctionProperties
 {
     Documentation documentation;
+
+    /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
+      *
+      * If users can make a request to an arbitrary hostname, they can get the info from the internal network
+      * or manipulate internal APIs (say - put some data into Memcached, which is available only in the corporate network).
+      * This is named "SSRF attack".
+      * Or a user can use an open ClickHouse server to amplify DoS attacks.
+      *
+      * In those cases, the table function should not be allowed in readonly mode.
+      */
     bool allow_readonly = false;
 };
 
