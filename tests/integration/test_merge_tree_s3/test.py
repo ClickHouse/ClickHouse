@@ -763,7 +763,7 @@ def test_cache_setting_compatibility(cluster, node_name):
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
     node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r';"
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
     )
     node.query(
         "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"

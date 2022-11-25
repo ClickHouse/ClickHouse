@@ -7,7 +7,9 @@ import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dict
 
 # Dictionaries 
 
-<CloudDetails />
+:::tip Tutorial
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
+:::
 
 You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 
@@ -26,6 +28,8 @@ The [dictionaries](../../../operations/system-tables/dictionaries.md#system_tabl
 -   Status of the dictionary.
 -   Configuration parameters.
 -   Metrics like amount of RAM allocated for the dictionary or a number of queries since the dictionary was successfully loaded.
+
+<CloudDetails />
 
 ## Creating a dictionary with a DDL query
 

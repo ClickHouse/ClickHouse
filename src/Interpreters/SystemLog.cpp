@@ -75,7 +75,7 @@ namespace
         const char * getName() const override { return "storage definition with comment"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            ParserStorage storage_p;
+            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
             ASTPtr storage;
 
             if (!storage_p.parse(pos, storage, expected))
