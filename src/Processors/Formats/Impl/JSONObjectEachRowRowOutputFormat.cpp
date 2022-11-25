@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
-#include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
 
@@ -7,36 +6,8 @@ namespace DB
 {
 
 JSONObjectEachRowRowOutputFormat::JSONObjectEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : JSONEachRowRowOutputFormat(out_, header_, params_, settings_), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, settings_))
+    : JSONEachRowRowOutputFormat(out_, header_, params_, settings_)
 {
-}
-
-void JSONObjectEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row)
-{
-    if (field_number == field_index_for_object_name)
-    {
-        ++field_number;
-        return;
-    }
-    JSONEachRowRowOutputFormat::writeField(column, serialization, row);
-}
-
-void JSONObjectEachRowRowOutputFormat::write(const Columns & columns, size_t row)
-{
-    if (field_index_for_object_name)
-        object_name = columns[*field_index_for_object_name]->getDataAt(row).toString();
-    else
-        object_name = "row_" + std::to_string(row + 1);
-
-    IRowOutputFormat::write(columns, row);
-}
-
-void JSONObjectEachRowRowOutputFormat::writeFieldDelimiter()
-{
-    /// We should not write comma before column that is used for
-    /// object name and also after it if it's in the first place
-    if (field_number != field_index_for_object_name && !(field_index_for_object_name == 0 && field_number == 1))
-        JSONEachRowRowOutputFormat::writeFieldDelimiter();
 }
 
 void JSONObjectEachRowRowOutputFormat::writePrefix()
@@ -46,7 +17,9 @@ void JSONObjectEachRowRowOutputFormat::writePrefix()
 
 void JSONObjectEachRowRowOutputFormat::writeRowStartDelimiter()
 {
-    JSONUtils::writeCompactObjectStart(*ostr, 1, object_name.c_str());
+    ++row_num;
+    String title = "row_" + std::to_string(row_num);
+    JSONUtils::writeCompactObjectStart(*ostr, 1, title.c_str());
 }
 
 void JSONObjectEachRowRowOutputFormat::writeRowEndDelimiter()
@@ -79,7 +52,6 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
         return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, params, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
-    factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
 }
 
 }

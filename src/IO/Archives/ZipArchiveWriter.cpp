@@ -134,8 +134,7 @@ private:
         if (!offset())
             return;
         RawHandle raw_handle = handle.getRawHandle();
-        int code = zipWriteInFileInZip(raw_handle, working_buffer.begin(), static_cast<uint32_t>(offset()));
-        checkResult(code);
+        checkResult(zipWriteInFileInZip(raw_handle, working_buffer.begin(), offset()));
     }
 
     void checkResult(int code) const { handle.checkResult(code); }

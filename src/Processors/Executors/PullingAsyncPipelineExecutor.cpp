@@ -127,7 +127,6 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (lazy_format)
     {
         chunk = lazy_format->getChunk(milliseconds);
-        data->rethrowExceptionIfHas();
         return true;
     }
 

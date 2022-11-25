@@ -69,7 +69,6 @@ public:
 
     Interface interface = Interface::TCP;
     bool is_secure = false;
-    String certificate;
 
     /// For tcp
     String os_user;

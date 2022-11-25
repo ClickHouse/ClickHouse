@@ -36,7 +36,7 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)

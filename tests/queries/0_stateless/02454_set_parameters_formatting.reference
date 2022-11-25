@@ -1,3 +1,0 @@
-SET param_a = 1
-SET max_threads = 1, param_a = 1
-SET max_threads = 1, param_a = 1

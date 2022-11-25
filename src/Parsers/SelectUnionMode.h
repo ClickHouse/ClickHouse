@@ -18,8 +18,6 @@ enum class SelectUnionMode
     INTERSECT_DISTINCT
 };
 
-const char * toString(SelectUnionMode mode);
-
 using SelectUnionModes = std::vector<SelectUnionMode>;
 using SelectUnionModesSet = std::unordered_set<SelectUnionMode>;
 
