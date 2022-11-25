@@ -91,7 +91,7 @@ func TestReadTable(t *testing.T) {
 		// we read the table system.disks as this should contain only 1 row
 		frame, err := clickhouseClient.ReadTable("system", "disks", []string{}, data.OrderBy{}, 10)
 		require.Nil(t, err)
-		require.ElementsMatch(t, frame.Columns(), [7]string{"name", "path", "free_space", "total_space", "keep_free_space", "type", "cache_path"})
+		require.ElementsMatch(t, frame.Columns(), [9]string{"name", "path", "free_space", "total_space", "unreserved_space", "keep_free_space", "type", "is_encrypted", "cache_path"})
 		i := 0
 		for {
 			values, ok, err := frame.Next()
@@ -102,8 +102,11 @@ func TestReadTable(t *testing.T) {
 				require.Equal(t, "/var/lib/clickhouse/", values[1])
 				require.Greater(t, values[2], uint64(0))
 				require.Greater(t, values[3], uint64(0))
-				require.Equal(t, values[4], uint64(0))
-				require.Equal(t, "local", values[5])
+				require.Greater(t, values[4], uint64(0))
+				require.Equal(t, values[5], uint64(0))
+				require.Equal(t, "local", values[6])
+				require.Equal(t, values[7], uint8(0))
+				require.Equal(t, values[8], "")
 			} else {
 				require.False(t, ok)
 				break
