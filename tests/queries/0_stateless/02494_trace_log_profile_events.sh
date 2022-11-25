@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-tsan
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,5 +45,5 @@ FROM
         ORDER BY event ASC
     )
 )
-WHERE event NOT IN ('ContextLock', 'NetworkSendBytes', 'NetworkSendElapsedMicroseconds');
+WHERE event NOT IN ('ContextLock', 'NetworkSendBytes', 'NetworkSendElapsedMicroseconds', 'QueryProfilerRuns');
 "
