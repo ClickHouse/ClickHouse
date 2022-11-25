@@ -249,9 +249,9 @@ TEST_P(CoordinationTest, ChangelogTestSimple)
 
 namespace
 {
-void waitDurableIndex(nuraft::log_store & log_store, uint64_t index)
+void waitDurableLogs(nuraft::log_store & log_store)
 {
-    while (log_store.last_durable_index() != index)
+    while (log_store.last_durable_index() != log_store.next_slot() - 1)
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
@@ -263,12 +263,11 @@ TEST_P(CoordinationTest, ChangelogTestFile)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
-    uint64_t last_entry_idx = 0;
     auto entry = getLogEntry("hello world", 77);
-    last_entry_idx = changelog.append(entry);
+    changelog.append(entry);
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     for (const auto & p : fs::directory_iterator("./logs"))
@@ -278,10 +277,10 @@ TEST_P(CoordinationTest, ChangelogTestFile)
     changelog.append(entry);
     changelog.append(entry);
     changelog.append(entry);
-    last_entry_idx = changelog.append(entry);
+    changelog.append(entry);
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -294,17 +293,16 @@ TEST_P(CoordinationTest, ChangelogReadWrite)
     DB::KeeperLogStore changelog("./logs", 1000, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 10);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     DB::KeeperLogStore changelog_reader("./logs", 1000, true, params.enable_compression);
     changelog_reader.init(1, 0);
@@ -341,7 +339,7 @@ TEST_P(CoordinationTest, ChangelogWriteAt)
     changelog.write_at(7, entry);
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, 7);
+    waitDurableLogs(changelog);
 
     EXPECT_EQ(changelog.size(), 7);
     EXPECT_EQ(changelog.last_entry()->get_term(), 77);
@@ -364,17 +362,16 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 7; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 7);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -386,12 +383,12 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     for (size_t i = 7; i < 10; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
-        last_entry_idx = changelog_reader.append(entry);
+        changelog_reader.append(entry);
     }
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
 
-    waitDurableIndex(changelog_reader, last_entry_idx);
+    waitDurableLogs(changelog_reader);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
 
@@ -402,11 +399,11 @@ TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
     EXPECT_EQ(logs_count, 2);
 
     auto entry = getLogEntry("someentry", 77);
-    last_entry_idx = changelog_reader.append(entry);
+    changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 11);
 
-    waitDurableIndex(changelog_reader, last_entry_idx);
+    waitDurableLogs(changelog_reader);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
@@ -425,15 +422,14 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 3; ++i)
     {
         auto entry = getLogEntry("hello world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_EQ(changelog.size(), 3);
 
@@ -452,10 +448,10 @@ TEST_P(CoordinationTest, ChangelogTestCompaction)
     auto e3 = getLogEntry("hello world", 50);
     changelog.append(e3);
     auto e4 = getLogEntry("hello world", 60);
-    last_entry_idx = changelog.append(e4);
+    changelog.append(e4);
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -486,17 +482,16 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperations)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
     changelog.init(1, 0);
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 10);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     auto entries = changelog.pack(1, 5);
 
@@ -534,17 +529,16 @@ TEST_P(CoordinationTest, ChangelogTestBatchOperationsEmpty)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
     changelog.init(1, 0);
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 10; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog.size(), 10);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     auto entries = changelog.pack(5, 5);
 
@@ -583,15 +577,14 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 33; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -611,7 +604,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog.next_slot(), 8);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    waitDurableIndex(changelog, 7);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -637,15 +630,14 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtFileBorder)
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 33; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -665,7 +657,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtFileBorder)
     EXPECT_EQ(changelog.next_slot(), 12);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    waitDurableIndex(changelog, 11);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -690,15 +682,14 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtAllFiles)
     ChangelogDirTest test("./logs");
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 33; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -718,7 +709,7 @@ TEST_P(CoordinationTest, ChangelogTestWriteAtAllFiles)
     EXPECT_EQ(changelog.next_slot(), 2);
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
-    waitDurableIndex(changelog, 1);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
 
@@ -737,16 +728,15 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     DB::KeeperLogStore changelog("./logs", 5, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 35; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 35);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
@@ -760,12 +750,12 @@ TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
     changelog_reader.init(1, 0);
 
     auto entry = getLogEntry("36_hello_world", 360);
-    last_entry_idx = changelog_reader.append(entry);
+    changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
 
     EXPECT_EQ(changelog_reader.size(), 36);
 
-    waitDurableIndex(changelog_reader, last_entry_idx);
+    waitDurableLogs(changelog_reader);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
@@ -804,16 +794,15 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     DB::KeeperLogStore changelog(log_folder, 5, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 35; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 35);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
@@ -842,12 +831,12 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
 
     auto entry = getLogEntry("h", 7777);
-    last_entry_idx = changelog_reader.append(entry);
+    changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog_reader.size(), 11);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
 
-    waitDurableIndex(changelog_reader, last_entry_idx);
+    waitDurableLogs(changelog_reader);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
@@ -872,15 +861,14 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     DB::KeeperLogStore changelog("./logs", 20, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 35; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
@@ -894,10 +882,10 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
     assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
     auto entry = getLogEntry("hello_world", 7777);
-    last_entry_idx = changelog_reader.append(entry);
+    changelog_reader.append(entry);
     changelog_reader.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog_reader, last_entry_idx);
+    waitDurableLogs(changelog_reader);
 
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
@@ -916,15 +904,14 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     DB::KeeperLogStore changelog("./logs", 20, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 35; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
     EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
@@ -944,15 +931,14 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles2)
     DB::KeeperLogStore changelog("./logs", 10, true, params.enable_compression);
     changelog.init(1, 0);
 
-    uint64_t last_entry_idx = 0;
     for (size_t i = 0; i < 35; ++i)
     {
         auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
 
-    waitDurableIndex(changelog, last_entry_idx);
+    waitDurableLogs(changelog);
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
@@ -1402,16 +1388,15 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     state_machine->init();
     DB::KeeperLogStore changelog("./logs", settings->rotate_log_storage_interval, true, enable_compression);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
-    uint64_t last_entry_idx = 0;
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = "/hello_" + std::to_string(i);
         auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        last_entry_idx = changelog.append(entry);
+        changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
 
-        waitDurableIndex(changelog, last_entry_idx);
+        waitDurableLogs(changelog);
 
         state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
         state_machine->commit(i, changelog.entry_at(i)->get_buf());
@@ -1594,6 +1579,8 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
             changelog.append(entry);
             changelog.end_of_append_batch(0, 0);
         }
+
+        waitDurableLogs(changelog);
     }
 
 
@@ -1610,6 +1597,8 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
         changelog_1.end_of_append_batch(0, 0);
     }
 
+    waitDurableLogs(changelog_1);
+
     EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
     EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
 
@@ -1624,6 +1613,8 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
         changelog_2.append(entry);
         changelog_2.end_of_append_batch(0, 0);
     }
+
+    waitDurableLogs(changelog_2);
 
     changelog_2.compact(105);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
@@ -1644,6 +1635,8 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
         changelog_3.append(entry);
         changelog_3.end_of_append_batch(0, 0);
     }
+
+    waitDurableLogs(changelog_3);
 
     changelog_3.compact(125);
     std::this_thread::sleep_for(std::chrono::microseconds(1000));
@@ -1692,6 +1685,7 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
         changelog.end_of_append_batch(0, 0);
     }
 
+    waitDurableLogs(changelog);
 
     DB::KeeperLogStore changelog1("./logs", 100, true, test_params.enable_compression);
     changelog1.init(0, 3);
@@ -1773,6 +1767,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
         EXPECT_EQ(changelog.next_slot(), 2);
+        waitDurableLogs(changelog);
     }
 
     {
@@ -1783,6 +1778,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
         EXPECT_EQ(changelog.next_slot(), 3);
+        waitDurableLogs(changelog);
     }
 
     {
@@ -1793,6 +1789,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
         EXPECT_EQ(changelog.next_slot(), 4);
+        waitDurableLogs(changelog);
     }
 
     {
@@ -1803,6 +1800,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
         changelog.append(entry);
         changelog.end_of_append_batch(0, 0);
         EXPECT_EQ(changelog.next_slot(), 5);
+        waitDurableLogs(changelog);
     }
 }
 
@@ -1822,6 +1820,7 @@ TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
             changelog.append(entry);
         }
         changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
     }
 
     DB::KeeperLogStore changelog("./logs", 100, true, params.enable_compression);
@@ -1840,6 +1839,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     changelog1.append(entry);
     changelog1.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog1.next_slot(), 2);
+    waitDurableLogs(changelog1);
 
     std::cerr << "================Second time=====================\n";
     DB::KeeperLogStore changelog2("./logs", 100, true, params.enable_compression);
@@ -1848,6 +1848,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     changelog2.append(entry);
     changelog2.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog2.next_slot(), 3);
+    waitDurableLogs(changelog2);
 
     std::cerr << "================Third time=====================\n";
     DB::KeeperLogStore changelog3("./logs", 100, true, params.enable_compression);
@@ -1856,6 +1857,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     changelog3.append(entry);
     changelog3.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog3.next_slot(), 4);
+    waitDurableLogs(changelog3);
 
     std::cerr << "================Fourth time=====================\n";
     DB::KeeperLogStore changelog4("./logs", 100, true, params.enable_compression);
@@ -1864,6 +1866,7 @@ TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
     changelog4.append(entry);
     changelog4.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog4.next_slot(), 5);
+    waitDurableLogs(changelog4);
 }
 
 TEST_P(CoordinationTest, TestStorageSnapshotEqual)
