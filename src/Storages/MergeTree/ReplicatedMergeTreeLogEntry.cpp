@@ -264,6 +264,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
                     trailing_newline_found = true;
             }
         }
+
+        if (!trailing_newline_found)
+            in >> "\n";
+
         in >> "cleanup: " >> cleanup;
         trailing_newline_found = false;
     }
