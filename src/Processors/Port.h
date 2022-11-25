@@ -115,7 +115,7 @@ protected:
                 Data * expected = nullptr;
                 Data * desired = getPtr(flags | getUInt(data));
 
-                while (!value.compare_exchange_weak(expected, desired))
+                while (!value.compare_exchange_weak(expected, desired, std::memory_order_acq_rel))
                     desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | getUInt(data));
 
                 /// It's not very safe. In case of exception after exchange and before assignment we will get leak.
@@ -141,7 +141,7 @@ protected:
             Data * desired = nullptr;
             Data * expected = nullptr;
 
-            while (!data.compare_exchange_weak(expected, desired));
+            while (!data.compare_exchange_weak(expected, desired, std::memory_order_acq_rel));
 
             expected = getPtr(getUInt(expected) & PTR_MASK);
             delete expected;
@@ -185,7 +185,7 @@ protected:
             Data * expected = nullptr;
             Data * desired = getPtr(flags);
 
-            while (!data.compare_exchange_weak(expected, desired))
+            while (!data.compare_exchange_weak(expected, desired, std::memory_order_acq_rel))
                 desired = getPtr((getUInt(expected) & FLAGS_MASK & (~mask)) | flags | (getUInt(expected) & PTR_MASK));
 
             return getUInt(expected) & FLAGS_MASK;
@@ -193,7 +193,7 @@ protected:
 
         std::uintptr_t ALWAYS_INLINE getFlags() const
         {
-            return getUInt(data.load()) & FLAGS_MASK;
+            return getUInt(data.load(std::memory_order_acquire)) & FLAGS_MASK;
         }
 
     private:
