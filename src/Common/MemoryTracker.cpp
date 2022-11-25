@@ -220,7 +220,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     Int64 limit_to_check = current_hard_limit;
 
 #if USE_JEMALLOC
-    if (level == VariableContext::Global)
+    if (level == VariableContext::Global && allow_use_jemalloc_memory.load(std::memory_order_relaxed))
     {
         /// Jemalloc arenas may keep some extra memory.
         /// This memory was substucted from RSS to decrease memory drift.
