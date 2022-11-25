@@ -114,12 +114,6 @@ if __name__ == "__main__":
 
     is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
     if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
-        logging.info(
-            "Skipping Performance tests on Aarch64 for PR {}, because it's not labeled with 'pr-performance' (labels: {})".format(
-                pr_info.number, pr_info.labels
-            )
-        )
-
         status = "success"
         message = "Skipped, not labeled with 'pr-performance'"
         report_url = GITHUB_RUN_URL
