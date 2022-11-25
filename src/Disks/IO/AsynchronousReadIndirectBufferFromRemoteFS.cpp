@@ -133,14 +133,15 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
-    if (prefetch_future.valid())
+    if (!read_until_position || position > *read_until_position)
     {
-        prefetch_future.wait();
-        prefetch_future = {};
-    }
+        if (prefetch_future.valid())
+        {
+            ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
+            prefetch_future.wait();
+            prefetch_future = {};
+        }
 
-    if (position > read_until_position)
-    {
         read_until_position = position;
         impl->setReadUntilPosition(*read_until_position);
     }
@@ -149,12 +150,6 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
 {
-    if (prefetch_future.valid())
-    {
-        prefetch_future.wait();
-        prefetch_future = {};
-    }
-
     read_until_position = impl->getFileSize();
     impl->setReadUntilPosition(*read_until_position);
 }
