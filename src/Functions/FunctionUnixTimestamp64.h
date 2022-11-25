@@ -57,7 +57,7 @@ public:
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
-        const Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        const Int32 scale_diff = static_cast<Int32>(typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale);
         if (scale_diff == 0)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -140,7 +140,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
+        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, static_cast<UInt32>(target_scale));
 
         if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
               || (executeType<UInt16>(result_column, arguments, input_rows_count))

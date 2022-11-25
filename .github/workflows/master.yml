@@ -209,8 +209,8 @@ jobs:
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -251,8 +251,8 @@ jobs:
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -295,8 +295,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -338,8 +338,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -381,8 +381,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -424,8 +424,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -467,8 +467,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -510,8 +510,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -556,8 +556,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -599,8 +599,8 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -644,8 +644,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -689,8 +689,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -734,8 +734,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -779,8 +779,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -824,8 +824,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -869,8 +869,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -914,8 +914,8 @@ jobs:
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
-          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
@@ -974,6 +974,7 @@ jobs:
       - BuilderDebTsan
       - BuilderDebUBsan
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -1021,6 +1022,7 @@ jobs:
       - BuilderBinClangTidy
       - BuilderDebShared
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
@@ -1054,6 +1056,23 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
+  MarkReleaseReady:
+    needs:
+      - BuilderBinDarwin
+      - BuilderBinDarwinAarch64
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Mark Commit Release Ready
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 mark_release_ready.py
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
 ##############################################################################################
@@ -2992,10 +3011,83 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
+##############################################################################################
+###################################### SQLANCER FUZZERS ######################################
+##############################################################################################
+  SQLancerTestRelease:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, fuzzer-unit-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/sqlancer_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=SQLancer (release)
+          REPO_COPY=${{runner.temp}}/sqlancer_release/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: SQLancer
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 sqlancer_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  SQLancerTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, fuzzer-unit-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/sqlancer_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=SQLancer (debug)
+          REPO_COPY=${{runner.temp}}/sqlancer_debug/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: SQLancer
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 sqlancer_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:
       - DockerHubPush
       - BuilderReport
+      - BuilderSpecialReport
+      - MarkReleaseReady
       - FunctionalStatelessTestDebug0
       - FunctionalStatelessTestDebug1
       - FunctionalStatelessTestDebug2
@@ -3051,6 +3143,8 @@ jobs:
       - UnitTestsUBsan
       - UnitTestsReleaseClang
       - SharedBuildSmokeTest
+      - SQLancerTestRelease
+      - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository

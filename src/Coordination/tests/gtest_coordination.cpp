@@ -941,7 +941,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->active_in_map, true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
-    for (size_t i = 0; i < 5; ++i)
+    for (int i = 0; i < 5; ++i)
     {
         EXPECT_TRUE(map_snp.insert("/hello" + std::to_string(i), i).second);
     }
@@ -1982,7 +1982,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
 
     KeeperStorage storage{500, "", keeper_context};
 
-    int64_t zxid = 0;
+    int32_t zxid = 0;
 
     static constexpr std::string_view test_path = "/list_request_type/node";
 

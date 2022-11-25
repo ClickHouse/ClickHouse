@@ -23,10 +23,6 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
-SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
-
 /// Stores numbers of key-columns and value-columns.
 struct SummingSortedAlgorithm::MapDescription
 {
@@ -776,5 +772,9 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     last_chunk_sort_columns.clear();
     return Status(merged_data.pull(), true);
 }
+
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
+SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 }

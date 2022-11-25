@@ -492,7 +492,7 @@ int main(int argc, char ** argv)
 
         watch.restart();
 
-        for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
             pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -545,7 +545,7 @@ int main(int argc, char ** argv)
 
         watch.restart();
 
-        for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
             pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();

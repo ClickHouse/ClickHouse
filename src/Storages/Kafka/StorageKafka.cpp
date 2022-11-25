@@ -212,7 +212,7 @@ StorageKafka::StorageKafka(
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
-    , semaphore(0, num_consumers)
+    , semaphore(0, static_cast<int>(num_consumers))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
@@ -291,7 +291,7 @@ Pipe StorageKafka::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
-    unsigned /* num_streams */)
+    size_t /* num_streams */)
 {
     if (num_created_consumers == 0)
         return {};

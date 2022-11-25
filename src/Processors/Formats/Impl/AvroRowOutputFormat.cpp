@@ -193,7 +193,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::FixedString:
         {
             auto size = data_type->getSizeOfValueInMemory();
-            auto schema = avro::FixedSchema(size, "fixed_" + toString(type_name_increment));
+            auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();

@@ -81,9 +81,9 @@ Field QueryFuzzer::getRandomField(int type)
     {
         static constexpr UInt64 scales[] = {0, 1, 2, 10};
         return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
-                / sizeof(*bad_int64_values))],
-            scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))]);
+            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values) / sizeof(*bad_int64_values))],
+            static_cast<UInt32>(scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))])
+        );
     }
     default:
         assert(false);

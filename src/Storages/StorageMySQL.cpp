@@ -78,7 +78,7 @@ Pipe StorageMySQL::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(

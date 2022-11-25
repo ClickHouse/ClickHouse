@@ -14,6 +14,8 @@ from report import ReportColorTheme, create_test_html_report
 def process_logs(
     s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs
 ):
+    logging.info("Upload files to s3 %s", additional_logs)
+
     processed_logs = {}
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:

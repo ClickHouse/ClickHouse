@@ -607,7 +607,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
                 throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
             }
 
             block.erase(prewhere_info->row_level_column_name);
@@ -620,7 +620,7 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         if (!prewhere_column.type->canBeUsedInBooleanContext())
         {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
 
         if (prewhere_info->remove_prewhere_column)
@@ -628,13 +628,13 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
         else
         {
             WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
-            if (which.isInt() || which.isUInt())
+            if (which.isNativeInt() || which.isNativeUInt())
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
             else if (which.isFloat())
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
             else
-                throw Exception("Illegal type " + prewhere_column.type->getName() + " of column for filter.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
         }
     }
 
@@ -669,12 +669,11 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
     if (task->data_part->isProjectionPart())
     {
         part_name = task->data_part->getParentPart()->name;
-        projection_name  = task->data_part->name;
+        projection_name = task->data_part->name;
     }
     else
     {
         part_name = task->data_part->name;
-        projection_name = "";
     }
 
     PartBlockRange block_range
@@ -691,8 +690,9 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .block_range = std::move(block_range),
         .mark_ranges = std::move(requested_ranges)
     };
+    String request_description = request.toString();
 
-    /// Constistent hashing won't work with reading in order, because at the end of the execution
+    /// Consistent hashing won't work with reading in order, because at the end of the execution
     /// we could possibly seek back
     if (!delayed && canUseConsistentHashingForParallelReading())
     {
@@ -702,6 +702,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
             auto delayed_task = std::make_unique<MergeTreeReadTask>(*task); // Create a copy
             delayed_task->mark_ranges = std::move(request.mark_ranges);
             delayed_tasks.emplace_back(std::move(delayed_task));
+            LOG_TRACE(log, "Request delayed by hash: {}", request_description);
             return Status::Denied;
         }
     }
@@ -709,17 +710,24 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
     auto optional_response = extension.value().callback(std::move(request));
 
     if (!optional_response.has_value())
+    {
+        LOG_TRACE(log, "Request cancelled: {}", request_description);
         return Status::Cancelled;
+    }
 
     auto response = optional_response.value();
 
     task->mark_ranges = std::move(response.mark_ranges);
 
     if (response.denied || task->mark_ranges.empty())
+    {
+        LOG_TRACE(log, "Request rejected: {}", request_description);
         return Status::Denied;
+    }
 
     finalizeNewTask();
 
+    LOG_TRACE(log, "Request accepted: {}", request_description);
     return Status::Accepted;
 }
 
