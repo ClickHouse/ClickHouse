@@ -755,10 +755,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_to)
+        if (nullable_from && nullable_to)
         {
-            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
-            from = nullable_from ? nullable_from->getNestedType().get() : from;
+            from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -1284,7 +1283,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
-        /// Collect default expressions for MODIFY and ADD commands
+        /// Collect default expressions for MODIFY and ADD comands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
         {
             if (command.default_expression)

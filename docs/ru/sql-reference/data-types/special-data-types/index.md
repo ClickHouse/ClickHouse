@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/special-data-types/
 sidebar_label: "Служебные типы данных"
 sidebar_position: 55
 ---

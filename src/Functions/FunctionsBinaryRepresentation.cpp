@@ -566,8 +566,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        WhichDataType which(arguments[0]);
-        if (!which.isStringOrFixedString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -613,39 +612,6 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
-        {
-            auto col_res = ColumnString::create();
-
-            ColumnString::Chars & out_vec = col_res->getChars();
-            ColumnString::Offsets & out_offsets = col_res->getOffsets();
-
-            const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            size_t n = col_fix_string->getN();
-
-            size_t size = col_fix_string->size();
-            out_offsets.resize(size);
-            out_vec.resize(in_vec.size() / word_size + size);
-
-            char * begin = reinterpret_cast<char *>(out_vec.data());
-            char * pos = begin;
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                size_t new_offset = prev_offset + n;
-
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
-
-                out_offsets[i] = pos - begin;
-
-                prev_offset = new_offset;
-            }
-
-            out_vec.resize(pos - begin);
-
-            return col_res;
-        }
         else
         {
             throw Exception("Illegal column " + arguments[0].column->getName()
@@ -657,10 +623,10 @@ public:
 
 REGISTER_FUNCTION(BinaryRepr)
 {
-    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>(FunctionFactory::CaseInsensitive);
 }
 
 }

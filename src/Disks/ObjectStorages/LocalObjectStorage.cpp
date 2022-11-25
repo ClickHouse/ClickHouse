@@ -1,6 +1,8 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <Common/FileCache.h>
+#include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -26,14 +28,6 @@ namespace ErrorCodes
 LocalObjectStorage::LocalObjectStorage()
     : log(&Poco::Logger::get("LocalObjectStorage"))
 {
-    data_source_description.type = DataSourceType::Local;
-    if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
-    else
-        data_source_description.description = "/";
-
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
@@ -102,6 +96,13 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     LOG_TEST(log, "Write object: {}", path);
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
+}
+
+void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+{
+    fs::directory_iterator end_it;
+    for (auto it = fs::directory_iterator(path); it != end_it; ++it)
+        children.emplace_back(it->path().filename(), it->file_size());
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)

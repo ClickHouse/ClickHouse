@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -12,7 +13,7 @@
             </disk_memory>
             <disk_hdfs>
                 <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/</endpoint>
+                <endpoint>hdfs://hdfs1:9000/data/</endpoint>
             </disk_hdfs>
             <disk_encrypted>
                 <type>encrypted</type>

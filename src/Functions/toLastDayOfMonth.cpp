@@ -1,19 +1,21 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToDateOrDate32.h>
+#include <Functions/FunctionDateOrDateTimeToSomething.h>
 
 
 namespace DB
 {
 
-using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToDateOrDate32<ToLastDayOfMonthImpl>;
+using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToLastDayOfMonthImpl>;
 
 REGISTER_FUNCTION(ToLastDayOfMonth)
 {
     factory.registerFunction<FunctionToLastDayOfMonth>();
 
     /// MySQL compatibility alias.
-    factory.registerAlias("LAST_DAY", "toLastDayOfMonth", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToLastDayOfMonth>("LAST_DAY", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

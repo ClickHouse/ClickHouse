@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/special/buffer
 sidebar_position: 120
 sidebar_label:  Buffer
 ---

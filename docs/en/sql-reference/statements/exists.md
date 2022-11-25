@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/exists
 sidebar_position: 45
 sidebar_label: EXISTS
 ---

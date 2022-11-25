@@ -36,7 +36,7 @@ static bool check()
         return true;
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
