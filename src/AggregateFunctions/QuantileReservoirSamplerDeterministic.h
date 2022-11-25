@@ -55,10 +55,7 @@ struct QuantileReservoirSamplerDeterministic
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
-        if constexpr (is_decimal<Value>)
-            return static_cast<typename Value::NativeType>(data.quantileInterpolated(level));
-        else
-            return static_cast<Value>(data.quantileInterpolated(level));
+        return data.quantileInterpolated(level);
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -66,10 +63,7 @@ struct QuantileReservoirSamplerDeterministic
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         for (size_t i = 0; i < size; ++i)
-            if constexpr (is_decimal<Value>)
-                result[indices[i]] = static_cast<typename Value::NativeType>(data.quantileInterpolated(levels[indices[i]]));
-            else
-                result[indices[i]] = static_cast<Value>(data.quantileInterpolated(levels[indices[i]]));
+            result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);
     }
 
     /// The same, but in the case of an empty state, NaN is returned.

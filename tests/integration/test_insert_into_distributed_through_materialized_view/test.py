@@ -44,8 +44,7 @@ CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'defaul
         )
 
         remote.query(
-            "CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)",
-            settings={"allow_deprecated_syntax_for_merge_tree": 1},
+            "CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)"
         )
         instance_test_inserts_batching.query(
             """
@@ -66,8 +65,7 @@ CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster',
             "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source"
         )
         instance_test_inserts_local_cluster.query(
-            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)",
-            settings={"allow_deprecated_syntax_for_merge_tree": 1},
+            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)"
         )
         instance_test_inserts_local_cluster.query(
             """

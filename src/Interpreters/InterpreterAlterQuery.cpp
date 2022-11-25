@@ -66,27 +66,26 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     BlockIO res;
 
-    if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+    if (!alter.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
     query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (database->shouldReplicateQuery(getContext(), query_ptr))
+    if (typeid_cast<DatabaseReplicated *>(database.get())
+        && !getContext()->getClientInfo().is_replicated_database_internal
+        && !alter.isAttachAlter()
+        && !alter.isFetchAlter()
+        && !alter.isDropPartitionAlter())
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -171,7 +170,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
-        alter_commands.validate(table, getContext());
+        alter_commands.validate(metadata, getContext());
         alter_commands.prepare(metadata);
         table->checkAlterIsPossible(alter_commands, getContext());
         table->alter(alter_commands, getContext(), alter_lock);
@@ -397,9 +396,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_FETCH_PARTITION, database, table);
             break;
         }
-        case ASTAlterCommand::FREEZE_PARTITION:
-        case ASTAlterCommand::FREEZE_ALL:
-        case ASTAlterCommand::UNFREEZE_PARTITION:
+        case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
+        case ASTAlterCommand::FREEZE_ALL: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_PARTITION: [[fallthrough]];
         case ASTAlterCommand::UNFREEZE_ALL:
         {
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);

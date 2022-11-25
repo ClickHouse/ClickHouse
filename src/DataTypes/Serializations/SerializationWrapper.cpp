@@ -5,19 +5,18 @@ namespace DB
 {
 
 void SerializationWrapper::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    nested_serialization->enumerateStreams(settings, callback, data);
+    nested_serialization->enumerateStreams(path, callback, data);
 }
 
 void SerializationWrapper::serializeBinaryBulkStatePrefix(
-    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested_serialization->serializeBinaryBulkStatePrefix(column, settings, state);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
 }
 
 void SerializationWrapper::serializeBinaryBulkStateSuffix(

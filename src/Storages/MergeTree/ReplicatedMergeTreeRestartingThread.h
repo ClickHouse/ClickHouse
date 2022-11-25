@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <base/types.h>
 #include <thread>
@@ -41,7 +41,6 @@ private:
 
     BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
-    UInt32 consecutive_check_failures = 0;  /// How many consecutive checks have failed
     bool first_time = true;                 /// Activate replica for the first time.
 
     void run();
