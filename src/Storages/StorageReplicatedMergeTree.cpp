@@ -3128,7 +3128,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
+        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, getAllPartitionIds());
 
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
@@ -4573,7 +4573,12 @@ bool StorageReplicatedMergeTree::optimize(
             /// We must select parts for merge under merge_selecting_mutex because other threads
             /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
             std::lock_guard merge_selecting_lock(merge_selecting_mutex);
-            ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
+            PartitionIdsHint partition_ids_hint;
+            if (partition_id.empty())
+                partition_ids_hint = getAllPartitionIds();
+            else
+                partition_ids_hint.insert(partition_id);
+            ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
             auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
             if (storage_settings.get()->assign_part_uuids)
@@ -7057,7 +7062,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
 
 
-    ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
+    ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, {part_info.partition_id});
 
     /// The following block is pretty much copy & paste from StorageReplicatedMergeTree::dropPart to avoid conflicts while this is WIP.
     /// Extract it to a common method and re-use it before merging.
@@ -7265,7 +7270,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 
     while (true)
     {
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
+        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, {part_info.partition_id});
 
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
 
@@ -8334,7 +8339,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             /// We can enqueue part for check from DataPartExchange or SelectProcessor
             /// and it's hard to synchronize it with ReplicatedMergeTreeQueue and PartCheckThread...
             /// But at least we can ignore parts that are definitely not needed according to virtual parts and drop ranges.
-            auto pred = queue.getMergePredicate(zookeeper);
+            auto pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{new_part_info.partition_id});
             String covering_virtual = pred.getCoveringVirtualPart(lost_part_name);
             if (covering_virtual.empty())
             {
