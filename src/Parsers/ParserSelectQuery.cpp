@@ -195,6 +195,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_cube = true;
         else if (s_grouping_sets.ignore(pos, expected))
             select_query->group_by_with_grouping_sets = true;
+        else if (s_all.ignore(pos, expected))
+            select_query->group_by_all = true;
 
         if ((select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_grouping_sets) &&
             !open_bracket.ignore(pos, expected))
@@ -205,7 +207,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!grouping_sets_list.parse(pos, group_expression_list, expected))
                 return false;
         }
-        else
+        else if (!select_query->group_by_all)
         {
             if (!exp_list.parse(pos, group_expression_list, expected))
                 return false;
