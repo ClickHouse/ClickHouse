@@ -4507,6 +4507,9 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 
 SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
+    if (!initialization_done)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
+
     /// If table is read-only because it doesn't have metadata in zk yet, then it's not possible to insert into it
     /// Without this check, we'll write data parts on disk, and afterwards will remove them since we'll fail to commit them into zk
     /// In case of remote storage like s3, it'll generate unnecessary PUT requests
@@ -7642,7 +7645,15 @@ void StorageReplicatedMergeTree::createTableSharedID() const
         return;
     }
 
-    auto zookeeper = getZooKeeper();
+    /// We may call getTableSharedID when table is shut down. If exception happen, restarting thread will be already turned
+    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
+    /// context.
+    ZooKeeperPtr zookeeper;
+    if (shutdown_called.load())
+        zookeeper = getZooKeeperIfTableShutDown();
+    else
+        zookeeper = getZooKeeper();
+
     String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
