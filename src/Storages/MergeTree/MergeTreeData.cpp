@@ -1731,6 +1731,10 @@ catch (...)
 
 void MergeTreeData::waitForOutdatedPartsToBeLoaded() const
 {
+    /// Background tasks are not run if storage is static.
+    if (isStaticStorage())
+        return;
+
     if (outdated_data_parts_loading_finished)
         return;
 
