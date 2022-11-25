@@ -48,7 +48,7 @@ func TestFindClickHouseProcessesAndConfigs(t *testing.T) {
 			os.Exit(1)
 		}
 
-		// run a ClickHouse container that guarranties that it runs only for the duration of the test
+		// run a ClickHouse container that guarantees that it runs only for the duration of the test
 		req := testcontainers.ContainerRequest{
 			Image:        fmt.Sprintf("clickhouse/clickhouse-server:%s", test.GetClickHouseTestVersion()),
 			ExposedPorts: []string{"9000/tcp"},
