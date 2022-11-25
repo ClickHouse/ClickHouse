@@ -51,14 +51,31 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 {
 }
 
-bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, bool is_persistent)
+bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
-    size_t written_size = tryWrite(data, size, offset, is_persistent, true);
-    chassert(written_size == 0 || written_size == size);
+    size_t written_size = tryWrite(data, size, offset, segment_kind, true);
     return written_size == size;
 }
 
-size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t offset, bool is_persistent, bool strict)
+size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict)
+{
+    size_t total_written_size = 0;
+    while (size > 0)
+    {
+        size_t written_size = tryWriteImpl(data, size, offset, segment_kind, strict);
+        chassert(written_size <= size);
+        if (written_size == 0)
+            break;
+
+        data += written_size;
+        size -= written_size;
+        offset += written_size;
+        total_written_size += written_size;
+    }
+    return total_written_size;
+}
+
+size_t FileSegmentRangeWriter::tryWriteImpl(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind, bool strict)
 {
     if (finalized)
         return 0;
@@ -67,7 +84,7 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
 
     if (current_file_segment_it == file_segments.end())
     {
-        current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
+        current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, segment_kind);
     }
     else
     {
@@ -85,7 +102,7 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
         if (file_segment->range().size() == file_segment->getDownloadedSize())
         {
             completeFileSegment(*file_segment);
-            current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, is_persistent);
+            current_file_segment_it = allocateFileSegment(current_file_segment_write_offset, segment_kind);
         }
     }
 
@@ -103,8 +120,11 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
     size_t reserved_size = file_segment->tryReserve(size, strict);
     if (reserved_size == 0 || (strict && reserved_size != size))
     {
-        file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        appendFilesystemCacheLog(*file_segment);
+        if (strict)
+        {
+            file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+            appendFilesystemCacheLog(*file_segment);
+        }
 
         LOG_DEBUG(
             &Poco::Logger::get("FileSegmentRangeWriter"),
@@ -114,7 +134,7 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
         return 0;
     }
 
-    /// shrink
+    /// Shrink to reserved size, because we can't write more than reserved
     size = reserved_size;
 
     try
@@ -133,9 +153,9 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
     return size;
 }
 
-size_t FileSegmentRangeWriter::tryReserve(size_t size, size_t offset, bool is_persistent, bool strict)
+bool FileSegmentRangeWriter::reserve(size_t size, size_t offset)
 {
-    return tryWrite(nullptr, size, offset, is_persistent, strict);
+    return write(nullptr, size, offset, FileSegmentKind::Temporary);
 }
 
 void FileSegmentRangeWriter::finalize(bool clear)
@@ -177,7 +197,7 @@ FileSegmentRangeWriter::~FileSegmentRangeWriter()
     }
 }
 
-FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset, bool is_persistent)
+FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
     /**
     * Allocate a new file segment starting `offset`.
@@ -186,10 +206,7 @@ FileSegments::iterator FileSegmentRangeWriter::allocateFileSegment(size_t offset
 
     std::lock_guard cache_lock(cache->mutex);
 
-    CreateFileSegmentSettings create_settings
-    {
-        .is_persistent = is_persistent,
-    };
+    CreateFileSegmentSettings create_settings(segment_kind);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
@@ -301,7 +318,8 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
 
     try
     {
-        if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
+        auto segment_kind = is_persistent_cache_file ? FileSegmentKind::Persistent : FileSegmentKind::Regular;
+        if (!cache_writer->write(data, size, current_download_offset, segment_kind))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
             return;

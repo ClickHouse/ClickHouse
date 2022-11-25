@@ -52,24 +52,15 @@ void FileCachePlaceholder::reserveImpl(size_t requested_size)
                                                                  /* query_id_ */ "",
                                                                  /* source_path_ */ key);
 
-    /* Sometimes several calls of tryReserve are required,
-     * because it allocates space in current segment and its size may be less than requested_size.
-     * If we can't write any data, we need to free all space occupied by current reservation.
-     * To do this we will just destroy current cache_writer.
-     */
-    while (requested_size > 0)
+    size_t current_offset = cache_writer->currentOffset();
+    bool is_reserved = cache_writer->reserve(requested_size, current_offset);
+    if (!is_reserved)
     {
-        size_t current_offset = cache_writer->currentOffset();
-        size_t written = cache_writer->tryReserve(requested_size, current_offset, /* is_persistent */ false, /* strict */ false);
-        if (written == 0)
-        {
-            cache_writer->finalize(/* clear */ true);
-            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-                "Cannot reserve space in file cache ({} bytes required, {} / {} bytes used, {} / {} elements used)",
-                requested_size, file_cache->getUsedCacheSize(), file_cache->getTotalMaxSize(),
-                file_cache->getFileSegmentsNum(), file_cache->getTotalMaxElements());
-        }
-        requested_size -= written;
+        cache_writer->finalize(/* clear */ true);
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+            "Cannot reserve space in file cache ({} bytes required, {} / {} bytes used, {} / {} elements used)",
+            requested_size, file_cache->getUsedCacheSize(), file_cache->getTotalMaxSize(),
+            file_cache->getFileSegmentsNum(), file_cache->getTotalMaxElements());
     }
 
     cache_writers.push_back(std::move(cache_writer));

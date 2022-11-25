@@ -118,10 +118,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     }
     else
     {
-        CreateFileSegmentSettings create_settings{
-            .is_persistent = is_persistent
-        };
-
+        CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
         file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
     }
 

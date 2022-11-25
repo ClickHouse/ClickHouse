@@ -48,13 +48,27 @@ FileCache::Key FileCache::hash(const String & path)
     return Key(sipHash128(path.data(), path.size()));
 }
 
-String FileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const
+String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
 {
+    String file_suffix;
+    switch (segment_kind)
+    {
+        case FileSegmentKind::Persistent:
+            file_suffix = "_persistent";
+            break;
+        case FileSegmentKind::Temporary:
+            file_suffix = "_temporary";
+            break;
+        case FileSegmentKind::Regular:
+            file_suffix = "";
+            break;
+    }
+
     auto key_str = key.toString();
     return fs::path(cache_base_path)
         / key_str.substr(0, 3)
         / key_str
-        / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
+        / (std::to_string(offset) + file_suffix);
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
@@ -1025,14 +1039,17 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;
-                bool is_persistent = false;
+                FileSegmentKind segment_kind = FileSegmentKind::Regular;
 
                 if (delim_pos == std::string::npos)
                     parsed = tryParse<UInt64>(offset, offset_with_suffix);
                 else
                 {
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    is_persistent = offset_with_suffix.substr(delim_pos+1) == "persistent";
+                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
+                        segment_kind = FileSegmentKind::Persistent;
+                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
+                        segment_kind = FileSegmentKind::Temporary;
                 }
 
                 if (!parsed)
@@ -1052,7 +1069,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 {
                     auto * cell = addCell(
                         key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings{ .is_persistent = is_persistent }, cache_lock);
+                        CreateFileSegmentSettings(segment_kind), cache_lock);
 
                     if (cell)
                         queue_entries.emplace_back(cell->queue_iterator, cell->file_segment);
@@ -1164,7 +1181,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, cell] : cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->isPersistent()));
+            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
     }
 
     return cache_paths;
