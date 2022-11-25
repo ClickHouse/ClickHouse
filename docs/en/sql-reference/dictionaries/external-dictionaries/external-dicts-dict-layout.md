@@ -164,6 +164,15 @@ Configuration example:
 <layout>
   <hashed>
     <shards>10</shards>
+    <!-- Size of the backlog for blocks in parallel queue.
+
+         Since the bottleneck in parallel loading is rehash, and so to avoid
+         stalling because of thread is doing rehash, you need to have some
+         backlog.
+
+         10000 is good balance between memory and speed.
+         Even for 10e10 elements and can handle all the load without starvation. -->
+    <shard_load_queue_backlog>10000</shard_load_queue_backlog>
   </hashed>
 </layout>
 ```
@@ -171,7 +180,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED(SHARDS 10))
+LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### sparse_hashed
@@ -209,6 +218,7 @@ Configuration example:
   <complex_key_hashed>
     <preallocate>0</preallocate>
     <shards>1</shards>
+    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
   </complex_key_hashed>
 </layout>
 ```
@@ -216,7 +226,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([PREALLOCATE 0] [SHARDS 1]))
+LAYOUT(COMPLEX_KEY_HASHED([PREALLOCATE 0] [SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### complex_key_sparse_hashed
@@ -237,7 +247,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([PREALLOCATE 0] [SHARDS 1]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED([PREALLOCATE 0] [SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 ```
 
 ### hashed_array

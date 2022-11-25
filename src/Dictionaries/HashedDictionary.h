@@ -28,6 +28,7 @@ struct HashedDictionaryStorageConfiguration
 {
     const bool preallocate;
     const UInt64 shards;
+    const UInt64 shard_load_queue_backlog;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
 };

@@ -55,22 +55,22 @@ class ParallelDictionaryLoader : public boost::noncopyable
     using Queue = ConcurrentBoundedQueue<Block>;
 
 public:
-    explicit ParallelDictionaryLoader(HashedDictionary & dictionary_, size_t max_fill_ = 100'000)
+    explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
-        , max_fill(max_fill_)
         , simple_key(dictionary.dict_struct.getKeysSize() == 1)
         , pool(shards)
         , shards_queues(shards)
     {
-        LOG_TRACE(dictionary.log, "Will load the dictionary using {} threads", shards);
+        UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
+        LOG_TRACE(dictionary.log, "Will load the dictionary using {} threads (with {} backlog)", shards, backlog);
 
         shards_slots.resize(shards);
         std::generate(shards_slots.begin(), shards_slots.end(), [n = 0]() mutable { return n++; });
 
         for (size_t shard = 0; shard < shards; ++shard)
         {
-            shards_queues[shard].emplace(max_fill);
+            shards_queues[shard].emplace(backlog);
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
                 if (thread_group)
@@ -124,7 +124,6 @@ public:
 private:
     HashedDictionary & dictionary;
     const size_t shards;
-    const size_t max_fill;
     bool simple_key;
     ThreadPool pool;
     std::vector<std::optional<Queue>> shards_queues;
@@ -1116,14 +1115,17 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
 
         Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
-        if (!shards)
-            shards = 1;
-        if (shards < 0 || shards > 128)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [0, 128]", full_name);
+        if (shards <= 0 || shards > 128)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [1, 128]", full_name);
+
+        Int64 shard_load_queue_backlog = config.getInt(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
+        if (shard_load_queue_backlog <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
         HashedDictionaryStorageConfiguration configuration{
             preallocate,
             static_cast<UInt64>(shards),
+            static_cast<UInt64>(shard_load_queue_backlog),
             require_nonempty,
             dict_lifetime,
         };
