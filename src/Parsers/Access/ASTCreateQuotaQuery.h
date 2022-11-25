@@ -54,6 +54,6 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void replaceCurrentUserTag(const String & current_user_name) const;
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateQuotaQuery>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateQuotaQuery>(clone()); }
 };
 }

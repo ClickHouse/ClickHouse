@@ -18,7 +18,7 @@ using FunctionUpperUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'a', 'z', Po
 
 }
 
-REGISTER_FUNCTION(UpperUTF8)
+void registerFunctionUpperUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionUpperUTF8>();
 }

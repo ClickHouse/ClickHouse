@@ -125,7 +125,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeMap>(DataTypes{key_type, nested_func->getReturnType()}); }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
         const auto & map_nested_tuple = map_column.getNestedData();
@@ -152,7 +152,7 @@ public:
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
 #ifdef __cpp_lib_generic_unordered_lookup
-                key = key_ref.toView();
+                key = static_cast<std::string_view>(key_ref);
 #else
                 key = key_ref.toString();
 #endif
@@ -180,7 +180,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -228,11 +228,6 @@ public:
         destroyImpl<false>(place);
     }
 
-    bool hasTrivialDestructor() const override
-    {
-        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
-    }
-
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
         destroyImpl<true>(place);
@@ -250,7 +245,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         UInt64 size;
@@ -269,8 +264,7 @@ public:
         }
     }
 
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
         auto & nested_column = map_column.getNestedColumn();
@@ -294,24 +288,11 @@ public:
         for (auto & key : keys)
         {
             key_column.insert(key);
-            if constexpr (merge)
-                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
-            else
-                nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
         res_offsets.push_back(val_column.size());
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<false>(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

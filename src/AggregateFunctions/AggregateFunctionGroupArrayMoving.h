@@ -144,7 +144,7 @@ public:
         {
             auto & value = this->data(place).value;
             value.resize(size, arena);
-            buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+            buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
             this->data(place).sum = value.back();
         }
     }

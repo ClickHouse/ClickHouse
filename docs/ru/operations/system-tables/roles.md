@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/roles
----
 # system.roles {#system_tables-roles}
 
 Содержит сведения о [ролях](../../operations/access-rights.md#role-management).

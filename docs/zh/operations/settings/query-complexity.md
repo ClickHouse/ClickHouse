@@ -1,6 +1,3 @@
----
-slug: /zh/operations/settings/query-complexity
----
 # 查询复杂性的限制 {#restrictions-on-query-complexity}
 
 对查询复杂性的限制是设置的一部分。

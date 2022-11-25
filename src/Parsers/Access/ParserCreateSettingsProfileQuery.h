@@ -7,11 +7,11 @@ namespace DB
 {
 /** Parses queries like
   * CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
   *
   * ALTER SETTINGS PROFILE [IF EXISTS] name
   *     [RENAME TO new_name]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
   */
 class ParserCreateSettingsProfileQuery : public IParserBase
 {

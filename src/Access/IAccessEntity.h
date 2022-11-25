@@ -4,7 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <base/types.h>
 #include <memory>
-#include <unordered_map>
 
 
 namespace DB
@@ -45,15 +44,6 @@ struct IAccessEntity
         bool operator()(const IAccessEntity & lhs, const IAccessEntity & rhs) const { return (lhs.getType() < rhs.getType()) || ((lhs.getType() == rhs.getType()) && (lhs.getName() < rhs.getName())); }
         bool operator()(const std::shared_ptr<const IAccessEntity> & lhs, const std::shared_ptr<const IAccessEntity> & rhs) const { return operator()(*lhs, *rhs); }
     };
-
-    /// Finds all dependencies.
-    virtual std::vector<UUID> findDependencies() const { return {}; }
-
-    /// Replaces dependencies according to a specified map.
-    virtual void replaceDependencies(const std::unordered_map<UUID, UUID> & /* old_to_new_ids */) {}
-
-    /// Whether this access entity should be written to a backup.
-    virtual bool isBackupAllowed() const { return false; }
 
 protected:
     String name;

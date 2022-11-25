@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/max
-sidebar_position: 3
+toc_priority: 3
 ---
 
 # max {#agg_function-max}

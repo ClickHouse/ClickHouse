@@ -51,7 +51,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
     for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
         const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(i);
 
         if (name.empty())
             continue;

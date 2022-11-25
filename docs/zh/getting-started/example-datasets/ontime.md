@@ -1,7 +1,6 @@
 ---
-slug: /zh/getting-started/example-datasets/ontime
-sidebar_position: 21
-sidebar_label: OnTime
+toc_priority: 21
+toc_title: OnTime
 ---
 
 # OnTime {#ontime}

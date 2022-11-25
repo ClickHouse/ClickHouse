@@ -76,9 +76,9 @@ void SerializationDate::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    DayNum value;
+    LocalDate value;
     readCSV(value, istr);
-    assert_cast<ColumnUInt16 &>(column).getData().push_back(value);
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
 }
 
 }
