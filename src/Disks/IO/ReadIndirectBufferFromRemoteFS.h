@@ -1,8 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
 #include <utility>
 
 
@@ -10,6 +9,7 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
+struct ReadSettings;
 
 /**
 * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -39,8 +39,6 @@ private:
     bool nextImpl() override;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
-
-    ReadSettings read_settings;
 
     size_t file_offset_of_buffer_end = 0;
 };

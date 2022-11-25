@@ -188,7 +188,7 @@ Chunk IRowInputFormat::generate()
         }
 
         e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(static_cast<int>(total_rows));
+        e.setLineNumber(total_rows);
         e.addMessage(verbose_diagnostic);
         throw;
     }
@@ -232,9 +232,7 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    for (const auto & column : columns)
-        column->finalize();
-
+    finalizeObjectColumns(columns);
     Chunk chunk(std::move(columns), num_rows);
     return chunk;
 }

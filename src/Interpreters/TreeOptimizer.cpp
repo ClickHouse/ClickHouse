@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -34,7 +35,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>

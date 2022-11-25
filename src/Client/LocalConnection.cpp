@@ -6,6 +6,8 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Core/Protocol.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB

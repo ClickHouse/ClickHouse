@@ -763,7 +763,7 @@ def test_cache_setting_compatibility(cluster, node_name):
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
     node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r', compress_marks=false, compress_primary_key=false;"
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_r';"
     )
     node.query(
         "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500"
@@ -794,12 +794,12 @@ def test_cache_setting_compatibility(cluster, node_name):
         "<do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>",
     )
 
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
     assert result.strip().endswith("1")
 
     node.restart_clickhouse()
 
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
     assert result.strip().endswith("0")
 
     result = node.query(
@@ -824,7 +824,7 @@ def test_cache_setting_compatibility(cluster, node_name):
 
     node.restart_clickhouse()
 
-    result = node.query("DESCRIBE FILESYSTEM CACHE 's3_cache_r'")
+    result = node.query("DESCRIBE CACHE 's3_cache_r'")
     assert result.strip().endswith("1")
 
     node.query("SELECT * FROM s3_test FORMAT Null")

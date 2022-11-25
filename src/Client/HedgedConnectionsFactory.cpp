@@ -362,7 +362,7 @@ void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
     timeout_fd_to_replica_index.erase(replicas[index].change_replica_timeout.getDescriptor());
 }
 
-size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const
+int HedgedConnectionsFactory::numberOfProcessingReplicas() const
 {
     if (epoll.empty())
         return 0;
@@ -381,7 +381,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
             && result.is_usable
             && !replicas[i].is_ready
             && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry)))
-            indexes.push_back(static_cast<int>(i));
+            indexes.push_back(i);
     }
 
     if (indexes.empty())

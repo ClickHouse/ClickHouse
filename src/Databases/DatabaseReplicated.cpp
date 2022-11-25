@@ -8,7 +8,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -29,8 +28,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Common/Macros.h>
 #include <base/chrono_io.h>
-
-#include <utility>
 
 namespace DB
 {
@@ -357,7 +354,8 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
 
     /// Other codes are unexpected, will throw
     zkutil::KeeperMultiException::check(res, ops, responses);
-    UNREACHABLE();
+    chassert(false);
+    __builtin_unreachable();
 }
 
 bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path)
@@ -644,7 +642,6 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
-    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -863,19 +860,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
-    /// FIXME: Use proper dependency calculation instead of just moving MV to the end
-    using NameToMetadata = std::pair<String, String>;
-    std::vector<NameToMetadata> table_name_to_metadata_sorted;
-    table_name_to_metadata_sorted.reserve(table_name_to_metadata.size());
-    std::move(table_name_to_metadata.begin(), table_name_to_metadata.end(), std::back_inserter(table_name_to_metadata_sorted));
-    std::sort(table_name_to_metadata_sorted.begin(), table_name_to_metadata_sorted.end(), [](const NameToMetadata & lhs, const NameToMetadata & rhs) -> bool
-    {
-        const bool is_materialized_view_lhs = lhs.second.find("MATERIALIZED VIEW") != std::string::npos;
-        const bool is_materialized_view_rhs = rhs.second.find("MATERIALIZED VIEW") != std::string::npos;
-        return is_materialized_view_lhs < is_materialized_view_rhs;
-    });
-
-    for (const auto & name_and_meta : table_name_to_metadata_sorted)
+    for (const auto & name_and_meta : table_name_to_metadata)
     {
         if (isTableExist(name_and_meta.first, getContext()))
         {
@@ -1214,7 +1199,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
         String table_name = unescapeForFileName(escaped_table_name);
         if (!filter(table_name))
             continue;
-
         String zk_metadata;
         if (!zookeeper->tryGet(zookeeper_path + "/metadata/" + escaped_table_name, zk_metadata))
             throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Metadata for table {} was not found in ZooKeeper", table_name);
@@ -1234,10 +1218,6 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
             if (storage)
                 storage->adjustCreateQueryForBackup(create_table_query);
         }
-
-        /// `storage` is allowed to be null here. In this case it means that this storage exists on other replicas
-        /// but it has not been created on this replica yet.
-
         res.emplace_back(create_table_query, storage);
     }
 
