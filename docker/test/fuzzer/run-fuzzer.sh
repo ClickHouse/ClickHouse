@@ -215,7 +215,7 @@ quit
         --stacktrace \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
-        --queries-file $(ls -1 ch/tests/queries/0_stateless/ | grep -Fa ".sql" | sort -R) \
+        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 &
