@@ -17,49 +17,12 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-var clickhouseContainer testcontainers.Container
-
 func TestMain(m *testing.M) {
-	// create a ClickHouse container
-	ctx := context.Background()
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Println("unable to read current directory", err)
-		os.Exit(1)
-	}
-	// for now, we test against a hardcoded database-server version but we should make this a property
-	req := testcontainers.ContainerRequest{
-		Image:        fmt.Sprintf("clickhouse/clickhouse-server:%s", test.GetClickHouseTestVersion()),
-		ExposedPorts: []string{"9000/tcp"},
-		WaitingFor:   wait.ForLog("Ready for connections"),
-		Mounts: testcontainers.ContainerMounts{
-			{
-				Source: testcontainers.GenericBindMountSource{
-					HostPath: path.Join(cwd, "../../../testdata/docker/custom.xml"),
-				},
-				Target: "/etc/clickhouse-server/config.d/custom.xml",
-			},
-		},
-	}
-	clickhouseContainer, err = testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	if err != nil {
-		// can't test without container
-		panic(err)
-	}
-
-	p, _ := clickhouseContainer.MappedPort(ctx, "9000")
-
-	os.Setenv("CLICKHOUSE_DB_PORT", p.Port())
-
-	defer clickhouseContainer.Terminate(ctx) //nolint
 	os.Exit(m.Run())
 }
 
-func getProcessesInContainer(t *testing.T) ([]string, error) {
-	result, reader, err := clickhouseContainer.Exec(context.Background(), []string{"ps", "-aux"})
+func getProcessesInContainer(t *testing.T, container testcontainers.Container) ([]string, error) {
+	result, reader, err := container.Exec(context.Background(), []string{"ps", "-aux"})
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +44,44 @@ func getProcessesInContainer(t *testing.T) ([]string, error) {
 func TestFindClickHouseProcessesAndConfigs(t *testing.T) {
 
 	t.Run("can find ClickHouse processes and configs", func(t *testing.T) {
-		lines, err := getProcessesInContainer(t)
+		// create a ClickHouse container
+		ctx := context.Background()
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Println("unable to read current directory", err)
+			os.Exit(1)
+		}
+
+		// run a ClickHouse container that guarranties that it runs only for the duration of the test
+		req := testcontainers.ContainerRequest{
+			Image:        fmt.Sprintf("clickhouse/clickhouse-server:%s", test.GetClickHouseTestVersion()),
+			ExposedPorts: []string{"9000/tcp"},
+			WaitingFor:   wait.ForLog("Ready for connections"),
+			Mounts: testcontainers.ContainerMounts{
+				{
+					Source: testcontainers.GenericBindMountSource{
+						HostPath: path.Join(cwd, "../../../testdata/docker/custom.xml"),
+					},
+					Target: "/etc/clickhouse-server/config.d/custom.xml",
+				},
+			},
+		}
+		clickhouseContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: req,
+			Started:          true,
+		})
+		if err != nil {
+			// can't test without container
+			panic(err)
+		}
+
+		p, _ := clickhouseContainer.MappedPort(ctx, "9000")
+
+		t.Setenv("CLICKHOUSE_DB_PORT", p.Port())
+
+		defer clickhouseContainer.Terminate(ctx) //nolint
+
+		lines, err := getProcessesInContainer(t, clickhouseContainer)
 		require.Nil(t, err)
 		require.NotEmpty(t, lines)
 
