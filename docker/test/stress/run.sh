@@ -388,6 +388,8 @@ else
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
     rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
+    # Turn on after 22.12
+    rm -f /etc/clickhouse-server/config.d/compressed_marks_and_index.xml ||:
     # it uses recently introduced settings which previous versions may not have
     rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
@@ -456,7 +458,7 @@ else
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
                -e "REPLICA_IS_ALREADY_ACTIVE" \
-               -e "REPLICA_IS_ALREADY_EXIST" \
+               -e "REPLICA_ALREADY_EXISTS" \
                -e "ALL_REPLICAS_LOST" \
                -e "DDLWorker: Cannot parse DDL task query" \
                -e "RaftInstance: failed to accept a rpc connection due to error 125" \
