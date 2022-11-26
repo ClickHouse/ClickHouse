@@ -61,8 +61,6 @@ public:
     void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to) override;
 
 private:
-    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
-
     void copyObjectImpl(
         const String & src_bucket,
         const String & src_key,

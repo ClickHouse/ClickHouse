@@ -144,6 +144,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         else
             const_columns[i] = ColumnConst::create(columns[i]->cloneResized(1), 1);
     }
+
     block.setColumns(const_columns);
 
     bool unmodified = true;

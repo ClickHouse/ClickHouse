@@ -12,11 +12,13 @@
 #include <Storages/StorageS3Settings.h>
 
 #include <Processors/ISource.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
 
@@ -33,6 +35,21 @@ class StorageS3SequentialSource;
 class StorageS3Source : public ISource, WithContext
 {
 public:
+
+    struct KeyWithInfo
+    {
+        KeyWithInfo() = default;
+        KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_)
+            : key(std::move(key_)), info(std::move(info_))
+        {
+        }
+
+        String key;
+        std::optional<S3::ObjectInfo> info;
+    };
+
+    using KeysWithInfo = std::vector<KeyWithInfo>;
+
     class DisclosedGlobIterator
     {
     public:
@@ -46,7 +63,7 @@ public:
             Strings * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {});
 
-        String next();
+        KeyWithInfo next();
 
     private:
         class Impl;
@@ -57,9 +74,14 @@ public:
     class KeysIterator
     {
     public:
-        explicit KeysIterator(
-            const std::vector<String> & keys_, const String & bucket_, ASTPtr query, const Block & virtual_header, ContextPtr context);
-        String next();
+        KeysIterator(
+            const std::vector<String> & keys_,
+            const String & bucket_,
+            ASTPtr query,
+            const Block & virtual_header,
+            ContextPtr context);
+
+        KeyWithInfo next();
 
     private:
         class Impl;
@@ -67,7 +89,7 @@ public:
         std::shared_ptr<Impl> pimpl;
     };
 
-    using IteratorWrapper = std::function<String()>;
+    using IteratorWrapper = std::function<KeyWithInfo()>;
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -86,8 +108,9 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IteratorWrapper> file_iterator_,
-        size_t download_thread_num,
-        const std::unordered_map<String, S3::ObjectInfo> & object_infos_);
+        size_t download_thread_num);
+
+    ~StorageS3Source() override;
 
     String getName() const override;
 
@@ -99,7 +122,6 @@ private:
     String name;
     String bucket;
     String version_id;
-    String file_path;
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
@@ -109,10 +131,37 @@ private:
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
+    struct ReaderHolder
+    {
+    public:
+        ReaderHolder(
+            String path_,
+            std::unique_ptr<ReadBuffer> read_buf_,
+            std::unique_ptr<QueryPipeline> pipeline_,
+            std::unique_ptr<PullingPipelineExecutor> reader_)
+            : path(std::move(path_))
+            , read_buf(std::move(read_buf_))
+            , pipeline(std::move(pipeline_))
+            , reader(std::move(reader_))
+        {
+        }
 
-    std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+        ReaderHolder() = default;
+
+        explicit operator bool() const { return reader != nullptr; }
+        PullingPipelineExecutor * operator->() { return reader.get(); }
+        const PullingPipelineExecutor * operator->() const { return reader.get(); }
+        const String & getPath() const { return path; }
+
+    private:
+        String path;
+        std::unique_ptr<ReadBuffer> read_buf;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
+    };
+
+    ReaderHolder reader;
+
     /// onCancel and generate can be called concurrently
     std::mutex reader_mutex;
     std::vector<NameAndTypePair> requested_virtual_columns;
@@ -121,12 +170,16 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
-    std::unordered_map<String, S3::ObjectInfo> object_infos;
+    ThreadPool create_reader_pool;
+    ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
+    std::future<ReaderHolder> reader_future;
 
     /// Recreate ReadBuffer and Pipeline for each file.
-    bool initialize();
+    ReaderHolder createReader();
+    std::future<ReaderHolder> createReaderAsync();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key);
+    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
+    std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 
 /**
