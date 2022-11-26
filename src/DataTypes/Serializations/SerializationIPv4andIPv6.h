@@ -32,7 +32,7 @@ public:
     }
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, false);
+        deserializeText(column, istr, settings, true);
     }
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
