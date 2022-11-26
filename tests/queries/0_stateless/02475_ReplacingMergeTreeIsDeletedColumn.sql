@@ -65,6 +65,8 @@ INSERT INTO testReplica1 (*) VALUES ('d1', 2, 1);
 
 SELECT '== OPTIMIZE on replicas ==';
 OPTIMIZE TABLE testReplica1 FINAL CLEANUP;
+SYSTEM SYNC REPLICA testReplica1;
+
 -- Only d3 to d5 remain
 SELECT '== Replica 1 ==';
 SELECT * FROM testReplica1;
@@ -77,6 +79,8 @@ CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
 INSERT INTO testReplica2 (*) VALUES ('d1', 1, 1),('d2', 1, 0),('d3', 1, 1),('d4', 1, 0);
 
 OPTIMIZE TABLE testReplica2 FINAL;
+SYSTEM SYNC REPLICA testReplica2;
+
 -- Only d3 to d5 remain
 SELECT '== Replica 2 ==';
 SELECT * FROM testReplica2;
