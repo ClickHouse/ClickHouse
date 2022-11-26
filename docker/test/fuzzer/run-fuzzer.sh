@@ -209,7 +209,7 @@ quit
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    clickhouse-client \
+    timeout -s TERM --preserve-status 30m clickhouse-client \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
