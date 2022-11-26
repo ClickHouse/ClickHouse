@@ -184,17 +184,7 @@ void WriteBufferFromS3::finalizeImpl()
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
 
-
-        Aws::S3::Model::HeadObjectRequest request;
-        request.SetBucket(bucket);
-        request.SetKey(key);
-
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (write_settings.for_object_storage)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-        auto response = client_ptr->HeadObject(request);
-
+        auto response = S3::headObject(client_ptr, bucket, key, "", write_settings.for_object_storage);
         if (!response.IsSuccess())
             throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket), response.GetError().GetErrorType());
         else
