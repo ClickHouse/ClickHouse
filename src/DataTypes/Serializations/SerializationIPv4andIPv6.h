@@ -21,10 +21,11 @@ public:
     {
         IPv x;
         readText(x, istr);
-        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 
         if (whole && !istr.eof())
             throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     }
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
@@ -59,10 +60,12 @@ public:
         IPv x;
         assertChar('"', istr);
         readText(x, istr);
+        /// this code looks weird, but we want to throw specific exception to match original behavior...
         if (istr.eof())
             assertChar('"', istr);
         if (*istr.position() != '"')
             throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+        istr.ignore();
 
         assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     }
@@ -76,10 +79,11 @@ public:
     {
         IPv value;
         readCSV(value, istr);
-        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(value);
 
         if (!istr.eof())
             throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+
+        assert_cast<ColumnVector<IPv> &>(column).getData().push_back(value);
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override
