@@ -1,7 +1,7 @@
 #!/bin/sh -e
 
 if [ -f "clickhouse" ]; then
-    rm --interactive=never clickhouse || { echo "clickhouse already exists and I'm not able to remove it :("; exit 1; }
+    rm --interactive=never clickhouse || { echo "clickhouse already exists and I'm not able to remove it - probably I have no enough rights to do so. Please, remove it manually and repeat."; exit 1; }
 fi
 
 OS=$(uname -s)
