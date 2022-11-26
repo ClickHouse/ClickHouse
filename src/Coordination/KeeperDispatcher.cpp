@@ -84,13 +84,18 @@ void KeeperDispatcher::requestThread()
                     current_batch.emplace_back(request);
 
                     bool quick_batch_done = false;
+                    size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
                     /// Waiting until previous append will be successful, or batch is big enough
                     /// has_result == false && get_result_code == OK means that our request still not processed.
                     /// Sometimes NuRaft set errorcode without setting result, so we check both here.
-                    while ((!quick_batch_done && current_batch.size() < 10) || (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size))
+                    /// Regardless of the status of previous request, if we have enough requests in queue, we will try
+                    /// to batch at least max_quick_batch_size of them.
+                    while ((!quick_batch_done && current_batch.size() < max_quick_batch_size)
+                           || (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK)
+                               && current_batch.size() <= max_batch_size))
                     {
                         /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request, 1))
+                        if (requests_queue->tryPop(request))
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
@@ -101,7 +106,6 @@ void KeeperDispatcher::requestThread()
                             }
                             else
                             {
-
                                 current_batch.emplace_back(request);
                             }
                         }
@@ -295,7 +299,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
