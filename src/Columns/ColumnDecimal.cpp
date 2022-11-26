@@ -187,7 +187,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
             if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
                 PaddedPODArray<ValueWithIndex<NativeT>> pairs(data_size);
-                for (UInt32 i = 0; i < UInt32(data_size); ++i)
+                for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
                     pairs[i] = {data[i].value, i};
 
                 RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), data_size, reverse, res.data());
