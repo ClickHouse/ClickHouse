@@ -178,7 +178,7 @@ inline size_t DefaultHash64(T key)
             static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64));
     }
-    else if constexpr (std::is_same_v<T, DB::UUID>)
+    else if constexpr (std::is_same_v<T, DB::UUID> || std::is_same_v<T, DB::IPv6>)
     {
         return intHash64(
             static_cast<UInt64>(key.toUnderType()) ^
