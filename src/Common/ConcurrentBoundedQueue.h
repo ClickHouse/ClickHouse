@@ -143,6 +143,7 @@ public:
         return popImpl(x, milliseconds);
     }
 
+    /// Returns false if queue is empty.
     [[nodiscard]] bool tryPop(T & x)
     {
         {
