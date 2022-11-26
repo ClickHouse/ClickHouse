@@ -78,11 +78,11 @@ public:
     struct Field
     {
         const DataTypePtr type;
-        const size_t matcher_index;
+        const uint8_t matcher_index;
         const size_t score;
         const bool should_parse_the_rest_as_one_string;
         char * pos;
-        Field(const DataTypePtr & type_, const size_t & index_, const size_t & score_, char * pos_, const bool & one_string)
+        Field(const DataTypePtr & type_, const uint8_t & index_, const size_t & score_, char * pos_, const bool & one_string)
             : type(type_), matcher_index(index_), score(score_), should_parse_the_rest_as_one_string(one_string), pos(pos_)
         {
         }
@@ -91,7 +91,7 @@ public:
     struct Solution
     {
         DataTypes matched_types;
-        std::vector<int> matchers_order;
+        std::vector<uint8_t> matchers_order;
         size_t score;
     };
 
@@ -112,7 +112,7 @@ private:
     Solution final_solution;
 
     const FormatSettings format_settings;
-    int max_rows_to_check;
+    size_t max_rows_to_check;
     ReadBuffer & in;
 
     void

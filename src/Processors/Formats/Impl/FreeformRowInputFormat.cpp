@@ -32,20 +32,19 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & in)
 
 // Returns the score of the given type. This doesn't take nullable into account.
 // Possible return values:
-// - 0: remaining of the line to be a string
 // - 1: String
 // - 5: Decimal, Float
 // - 10: Date, DateTime, Map, Array, Tuple
 //
 // TODO: Find a better way to define score criterions.
-static size_t scoreForType(const DataTypePtr & type, const char * pos)
+static size_t scoreForType(const DataTypePtr & type)
 {
     WhichDataType which(type);
 
     if (which.isNullable())
     {
         const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
-        return scoreForType(nullable_type->getNestedType(), pos);
+        return scoreForType(nullable_type->getNestedType());
     }
 
     if (which.isMap() || which.isArray() || which.isTuple())
@@ -97,11 +96,11 @@ static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
     switch (rule)
     {
         case FormatSettings::EscapingRule::JSON:
-            return 4;
+            return 10;
         case FormatSettings::EscapingRule::CSV:
-            return 3;
+            return 8;
         case FormatSettings::EscapingRule::Quoted:
-            return 2;
+            return 6;
         case FormatSettings::EscapingRule::Escaped:
             [[fallthrough]];
         case FormatSettings::EscapingRule::Raw:
@@ -112,9 +111,9 @@ static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
     UNREACHABLE();
 }
 
-static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type, const char * pos)
+static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type)
 {
-    return scoreForRule(rule) * scoreForType(type, pos);
+    return scoreForRule(rule) * scoreForType(type);
 }
 
 void JSONFieldMatcher::parseField(String & s, ReadBuffer & in) const
@@ -143,7 +142,7 @@ void RawByWhitespaceFieldMatcher::parseField(String & s, ReadBuffer & in) const
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
-    : format_settings(settings_), max_rows_to_check(std::min<int>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
+    : format_settings(settings_), max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
 {
     // matchers are pushed in the order of priority, this helps with exiting early and reducing the search tree.
     matchers.push_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
@@ -165,7 +164,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
         // TODO: add a method to dynamically get a matcher's index
         matchers[4]->parseField(field, in);
         auto type = matchers[4]->getTypeFromField(field);
-        fields.emplace_back(type, 4, scoreForField(FormatSettings::EscapingRule::JSON, type, in.position()), in.position(), false);
+        fields.emplace_back(type, 4, scoreForField(FormatSettings::EscapingRule::JSON, type), in.position(), false);
         return fields;
     }
 
@@ -182,19 +181,17 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
                 fields.emplace_back(
                     type,
                     i,
-                    scoreForField(matcher->getEscapingRule(), type, in.position()),
+                    scoreForField(matcher->getEscapingRule(), type),
                     in.position(),
                     field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher");
                 LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got type: {}", type->getName());
                 if (isPreferredType(type))
                     break;
             }
-            else
-                LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got null type from field: {}", field);
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed parsing field, message: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field, message: {}", e.message());
         }
 
         ++i;
@@ -214,7 +211,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
         solutions.push_back(current_solution);
         LOG_DEBUG(
             &Poco::Logger::get("FreeformFieldMatcher"),
-            "got new solution with score: {} ; total count: {}",
+            "got new solution with score: {}, total solutions: {}",
             current_solution.score,
             solutions.size());
         // not reseting the buffer as we've already reach the end of row
@@ -249,26 +246,14 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         return false;
 
     char * start = in.position();
+
     std::vector<Solution> solutions;
     readRowAndGenerateSolutions(in.position(), solutions);
-
-    in.position() = start;
-    ::sort(solutions.begin(), solutions.end(), [](const Solution & first, const Solution & second) { return first.score > second.score; });
-
     if (solutions.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution");
 
-
-    std::vector<char *> rows_positions;
-    for (int row = 0; row < max_rows_to_check; ++row)
-    {
-        skipWhitespacesAndTabs(in);
-        if (in.eof())
-            break;
-
-        rows_positions.push_back(in.position());
-        skipToNextLineOrEOF(in);
-    }
+    ::sort(solutions.begin(), solutions.end(), [](const Solution & first, const Solution & second) { return first.score > second.score; });
+    in.position() = start;
 
     // after finding and ranking the solutions, we now check them against max_rows_to_check and pick the first one that works for all rows
     String tmp;
@@ -276,9 +261,11 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
     {
         try
         {
-            for (const auto & row_pos : rows_positions)
+            for (size_t row = 0; row < max_rows_to_check; ++row)
             {
-                in.position() = row_pos;
+                if (in.eof())
+                    break;
+
                 for (const auto & index : solution.matchers_order)
                 {
                     skipWhitespacesAndTabs(in);
@@ -286,7 +273,9 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
                 }
 
                 if (!in.eof() && *in.position() != '\n')
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution does not stop at newline character for one row");
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character");
+
+                skipToNextLineOrEOF(in);
             }
 
             final_solution = solution;
