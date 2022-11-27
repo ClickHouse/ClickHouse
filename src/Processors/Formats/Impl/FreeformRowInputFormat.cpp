@@ -161,10 +161,9 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
     String field;
     if (one_string)
     {
-        // TODO: add a method to dynamically get a matcher's index
-        matchers[4]->parseField(field, in);
-        auto type = matchers[4]->getTypeFromField(field);
-        fields.emplace_back(type, 4, scoreForField(FormatSettings::EscapingRule::JSON, type), in.position(), false);
+        matchers.back()->parseField(field, in);
+        auto type = matchers.back()->getDataTypeFromField(field);
+        fields.emplace_back(type, matchers.size() - 1, scoreForField(FormatSettings::EscapingRule::JSON, type), in.position(), false);
         return fields;
     }
 
@@ -174,7 +173,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
         {
             matcher->parseField(field, in);
             LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got field: {} ; matcher: {}", field, matcher->getName());
-            auto type = matcher->getTypeFromField(field);
+            auto type = matcher->getDataTypeFromField(field);
             if (type)
             {
                 type = makeFloatIfInt(type); // for the sake of correctness, make all int to be float
@@ -191,7 +190,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field, message: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field, error: {}", e.message());
         }
 
         ++i;
@@ -214,7 +213,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
             "got new solution with score: {}, total solutions: {}",
             current_solution.score,
             solutions.size());
-        // not reseting the buffer as we've already reach the end of row
+        // not resetting the buffer as we've already reach end of row
         return;
     }
 
@@ -250,12 +249,12 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
     std::vector<Solution> solutions;
     readRowAndGenerateSolutions(in.position(), solutions);
     if (solutions.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution.");
 
     ::sort(solutions.begin(), solutions.end(), [](const Solution & first, const Solution & second) { return first.score > second.score; });
     in.position() = start;
 
-    // after finding and ranking the solutions, we now check them against max_rows_to_check and pick the first one that works for all rows
+    // after finding and ranking the solutions, we now run them through max_rows_to_check and pick the first one that works for all rows
     String tmp;
     for (const auto & solution : solutions)
     {
@@ -273,7 +272,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
                 }
 
                 if (!in.eof() && *in.position() != '\n')
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character");
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character.");
 
                 skipToNextLineOrEOF(in);
             }
@@ -284,7 +283,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse data, error message: {} ", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse data, error: {} ", e.message());
         }
     }
 
@@ -330,8 +329,8 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     if (in->eof())
         return false;
 
-    if (matcher.getSolutionLength() == 0 && !matcher.generateSolutionsAndPickBest())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text");
+    if (!matcher.generateSolutionsAndPickBest())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found.");
 
     if (matcher.parseRow())
     {
@@ -354,7 +353,7 @@ FreeformSchemaReader::FreeformSchemaReader(ReadBuffer & in_, const FormatSetting
 NamesAndTypesList FreeformSchemaReader::readSchema()
 {
     if (!matcher.generateSolutionsAndPickBest())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found.");
 
     DataTypes types = matcher.getDataTypes();
     NamesAndTypesList names_and_types;
