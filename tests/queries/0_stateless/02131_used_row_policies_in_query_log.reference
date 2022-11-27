@@ -32,6 +32,7 @@ None
 3
 4
 Check system.query_log
+SELECT * FROM viewIfPermitted(SELECT pattern, message FROM system.password_rules ELSE null(\'pattern String, message String\'))	[]
 SELECT \'None\';	[]
 SELECT * FROM 02131_rqtable;	[]
 SELECT \'R1: x == 1\';	[]
