@@ -53,6 +53,9 @@ if ! $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null 
     exit 1
 fi
 
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" --format Null -q 'select 1' 2>/dev/null &
+client_pid=$!
+
 
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH plaintext_password BY ''" 2>&1 | grep -qF \
     "DB::Exception: Invalid password. The password should: be at least 12 characters long, contain at least 1 numeric character, contain at least 1 lowercase character, contain at least 1 uppercase character, contain at least 1 special character" && echo 'OK' || echo 'FAIL' ||:
