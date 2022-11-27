@@ -4716,6 +4716,7 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
 std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
 {
+    auto lock = lockParts();
     std::unordered_set<String> res;
     String prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
