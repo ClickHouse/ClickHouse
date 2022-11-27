@@ -97,11 +97,11 @@ namespace
     {
         while (!indices.empty())
         {
-            size_t bucket = indices.front();
+            size_t bucket_index = indices.front();
             indices.pop_front();
 
-            if (!callback(bucket))
-                indices.push_back(bucket);
+            if (!callback(bucket_index))
+                indices.push_back(bucket_index);
         }
     }
 }
@@ -237,14 +237,14 @@ private:
 };
 
 
-static void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets_snapshot, size_t except_idx)
+static void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & buckets_snapshot)
 {
     assert(blocks.size() == buckets_snapshot.size());
     retryForEach(
         generateRandomPermutation(1, buckets_snapshot.size()),
         [&](size_t i)
         {
-            if (i == except_idx || blocks[i].rows() == 0)
+            if (!blocks[i].rows())
                 return true;
             bool flushed = buckets_snapshot[i]->tryAddRightBlock(blocks[i]);
             if (flushed)
@@ -281,7 +281,7 @@ void GraceHashJoin::initBuckets()
 {
     const auto & settings = context->getSettingsRef();
 
-    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, 1024 * 1024));
+    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, settings.grace_hash_join_max_buckets));
 
     for (size_t i = 0; i < initial_num_buckets; ++i)
     {
@@ -475,7 +475,7 @@ public:
             /*
              * We need to filter out blocks that were written to the current bucket `B_{n}`
              * but then virtually moved to another bucket `B_{n+i}` on rehash.
-             * Bucket `B_{n+i}` is waiting for the buckets with smalled index to be processed,
+             * Bucket `B_{n+i}` is waiting for the buckets with smaller index to be processed,
              * and rows can be moved only forward (because we increase hash modulo twice on each rehash),
              * so it is safe to add blocks.
              */
@@ -609,24 +609,7 @@ void GraceHashJoin::addJoinedBlockImpl(Block block)
         blocks[bucket_index].clear();
     }
 
-    if (blocks.empty())
-        // All blocks were added to the @join
-        return;
-
-    /// TODO: extract code below into function `flushBlocksToBuckets`
-    UNUSED(flushBlocksToBuckets);
-
-    // Write the rest of the blocks to the disk buckets
-    assert(blocks.size() == buckets_snapshot.size());
-    retryForEach(
-        generateRandomPermutation(1, buckets_snapshot.size()),
-        [&](size_t i)
-        {
-            if (!blocks[i].rows())
-                return true;
-            return buckets_snapshot[i]->tryAddRightBlock(blocks[i]);
-        });
-
+    flushBlocksToBuckets(blocks, buckets_snapshot);
 }
 
 size_t GraceHashJoin::getNumBuckets() const
