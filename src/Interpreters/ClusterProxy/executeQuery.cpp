@@ -1,19 +1,45 @@
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/ProcessList.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
-#include <QueryPipeline/Pipe.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
-#include <DataTypes/DataTypesNumber.h>
 
+using namespace DB;
+
+namespace
+{
+
+/// We determine output stream sort properties by a local plan (local because otherwise table could be unknown).
+/// If no local shard exist for this cluster, no sort properties will be provided, c'est la vie.
+auto getRemoteShardsOutputStreamSortingProperties(const std::vector<QueryPlanPtr> & plans, ContextMutablePtr context)
+{
+    SortDescription sort_description;
+    DataStream::SortScope sort_scope = DataStream::SortScope::None;
+    if (!plans.empty())
+    {
+        if (const auto * step = dynamic_cast<const ITransformingStep *>(plans.front()->getRootNode()->step.get());
+            step && step->getDataStreamTraits().can_enforce_sorting_properties_in_distributed_query)
+        {
+            step->adjustSettingsToEnforceSortingPropertiesInDistributedQuery(context);
+            sort_description = step->getOutputStream().sort_description;
+            sort_scope = step->getOutputStream().sort_scope;
+        }
+    }
+    return std::make_pair(sort_description, sort_scope);
+}
+}
 
 namespace DB
 {
@@ -190,6 +216,8 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
+        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
+
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -203,7 +231,9 @@ void executeQuery(
             std::move(external_tables),
             log,
             shards,
-            query_info.storage_limits);
+            query_info.storage_limits,
+            std::move(sort_description),
+            std::move(sort_scope));
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -235,10 +265,13 @@ void executeQueryWithParallelReplicas(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster)
+    const ClusterPtr & not_optimized_cluster,
+    QueryProcessingStage::Enum processed_stage)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -261,6 +294,7 @@ void executeQueryWithParallelReplicas(
 
 
     std::vector<QueryPlanPtr> plans;
+    SelectStreamFactory::Shards remote_shards;
     size_t shards = query_info.getCluster()->getShardCount();
 
     for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
@@ -283,18 +317,43 @@ void executeQueryWithParallelReplicas(
         else
             query_ast_for_shard = query_ast;
 
-        auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr, throttler, context,
-            static_cast<UInt32>(shards), query_info.storage_limits);
+        stream_factory.createForShardWithParallelReplicas(
+            shard_info, query_ast_for_shard, main_table, context, static_cast<UInt32>(shards), plans, remote_shards);
+    }
 
-        if (!shard_plans.local_plan && !shard_plans.remote_plan)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
+    Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    scalars.emplace(
+        "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+    auto external_tables = context->getExternalTables();
 
-        if (shard_plans.local_plan)
-            plans.emplace_back(std::move(shard_plans.local_plan));
+    if (!remote_shards.empty())
+    {
+        auto new_context = Context::createCopy(context);
+        auto && [sort_description, sort_scope] = getRemoteShardsOutputStreamSortingProperties(plans, new_context);
 
-        if (shard_plans.remote_plan)
-            plans.emplace_back(std::move(shard_plans.remote_plan));
+        for (const auto & shard : remote_shards)
+        {
+            auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+                shard.coordinator,
+                shard,
+                shard.header,
+                processed_stage,
+                main_table,
+                table_func_ptr,
+                new_context,
+                throttler,
+                scalars,
+                external_tables,
+                &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
+                query_info.storage_limits,
+                sort_description,
+                sort_scope);
+
+            auto remote_plan = std::make_unique<QueryPlan>();
+            remote_plan->addStep(std::move(read_from_remote));
+            remote_plan->addInterpreterContext(new_context);
+            plans.emplace_back(std::move(remote_plan));
+        }
     }
 
     if (plans.empty())
