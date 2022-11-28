@@ -185,26 +185,6 @@ void StorageMergeTree::shutdown()
 
     if (deduplication_log)
         deduplication_log->shutdown();
-
-    try
-    {
-        /// We clear all old parts after stopping all background operations.
-        /// It's important, because background operations can produce temporary
-        /// parts which will remove themselves in their destructors. If so, we
-        /// may have race condition between our remove call and background
-        /// process.
-        /// Do not clear old parts in case when server is shutting down because it failed to start due to some exception.
-
-        if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
-            && Context::getGlobalContextInstance()->isServerCompletelyStarted())
-            clearOldPartsFromFilesystem(true);
-    }
-    catch (...)
-    {
-        /// Example: the case of readonly filesystem, we have failure removing old parts.
-        /// Should not prevent table shutdown.
-        tryLogCurrentException(log);
-    }
 }
 
 

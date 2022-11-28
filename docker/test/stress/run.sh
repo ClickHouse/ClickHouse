@@ -131,13 +131,7 @@ function stop()
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    # --max-tries is supported only since 22.12
-    if dpkg --compare-versions "$(clickhouse local -q 'select version()')" ge "22.12"; then
-        # Increase default waiting timeout for sanitizers and debug builds
-        clickhouse stop --max-tries 180 --do-not-kill && return
-    else
-        clickhouse stop --do-not-kill && return
-    fi
+    clickhouse stop --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
