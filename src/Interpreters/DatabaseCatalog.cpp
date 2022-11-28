@@ -1215,6 +1215,8 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
 
         if (affected_dirs)
             LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
+        else
+            LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
     (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);
