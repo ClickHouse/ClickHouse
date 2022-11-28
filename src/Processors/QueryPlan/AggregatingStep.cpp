@@ -27,9 +27,9 @@ namespace DB
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
-    InputOrderInfoPtr group_by_info)
+    SortDescription sort_description_for_merging)
 {
-    return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && group_by_info;
+    return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && !sort_description_for_merging.empty();
 }
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number, bool memory_bound_merging_will_be_used)
@@ -109,7 +109,7 @@ AggregatingStep::AggregatingStep(
         getTraits(
             should_produce_results_in_order_of_bucket_number_,
             DB::memoryBoundMergingWillBeUsed(
-                should_produce_results_in_order_of_bucket_number_, memory_bound_merging_of_aggregation_results_enabled_, group_by_info_)),
+                should_produce_results_in_order_of_bucket_number_, memory_bound_merging_of_aggregation_results_enabled_, sort_description_for_merging_)),
         false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -136,6 +136,12 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
 {
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
+
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -480,7 +486,7 @@ void AggregatingStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const
 {
     return DB::memoryBoundMergingWillBeUsed(
-        should_produce_results_in_order_of_bucket_number, memory_bound_merging_of_aggregation_results_enabled, group_by_info);
+        should_produce_results_in_order_of_bucket_number, memory_bound_merging_of_aggregation_results_enabled, sort_description_for_merging);
 }
 
 }
