@@ -446,6 +446,10 @@ public:
     void removeDeleteOnDestroyMarker();
     void removeVersionMetadata();
 
+    /// Found column without specific compression and return codec
+    /// for this column with default parameters.
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -574,10 +578,6 @@ private:
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
-
-    /// Found column without specific compression and return codec
-    /// for this column with default parameters.
-    CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 

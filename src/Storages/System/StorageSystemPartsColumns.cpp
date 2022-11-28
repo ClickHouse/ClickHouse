@@ -58,6 +58,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_position",                            std::make_shared<DataTypeUInt64>()},
         {"default_kind",                               std::make_shared<DataTypeString>()},
         {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"compression_codec",                          std::make_shared<DataTypeString>()},
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
@@ -216,6 +217,9 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (columns_mask[src_index++])
                     columns[res_index++]->insertDefault();
             }
+
+	    if (columns_mask[src_index++])
+                columns[res_index++]->insert(queryToString(part->detectDefaultCompressionCodec()->getFullCodecDesc()));
 
             ColumnSize column_size = part->getColumnSize(column.name);
             if (columns_mask[src_index++])
