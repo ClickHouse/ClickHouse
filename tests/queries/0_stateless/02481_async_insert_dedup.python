@@ -82,18 +82,34 @@ for i in range(3):
 
 gen.join()
 
-time.sleep(5)
 
-result = client.query("select count(*) from t_async_insert_dedup")
-print(result, flush=True)
-result = client.query("select KeyID from t_async_insert_dedup order by KeyID")
-result = result.split()
-for i in range(total_number):
-    expect = str(i+1)
-    real = result[i]
-    if expect != real:
-        print("error, {} is not equal to {} for {}-th elements".format(real, expect, i), flush=True)
-        break
+#result = client.query("select count(*) from t_async_insert_dedup")
+#print(result, flush=True)
+
+retry = 0
+
+while (True):
+    time.sleep(5)
+    result = client.query("select KeyID from t_async_insert_dedup order by KeyID")
+    result = result.split()
+    err = False
+    errMsg = ""
+    for i in range(total_number):
+        expect = str(i+1)
+        real = result[i]
+        if expect != real:
+            err = True
+            errMsg = "error, {} is not equal to {} for {}-th elements, total rows is {}".format(real, expect, i, len(result))
+            break
+    # retry several times to get stable results.
+    if err and retry >= 5:
+        print (errMsg, flush=True)
+    elif err:
+        retry += 1
+        continue
+    else:
+        print(len(result), flush=True)
+    break
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup NO DELAY")
 
 os._exit(os.EX_OK)
