@@ -24,9 +24,9 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static inline void skipWhitespacesAndTabs(ReadBuffer & in)
+static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 {
-    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == '-' || *in.position() == ':' || *in.position() == ','))
+    while (!in.eof() && (isWhitespaceASCII(*in.position()) || *in.position() == ':' || *in.position() == ','))
         ++in.position();
 }
 
@@ -35,8 +35,6 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & in)
 // - 1: String
 // - 5: Decimal, Float
 // - 10: Date, DateTime, Map, Array, Tuple
-//
-// TODO: Find a better way to define score criterions.
 static size_t scoreForType(const DataTypePtr & type)
 {
     WhichDataType which(type);
@@ -48,29 +46,17 @@ static size_t scoreForType(const DataTypePtr & type)
     }
 
     if (which.isMap() || which.isArray() || which.isTuple())
-        return 10;
+        return 100;
 
     if (which.isDateOrDate32() || which.isDateTimeOrDateTime64())
-        return 10;
+        // the rationale here is 2022.11.28 11:30:04.474043 could be parsed into as many as 7 fields
+        // so the score for dates must be at least 7 times greater than a number
+        return 50;
 
     if (which.isDecimal() || which.isFloat())
         return 5;
 
     return 1;
-}
-
-// Returns if type is not String
-static bool isPreferredType(const DataTypePtr & type)
-{
-    WhichDataType which(type);
-
-    if (which.isNullable())
-    {
-        const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
-        return isPreferredType(nullable_type->getNestedType());
-    }
-
-    return !which.isStringOrFixedString();
 }
 
 static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
@@ -91,30 +77,6 @@ static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
     return type;
 }
 
-static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
-{
-    switch (rule)
-    {
-        case FormatSettings::EscapingRule::JSON:
-            return 10;
-        case FormatSettings::EscapingRule::CSV:
-            return 8;
-        case FormatSettings::EscapingRule::Quoted:
-            return 6;
-        case FormatSettings::EscapingRule::Escaped:
-            [[fallthrough]];
-        case FormatSettings::EscapingRule::Raw:
-            return 1;
-        default:
-            return 0;
-    }
-    UNREACHABLE();
-}
-
-static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type)
-{
-    return scoreForRule(rule) * scoreForType(type);
-}
 
 void JSONFieldMatcher::parseField(String & s, ReadBuffer & in) const
 {
@@ -154,7 +116,7 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
 
 std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleFields(const bool & one_string)
 {
-    skipWhitespacesAndTabs(in);
+    skipWhitespacesAndDelimiters(in);
     char * start = in.position();
     std::vector<FreeformFieldMatcher::Field> fields;
 
@@ -163,34 +125,40 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
     {
         matchers.back()->parseField(field, in);
         auto type = matchers.back()->getDataTypeFromField(field);
-        fields.emplace_back(type, matchers.size() - 1, scoreForField(FormatSettings::EscapingRule::JSON, type), in.position(), false);
+        fields.emplace_back(type, matchers.size() - 1, scoreForType(type), in.position(), false);
         return fields;
     }
 
+    size_t prev_score = 0, score = 0;
     for (size_t i = 0; const auto & matcher : matchers)
     {
         try
         {
             matcher->parseField(field, in);
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got field: {} ; matcher: {}", field, matcher->getName());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got field: {} , matcher: {}", field, matcher->getName());
             auto type = matcher->getDataTypeFromField(field);
             if (type)
             {
                 type = makeFloatIfInt(type); // for the sake of correctness, make all int to be float
-                fields.emplace_back(
-                    type,
-                    i,
-                    scoreForField(matcher->getEscapingRule(), type),
-                    in.position(),
-                    field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher");
-                LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got type: {}", type->getName());
-                if (isPreferredType(type))
-                    break;
+                score = scoreForType(type);
+
+                // add a new field only if current score > prev_score or if we haven't found a field other than string
+                if (score > prev_score || prev_score <= 1)
+                {
+                    prev_score = score;
+                    fields.emplace_back(
+                        type,
+                        i,
+                        scoreForType(type),
+                        in.position(),
+                        field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher");
+                    LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got type: {}, score: {}", type->getName(), scoreForType(type));
+                }
             }
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field, error: {}", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field: {}", e.message());
         }
 
         ++i;
@@ -240,6 +208,11 @@ void FreeformFieldMatcher::readRowAndGenerateSolutions(char * pos, std::vector<S
 
 bool FreeformFieldMatcher::generateSolutionsAndPickBest()
 {
+    if (!final_solution.matchers_order.empty())
+        // if a solution is found already, we could return immediately
+        // this is useful in the case of readRow
+        return true;
+
     skipBOMIfExists(in);
     if (in.eof())
         return false;
@@ -267,7 +240,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
 
                 for (const auto & index : solution.matchers_order)
                 {
-                    skipWhitespacesAndTabs(in);
+                    skipWhitespacesAndDelimiters(in);
                     matchers[index]->parseField(tmp, in);
                 }
 
@@ -283,7 +256,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         }
         catch (Exception & e)
         {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse data, error: {} ", e.message());
+            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "failed to parse field: {}", e.message());
         }
     }
 
@@ -293,14 +266,14 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
 
 bool FreeformFieldMatcher::parseRow()
 {
-    skipWhitespacesAndTabs(in);
+    skipWhitespacesAndDelimiters(in);
     if (in.eof() || final_solution.matchers_order.empty())
         return false;
 
     matched_fields.resize(final_solution.matchers_order.size());
     for (size_t col = 0; const auto & i : final_solution.matchers_order)
     {
-        skipWhitespacesAndTabs(in);
+        skipWhitespacesAndDelimiters(in);
         matchers[i]->parseField(matched_fields[col], in);
         ++col;
     }
