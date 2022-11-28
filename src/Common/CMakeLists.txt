@@ -1,4 +1,5 @@
 add_subdirectory(StringUtils)
+add_subdirectory(benchmarks)
 
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
