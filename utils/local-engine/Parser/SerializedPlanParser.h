@@ -49,6 +49,7 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"add", "plus"},
     {"divide", "divide"},
     {"modulus", "modulo"},
+    {"remainder", "modulo"},
     {"abs", "abs"},
     {"ceil", "ceil"},
     {"floor", "floor"},
@@ -103,10 +104,15 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"strpos", "position"},
     {"char_length", "char_length"},
     {"replace", "replaceAll"},
+    {"regexp_replace", "replaceRegexpAll"},
     {"chr", "char"},
+    {"rlike", "match"},
 
     // in functions
     {"in", "in"},
+
+    // null related functions
+    {"coalesce", "coalesce"},
 
     // aggregate functions
     {"count", "count"},
