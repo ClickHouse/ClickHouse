@@ -112,7 +112,8 @@ jobs:
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
-    if: ${{ success() || failure() || always() }}
+    # We need additional `&& ! cancelled()` to have the job being able to cancel
+    if: ${{ success() || failure() || ( always() && ! cancelled() ) }}
     steps:
       - name: Set envs
         run: |
