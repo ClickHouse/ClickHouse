@@ -472,7 +472,7 @@ public:
             final_flags = std::make_unique<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
-            bool included_elements = 0;
+            size_t included_elements = 0;
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; i++)
             {
