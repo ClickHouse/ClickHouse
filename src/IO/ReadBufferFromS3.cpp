@@ -45,7 +45,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    UInt64 max_single_read_retries_,
+    const S3Settings::RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -56,7 +56,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
-    , max_single_read_retries(max_single_read_retries_)
+    , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
     , read_settings(settings_)
@@ -105,7 +105,7 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
+    for (size_t attempt = 0; attempt < request_settings.max_single_read_retries && !next_result; ++attempt)
     {
         Stopwatch watch;
         try
@@ -166,7 +166,7 @@ bool ReadBufferFromS3::nextImpl()
                 attempt,
                 e.message());
 
-            if (attempt + 1 == max_single_read_retries)
+            if (attempt + 1 == request_settings.max_single_read_retries)
                 throw;
 
             /// Pause before next attempt.
@@ -349,7 +349,7 @@ SeekableReadBufferPtr ReadBufferS3Factory::getReader()
         bucket,
         key,
         version_id,
-        s3_max_single_read_retries,
+        request_settings,
         read_settings,
         false /*use_external_buffer*/,
         next_range->first,

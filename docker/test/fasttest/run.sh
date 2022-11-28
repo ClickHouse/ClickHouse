@@ -137,6 +137,7 @@ function clone_submodules
             contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
+            contrib/xxHash
         )
 
         git submodule sync

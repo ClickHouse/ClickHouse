@@ -364,4 +364,17 @@ struct LogInfoCommand : public IFourLetterCommand
     ~LogInfoCommand() override = default;
 };
 
+/// Request to be leader.
+struct RequestLeaderCommand : public IFourLetterCommand
+{
+    explicit RequestLeaderCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rqld"; }
+    String run() override;
+    ~RequestLeaderCommand() override = default;
+};
+
 }

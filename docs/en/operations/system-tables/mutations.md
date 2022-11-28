@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/mutations
 ---
 # mutations
 
-The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md/#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
+The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
 Columns:
 
@@ -45,7 +45,7 @@ If there were problems with mutating some data parts, the following columns cont
 
 **See Also**
 
--   [Mutations](/docs/en/sql-reference/statements/alter/index.md/#mutations)
+-   [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
 -   [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) table engine
 -   [ReplicatedMergeTree](/docs/en/engines/table-engines/mergetree-family/replication.md) family
 
