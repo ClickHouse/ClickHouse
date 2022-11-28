@@ -1,6 +1,7 @@
 import pytest
 import random, string
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", with_zookeeper=True)
@@ -110,6 +111,22 @@ def test_create_table():
     for i, table_engine in enumerate(table_engines):
         node.query(f"CREATE TABLE table{i} (x int) ENGINE = {table_engine}")
 
+    assert (
+        node.query("SHOW CREATE TABLE table0")
+        == "CREATE TABLE default.table0\\n(\\n    `x` Int32\\n)\\nENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')\n"
+    )
+
+    assert node.query(
+        "SELECT create_table_query, engine_full FROM system.tables WHERE name = 'table0'"
+    ) == TSV(
+        [
+            [
+                "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
+                "MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
+            ],
+        ]
+    )
+
     check_logs(
         must_contain=[
             "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
@@ -189,6 +206,22 @@ def test_table_functions():
     for i, table_function in enumerate(table_functions):
         node.query(f"CREATE TABLE tablefunc{i} (x int) AS {table_function}")
 
+    assert (
+        node.query("SHOW CREATE TABLE tablefunc0")
+        == "CREATE TABLE default.tablefunc0\\n(\\n    `x` Int32\\n) AS mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')\n"
+    )
+
+    assert node.query(
+        "SELECT create_table_query, engine_full FROM system.tables WHERE name = 'tablefunc0'"
+    ) == TSV(
+        [
+            [
+                "CREATE TABLE default.tablefunc0 (`x` Int32) AS mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
+                "",
+            ],
+        ]
+    )
+
     check_logs(
         must_contain=[
             "CREATE TABLE tablefunc0 (`x` int) AS mysql('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
@@ -266,6 +299,16 @@ def test_create_dictionary():
         f"CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         f"SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '{password}' DB 'default')) "
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    assert (
+        node.query("SHOW CREATE TABLE dict1")
+        == "CREATE DICTIONARY default.dict1\\n(\\n    `n` int DEFAULT 0,\\n    `m` int DEFAULT 1\\n)\\nPRIMARY KEY n\\nSOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'[HIDDEN]\\' DB \\'default\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+    )
+
+    assert (
+        node.query("SELECT create_table_query FROM system.tables WHERE name = 'dict1'")
+        == "CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'[HIDDEN]\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
     )
 
     check_logs(

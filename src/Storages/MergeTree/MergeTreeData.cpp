@@ -282,8 +282,8 @@ MergeTreeData::MergeTreeData(
 
     checkTTLExpressions(metadata_, metadata_);
 
-    /// format_file always contained on any data path
-    PathWithDisk version_file;
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+    std::optional<UInt32> read_format_version;
     /// Creating directories, if not exist.
     for (const auto & disk : getDisks())
     {
@@ -292,42 +292,44 @@ MergeTreeData::MergeTreeData(
 
         disk->createDirectories(relative_data_path);
         disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-        String current_version_file_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
 
-        if (disk->exists(current_version_file_path))
+        if (disk->exists(format_version_path))
         {
-            if (!version_file.first.empty())
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplication of version file {} and {}", fullPath(version_file.second, version_file.first), current_version_file_path);
-            version_file = {current_version_file_path, disk};
+            auto buf = disk->readFile(format_version_path);
+            UInt32 current_format_version{0};
+            readIntText(current_format_version, *buf);
+            if (!buf->eof())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+            if (!read_format_version.has_value())
+                read_format_version = current_format_version;
+            else if (*read_format_version != current_format_version)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Version file on {} contains version {} expected version is {}.", fullPath(disk, format_version_path), current_format_version, *read_format_version);
         }
     }
 
-    /// If not choose any
-    if (version_file.first.empty())
-        version_file = {fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME, getStoragePolicy()->getAnyDisk()};
-
-    bool version_file_exists = version_file.second->exists(version_file.first);
-
     // When data path or file not exists, ignore the format_version check
-    if (!attach || !version_file_exists)
+    if (!attach || !read_format_version)
     {
         format_version = min_format_version;
-        if (!version_file.second->isReadOnly())
+
+        // try to write to first non-readonly disk
+        for (const auto & disk : getStoragePolicy()->getDisks())
         {
-            auto buf = version_file.second->writeFile(version_file.first, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, context_->getWriteSettings());
-            writeIntText(format_version.toUnderType(), *buf);
-            if (getContext()->getSettingsRef().fsync_metadata)
-                buf->sync();
+            if (!disk->isReadOnly())
+            {
+                auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, context_->getWriteSettings());
+                writeIntText(format_version.toUnderType(), *buf);
+                if (getContext()->getSettingsRef().fsync_metadata)
+                    buf->sync();
+
+                break;
+            }
         }
     }
     else
     {
-        auto buf = version_file.second->readFile(version_file.first);
-        UInt32 read_format_version;
-        readIntText(read_format_version, *buf);
-        format_version = read_format_version;
-        if (!buf->eof())
-            throw Exception("Bad version file: " + fullPath(version_file.second, version_file.first), ErrorCodes::CORRUPTED_DATA);
+        format_version = *read_format_version;
     }
 
     if (format_version < min_format_version)

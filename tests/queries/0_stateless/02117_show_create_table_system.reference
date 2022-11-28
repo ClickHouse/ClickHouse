@@ -190,6 +190,10 @@ CREATE TABLE system.disks
     `keep_free_space` UInt64,
     `type` String,
     `is_encrypted` UInt8,
+    `is_read_only` UInt8,
+    `is_write_once` UInt8,
+    `is_remote` UInt8,
+    `is_broken` UInt8,
     `cache_path` String
 )
 ENGINE = SystemDisks
