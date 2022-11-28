@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/nullable
 sidebar_position: 55
 sidebar_label: Nullable
 ---

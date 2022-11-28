@@ -130,7 +130,7 @@ public:
                                 ". Expected const integer.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            scale = static_cast<UInt32>(argument.column->get64(0));
+            scale = argument.column->get64(0);
         }
         if (arguments.size() == 2)
         {
@@ -160,7 +160,7 @@ public:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<Now64OverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

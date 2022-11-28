@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/kill
 sidebar_position: 46
 sidebar_label: KILL
 ---

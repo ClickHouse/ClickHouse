@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/table-functions/jdbc
 sidebar_position: 43
 sidebar_label: jdbc
 ---

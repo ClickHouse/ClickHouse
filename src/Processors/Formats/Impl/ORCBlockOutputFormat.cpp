@@ -253,8 +253,8 @@ void ORCBlockOutputFormat::writeDateTimes(
         }
 
         timestamp_orc_column.notNull[i] = 1;
-        timestamp_orc_column.data[i] = static_cast<int64_t>(get_seconds(timestamp_column.getElement(i)));
-        timestamp_orc_column.nanoseconds[i] = static_cast<int64_t>(get_nanoseconds(timestamp_column.getElement(i)));
+        timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
+        timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
     timestamp_orc_column.numElements = timestamp_column.size();
 }
