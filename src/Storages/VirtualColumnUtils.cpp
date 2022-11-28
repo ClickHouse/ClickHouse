@@ -164,6 +164,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         ActionsVisitor::Data visitor_data(
             context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true, false,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
+
         ActionsVisitor(visitor_data).visit(node);
         actions = visitor_data.getActions();
         auto expression_actions = std::make_shared<ExpressionActions>(actions);

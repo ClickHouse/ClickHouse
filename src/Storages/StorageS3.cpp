@@ -94,7 +94,10 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
 {
-    auto file = path.substr(path.find_last_of('/') + 1);
+    auto pos = path.find_last_of('/');
+    assert(pos != std::string::npos);
+
+    auto file = path.substr(pos + 1);
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
 
@@ -197,7 +200,12 @@ private:
         is_finished = !outcome.GetResult().GetIsTruncated();
 
         if (!is_finished)
+        {
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            list_objects_pool.wait();
             outcome_future = listObjectsAsync();
+        }
 
         KeysWithInfo temp_buffer;
         temp_buffer.reserve(result_batch.size());
@@ -220,14 +228,11 @@ private:
             }
         }
 
-        if (!filter_ast.has_value())
-        {
-            String any_key;
-            if (!temp_buffer.empty())
-                any_key = temp_buffer.front().key;
+        if (temp_buffer.empty())
+            return;
 
-            createFilterAST(any_key);
-        }
+        if (!filter_ast.has_value())
+            createFilterAST(temp_buffer.front().key);
 
         if (*filter_ast)
         {
@@ -261,7 +266,10 @@ private:
     void createFilterAST(const String & any_key)
     {
         if (!query || !virtual_header)
+        {
+            filter_ast = nullptr;
             return;
+        }
 
         /// Create a virtual block with one row to construct filter
         /// Append "idx" column as the filter result
@@ -345,17 +353,13 @@ public:
         , virtual_header(virtual_header_)
     {
         /// Create a virtual block with one row to construct filter
-        if (query && virtual_header)
+        if (query && virtual_header && !keys.empty())
         {
             /// Append "idx" column as the filter result
             virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-            String any_key;
-            if (!keys.empty())
-                any_key = keys.front();
-
             auto block = virtual_header.cloneEmpty();
-            addPathToVirtualColumns(block, fs::path(bucket) / any_key, 0);
+            addPathToVirtualColumns(block, fs::path(bucket) / keys.front(), 0);
 
             ASTPtr filter_ast;
             VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
@@ -626,6 +630,9 @@ Chunk StorageS3Source::generate()
             if (!reader)
                 break;
 
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            create_reader_pool.wait();
             reader_future = createReaderAsync();
         }
     }
