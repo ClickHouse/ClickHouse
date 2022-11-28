@@ -423,7 +423,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getResultType());
 }
 
 
@@ -2021,7 +2021,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getReturnType()});
+                        {f.column_name, f.aggregate_function->getResultType()});
                 }
             }
 

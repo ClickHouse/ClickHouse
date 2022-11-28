@@ -47,8 +47,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 
     if (function_base)
         map.add("Function", function_base->getName());
-    else if (function_builder)
-        map.add("Function", function_builder->getName());
 
     if (type == ActionType::FUNCTION)
         map.add("Compiled", is_function_compiled);
@@ -166,7 +164,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     Node node;
     node.type = ActionType::FUNCTION;
-    node.function_builder = function;
     node.children = std::move(children);
 
     bool all_const = true;
@@ -224,6 +221,86 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     if (result_name.empty())
     {
         result_name = function->getName() + "(";
+        for (size_t i = 0; i < num_arguments; ++i)
+        {
+            if (i)
+                result_name += ", ";
+            result_name += node.children[i]->result_name;
+        }
+        result_name += ")";
+    }
+
+    node.result_name = std::move(result_name);
+
+    return addNode(std::move(node));
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    std::string result_name)
+{
+    size_t num_arguments = children.size();
+
+    Node node;
+    node.type = ActionType::FUNCTION;
+    node.children = std::move(children);
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const auto & child = *node.children[i];
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+
+    node.function_base = function_base;
+    node.result_type = node.function_base->getResultType();
+    node.function = node.function_base->prepare(arguments);
+    node.is_deterministic = node.function_base->isDeterministic();
+
+    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+    if (node.function_base->isSuitableForConstantFolding())
+    {
+        ColumnPtr column;
+
+        if (all_const)
+        {
+            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+            column = node.function->execute(arguments, node.result_type, num_rows, true);
+        }
+        else
+        {
+            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
+        }
+
+        /// If the result is not a constant, just in case, we will consider the result as unknown.
+        if (column && isColumnConst(*column))
+        {
+            /// All constant (literal) columns in block are added with size 1.
+            /// But if there was no columns in block before executing a function, the result has size 0.
+            /// Change the size to 1.
+
+            if (column->empty())
+                column = column->cloneResized(1);
+
+            node.column = std::move(column);
+        }
+    }
+
+    if (result_name.empty())
+    {
+        result_name = function_base->getName() + "(";
         for (size_t i = 0; i < num_arguments; ++i)
         {
             if (i)
@@ -1927,8 +2004,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
                 FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
-                predicate->function_builder = func_builder_cast;
-                predicate->function_base = predicate->function_builder->build(arguments);
+                predicate->function_base = func_builder_cast->build(arguments);
                 predicate->function = predicate->function_base->prepare(arguments);
             }
         }
@@ -1939,7 +2015,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
-            predicate->function_base = predicate->function_builder->build(arguments);
+            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+            predicate->function_base = func_builder_and->build(arguments);
             predicate->function = predicate->function_base->prepare(arguments);
         }
     }

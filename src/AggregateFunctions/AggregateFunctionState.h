@@ -23,7 +23,7 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, createResultType())
         , nested_func(nested_)
     {}
 
@@ -32,7 +32,7 @@ public:
         return nested_func->getName() + "State";
     }
 
-    DataTypePtr getReturnType() const override
+    DataTypePtr createResultType() const
     {
         return getStateType();
     }

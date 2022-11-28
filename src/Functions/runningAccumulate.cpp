@@ -91,7 +91,7 @@ public:
         if (arguments.size() == 2)
             column_with_groups = arguments[1].column;
 
-        AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
+        ConstAggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
         AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());
@@ -99,7 +99,7 @@ public:
         /// Will pass empty arena if agg_func does not allocate memory in arena
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        auto result_column_ptr = agg_func.getReturnType()->createColumn();
+        auto result_column_ptr = agg_func.getResultType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 

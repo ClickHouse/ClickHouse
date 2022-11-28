@@ -13,6 +13,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include "Common/tests/gtest_global_context.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
@@ -599,9 +600,9 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
-                if (const auto * adaptor = typeid_cast<const FunctionToOverloadResolverAdaptor *>(node.function_builder.get()))
+                if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
                 {
-                    if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction()))
+                    if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                     {
                         const auto & index_hint_dag = index_hint->getActions();
                         children = index_hint_dag->getOutputs();
@@ -611,7 +612,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
 
-                const auto & func = inverted_dag.addFunction(node.function_builder, children, "");
+                const auto & func = inverted_dag.addFunction(FunctionFactory::instance().get(node.function_base->getName(), context), children, "");
                 to_inverted[&node] = &func;
                 return func;
             }
@@ -654,7 +655,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 return func;
             }
 
-            res = &inverted_dag.addFunction(node.function_builder, children, "");
+            res = &inverted_dag.addFunction(FunctionFactory::instance().get(node.function_base->getName(), context), children, "");
         }
     }
 
@@ -939,6 +940,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * which while not strictly monotonic, are monotonic everywhere on the input range.
   */
 bool KeyCondition::transformConstantWithValidFunctions(
+    ContextPtr context,
     const String & expr_name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
@@ -1024,14 +1026,16 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                func->function_builder, left_arg_type, left_arg_value, const_type, const_value);
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                func->function_builder, const_type, const_value, right_arg_type, right_arg_value);
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
+                                const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }
                 }
@@ -1067,7 +1071,13 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         return false;
 
     return transformConstantWithValidFunctions(
-        expr_name, out_key_column_num, out_key_column_type, out_value, out_type, [](IFunctionBase & func, const IDataType & type)
+        node.getTreeContext().getQueryContext(),
+        expr_name,
+        out_key_column_num,
+        out_key_column_type,
+        out_value,
+        out_type,
+        [](IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
@@ -1116,7 +1126,13 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         return false;
 
     return transformConstantWithValidFunctions(
-        expr_name, out_key_column_num, out_key_column_type, out_value, out_type, [](IFunctionBase & func, const IDataType &)
+        node.getTreeContext().getQueryContext(),
+        expr_name,
+        out_key_column_num,
+        out_key_column_type,
+        out_value,
+        out_type,
+        [](IFunctionBase & func, const IDataType &)
         {
             return func.isDeterministic();
         });

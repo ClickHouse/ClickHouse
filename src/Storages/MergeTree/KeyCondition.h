@@ -421,6 +421,7 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
+        ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,

@@ -107,7 +107,7 @@ private:
 
 public:
     AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, nested_->getResultType())
         , nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
@@ -123,11 +123,6 @@ public:
     String getName() const override
     {
         return nested_func->getName() + "ForEach";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(nested_func->getReturnType());
     }
 
     bool isVersioned() const override

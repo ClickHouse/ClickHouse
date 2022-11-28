@@ -19,7 +19,7 @@ namespace DB
 class DataTypeAggregateFunction final : public IDataType
 {
 private:
-    AggregateFunctionPtr function;
+    ConstAggregateFunctionPtr function;
     DataTypes argument_types;
     Array parameters;
     mutable std::optional<size_t> version;
@@ -30,9 +30,9 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_,
+    DataTypeAggregateFunction(ConstAggregateFunctionPtr function_, const DataTypes & argument_types_,
                               const Array & parameters_, std::optional<size_t> version_ = std::nullopt)
-        : function(function_)
+        : function(std::move(function_))
         , argument_types(argument_types_)
         , parameters(parameters_)
         , version(version_)
@@ -40,7 +40,7 @@ public:
     }
 
     String getFunctionName() const { return function->getName(); }
-    AggregateFunctionPtr getFunction() const { return function; }
+    ConstAggregateFunctionPtr getFunction() const { return function; }
 
     String doGetName() const override;
     String getNameWithoutVersion() const;
@@ -51,7 +51,7 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getReturnType(); }
+    DataTypePtr getReturnType() const { return function->getResultType(); }
     DataTypePtr getReturnTypeToPredict() const { return function->getReturnTypeToPredict(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 

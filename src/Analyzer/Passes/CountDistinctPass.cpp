@@ -69,7 +69,7 @@ public:
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(result_type));
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
     }
 };

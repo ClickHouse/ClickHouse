@@ -2,6 +2,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include "Core/ColumnsWithTypeAndName.h"
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -25,25 +26,54 @@ FunctionNode::FunctionNode(String function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void FunctionNode::resolveAsFunction(FunctionOverloadResolverPtr function_value, DataTypePtr result_type_value)
+ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
 {
-    aggregate_function = nullptr;
+    ColumnsWithTypeAndName argument_types;
+    for (const auto & arg : getArguments().getNodes())
+    {
+        ColumnWithTypeAndName argument;
+        argument.type = arg->getResultType();
+        argument_types.push_back(argument);
+    }
+    return argument_types;
+}
+
+
+FunctionBasePtr FunctionNode::getFunction() const
+{
+    return std::dynamic_pointer_cast<IFunctionBase>(function);
+}
+
+AggregateFunctionPtr FunctionNode::getAggregateFunction() const
+{
+    return std::dynamic_pointer_cast<IAggregateFunction>(function);
+}
+
+bool FunctionNode::isAggregateFunction() const
+{
+    return typeid_cast<AggregateFunctionPtr>(function) != nullptr && !isWindowFunction();
+}
+
+bool FunctionNode::isOrdinaryFunction() const
+{
+    return typeid_cast<FunctionBasePtr>(function) != nullptr;
+}
+
+void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
+{
+    function_name = function_value->getName();
     function = std::move(function_value);
-    result_type = std::move(result_type_value);
-    function_name = function->getName();
 }
 
-void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value, DataTypePtr result_type_value)
+void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value)
 {
-    function = nullptr;
-    aggregate_function = std::move(aggregate_function_value);
-    result_type = std::move(result_type_value);
-    function_name = aggregate_function->getName();
+    function_name = aggregate_function_value->getName();
+    function = std::move(aggregate_function_value);
 }
 
-void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value, DataTypePtr result_type_value)
+void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
 {
-    resolveAsAggregateFunction(window_function_value, result_type_value);
+    resolveAsAggregateFunction(window_function_value);
 }
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -63,8 +93,8 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", function_type: " << function_type;
 
-    if (result_type)
-        buffer << ", result_type: " + result_type->getName();
+    if (function)
+        buffer << ", result_type: " + function->getResultType()->getName();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -95,12 +125,14 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
         isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() ||
         isWindowFunction() != rhs_typed.isWindowFunction())
         return false;
+    auto lhs_result_type = getResultType();
+    auto rhs_result_type = rhs.getResultType();
 
-    if (result_type && rhs_typed.result_type && !result_type->equals(*rhs_typed.getResultType()))
+    if (lhs_result_type && rhs_result_type && !lhs_result_type->equals(*rhs_result_type))
         return false;
-    else if (result_type && !rhs_typed.result_type)
+    else if (lhs_result_type && !rhs_result_type)
         return false;
-    else if (!result_type && rhs_typed.result_type)
+    else if (!lhs_result_type && rhs_result_type)
         return false;
 
     return true;
@@ -114,7 +146,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
 
-    if (result_type)
+    if (auto result_type = getResultType())
     {
         auto result_type_name = result_type->getName();
         hash_state.update(result_type_name.size());
@@ -130,8 +162,6 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       * because ordinary functions or aggregate functions must be stateless.
       */
     result_function->function = function;
-    result_function->aggregate_function = aggregate_function;
-    result_function->result_type = result_type;
 
     return result_function;
 }

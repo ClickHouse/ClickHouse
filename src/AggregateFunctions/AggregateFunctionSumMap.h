@@ -80,7 +80,7 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */)
+        : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_, getName()))
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
@@ -117,19 +117,22 @@ public:
             return 0;
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(
+        const DataTypePtr & keys_type_,
+        const DataTypes & values_types_,
+        const String & name_)
     {
         DataTypes types;
-        types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
+        types.emplace_back(std::make_shared<DataTypeArray>(keys_type_));
 
-        for (const auto & value_type : values_types)
+        for (const auto & value_type : values_types_)
         {
             if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
             {
                 if (!value_type->isSummable())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} cannot be summed, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
             }
 
             DataTypePtr result_type;
@@ -139,7 +142,7 @@ public:
                 if (value_type->onlyNull())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Cannot calculate {} of type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
                 // Overflow, meaning that the returned type is the same as
                 // the input type. Nulls are skipped.
@@ -153,7 +156,7 @@ public:
                 if (!value_type_without_nullable->canBePromoted())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
                 WhichDataType value_type_to_check(value_type_without_nullable);
 

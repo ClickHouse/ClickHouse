@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
+#include <Core/IResolvedFunction.h>
 
 #include "config.h"
 
@@ -48,7 +49,9 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+using ConstAggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
+
 struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
@@ -59,17 +62,17 @@ struct AggregateFunctionProperties;
   *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
   */
-class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>
+class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>, public IResolvedFunction
 {
 public:
-    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
-        : argument_types(argument_types_), parameters(parameters_) {}
+    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : result_type(result_type_)
+        , argument_types(argument_types_)
+        , parameters(parameters_)
+    {}
 
     /// Get main function name.
     virtual String getName() const = 0;
-
-    /// Get the result type.
-    virtual DataTypePtr getReturnType() const = 0;
 
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
@@ -102,7 +105,7 @@ public:
 
     virtual size_t getDefaultVersion() const { return 0; }
 
-    virtual ~IAggregateFunction() = default;
+    ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */
 
@@ -348,8 +351,9 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
-    const DataTypes & getArgumentTypes() const { return argument_types; }
-    const Array & getParameters() const { return parameters; }
+    const DataTypePtr & getResultType() const override { return result_type; }
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const Array & getParameters() const override { return parameters; }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -398,6 +402,7 @@ public:
 #endif
 
 protected:
+    DataTypePtr result_type;
     DataTypes argument_types;
     Array parameters;
 };
@@ -414,8 +419,8 @@ private:
     }
 
 public:
-    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunction(argument_types_, parameters_) {}
+    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : IAggregateFunction(argument_types_, parameters_, result_type_) {}
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
@@ -695,15 +700,15 @@ public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
 
-    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_)
+    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_, result_type_)
     {
         /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
         /// Enforce that either both of them are changed or none are
-        constexpr bool declares_destroy_and_hasTrivialDestructor =
+        constexpr bool declares_destroy_and_has_trivial_destructor =
             std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
             std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
-        static_assert(declares_destroy_and_hasTrivialDestructor,
+        static_assert(declares_destroy_and_has_trivial_destructor,
             "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
     }
 

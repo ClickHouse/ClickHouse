@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
+#include "DataTypes/Serializations/ISerialization.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -30,16 +31,14 @@ private:
     AggregateFunctionPtr nested_function;
 
     size_t size_of_data;
-    DataTypePtr inner_type;
     bool inner_nullable;
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params}
+        : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params, createResultType(nested_function_->getResultType())}
         , nested_function{nested_function_}
         , size_of_data {nested_function->sizeOfData()}
-        , inner_type {nested_function->getReturnType()}
-        , inner_nullable {inner_type->isNullable()}
+        , inner_nullable {nested_function->getResultType()->isNullable()}
     {
         // nothing
     }
@@ -246,22 +245,22 @@ public:
         readChar(place[size_of_data], buf);
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypePtr & inner_type_)
     {
         if constexpr (UseNull)
         {
             // -OrNull
 
-            if (inner_nullable)
-                return inner_type;
+            if (inner_type_->isNullable())
+                return inner_type_;
 
-            return std::make_shared<DataTypeNullable>(inner_type);
+            return std::make_shared<DataTypeNullable>(inner_type_);
         }
         else
         {
             // -OrDefault
 
-            return inner_type;
+            return inner_type_;
         }
     }
 

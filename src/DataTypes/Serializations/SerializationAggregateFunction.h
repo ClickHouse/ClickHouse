@@ -11,14 +11,14 @@ namespace DB
 class SerializationAggregateFunction final : public ISerialization
 {
 private:
-    AggregateFunctionPtr function;
+    ConstAggregateFunctionPtr function;
     String type_name;
     size_t version;
 
 public:
     static constexpr bool is_parametric = true;
 
-    SerializationAggregateFunction(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
+    SerializationAggregateFunction(const ConstAggregateFunctionPtr & function_, String type_name_, size_t version_)
         : function(function_), type_name(std::move(type_name_)), version(version_) {}
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.

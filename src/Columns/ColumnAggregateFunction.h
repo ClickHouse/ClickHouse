@@ -70,7 +70,7 @@ private:
     ArenaPtr my_arena;
 
     /// Used for destroying states and for finalization of values.
-    AggregateFunctionPtr func;
+    ConstAggregateFunctionPtr func;
 
     /// Source column. Used (holds source from destruction),
     ///  if this column has been constructed from another and uses all or part of its values.
@@ -92,9 +92,9 @@ private:
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
 
-    explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    explicit ColumnAggregateFunction(const ConstAggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const ConstAggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -103,10 +103,10 @@ private:
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_, size_t version_);
+    void set(const ConstAggregateFunctionPtr & func_, size_t version_);
 
-    AggregateFunctionPtr getAggregateFunction() { return func; }
-    AggregateFunctionPtr getAggregateFunction() const { return func; }
+    ConstAggregateFunctionPtr getAggregateFunction() { return func; }
+    ConstAggregateFunctionPtr getAggregateFunction() const { return func; }
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
