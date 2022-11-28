@@ -3,7 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
-#include <Access/Common/AccessType.h>
 
 #include <memory>
 #include <string>
@@ -69,13 +68,9 @@ public:
 
     virtual ~ITableFunction() = default;
 
-protected:
-    virtual AccessType getSourceAccessType() const;
-
 private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
-
     virtual const char * getStorageTypeName() const = 0;
 };
 

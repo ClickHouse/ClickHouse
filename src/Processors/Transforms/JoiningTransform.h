@@ -39,8 +39,7 @@ public:
     using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
     JoiningTransform(
-        const Block & input_header,
-        const Block & output_header,
+        Block input_header,
         JoinPtr join_,
         size_t max_block_size_,
         bool on_totals_ = false,

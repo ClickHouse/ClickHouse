@@ -18,9 +18,9 @@ conflicts:
 maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
 description: |
   Client binary for ClickHouse
-    ClickHouse is a column-oriented database management system.
+    ClickHouse is a column-oriented database management system
     that allows generating analytical data reports in real time.
-    This package provides clickhouse-client, clickhouse-local and clickhouse-benchmark.
+    This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
 
 overrides:
   deb:
@@ -37,7 +37,7 @@ deb:
 contents:
 - src: root/etc/clickhouse-client/config.xml
   dst: /etc/clickhouse-client/config.xml
-  type: config
+  type: config|noreplace
 - src: root/usr/bin/clickhouse-benchmark
   dst: /usr/bin/clickhouse-benchmark
 - src: root/usr/bin/clickhouse-compressor

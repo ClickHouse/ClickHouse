@@ -1,10 +1,10 @@
 ---
-slug: /en/sql-reference/dictionaries/
-sidebar_label: Dictionaries
-sidebar_position: 35
+toc_folder_title: Dictionaries
+toc_priority: 35
+toc_title: Introduction
 ---
 
-# Dictionaries
+# Dictionaries {#dictionaries}
 
 A dictionary is a mapping (`key -> attributes`) that is convenient for various types of reference lists.
 

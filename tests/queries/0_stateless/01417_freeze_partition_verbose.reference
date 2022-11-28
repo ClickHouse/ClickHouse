@@ -22,4 +22,3 @@ command_type	partition_id	part_name	backup_name
 FREEZE PARTITION	202103	20210301_20210301_1_1_0	test_01417_single_part_old_syntax
 command_type	partition_id	part_name	backup_name
 UNFREEZE PARTITION	20210301	20210301_20210301_1_1_0	test_01417_single_part_old_syntax
-SYSTEM UNFREEZE	7	7_8_8_0	test_01417_single_part_7_system

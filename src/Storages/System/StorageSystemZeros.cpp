@@ -1,6 +1,6 @@
 #include <Storages/System/StorageSystemZeros.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -23,11 +23,11 @@ using ZerosStatePtr = std::shared_ptr<ZerosState>;
 /// Source which generates zeros.
 /// Uses state to share the number of generated rows between threads.
 /// If state is nullptr, then limit is ignored.
-class ZerosSource : public ISource
+class ZerosSource : public SourceWithProgress
 {
 public:
     ZerosSource(UInt64 block_size, UInt64 limit_, ZerosStatePtr state_)
-            : ISource(createHeader()), limit(limit_), state(std::move(state_))
+            : SourceWithProgress(createHeader()), limit(limit_), state(std::move(state_))
     {
         column = createColumn(block_size);
     }
@@ -54,7 +54,7 @@ protected:
             }
         }
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column_ptr)}, column_size };
     }

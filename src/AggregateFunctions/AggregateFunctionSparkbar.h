@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -161,7 +161,7 @@ private:
             Y max_y = data.max_y;
             Float64 diff_y = max_y - min_y;
 
-            if (diff_y != 0.0)
+            if (diff_y)
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
@@ -194,7 +194,7 @@ private:
             auto upper_bound = [&](size_t bucket_num)
             {
                 bound.second = (bucket_num + 1) * multiple_d;
-                bound.first = static_cast<size_t>(std::floor(bound.second));
+                bound.first = std::floor(bound.second);
             };
             upper_bound(cur_bucket_num);
             for (size_t i = 0; i <= (diff_x + 1); ++i)
@@ -249,7 +249,7 @@ private:
                 value += getBar(point_y ? 1 : 0);
             };
 
-            if (diff_y != 0.0)
+            if (diff_y)
                 std::for_each(new_points.begin(), new_points.end(), get_bars);
             else
                 std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
@@ -298,7 +298,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs, Arena * /*arena*/) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /*arena*/) const override
     {
         this->data(place).merge(this->data(rhs));
     }

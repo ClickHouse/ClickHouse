@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NLP
 
@@ -125,9 +125,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Stem)
+void registerFunctionStem(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionStem>();
+    factory.registerFunction<FunctionStem>(FunctionFactory::CaseInsensitive);
 }
 
 }

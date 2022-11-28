@@ -28,8 +28,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
-    extern const int CAPN_PROTO_BAD_TYPE;
-    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
@@ -38,7 +37,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
     try
     {
         int fd;
-        KJ_SYSCALL(fd = open(schema_info.schemaDirectory().data(), O_RDONLY)); // NOLINT(bugprone-suspicious-semicolon)
+        KJ_SYSCALL(fd = open(schema_info.schemaDirectory().data(), O_RDONLY));
         auto schema_dir = kj::newDiskDirectory(kj::OsFileHandle(fd));
         schema = impl.parseFromDirectory(*schema_dir, kj::Path::parse(schema_info.schemaPath()), {});
     }
@@ -53,7 +52,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         if (description.find("Parse error") != String::npos)
             throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA, "Cannot parse CapnProto schema {}:{}", schema_info.schemaPath(), e.getLine());
 
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while parsing CapnProto schema: {}, schema dir and file: {}, {}", description, schema_info.schemaDirectory(), schema_info.schemaPath());
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while parsing CapnProro schema: {}, schema dir and file: {}, {}", description, schema_info.schemaDirectory(), schema_info.schemaPath());
     }
 
     auto message_maybe = schema.findNested(schema_info.messageName());
@@ -448,10 +447,10 @@ static DataTypePtr getEnumDataTypeFromEnumSchema(const capnp::EnumSchema & enum_
     if (enumerants.size() < 32768)
         return getEnumDataTypeFromEnumerants<Int16>(enumerants);
 
-    throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "ClickHouse supports only 8 and 16-bit Enums");
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "ClickHouse supports only 8 and 16-but Enums");
 }
 
-static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type, bool skip_unsupported_fields)
+static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type)
 {
     switch (capnp_type.which())
     {
@@ -484,90 +483,57 @@ static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type, 
         case capnp::schema::Type::LIST:
         {
             auto list_schema = capnp_type.asList();
-            auto nested_type = getDataTypeFromCapnProtoType(list_schema.getElementType(), skip_unsupported_fields);
-            if (!nested_type)
-                return nullptr;
+            auto nested_type = getDataTypeFromCapnProtoType(list_schema.getElementType());
             return std::make_shared<DataTypeArray>(nested_type);
         }
         case capnp::schema::Type::STRUCT:
         {
             auto struct_schema = capnp_type.asStruct();
 
-
-            if (struct_schema.getFields().size() == 0)
-            {
-                if (skip_unsupported_fields)
-                    return nullptr;
-                throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Empty messages are not supported");
-            }
-
             /// Check if it can be Nullable.
             if (checkIfStructIsNamedUnion(struct_schema))
             {
                 auto fields = struct_schema.getUnionFields();
                 if (fields.size() != 2 || (!fields[0].getType().isVoid() && !fields[1].getType().isVoid()))
-                {
-                    if (skip_unsupported_fields)
-                        return nullptr;
-                    throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unions are not supported");
-                }
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unions are not supported");
                 auto value_type = fields[0].getType().isVoid() ? fields[1].getType() : fields[0].getType();
                 if (value_type.isStruct() || value_type.isList())
-                {
-                    if (skip_unsupported_fields)
-                        return nullptr;
-                    throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Tuples and Lists cannot be inside Nullable");
-                }
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Tuples and Lists cannot be inside Nullable");
 
-                auto nested_type = getDataTypeFromCapnProtoType(value_type, skip_unsupported_fields);
-                if (!nested_type)
-                    return nullptr;
+                auto nested_type = getDataTypeFromCapnProtoType(value_type);
                 return std::make_shared<DataTypeNullable>(nested_type);
             }
 
             if (checkIfStructContainsUnnamedUnion(struct_schema))
-                throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unnamed union is not supported");
+                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
 
             /// Treat Struct as Tuple.
             DataTypes nested_types;
             Names nested_names;
             for (auto field : struct_schema.getNonUnionFields())
             {
-                auto nested_type = getDataTypeFromCapnProtoType(field.getType(), skip_unsupported_fields);
-                if (!nested_type)
-                    continue;
                 nested_names.push_back(field.getProto().getName());
-                nested_types.push_back(nested_type);
+                nested_types.push_back(getDataTypeFromCapnProtoType(field.getType()));
             }
-            if (nested_types.empty())
-                return nullptr;
             return std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names));
         }
         default:
-        {
-            if (skip_unsupported_fields)
-                return nullptr;
-            throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unsupported CapnProtoType: {}", getCapnProtoFullTypeName(capnp_type));
-        }
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unsupported CapnProtoType: {}", getCapnProtoFullTypeName(capnp_type));
     }
 }
 
-NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, bool skip_unsupported_fields)
+NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema)
 {
     if (checkIfStructContainsUnnamedUnion(schema))
-        throw Exception(ErrorCodes::CAPN_PROTO_BAD_TYPE, "Unnamed union is not supported");
+        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
 
     NamesAndTypesList names_and_types;
     for (auto field : schema.getNonUnionFields())
     {
         auto name = field.getProto().getName();
-        auto type = getDataTypeFromCapnProtoType(field.getType(), skip_unsupported_fields);
-        if (type)
-            names_and_types.emplace_back(name, type);
+        auto type = getDataTypeFromCapnProtoType(field.getType());
+        names_and_types.emplace_back(name, type);
     }
-    if (names_and_types.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert CapnProto schema to ClickHouse table schema, all fields have unsupported types");
-
     return names_and_types;
 }
 

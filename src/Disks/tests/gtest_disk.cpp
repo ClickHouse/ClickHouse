@@ -7,6 +7,12 @@
 namespace fs = std::filesystem;
 
 
+#if !defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+
+
 template <typename T>
 DB::DiskPtr createDisk();
 

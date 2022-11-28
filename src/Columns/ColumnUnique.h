@@ -316,8 +316,8 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
     return 0;
 }
 
-template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
+
+namespace
 {
     class FieldVisitorGetData : public StaticVisitor<>
     {
@@ -350,7 +350,12 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
     };
+}
 
+
+template <typename ColumnType>
+size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
+{
     if (x.isNull())
         return getNullValueIndex();
 
@@ -547,7 +552,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
+    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
         positions[num_added_rows] = inserted_pos;
@@ -586,6 +591,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         }
     }
 
+    // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
     return std::move(positions_column);
 }
 

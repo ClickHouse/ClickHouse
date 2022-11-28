@@ -8,7 +8,6 @@
 #include <Parsers/MySQL/ASTAlterQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -88,8 +87,6 @@ using InterpreterMySQLDropQuery = InterpreterMySQLDDLQuery<InterpreterDropImpl>;
 using InterpreterMySQLAlterQuery = InterpreterMySQLDDLQuery<InterpreterAlterImpl>;
 using InterpreterMySQLRenameQuery = InterpreterMySQLDDLQuery<InterpreterRenameImpl>;
 using InterpreterMySQLCreateQuery = InterpreterMySQLDDLQuery<InterpreterCreateImpl>;
-
-NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition);
 
 }
 

@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/Context.h>

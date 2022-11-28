@@ -1,6 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest
-# Tag no-fasttest: 180 seconds running
 
 log_user 0
 set timeout 60

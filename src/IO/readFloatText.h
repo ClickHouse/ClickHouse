@@ -354,7 +354,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (unlikely(read_digits > significant_digits))
     {
         int before_point_additional_exponent = read_digits - significant_digits;
-        x = static_cast<T>(shift10(before_point, before_point_additional_exponent));
+        x = shift10(before_point, before_point_additional_exponent);
     }
     else
     {
@@ -411,10 +411,10 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     }
 
     if (after_point)
-        x += static_cast<T>(shift10(after_point, after_point_exponent));
+        x += shift10(after_point, after_point_exponent);
 
     if (exponent)
-        x = static_cast<T>(shift10(x, exponent));
+        x = shift10(x, exponent);
 
     if (negative)
         x = -x;
@@ -486,7 +486,7 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
     bool negative = false;
     x = 0;
     bool after_point = false;
-    T power_of_ten = 1;
+    double power_of_ten = 1;
 
     if (buf.eof())
         throwReadAfterEOF();

@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToStartOfSecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfSecondImpl>;
 
-REGISTER_FUNCTION(ToStartOfSecond)
+void registerFunctionToStartOfSecond(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfSecond>();
 }
