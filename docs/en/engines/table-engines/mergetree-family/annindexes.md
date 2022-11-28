@@ -41,26 +41,27 @@ Approximate Nearest Neighbor Search Indexes (`ANNIndexes`) are similar to skip i
 
 In these queries, `DistanceFunction` is selected from [distance functions](../../../sql-reference/functions/distance-functions). `Point` is a known vector (something like `(0.1, 0.1, ... )`). To avoid writing large vectors, use [client parameters](../../../interfaces/cli.md#queries-with-parameters-cli-queries-with-parameters). `Value` - a float value that will bound the neighbourhood.
 
-!!! note "Note"
-    ANN index can't speed up query that satisfies both types(`where + order by`, only one of them). All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
+:::note
+ANN index can't speed up query that satisfies both types (`where + order by`, only one of them). All queries must have the limit, as algorithms are used to find nearest neighbors and need a specific number of them.
+:::
 
-!!! note "Note"
-    Indexes are applied only to queries with a limit less than the `max_limit_for_ann_queries` setting. This helps to avoid memory overflows in queries with a large limit. `max_limit_for_ann_queries` setting can be changed if you know you can provide enough memory. The default value is `1000000`.
+::note
+Indexes are applied only to queries with a limit less than the `max_limit_for_ann_queries` setting. This helps to avoid memory overflows in queries with a large limit. `max_limit_for_ann_queries` setting can be changed if you know you can provide enough memory. The default value is `1000000`.
+:::
 
 Both types of queries are handled the same way. The indexes get `n` neighbors (where `n` is taken from the `LIMIT` clause) and work with them. In `ORDER BY` query they remember the numbers of all parts of the granule that have at least one of neighbor. In `WHERE` query they remember only those parts that satisfy the requirements.
 
 
-
 ## Create table with ANNIndex
 
-This feature is disabled by default. To enable it, set `allow_experimental_annoy_index` to 1. Also, this feature is disabled for arm, due to likely problems with the algorithm.
+This feature is disabled by default. To enable it, set `allow_experimental_annoy_index` to 1. Also, this feature is disabled on ARM, due to likely problems with the algorithm.
 
 ```sql
 CREATE TABLE t
 (
   `id` Int64,
-  `number` Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE index_name(parameters) GRANULARITY N
+  `data` Tuple(Float32, Float32, Float32),
+  INDEX ann_index_name data TYPE ann_index_type(ann_index_parameters) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -70,8 +71,8 @@ ORDER BY id;
 CREATE TABLE t
 (
   `id` Int64,
-  `number` Array(Float32),
-  INDEX x number TYPE index_name(parameters) GRANULARITY N
+  `data` Array(Float32),
+  INDEX ann_index_name data TYPE ann_index_type(ann_index_parameters) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -80,7 +81,7 @@ ORDER BY id;
 With greater `GRANULARITY` indexes remember the data structure better. The `GRANULARITY` indicates how many granules will be used to construct the index. The more data is provided for the index, the more of it can be handled by one index and the more chances that with the right hyperparameters the index will remember the data structure better. But some indexes can't be built if they don't have enough data, so this granule will always participate in the query. For more information, see the description of indexes.
 
 As the indexes are built only during insertions into table, `INSERT` and `OPTIMIZE` queries are slower than for ordinary table. At this stage indexes remember all the information about the given data. ANNIndexes should be used if you have immutable or rarely changed data and many read requests.
-    
+
 You can create your table with index which uses certain algorithm. Now only indices based on the following algorithms are supported:
 
 # Index list
@@ -98,8 +99,8 @@ __Examples__:
 CREATE TABLE t
 (
   id Int64,
-  number Tuple(Float32, Float32, Float32),
-  INDEX x number TYPE annoy(Trees, DistanceName) GRANULARITY N
+  data Tuple(Float32, Float32, Float32),
+  INDEX ann_index_name data TYPE annoy(NumTrees, DistanceName) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -109,22 +110,24 @@ ORDER BY id;
 CREATE TABLE t
 (
   id Int64,
-  number Array(Float32),
-  INDEX x number TYPE annoy(Trees, DistanceName) GRANULARITY N
+  data Array(Float32),
+  INDEX ann_index_name data TYPE annoy(NumTrees, DistanceName) GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
-!!! note "Note"
-    Table with array field will work faster, but all arrays **must** have same length. Use [CONSTRAINT](../../../sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1 CHECK length(number) = 256`.
 
-Parameter `Trees` is the number of trees which algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness). By default it is set to `100`. Parameter `DistanceName` is name of distance function. By default it is set to `L2Distance`. It can be set without changing first parameter, for example
+:::note
+Table with array field will work faster, but all arrays **must** have same length. Use [CONSTRAINT](../../../sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1 CHECK length(data) = 256`.
+:::
+
+Parameter `NumTrees` is the number of trees which the algorithm will create. The bigger it is, the slower (approximately linear) it works (in both `CREATE` and `SELECT` requests), but the better accuracy you get (adjusted for randomness). By default it is set to `100`. Parameter `DistanceName` is name of distance function. By default it is set to `L2Distance`. It can be set without changing first parameter, for example
 ```sql
 CREATE TABLE t
 (
   id Int64,
-  number Array(Float32),
-  INDEX x number TYPE annoy('cosineDistance') GRANULARITY N
+  data Array(Float32),
+  INDEX ann_index_name data TYPE annoy('cosineDistance') GRANULARITY N
 )
 ENGINE = MergeTree
 ORDER BY id;
