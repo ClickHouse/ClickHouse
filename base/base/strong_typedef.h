@@ -25,9 +25,6 @@ public:
     constexpr StrongTypedef(const Self &) = default;
     constexpr StrongTypedef(Self &&) noexcept(std::is_nothrow_move_constructible_v<T>) = default;
 
-    template <typename U>
-    constexpr explicit StrongTypedef(const U & u) : t(static_cast<T>(u)) {}
-
     Self & operator=(const Self &) = default;
     Self & operator=(Self &&) noexcept(std::is_nothrow_move_assignable_v<T>)= default;
 
