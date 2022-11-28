@@ -353,6 +353,11 @@ class ClickhouseIntegrationTestsRunner:
         )
 
     def _compress_logs(self, dir, relpaths, result_path):
+        # We execute sync in advance to have all files written after containers
+        # are finished or killed
+        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+            "sync", shell=True
+        )
         subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
             shell=True,

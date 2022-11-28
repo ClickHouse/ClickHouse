@@ -3,30 +3,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/HashUtils.h>
 
 namespace DB
 {
 
 namespace
 {
-
-struct QueryTreeNodeHash
-{
-    size_t operator()(const IQueryTreeNode * node) const
-    {
-        return node->getTreeHash().first;
-    }
-};
-
-struct QueryTreeNodeEqualTo
-{
-    size_t operator()(const IQueryTreeNode * lhs_node, const IQueryTreeNode * rhs_node) const
-    {
-        return lhs_node->isEqual(*rhs_node);
-    }
-};
-
-using QueryTreeNodeSet = std::unordered_set<const IQueryTreeNode *, QueryTreeNodeHash, QueryTreeNodeEqualTo>;
 
 class OrderByLimitByDuplicateEliminationVisitor : public InDepthQueryTreeVisitor<OrderByLimitByDuplicateEliminationVisitor>
 {
@@ -82,7 +65,7 @@ public:
     }
 
 private:
-    QueryTreeNodeSet unique_expressions_nodes_set;
+    QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
 };
 
 }

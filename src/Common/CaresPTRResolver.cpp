@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <sys/select.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include "ares.h"
 #include "netdb.h"
 
@@ -40,6 +41,8 @@ namespace DB
         }
     }
 
+    std::mutex CaresPTRResolver::mutex;
+
     CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token) : channel(nullptr)
     {
         /*
@@ -73,6 +76,8 @@ namespace DB
 
     std::unordered_set<std::string> CaresPTRResolver::resolve(const std::string & ip)
     {
+        std::lock_guard guard(mutex);
+
         std::unordered_set<std::string> ptr_records;
 
         resolve(ip, ptr_records);
@@ -83,6 +88,8 @@ namespace DB
 
     std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string & ip)
     {
+        std::lock_guard guard(mutex);
+
         std::unordered_set<std::string> ptr_records;
 
         resolve_v6(ip, ptr_records);
@@ -110,23 +117,83 @@ namespace DB
 
     void CaresPTRResolver::wait()
     {
-        timeval * tvp, tv;
-        fd_set read_fds;
-        fd_set write_fds;
-        int nfds;
+        int sockets[ARES_GETSOCK_MAXNUM];
+        pollfd pollfd[ARES_GETSOCK_MAXNUM];
 
-        for (;;)
+        while (true)
         {
-            FD_ZERO(&read_fds);
-            FD_ZERO(&write_fds);
-            nfds = ares_fds(channel, &read_fds,&write_fds);
-            if (nfds == 0)
+            auto readable_sockets = get_readable_sockets(sockets, pollfd);
+            auto timeout = calculate_timeout();
+
+            int number_of_fds_ready = 0;
+            if (!readable_sockets.empty())
+            {
+                number_of_fds_ready = poll(readable_sockets.data(), static_cast<nfds_t>(readable_sockets.size()), static_cast<int>(timeout));
+            }
+
+            if (number_of_fds_ready > 0)
+            {
+                process_readable_sockets(readable_sockets);
+            }
+            else
+            {
+                process_possible_timeout();
+                break;
+            }
+        }
+    }
+
+    std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd)
+    {
+        int sockets_bitmask = ares_getsock(channel, sockets, ARES_GETSOCK_MAXNUM);
+
+        int number_of_sockets_to_poll = 0;
+
+        for (int i = 0; i < ARES_GETSOCK_MAXNUM; i++, number_of_sockets_to_poll++)
+        {
+            pollfd[i].events = 0;
+            pollfd[i].revents = 0;
+
+            if (ARES_GETSOCK_READABLE(sockets_bitmask, i))
+            {
+                pollfd[i].fd = sockets[i];
+                pollfd[i].events = POLLIN;
+            }
+            else
             {
                 break;
             }
-            tvp = ares_timeout(channel, nullptr, &tv);
-            select(nfds, &read_fds, &write_fds, nullptr, tvp);
-            ares_process(channel, &read_fds, &write_fds);
+        }
+
+        return std::span<struct pollfd>(pollfd, number_of_sockets_to_poll);
+    }
+
+    int64_t CaresPTRResolver::calculate_timeout()
+    {
+        timeval tv;
+        if (auto * tvp = ares_timeout(channel, nullptr, &tv))
+        {
+            auto timeout = tvp->tv_sec * 1000 + tvp->tv_usec / 1000;
+
+            return timeout;
+        }
+
+        return 0;
+    }
+
+    void CaresPTRResolver::process_possible_timeout()
+    {
+        /* Call ares_process() unconditonally here, even if we simply timed out
+        above, as otherwise the ares name resolve won't timeout! */
+        ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+    }
+
+    void CaresPTRResolver::process_readable_sockets(std::span<pollfd> readable_sockets)
+    {
+        for (auto readable_socket : readable_sockets)
+        {
+            auto fd = readable_socket.revents & POLLIN ? readable_socket.fd : ARES_SOCKET_BAD;
+            ares_process_fd(channel, fd, ARES_SOCKET_BAD);
         }
     }
 }

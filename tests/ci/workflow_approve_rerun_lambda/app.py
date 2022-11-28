@@ -61,11 +61,11 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "Docs",
-    "DocsRelease",
+    "DocsCheck",
+    "DocsReleaseChecks",
     "MasterCI",
     "PullRequestCI",
-    "ReleaseCI",
+    "ReleaseBranchCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -491,6 +491,12 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
+
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"status": "OK"}',
+        }
     except Exception:
         print("Received event: ", event)
         raise
