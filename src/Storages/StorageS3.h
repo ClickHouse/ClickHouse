@@ -214,7 +214,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageHudi;
-    friend class StorageDelta;
+    friend class StorageDeltaLake;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;
