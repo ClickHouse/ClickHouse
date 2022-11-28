@@ -146,8 +146,9 @@ public:
     /// Returns false if queue is empty.
     [[nodiscard]] bool tryPop(T & x)
     {
+        // we don't use popImpl to avoid CV wait
         {
-            std::unique_lock<std::mutex> queue_lock(queue_mutex);
+            std::lock_guard queue_lock(queue_mutex);
 
             if (queue.empty())
                 return false;
