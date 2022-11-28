@@ -602,7 +602,7 @@ date_trunc(unit, value[, timezone])
 
 -   Дата и время, отсеченные до указанной части.
 
-Тип: [Datetime](../../sql-reference/data-types/datetime.md).
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Примеры**
 
@@ -913,7 +913,7 @@ now([timezone])
 
 -   Текущие дата и время.
 
-Тип: [Datetime](../../sql-reference/data-types/datetime.md).
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Пример**
 

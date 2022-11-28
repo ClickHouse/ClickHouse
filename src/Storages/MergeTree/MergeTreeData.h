@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -29,7 +30,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
-#include <Disks/StoragePolicy.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -220,6 +220,9 @@ public:
     using DataPartsLock = std::unique_lock<std::mutex>;
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
+    using OperationDataPartsLock = std::unique_lock<std::mutex>;
+    OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
+
     MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -271,6 +274,8 @@ public:
             }
         }
 
+        TransactionID getTID() const;
+
     private:
         friend class MergeTreeData;
 
@@ -278,7 +283,6 @@ public:
         MergeTreeTransaction * txn;
         MutableDataParts precommitted_parts;
         MutableDataParts locked_parts;
-        bool has_in_memory_parts = false;
 
         void clear();
     };
@@ -563,10 +567,11 @@ public:
         Transaction & out_transaction);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
-    DataPartsVector renameTempPartAndReplaceUnlocked(
+    bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        DataPartsLock & lock);
+        DataPartsLock & lock,
+        DataPartsVector * out_covered_parts = nullptr);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -917,6 +922,9 @@ public:
     using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
     WriteAheadLogPtr getWriteAheadLog();
 
+    constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+    MergeTreeData::MutableDataPartPtr createEmptyPart(MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name, const MergeTreeTransactionPtr & txn);
+
     MergeTreeDataFormatVersion format_version;
 
     /// Merging params - what additional actions to perform during merge.
@@ -1025,7 +1033,7 @@ public:
     using MatcherFn = std::function<bool(const String &)>;
 
     /// Returns an object that protects temporary directory from cleanup
-    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
+    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1107,6 +1115,10 @@ protected:
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
+
+    /// Mutex for critical sections which alter set of parts
+    /// It is like truncate, drop/detach partition
+    mutable std::mutex operation_with_data_parts_mutex;
 
     /// Current description of columns of data type Object.
     /// It changes only when set of parts is changed and is
@@ -1217,6 +1229,23 @@ protected:
         DataPartPtr & out_covering_part,
         DataPartsLock & data_parts_lock) const;
 
+    DataPartsVector getCoveredOutdatedParts(
+        const DataPartPtr & part,
+        DataPartsLock & data_parts_lock) const;
+
+    struct PartHierarchy
+    {
+        DataPartPtr duplicate_part;
+        DataPartsVector covering_parts;
+        DataPartsVector covered_parts;
+        DataPartsVector intersected_parts;
+    };
+
+    PartHierarchy getPartHierarchy(
+        const MergeTreePartInfo & part_info,
+        DataPartState state,
+        DataPartsLock & /* data_parts_lock */) const;
+
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -1286,8 +1315,9 @@ protected:
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
 private:
-    /// Checking that candidate part doesn't break invariants: correct partition and doesn't exist already
-    void checkPartCanBeAddedToTable(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    /// Checking that candidate part doesn't break invariants: correct partition
+    void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
+    void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
@@ -1377,7 +1407,7 @@ private:
 
     static MutableDataPartPtr preparePartForRemoval(const DataPartPtr & part);
 
-    TemporaryParts temporary_parts;
+    mutable TemporaryParts temporary_parts;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
