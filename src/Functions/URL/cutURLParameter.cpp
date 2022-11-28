@@ -55,7 +55,6 @@ public:
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
-        // assert(isArray(arguments[1].type));
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         const ColumnArray * col_const_array = checkAndGetColumnConstData<ColumnArray>(column_needle.get());
@@ -150,21 +149,17 @@ public:
             else
             {
                 size_t data_size = col_const_array->getData().size();
-                // assert(data_size>0);
 
                 for (size_t j = 0; j < data_size; ++j)
                 {
                     auto field = col_const_array->getData()[j];
-                    // auto typename_ = field.getTypeName();
-                    // assert(typename_ != "");
                     cutURL(res_chars, field.get<String>());
                 }
 
             }
-            res_data.resize(res_offset + res_chars.size() + 1);
+            res_data.resize(res_offset + res_chars.size());
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &res_chars[0], res_chars.size());
-            res_offset += res_chars.size() + 1;
-            res_data[res_offset - 1] = 0;
+            res_offset += res_chars.size();
             res_offsets[i] = res_offset;
 
             prev_offset = cur_offset;
