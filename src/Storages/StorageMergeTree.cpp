@@ -118,7 +118,6 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    clearOldPartsFromFilesystem();
     clearOldWriteAheadLogs();
     clearEmptyParts();
 
