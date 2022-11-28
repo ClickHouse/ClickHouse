@@ -79,14 +79,14 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
     function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
     function_node->getArguments().getNodes() = { argument };
 
-    function_node->getArgumentsNode() = std::make_shared<ListNode>(QueryTreeNodes{argument});
+    function_node->getArguments().getNodes() = { argument };
 
     if (!parameters.empty())
     {
         QueryTreeNodes parameter_nodes;
         for (const auto & param : parameters)
             parameter_nodes.emplace_back(std::make_shared<ConstantNode>(param));
-        function_node->getParametersNode() = std::make_shared<ListNode>(std::move(parameter_nodes));
+        function_node->getParameters().getNodes() = std::move(parameter_nodes);
     }
 
     return function_node;
