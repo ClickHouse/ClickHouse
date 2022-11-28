@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+"""
+Lambda function to:
+    - calculate number of running runners
+    - cleaning dead runners from GitHub
+    - terminating stale lost runners in EC2
+"""
 
 import argparse
 import sys
 import json
 import time
 from collections import namedtuple
+from datetime import datetime
 
 import jwt
 import requests
@@ -83,6 +90,44 @@ def get_dead_runners_in_ec2(runners):
             print("Instance", instance_id, "is not alive, going to remove it")
             result_to_delete.append(runner)
     return result_to_delete
+
+
+def get_lost_ec2_instances(runners):
+    client = boto3.client("ec2")
+    reservations = client.describe_instances(
+        Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}]
+    )["Reservations"]
+    lost_instances = []
+    # Here we refresh the runners to get the most recent state
+    now = datetime.now().timestamp()
+
+    for reservation in reservations:
+        for instance in reservation["Instances"]:
+            # Do not consider instances started 20 minutes ago as problematic
+            if now - instance["LaunchTime"].timestamp() < 1200:
+                continue
+
+            runner_type = [
+                tag["Value"]
+                for tag in instance["Tags"]
+                if tag["Key"] == "github:runner-type"
+            ][0]
+            # If there's no necessary labels in runner type it's fine
+            if not (
+                UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS
+            ):
+                continue
+
+            if instance["State"]["Name"] == "running" and (
+                not [
+                    runner
+                    for runner in runners
+                    if runner.name == instance["InstanceId"]
+                ]
+            ):
+                lost_instances.append(instance)
+
+    return lost_instances
 
 
 def get_key_and_app_from_aws():
@@ -290,6 +335,13 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
         for runner in dead_runners:
             print("Deleting runner", runner)
             delete_runner(access_token, runner)
+
+        lost_instances = get_lost_ec2_instances(gh_runners)
+        if lost_instances:
+            print("Going to terminate lost runners")
+            ids = [i["InstanceId"] for i in lost_instances]
+            print("Terminating runners:", ids)
+            boto3.client("ec2").terminate_instances(InstanceIds=ids)
 
 
 if __name__ == "__main__":
