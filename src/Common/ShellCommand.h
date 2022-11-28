@@ -3,7 +3,6 @@
 #include <memory>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <unordered_map>
 
 
 namespace DB

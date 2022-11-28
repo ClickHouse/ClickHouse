@@ -2,9 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/UUID.h>
-#include <Common/SettingConstraintWritability.h>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 
@@ -21,14 +19,13 @@ class AccessControl;
 struct SettingsProfileElement
 {
     std::optional<UUID> parent_profile;
-
     String setting_name;
     Field value;
     Field min_value;
     Field max_value;
-    std::optional<SettingConstraintWritability> writability;
+    std::optional<bool> readonly;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, readonly); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -60,17 +57,12 @@ public:
     std::shared_ptr<ASTSettingsProfileElements> toAST() const;
     std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
 
-    std::vector<UUID> findDependencies() const;
-    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
-
     void merge(const SettingsProfileElements & other);
 
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
     SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
     std::vector<UUID> toProfileIDs() const;
-
-    bool isBackupAllowed() const;
 };
 
 }
