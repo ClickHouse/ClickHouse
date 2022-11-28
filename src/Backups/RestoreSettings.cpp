@@ -3,6 +3,7 @@
 #include <Backups/RestoreSettings.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -213,7 +214,12 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     query.settings = query_settings;
 
-    query.base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    auto base_backup_name = base_backup_info ? base_backup_info->toAST() : nullptr;
+    if (base_backup_name)
+        query.setOrReplace(query.base_backup_name, base_backup_name);
+    else
+        query.reset(query.base_backup_name);
+
     query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 

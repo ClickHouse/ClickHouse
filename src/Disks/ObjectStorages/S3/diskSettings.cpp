@@ -4,6 +4,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/Throttler.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -32,17 +33,26 @@ namespace ErrorCodes
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
-    S3Settings::ReadWriteSettings rw_settings;
-    rw_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries);
-    rw_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size);
-    rw_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", context->getSettingsRef().s3_upload_part_size_multiply_factor);
-    rw_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", context->getSettingsRef().s3_upload_part_size_multiply_parts_count_threshold);
-    rw_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size);
-    rw_settings.check_objects_after_upload = config.getUInt64(config_prefix + ".s3_check_objects_after_upload", context->getSettingsRef().s3_check_objects_after_upload);
-    rw_settings.max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".s3_max_unexpected_write_error_retries", context->getSettingsRef().s3_max_unexpected_write_error_retries);
+    const Settings & settings = context->getSettingsRef();
+    S3Settings::RequestSettings request_settings;
+    request_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", settings.s3_max_single_read_retries);
+    request_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", settings.s3_min_upload_part_size);
+    request_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", settings.s3_upload_part_size_multiply_factor);
+    request_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", settings.s3_upload_part_size_multiply_parts_count_threshold);
+    request_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", settings.s3_max_single_part_upload_size);
+    request_settings.check_objects_after_upload = config.getUInt64(config_prefix + ".s3_check_objects_after_upload", settings.s3_check_objects_after_upload);
+    request_settings.max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".s3_max_unexpected_write_error_retries", settings.s3_max_unexpected_write_error_retries);
+
+    // NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload, which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
+    if (UInt64 max_get_rps = config.getUInt64(config_prefix + ".s3_max_get_rps", settings.s3_max_get_rps))
+        request_settings.get_request_throttler = std::make_shared<Throttler>(
+            max_get_rps, config.getUInt64(config_prefix + ".s3_max_get_burst", settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * max_get_rps));
+    if (UInt64 max_put_rps = config.getUInt64(config_prefix + ".s3_max_put_rps", settings.s3_max_put_rps))
+        request_settings.put_request_throttler = std::make_shared<Throttler>(
+            max_put_rps, config.getUInt64(config_prefix + ".s3_max_put_burst", settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * max_put_rps));
 
     return std::make_unique<S3ObjectStorageSettings>(
-        rw_settings,
+        request_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
@@ -112,14 +122,20 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<Aws::S3::S3Client> getClient(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    const S3ObjectStorageSettings & settings)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(),
         static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-        /* for_disk_s3 = */ true);
+        /* for_disk_s3 = */ true,
+        settings.request_settings.get_request_throttler,
+        settings.request_settings.put_request_throttler);
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
     if (uri.key.back() != '/')
