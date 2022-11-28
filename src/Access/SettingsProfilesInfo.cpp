@@ -65,11 +65,13 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
 Strings SettingsProfilesInfo::getProfileNames() const
 {
     Strings result;
-    result.reserve(profiles_with_implicit.size());
+    result.reserve(profiles.size());
     for (const auto & profile_id : profiles)
     {
         const auto p = names_of_profiles.find(profile_id);
-        if (p == names_of_profiles.end())
+        if (p != names_of_profiles.end())
+            result.push_back(p->second);
+        else
         {
             if (const auto name = access_control.tryReadName(profile_id))
                 // We could've updated cache here, but it is a very rare case, so don't bother.
@@ -77,8 +79,6 @@ Strings SettingsProfilesInfo::getProfileNames() const
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to get profile name for {}", toString(profile_id));
         }
-
-        result.push_back(p->second);
     }
 
     return result;
