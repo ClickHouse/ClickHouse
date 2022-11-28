@@ -121,6 +121,9 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"min", "min"},
     {"max", "max"},
     {"collect_list", "groupArray"},
+
+    // date or datetime functions
+    {"from_unixtime", "FROM_UNIXTIME"},
 };
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
