@@ -120,7 +120,7 @@ private:
     Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
-    size_t max_num_buckets;
+    const size_t max_num_buckets;
     size_t max_block_size;
 
     Names left_key_names;
@@ -136,11 +136,6 @@ private:
 
     InMemoryJoinPtr hash_join;
     mutable std::mutex hash_join_mutex;
-
-    std::atomic<bool> started_reading_delayed_blocks{false};
-
-    Block totals;
-    mutable std::mutex totals_mutex;
 };
 
 }
