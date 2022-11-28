@@ -1,4 +1,3 @@
-#include "base/types.h"
 #include "config.h"
 #include <Common/ProfileEvents.h>
 #include "IO/ParallelReadBuffer.h"
@@ -481,7 +480,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
     size_t object_size = info
         ? info->size
-        : S3::getObjectSize(client, bucket, current_key, version_id, false, false);
+        : S3::getObjectSize(client, bucket, current_key, version_id, true, false);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
     auto read_buf = wrapReadBufferWithCompressionMethod(

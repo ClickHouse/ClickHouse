@@ -14,14 +14,20 @@ def infinite_redirect(_path):
 def server(_bucket, _path):
     for name in request.headers:
         if name == "Authorization" and request.headers[name] == "Bearer TOKEN":
-            return "1, 2, 3"
+            result = "1, 2, 3"
+            response.headers["Content-Length"] = len(result)
+            return result
+
+    result = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ForbiddenError</Code><Message>Forbidden Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
     response.status = 403
     response.content_type = "text/xml"
-    return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ForbiddenError</Code><Message>Forbidden Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
+    response.set_header("Content-Length", len(result))
+    return result
 
 
 @route("/")
 def ping():
+    response.set_header("Content-Length", 2)
     return "OK"
 
 
