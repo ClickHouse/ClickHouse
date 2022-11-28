@@ -8,6 +8,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
 #include <Common/quoteString.h>
+#include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
@@ -353,180 +354,10 @@ void BackupImpl::writeBackupMetadata()
     increaseUncompressedSize(str.size());
 }
 
-/// TODO: move this to some common place instead of copy-pasting from ConfigProcessor?
-namespace XMLHelpers
-{
-
-using namespace Poco;
-using namespace Poco::XML;
-
-using XMLDocumentPtr = AutoPtr<Document>;
-
-Node * getRootNode(Document * document)
-{
-    for (Node * child = document->firstChild(); child; child = child->nextSibling())
-    {
-        /// Besides the root element there can be comment nodes on the top level.
-        /// Skip them.
-        if (child->nodeType() == Node::ELEMENT_NODE)
-            return child;
-    }
-
-    throw Poco::Exception("No root node in document");
-}
-
-int parseInt(const std::string& value)
-{
-    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
-        return static_cast<int>(NumberParser::parseHex(value));
-    else
-        return NumberParser::parse(value);
-}
-
-/*
-unsigned parseUInt(const std::string& value)
-{
-    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
-        return NumberParser::parseHex(value);
-    else
-        return NumberParser::parseUnsigned(value);
-}
-
-
-Int64 parseInt64(const std::string& value)
-{
-    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
-        return static_cast<Int64>(NumberParser::parseHex64(value));
-    else
-        return NumberParser::parse64(value);
-}
-*/
-
-UInt64 parseUInt64(const std::string& value)
-{
-    if ((value.compare(0, 2, "0x") == 0) || (value.compare(0, 2, "0X") == 0))
-        return NumberParser::parseHex64(value);
-    else
-        return NumberParser::parseUnsigned64(value);
-}
-
-
-bool parseBool(const std::string& value)
-{
-    int n;
-    if (NumberParser::tryParse(value, n))
-        return n != 0;
-    else if (icompare(value, "true") == 0)
-        return true;
-    else if (icompare(value, "yes") == 0)
-        return true;
-    else if (icompare(value, "on") == 0)
-        return true;
-    else if (icompare(value, "false") == 0)
-        return false;
-    else if (icompare(value, "no") == 0)
-        return false;
-    else if (icompare(value, "off") == 0)
-        return false;
-    else
-        throw SyntaxException("Cannot convert to boolean", value);
-}
-
-/*
-const Node * getValueNode(const Node * node, const std::string & path)
-{
-    const auto * path_node = node->getNodeByPath(path);
-    if (!path_node)
-        return nullptr;
-    for (const auto * child = path_node->firstChild(); child; child = child->nextSibling())
-    {
-        if (child->)
-    }
-}
-*/
-std::string getString(const Node * node, const std::string & path, std::optional<std::string> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return value_node->innerText();
-}
-/*
-Int64 getInt64(const Node * node, const std::string & path, std::optional<Int64> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return parseInt64(value_node->nodeValue());
-}
-*/
-UInt64 getUInt64(const Node * node, const std::string & path, std::optional<UInt64> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return parseUInt64(value_node->innerText());
-}
-
-int getInt(const Node * node, const std::string & path, std::optional<int> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return parseInt(value_node->innerText());
-}
-
-/*
-unsigned getUInt(const Node * node, const std::string & path, std::optional<unsigned> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return parseUInt(value_node->nodeValue());
-}
-*/
-bool getBool(const Node * node, const std::string & path, std::optional<bool> default_value = std::nullopt)
-{
-    const auto * value_node = node->getNodeByPath(path);
-    if (!value_node)
-    {
-        if (default_value)
-            return *default_value;
-        else
-            throw Poco::NotFoundException(path);
-    }
-    return parseBool(value_node->innerText());
-}
-}
 
 void BackupImpl::readBackupMetadata()
 {
-    using namespace XMLHelpers;
+    using namespace XMLUtils;
 
     std::unique_ptr<ReadBuffer> in;
     if (use_archives)
@@ -547,7 +378,7 @@ void BackupImpl::readBackupMetadata()
     readStringUntilEOF(str, *in);
     increaseUncompressedSize(str.size());
     Poco::XML::DOMParser dom_parser;
-    XMLDocumentPtr config = dom_parser.parseMemory(str.data(), str.size());
+    Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
 
     version = getInt(config_root, "version");
