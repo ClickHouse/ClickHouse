@@ -1888,7 +1888,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
         for (const auto & partitions : candidate->block_numbers)
             partition_ids_hint.insert(partitions.first);
 
-    auto merge_pred = getMergePredicate(zookeeper, /* partition_ids_hint */ {});
+    auto merge_pred = getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
     for (const auto & candidate : candidates)
