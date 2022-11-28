@@ -164,7 +164,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 <li><font face = "monospace">index_granularity</font>: 显式设置为其默认值8192。这意味着对于每一组8192行，主索引将有一个索引条目，例如，如果表包含16384行，那么索引将有两个索引条目。
 </li>
 <br/>
-<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="blue">字适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
+<li><font face = "monospace">index_granularity_bytes</font>: 设置为0表示禁止<a href="https://clickhouse.com/docs/en/whats-new/changelog/2019/#experimental-features-1" target="_blank"><font color="blue">自适应索引粒度</font></a>。自适应索引粒度意味着ClickHouse自动为一组n行创建一个索引条目
 <ul>
 <li>如果n小于8192，但n行的合并行数据大小大于或等于10MB (index_granularity_bytes的默认值)或</li>
 <li>n达到8192</li>
@@ -777,7 +777,7 @@ ClickHouse现在创建了一个额外的索引来存储—每组4个连续的颗
 如果我们想显著加快我们的两个示例查询——一个过滤具有特定UserID的行，一个过滤具有特定URL的行——那么我们需要使用多个主索引，通过使用这三个方法中的一个：
 
 - 新建一个不同主键的新表。
-- 创建一个雾化视图。
+- 创建一个物化视图。
 - 增加projection。
 
 这三个方法都会有效地将示例数据复制到另一个表中，以便重新组织表的主索引和行排序顺序。
@@ -992,7 +992,7 @@ Ok.
 
 :::note
 - 我们在视图的主键中切换键列的顺序(与原始表相比)
-- 雾化视图由一个隐藏表支持，该表的行顺序和主索引基于给定的主键定义
+- 物化视图由一个隐藏表支持，该表的行顺序和主索引基于给定的主键定义
 - 我们使用POPULATE关键字，以便用源表hits_UserID_URL中的所有887万行立即导入新的物化视图 
 - 如果在源表hits_UserID_URL中插入了新行，那么这些行也会自动插入到隐藏表中
 - 实际上，隐式创建的隐藏表的行顺序和主索引与我们上面显式创建的辅助表相同:
@@ -1082,7 +1082,7 @@ ALTER TABLE hits_UserID_URL
     );
 ```
 
-雾化projection：
+物化projection：
 ```sql
 ALTER TABLE hits_UserID_URL
     MATERIALIZE PROJECTION prj_url_userid;
