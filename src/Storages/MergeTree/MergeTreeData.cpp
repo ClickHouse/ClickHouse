@@ -4719,7 +4719,7 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
 {
     auto lock = lockParts();
     std::unordered_set<String> res;
-    String prev_id;
+    std::string_view prev_id;
     for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (prev_id == part->info.partition_id)
