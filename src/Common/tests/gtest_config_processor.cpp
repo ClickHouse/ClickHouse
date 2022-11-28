@@ -20,7 +20,8 @@ TEST(Common, ConfigProcessorManyElements)
 
     auto config_file = std::make_unique<Poco::File>(path / "config.xml");
 
-    constexpr size_t element_count = 1000000;
+    /// TODO: increase this to 1M when https://github.com/pocoproject/poco/pull/3885 is fixed
+    constexpr size_t element_count = 50000;
 
     {
         DB::WriteBufferFromFile out(config_file->path());
