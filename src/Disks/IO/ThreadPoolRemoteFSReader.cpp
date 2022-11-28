@@ -20,7 +20,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric Read;
+    extern const Metric RemoteFSRead;
 }
 
 namespace DB
@@ -39,15 +39,12 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    auto schedule = threadPoolCallbackRunner<Result>(pool, "VFSRead");
-
-    return schedule([request]() -> Result
+    return scheduleFromThreadPool<Result>([request]() -> Result
     {
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteFSRead};
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
         Stopwatch watch(CLOCK_MONOTONIC);
-
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
 
         watch.stop();
@@ -56,7 +53,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.offset ? result.size - result.offset : result.size);
 
         return Result{ .size = result.size, .offset = result.offset };
-    }, request.priority);
+    }, pool, "VFSRead", request.priority);
 }
 
 }

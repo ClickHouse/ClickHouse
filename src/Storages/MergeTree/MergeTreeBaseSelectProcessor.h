@@ -104,10 +104,17 @@ protected:
          const Names & non_const_virtual_column_names);
 
     /// Sets up data readers for each step of prewhere and where
+    void initializeMergeTreeReadersForCurrentTask(
+        const StorageMetadataPtr & metadata_snapshot,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
     void initializeMergeTreeReadersForPart(
         MergeTreeData::DataPartPtr & data_part,
-        const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-        const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const MergeTreeReadTaskColumns & task_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MarkRanges & mark_ranges,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
     /// Sets up range readers corresponding to data readers
@@ -139,8 +146,8 @@ protected:
     /// This header is used for chunks from readFromPart().
     Block header_without_virtual_columns;
 
-    std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
-    std::shared_ptr<MarkCache> owned_mark_cache;
+    UncompressedCachePtr owned_uncompressed_cache;
+    MarkCachePtr owned_mark_cache;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
@@ -194,6 +201,15 @@ private:
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
     void splitCurrentTaskRangesAndFillBuffer();
+
+    /// Initialize pre readers.
+    void initializeMergeTreePreReadersForPart(
+        MergeTreeData::DataPartPtr & data_part,
+        const MergeTreeReadTaskColumns & task_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MarkRanges & mark_ranges,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 };
 
 }

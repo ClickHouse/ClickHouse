@@ -35,6 +35,8 @@ public:
 
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
+    void prefetch() override;
+
 private:
     FileStreams streams;
 
@@ -56,14 +58,16 @@ private:
         size_t from_mark,
         bool continue_reading,
         size_t current_task_last_mark,
-        ISerialization::SubstreamsCache & cache,
-        std::unordered_set<std::string> & prefetched_streams); /// if stream was already prefetched do nothing
+        ISerialization::SubstreamsCache & cache);
 
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
         size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache);
+
+    std::unordered_set<std::string> prefetched_streams;
+    size_t current_prefetch_from_mark = 0;
 };
 
 }

@@ -5,6 +5,8 @@
 #include <IO/WriteSettings.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 
 namespace DB

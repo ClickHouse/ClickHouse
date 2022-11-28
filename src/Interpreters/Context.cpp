@@ -223,6 +223,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> read_task_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -1847,6 +1848,18 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
+ThreadPool & Context::getReadTaskThreadpool() const
+{
+    auto lock = getLock();
+    if (!shared->read_task_threadpool)
+    {
+        constexpr size_t pool_size = 50;
+        constexpr size_t queue_size = 1000000;
+        shared->read_task_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+    return *shared->read_task_threadpool;
+}
+
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
     auto lock = getLock();
@@ -2752,7 +2765,16 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->cache_log;
+    return shared->system_logs->filesystem_cache_log;
+}
+
+std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
+{
+    auto lock = getLock();
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->filesystem_read_prefetches_log;
 }
 
 std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
@@ -3591,7 +3613,7 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_remote_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
+                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 300);
                 auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
 
                 shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
@@ -3662,6 +3684,8 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
 
     res.load_marks_asynchronously = settings.load_marks_asynchronously;
+
+    res.enable_filesystem_read_prefetch_log = settings.enable_filesystem_read_prefetch_log;
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;

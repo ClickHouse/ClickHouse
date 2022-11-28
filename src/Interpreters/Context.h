@@ -91,6 +91,7 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
@@ -829,6 +830,8 @@ public:
     void dropMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    ThreadPool & getReadTaskThreadpool() const;
+
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -910,6 +913,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.

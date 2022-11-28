@@ -56,8 +56,8 @@ void MergeTreeSelectProcessor::initializeReaders()
 
     owned_mark_cache = storage.getContext()->getMarkCache();
 
-    initializeMergeTreeReadersForPart(data_part, task_columns, storage_snapshot->getMetadataForQuery(),
-        all_mark_ranges, {}, {});
+    initializeMergeTreeReadersForPart(
+        data_part, task_columns, storage_snapshot->getMetadataForQuery(), all_mark_ranges, {}, {});
 }
 
 

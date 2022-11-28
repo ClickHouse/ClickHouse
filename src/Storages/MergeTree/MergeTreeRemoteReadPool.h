@@ -1,22 +1,35 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/SelectQueryInfo.h>
-#include <mutex>
+#include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <queue>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
 
-class MergeTreeRemoteReadPool : public IMergeTreeReadPool
+struct RangesInDataPart;
+using RangesInDataParts = std::vector<RangesInDataPart>;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+struct MergeTreeReaderSettings;
+class MarkCache;
+class UncompressedCache;
+class IMergeTreeReader;
+using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+struct MarkRange;
+using MarkRanges = std::deque<MarkRange>;
+
+
+class MergeTreeRemoteReadPool : public IMergeTreeReadPool, private WithContext
 {
 public:
     MergeTreeRemoteReadPool(
-        size_t threads_,
+        size_t threads,
         size_t sum_marks_,
         size_t min_marks_for_concurrent_read_,
         RangesInDataParts && parts_,
@@ -24,58 +37,59 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         const Names & column_names_,
         const Names & virtual_column_names_,
-        size_t preferred_block_size_bytes_);
+        size_t preferred_block_size_bytes_,
+        const MergeTreeReaderSettings & reader_settings_,
+        ContextPtr context_,
+        MarkCache * mark_cache_,
+        UncompressedCache * uncompressed_cache,
+        bool prefetch_all_parts_in_advance_);
 
-    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names) override;
+    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread) override;
 
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
 
-    Block getHeader() const override;
+    Block getHeader() const override { return header; }
 
 private:
-    struct PartInfo
-    {
-        MergeTreeData::DataPartPtr data_part;
-        size_t part_index_in_query;
-        size_t sum_marks = 0;
+    struct PartInfo;
+    using PartInfoPtr = std::shared_ptr<PartInfo>;
+    using PartsInfos = std::vector<PartInfoPtr>;
+    using ThreadsTasks = std::map<size_t, std::deque<MergeTreeReadTaskPtr>>;
 
-        NameSet column_name_set;
-        MergeTreeReadTaskColumns task_columns;
-        MergeTreeBlockSizePredictorPtr size_predictor;
-    };
-    using PartsInfos = std::queue<MergeTreeRemoteReadPool::PartInfo>;
+    std::future<MergeTreeReaderPtr> createReader(
+        const PartInfo & part,
+        const NamesAndTypesList & columns,
+        const MarkRanges & required_ranges) const;
 
-    static PartsInfos getPartsInfosGroupedByDiskName(
+    PartsInfos getPartsInfos(
         const RangesInDataParts & parts,
         const PrewhereInfoPtr & prewhere_info,
-        const Names & column_names,
         const Names & virtual_column_names,
-        size_t preferred_block_size_bytes);
+        size_t preferred_block_size_bytes) const;
 
-    void fillPerThreadInfo(
+    ThreadsTasks createThreadsTasks(
         size_t threads,
         size_t sum_marks,
-        const RangesInDataParts & parts,
         size_t min_marks_for_concurrent_read,
-        const PrewhereInfoPtr & prewhere_info,
-        const Names & column_names,
-        const Names & virtual_column_names,
-        size_t preferred_block_size_bytes);
+        const PrewhereInfoPtr & prewhere_info) const;
 
     mutable std::mutex mutex;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeRemoteReadPool");
+    Poco::Logger * log;
 
-    const StorageSnapshotPtr storage_snapshot;
-    const Names column_names;
+    Block header;
+    StorageSnapshotPtr storage_snapshot;
+    bool prefetch_all_parts_in_advance;
+    MarkCache * mark_cache;
+    UncompressedCache * uncompressed_cache;
+    MergeTreeReaderSettings reader_settings;
+    ReadBufferFromFileBase::ProfileCallback profile_callback;
 
-    const bool predict_block_size_bytes;
-    const PrewhereInfoPtr prewhere_info;
-    const RangesInDataParts parts_ranges;
+    /// Saved here, because MergeTreeReadTask in threads_tasks
+    /// holds reference to its values.
+    Names column_names;
+    PartsInfos parts_infos;
 
-    using ThreadTask = std::vector<MergeTreeReadTaskPtr>;
-    std::vector<ThreadTask> threads_tasks;
-
-    std::set<size_t> remaining_thread_tasks;
+    ThreadsTasks threads_tasks;
 };
 
 }

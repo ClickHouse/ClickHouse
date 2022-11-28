@@ -4,29 +4,13 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 #include <mutex>
 
 
 namespace DB
 {
-
-class IMergeTreeReadPool : private boost::noncopyable
-{
-public:
-    virtual ~IMergeTreeReadPool() = default;
-
-    virtual MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names) = 0;
-
-    virtual void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) = 0;
-
-    virtual Block getHeader() const = 0;
-
-protected:
-};
-
-using MergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
-
 
 /**   Provides read tasks for MergeTreeThreadSelectProcessor`s in fine-grained batches, allowing for more
  *    uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
@@ -83,7 +67,7 @@ public:
         size_t preferred_block_size_bytes_,
         bool do_not_steal_tasks_ = false);
 
-    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names) override;
+    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread) override;
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.

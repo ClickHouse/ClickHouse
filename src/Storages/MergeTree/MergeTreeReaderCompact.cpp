@@ -45,7 +45,16 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           settings.read_settings,
           load_marks_threadpool_,
           data_part_info_for_read_->getColumns().size())
+    , profile_callback(profile_callback_)
+    , clock_type(clock_type_)
 {
+}
+
+void MergeTreeReaderCompact::initialize()
+{
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeReaderCompact already initialized");
+
     try
     {
         fillColumnPositions();
@@ -75,8 +84,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -95,8 +104,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         std::nullopt, std::nullopt),
                     /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -111,6 +120,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         data_part_info_for_read->reportBroken();
         throw;
     }
+
+    initialized = true;
 }
 
 void MergeTreeReaderCompact::fillColumnPositions()
@@ -154,6 +165,9 @@ void MergeTreeReaderCompact::fillColumnPositions()
 size_t MergeTreeReaderCompact::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
+    if (!initialized)
+        initialize();
+
     if (continue_reading)
         from_mark = next_mark;
 
@@ -273,6 +287,15 @@ void MergeTreeReaderCompact::readData(
         last_read_granule.emplace(from_mark, column_position);
 }
 
+void MergeTreeReaderCompact::prefetch()
+{
+    if (!initialized)
+        initialize();
+
+    adjustUpperBound(all_mark_ranges.back().end);
+    seekToMark(all_mark_ranges.front().begin, 0);
+    data_buffer->prefetch();
+}
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {

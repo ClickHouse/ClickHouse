@@ -38,7 +38,10 @@ public:
 
     bool canReadIncompleteGranules() const override { return false; }
 
+    void prefetch() override;
+
 private:
+    void initialize();
     bool isContinuousReading(size_t mark, size_t column_position);
     void fillColumnPositions();
 
@@ -76,6 +79,11 @@ private:
 
     /// For asynchronous reading from remote fs.
     void adjustUpperBound(size_t last_mark);
+
+    ReadBufferFromFileBase::ProfileCallback profile_callback;
+    clockid_t clock_type;
+
+    bool initialized = false;
 };
 
 }

@@ -30,6 +30,7 @@ public:
 
 private:
     ReadBufferPtr reader;
+    std::atomic<int> cnt;
 };
 
 }

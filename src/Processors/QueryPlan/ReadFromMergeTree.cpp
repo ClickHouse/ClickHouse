@@ -192,6 +192,7 @@ Pipe ReadFromMergeTree::readFromPool(
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
     MergeTreeReadPoolPtr pool;
+
     if (checkAllPartsOnRemoteFS(parts_with_range)
         && !settings.prefer_canonical_merge_tree_read_pool_for_remote_fs)
     {
@@ -204,7 +205,12 @@ Pipe ReadFromMergeTree::readFromPool(
             prewhere_info,
             required_columns,
             virt_column_names,
-            settings.preferred_block_size_bytes);
+            settings.preferred_block_size_bytes,
+            reader_settings,
+            data.getContext(),
+            data.getContext()->getMarkCache().get(),
+            use_uncompressed_cache ? data.getContext()->getUncompressedCache().get() : nullptr,
+            settings.prefetch_all_parts_in_advance);
     }
     else
     {

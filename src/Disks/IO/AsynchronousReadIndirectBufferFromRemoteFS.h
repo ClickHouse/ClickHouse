@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadSettings.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <utility>
 
 namespace Poco { class Logger; }
@@ -62,7 +63,11 @@ private:
 
     bool hasPendingDataToRead();
 
+    void appendToPrefetchLog(FilesystemPrefetchState state);
+
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+
+    void resetPrefetch(FilesystemPrefetchState state);
 
     ReadSettings read_settings;
 
@@ -80,11 +85,15 @@ private:
 
     size_t min_bytes_for_seek;
 
+    std::string query_id;
+
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
 
     Poco::Logger * log;
+
+    Decimal64 prefetch_start_time;
 };
 
 }

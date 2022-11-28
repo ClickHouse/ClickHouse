@@ -27,13 +27,12 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
-    :
-    MergeTreeBaseSelectProcessor{
-        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
-    thread{thread_},
-    pool{pool_}
+    : MergeTreeBaseSelectProcessor(
+        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings),
+        max_block_size_rows_, preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_)
+    , thread{thread_}
+    , pool{pool_}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -84,15 +83,12 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     {
         min_marks_to_read = min_marks_to_read_;
     }
-
-
-    ordered_names = getPort().getHeader().getNames();
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
-    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    task = pool->getTask(min_marks_to_read, thread);
     return static_cast<bool>(task);
 }
 
@@ -121,8 +117,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
     const bool init_new_readers = !reader || part_name != last_readed_part_name;
     if (init_new_readers)
     {
-        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
-            task->mark_ranges, value_size_map, profile_callback);
+        initializeMergeTreeReadersForCurrentTask(metadata_snapshot, value_size_map, profile_callback);
     }
 
     last_readed_part_name = part_name;
