@@ -92,9 +92,20 @@ namespace ErrorCodes
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
+{
+    auto file = path.substr(path.find_last_of('/') + 1);
+    if (block.has("_path"))
+        block.getByName("_path").column->assumeMutableRef().insert(path);
+
+    if (block.has("_file"))
+        block.getByName("_file").column->assumeMutableRef().insert(file);
+
+    block.getByName("_idx").column->assumeMutableRef().insert(idx);
+}
+
 class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
-
 public:
     Impl(
         const Aws::S3::S3Client & client_,
@@ -134,20 +145,6 @@ public:
         request.SetPrefix(key_prefix);
 
         outcome_future = listObjectsAsync();
-
-        /// Create a virtual block with one row to construct filter
-        if (query && virtual_header)
-        {
-            /// Append "idx" column as the filter result
-            virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-            auto block = virtual_header.cloneEmpty();
-            MutableColumns columns = block.mutateColumns();
-            for (auto & column : columns)
-                column->insertDefault();
-            block.setColumns(std::move(columns));
-            VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-        }
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
         recursive = globbed_uri.key == "/**" ? true : false;
@@ -194,87 +191,60 @@ private:
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                             backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
 
-         /// It returns false when all objects were returned
+        const auto & result_batch = outcome.GetResult().GetContents();
+
+        /// It returns false when all objects were returned
         is_finished = !outcome.GetResult().GetIsTruncated();
+
         if (!is_finished)
             outcome_future = listObjectsAsync();
 
-        const auto & result_batch = outcome.GetResult().GetContents();
+        KeysWithInfo temp_buffer;
+        temp_buffer.reserve(result_batch.size());
 
-        if (filter_ast)
+        for (const auto & row : result_batch)
+        {
+            String key = row.GetKey();
+            if (recursive || re2::RE2::FullMatch(key, *matcher))
+            {
+                S3::ObjectInfo info =
+                {
+                    .size = size_t(row.GetSize()),
+                    .last_modification_time = row.GetLastModified().Millis() / 1000,
+                };
+
+                if (object_infos)
+                    (*object_infos)[fs::path(globbed_uri.bucket) / key] = info;
+
+                temp_buffer.emplace_back(std::move(key), std::move(info));
+            }
+        }
+
+        if (!filter_ast.has_value())
+        {
+            String any_key;
+            if (!temp_buffer.empty())
+                any_key = temp_buffer.front().key;
+
+            createFilterAST(any_key);
+        }
+
+        if (*filter_ast)
         {
             auto block = virtual_header.cloneEmpty();
+            for (size_t i = 0; i < temp_buffer.size(); ++i)
+                addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / temp_buffer[i].key, i);
 
-            MutableColumnPtr path_column;
-            MutableColumnPtr file_column;
-            MutableColumnPtr idx_column = block.getByName("_idx").column->assumeMutable();
-
-            if (block.has("_path"))
-                path_column = block.getByName("_path").column->assumeMutable();
-
-            if (block.has("_file"))
-                file_column = block.getByName("_file").column->assumeMutable();
-
-            KeysWithInfo temp_buffer;
-            for (size_t i = 0; i < result_batch.size(); ++i)
-            {
-                const auto & row = result_batch[i];
-                String key = row.GetKey();
-
-                if (recursive || re2::RE2::FullMatch(key, *matcher))
-                {
-                    S3::ObjectInfo info =
-                    {
-                        .size = size_t(row.GetSize()),
-                        .last_modification_time = row.GetLastModified().Millis() / 1000,
-                    };
-
-                    String path = fs::path(globbed_uri.bucket) / key;
-                    if (object_infos)
-                        (*object_infos)[path] = info;
-
-                    String file = path.substr(path.find_last_of('/') + 1);
-                    if (path_column)
-                        path_column->insert(path);
-                    if (file_column)
-                        file_column->insert(file);
-
-                    temp_buffer.emplace_back(std::move(key), std::move(info));
-                    idx_column->insert(i);
-                }
-            }
-
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
+            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), *filter_ast);
             const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
 
-            size_t rows = block.rows();
-            buffer.reserve(rows);
-            for (size_t i = 0; i < rows; ++i)
-            {
-                UInt64 idx = idxs.getData()[i];
+            buffer.reserve(block.rows());
+            for (UInt64 idx : idxs.getData())
                 buffer.emplace_back(std::move(temp_buffer[idx]));
-            }
         }
         else
         {
-            buffer.reserve(result_batch.size());
-            for (const auto & row : result_batch)
-            {
-                String key = row.GetKey();
-                if (recursive || re2::RE2::FullMatch(key, *matcher))
-                {
-                    S3::ObjectInfo info =
-                    {
-                        .size = size_t(row.GetSize()),
-                        .last_modification_time = row.GetLastModified().Millis() / 1000,
-                    };
-
-                    if (object_infos)
-                        (*object_infos)[fs::path(globbed_uri.bucket) / key] = info;
-
-                    buffer.emplace_back(std::move(key), std::move(info));
-                }
-            }
+            buffer = std::move(temp_buffer);
         }
 
         /// Set iterator only after the whole batch is processed
@@ -286,6 +256,20 @@ private:
             for (const auto & [key, _] : buffer)
                 read_keys->push_back(key);
         }
+    }
+
+    void createFilterAST(const String & any_key)
+    {
+        if (!query || !virtual_header)
+            return;
+
+        /// Create a virtual block with one row to construct filter
+        /// Append "idx" column as the filter result
+        virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+        auto block = virtual_header.cloneEmpty();
+        addPathToVirtualColumns(block, fs::path(globbed_uri.bucket) / any_key, 0);
+        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast.emplace());
     }
 
     std::future<Aws::S3::Model::ListObjectsV2Outcome> listObjectsAsync()
@@ -312,7 +296,7 @@ private:
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
-    ASTPtr filter_ast;
+    std::optional<ASTPtr> filter_ast;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
     bool is_finished{false};
@@ -363,14 +347,15 @@ public:
         /// Create a virtual block with one row to construct filter
         if (query && virtual_header)
         {
-            /// Append "key" column as the filter result
-            virtual_header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "_key"});
+            /// Append "idx" column as the filter result
+            virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+            String any_key;
+            if (!keys.empty())
+                any_key = keys.front();
 
             auto block = virtual_header.cloneEmpty();
-            MutableColumns columns = block.mutateColumns();
-            for (auto & column : columns)
-                column->insertDefault();
-            block.setColumns(std::move(columns));
+            addPathToVirtualColumns(block, fs::path(bucket) / any_key, 0);
 
             ASTPtr filter_ast;
             VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
@@ -378,34 +363,16 @@ public:
             if (filter_ast)
             {
                 block = virtual_header.cloneEmpty();
-                MutableColumnPtr path_column;
-                MutableColumnPtr file_column;
-                MutableColumnPtr key_column = block.getByName("_key").column->assumeMutable();
-
-                if (block.has("_path"))
-                    path_column = block.getByName("_path").column->assumeMutable();
-
-                if (block.has("_file"))
-                    file_column = block.getByName("_file").column->assumeMutable();
-
-                for (const auto & key : keys)
-                {
-                    String path = fs::path(bucket) / key;
-                    String file = path.substr(path.find_last_of('/') + 1);
-                    if (path_column)
-                        path_column->insert(path);
-                    if (file_column)
-                        file_column->insert(file);
-                    key_column->insert(key);
-                }
+                for (size_t i = 0; i < keys.size(); ++i)
+                    addPathToVirtualColumns(block, fs::path(bucket) / keys[i], i);
 
                 VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-                const ColumnString & keys_col = typeid_cast<const ColumnString &>(*block.getByName("_key").column);
-                size_t rows = block.rows();
+                const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
+
                 Strings filtered_keys;
-                filtered_keys.reserve(rows);
-                for (size_t i = 0; i < rows; ++i)
-                    filtered_keys.emplace_back(keys_col.getDataAt(i).toString());
+                filtered_keys.reserve(block.rows());
+                for (UInt64 idx : idxs.getData())
+                    filtered_keys.emplace_back(std::move(keys[idx]));
 
                 keys = std::move(filtered_keys);
             }
@@ -1301,8 +1268,13 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 {
     std::vector<String> read_keys;
 
-    auto file_iterator
-        = createFileIterator(s3_configuration, {s3_configuration.uri.key}, is_key_with_globs, distributed_processing, ctx, nullptr, {}, object_infos, &read_keys);
+    auto file_iterator = createFileIterator(
+        s3_configuration,
+        {s3_configuration.uri.key},
+        is_key_with_globs,
+        distributed_processing,
+        ctx, nullptr,
+        {}, object_infos, &read_keys);
 
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
