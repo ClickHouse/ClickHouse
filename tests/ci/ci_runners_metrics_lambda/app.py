@@ -86,8 +86,6 @@ def get_dead_runners_in_ec2(runners):
 
 
 def get_key_and_app_from_aws():
-    import boto3
-
     secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
@@ -141,21 +139,25 @@ def list_runners(access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
+    per_page = 100
     response = requests.get(
-        "https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100",
+        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
         headers=headers,
     )
     response.raise_for_status()
     data = response.json()
     total_runners = data["total_count"]
+    print("Expected total runners", total_runners)
     runners = data["runners"]
 
-    total_pages = int(total_runners / 100 + 1)
+    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
+    total_pages = (total_runners - 1) // per_page + 1
+
     print("Total pages", total_pages)
     for i in range(2, total_pages + 1):
         response = requests.get(
             "https://api.github.com/orgs/ClickHouse/actions/runners"
-            f"?page={i}&per_page=100",
+            f"?page={i}&per_page={per_page}",
             headers=headers,
         )
         response.raise_for_status()
@@ -271,8 +273,8 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
     encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
     installation_id = get_installation_id(encoded_jwt)
     access_token = get_access_token(encoded_jwt, installation_id)
-    runners = list_runners(access_token)
-    grouped_runners = group_runners_by_tag(runners)
+    gh_runners = list_runners(access_token)
+    grouped_runners = group_runners_by_tag(gh_runners)
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
             print(group)
@@ -284,7 +286,7 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
 
     if delete_offline_runners:
         print("Going to delete offline runners")
-        dead_runners = get_dead_runners_in_ec2(runners)
+        dead_runners = get_dead_runners_in_ec2(gh_runners)
         for runner in dead_runners:
             print("Deleting runner", runner)
             delete_runner(access_token, runner)
