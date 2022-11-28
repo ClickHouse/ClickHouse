@@ -130,7 +130,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageHudi::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -139,8 +139,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
 StoragePtr TableFunctionHudi::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri(configuration.url);
-    S3::URI s3_uri(uri);
+    S3::URI s3_uri(configuration.url);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
@@ -162,7 +161,7 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
          = {R"(The table function can be used to read the Hudi table stored on object store.)",
             Documentation::Examples{{"hudi", "SELECT * FROM hudi(url, access_key_id, secret_access_key)"}},
             Documentation::Categories{"DataLake"}},
-         .allow_readonly = true});
+         .allow_readonly = false});
 }
 }
 
