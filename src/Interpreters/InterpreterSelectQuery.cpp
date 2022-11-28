@@ -503,23 +503,34 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
+        NameToNameMap parameter_values;
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
             /// We need to fetch the parameters set for SELECT parameterized view before the query is replaced.
             /// ad after query is replaced, we use these parameters to substitute in the parameterized view query
-            NameToNameMap parameter_values;
             if (query_info.is_parameterized_view)
+            {
                 parameter_values = analyzeFunctionParamValues(query_ptr);
+                view->setParameterValues(parameter_values);
+            }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
             if (query_info.is_parameterized_view)
-                view->replaceQueryParametersIfParametrizedView(query_ptr, parameter_values);
+            {
+                view->replaceQueryParametersIfParametrizedView(query_ptr);
+            }
+
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
-            options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+            options,
+            joined_tables.tablesWithColumns(),
+            required_result_column_names,
+            table_join,
+            query_info.is_parameterized_view,
+            parameter_values);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -646,7 +657,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, parameter_values);
         }
 
         /// Calculate structure of the result.

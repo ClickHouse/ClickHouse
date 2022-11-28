@@ -249,7 +249,20 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     for (const auto & column : *cols)
                     {
                         if (first_table || !data.join_using_columns.contains(column.name))
-                            addIdentifier(columns, table.table, column.name);
+                        {
+                            std::string column_name = column.name;
+                            std::string::size_type pos = 0u;
+                            for (auto parameter : data.parameter_values)
+                            {
+                                if ((pos = column_name.find(parameter.first)) != std::string::npos)
+                                {
+                                    String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
+                                    column_name.replace(pos,parameter.first.size(),parameter_name);
+                                    break;
+                                }
+                            }
+                            addIdentifier(columns, table.table, column_name);
+                        }
                     }
                 }
                 first_table = false;

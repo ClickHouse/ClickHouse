@@ -140,7 +140,7 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
+    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names,parameter_values);
     const auto & header = query_plan.getCurrentDataStream().header;
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
@@ -176,7 +176,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query)
 {
     ReplaceQueryParameterVisitor visitor(parameter_values);
     visitor.visit(outer_query);

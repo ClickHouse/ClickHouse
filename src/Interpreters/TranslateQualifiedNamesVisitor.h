@@ -28,11 +28,13 @@ public:
         const TablesWithColumns & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
+        NameToNameMap parameter_values;
 
-        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true)
+        Data(const NameSet & source_columns_, const TablesWithColumns & tables_, bool has_columns_ = true, NameToNameMap parameter_values_ = {})
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)
+            , parameter_values(parameter_values_)
         {}
 
         bool hasColumn(const String & name) const { return source_columns.count(name); }
