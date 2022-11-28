@@ -159,7 +159,6 @@ public:
                     auto field = col_const_array->getData()[j];
                     cutURL(res_chars, field.get<String>());
                 }
-
             }
             res_data.resize(res_offset + res_chars.size());
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &res_chars[0], res_chars.size());
@@ -169,7 +168,6 @@ public:
             prev_offset = cur_offset;
         }
     }
-
 };
 
 REGISTER_FUNCTION(CutURLParameter)
