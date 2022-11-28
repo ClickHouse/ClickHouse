@@ -431,6 +431,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer)
         rotate(max_log_id + 1);
+
+    initialized = true;
 }
 
 
@@ -589,7 +591,7 @@ void Changelog::writeThread()
 
 void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
-    if (!current_writer)
+    if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
 
     if (logs.empty())
