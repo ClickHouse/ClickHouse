@@ -119,7 +119,8 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"avg", "avg"},
     {"sum", "sum"},
     {"min", "min"},
-    {"max", "max"}
+    {"max", "max"},
+    {"collect_list", "groupArray"},
 };
 
 static const std::set<std::string> FUNCTION_NEED_KEEP_ARGUMENTS = {"alias"};
