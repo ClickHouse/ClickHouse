@@ -175,7 +175,7 @@ protected:
 
     ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAGPtr & actions, bool is_left) const;
 
-    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false, bool is_create_parameterized_view = false);
+    void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
     /** Similar to getRootActions but do not make sets when analyzing IN functions. It's used in
       * analyzeAggregation which happens earlier than analyzing PREWHERE and WHERE. If we did, the
@@ -293,8 +293,7 @@ struct ExpressionAnalysisResult
         ssize_t & prewhere_step_num,
         ssize_t & where_step_num,
         ssize_t & having_step_num,
-        const ASTSelectQuery & query,
-        bool is_create_parameterized_view);
+        const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.

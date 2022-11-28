@@ -330,10 +330,10 @@ using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressi
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const TablesWithColumns & tables_with_columns)
+                             const TablesWithColumns & tables_with_columns, NameToNameMap parameter_values = {})
 {
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */, parameter_values);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 
@@ -1206,7 +1206,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
     const Names & required_result_columns,
-    std::shared_ptr<TableJoin> table_join) const
+    std::shared_ptr<TableJoin> table_join,
+    bool is_parameterized_view,
+    const NameToNameMap parameter_values) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -1244,7 +1246,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
@@ -1311,7 +1313,27 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
+
+    if (is_parameterized_view)
+    {
+        for (auto & column : result.source_columns)
+        {
+            std::string column_name = column.name;
+            std::string::size_type pos = 0u;
+            for (auto & parameter : parameter_values)
+            {
+                if ((pos = column_name.find(parameter.first)) != std::string::npos)
+                {
+                    String parameter_name("_CAST(" + parameter.second + ", '" + column.type->getName() + "')");
+                    column.name.replace(pos,parameter.first.size(),parameter_name);
+                    break;
+                }
+            }
+        }
+    }
+
     result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
+
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns

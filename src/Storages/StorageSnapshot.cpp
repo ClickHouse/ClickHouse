@@ -112,21 +112,34 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
+Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names,const NameToNameMap & parameter_values) const
 {
     Block res;
+
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & name : column_names)
     {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        std::string column_name  = name;
+        std::string substituted_column_name = name;
+        std::string::size_type pos = 0u;
+        for (auto parameter : parameter_values)
+        {
+            if ((pos = substituted_column_name.find("_CAST(" + parameter.second)) != std::string::npos)
+            {
+                substituted_column_name = substituted_column_name.substr(0,pos) + parameter.first + ")";
+                break;
+            }
+        }
+
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
         if (column && !object_column)
         {
-            res.insert({column->type->createColumn(), column->type, column->name});
+            res.insert({column->type->createColumn(), column->type, column_name});
         }
         else if (object_column)
         {
-            res.insert({object_column->type->createColumn(), object_column->type, object_column->name});
+            res.insert({object_column->type->createColumn(), object_column->type, column_name});
         }
         else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
         {

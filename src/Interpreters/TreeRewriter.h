@@ -90,6 +90,7 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    Names sourceColumns() const { return source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }
@@ -129,7 +130,9 @@ public:
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {},
-        std::shared_ptr<TableJoin> table_join = {}) const;
+        std::shared_ptr<TableJoin> table_join = {},
+        bool is_parameterized_view = false,
+        const NameToNameMap parameter_values = {}) const;
 
 private:
     static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);

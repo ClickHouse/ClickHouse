@@ -538,7 +538,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 }
 
 
-void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts, bool is_create_parameterized_view)
+void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
     ActionsVisitor::Data visitor_data(
@@ -553,8 +553,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
         getAggregationKeysInfo(),
-        false /* build_expression_with_window_functions */,
-        is_create_parameterized_view);
+        false /* build_expression_with_window_functions */);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -1287,12 +1286,7 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
-    getRootActions(select_query->where(), only_types, step.actions(), false/*only_consts*/, query_options.is_create_parameterized_view);
-
-    /// For creating parameterized view, query parameters are allowed in select
-    /// As select will be stored without substituting query parameters, we don't want to evaluate the where expression
-    if (query_options.is_create_parameterized_view)
-        return true;
+    getRootActions(select_query->where(), only_types, step.actions(), false/*only_consts*/);
 
     auto where_column_name = select_query->where()->getColumnName();
     step.addRequiredOutput(where_column_name);
@@ -1487,9 +1481,6 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
 
-    if (query_options.is_create_parameterized_view && !analyzeReceiveQueryParams(select_query->having()).empty())
-        return true;
-
     step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
@@ -1501,7 +1492,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    getRootActions(select_query->select(), only_types, step.actions());
+    getRootActions(select_query->select(), only_types, step.actions(), false /*only_consts*/);
 
     for (const auto & child : select_query->select()->children)
         appendSelectSkipWindowExpressions(step, child);
@@ -1831,7 +1822,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.finalize();
 
-        finalize(chain, prewhere_step_num, where_step_num, having_step_num, query, query_analyzer.query_options.is_create_parameterized_view);
+        finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
         chain.clear();
     };
@@ -1915,17 +1906,11 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
 
-                    /// For creating parameterized view, query parameters are allowed in select
-                    /// As select will be stored without substituting query parameters, we don't want to evaluate the where expression
-                    const bool can_evaluate_filter_column = !query_analyzer.query_options.is_create_parameterized_view;
-                    if (can_evaluate_filter_column)
-                    {
-                        auto & column_elem
-                            = before_where_sample.getByName(query.where()->getColumnName());
-                        /// If the filter column is a constant and not a query parameter, record it.
-                        if (column_elem.column)
-                            where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
-                    }
+                    auto & column_elem
+                        = before_where_sample.getByName(query.where()->getColumnName());
+                    /// If the filter column is a constant and not a query parameter, record it.
+                    if (column_elem.column)
+                        where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
                 }
             }
             chain.addStep();
@@ -2077,8 +2062,7 @@ void ExpressionAnalysisResult::finalize(
     ssize_t & prewhere_step_num,
     ssize_t & where_step_num,
     ssize_t & having_step_num,
-    const ASTSelectQuery & query,
-    bool is_create_parameterized_view)
+    const ASTSelectQuery & query)
 {
     if (prewhere_step_num >= 0)
     {
@@ -2098,16 +2082,14 @@ void ExpressionAnalysisResult::finalize(
         prewhere_step_num = -1;
     }
 
-    /// For creating parameterized view, query parameters are allowed in select
-    /// As select will be stored without substituting query parameters, we don't want to evaluate the expressions/steps
-    if (where_step_num >= 0 && !(is_create_parameterized_view && !analyzeReceiveQueryParams(query.where()).empty()))
+    if (where_step_num >= 0)
     {
         where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
         where_step_num = -1;
     }
 
-    if (having_step_num >= 0 && !(is_create_parameterized_view && !analyzeReceiveQueryParams(query.having()).empty()))
+    if (having_step_num >= 0)
     {
         having_column_name = query.having()->getColumnName();
         remove_having_filter = chain.steps.at(having_step_num)->required_output.find(having_column_name)->second;

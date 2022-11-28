@@ -11,8 +11,12 @@ FROM
     SELECT *
     FROM default.Catalog
     WHERE Price = _CAST(10, \'UInt64\')
-) AS v1
+) AS pv1
 50
 10
 20
 30
+20
+30
+40
+60
