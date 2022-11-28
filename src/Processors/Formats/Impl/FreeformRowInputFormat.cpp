@@ -59,6 +59,31 @@ static size_t scoreForType(const DataTypePtr & type)
     return 1;
 }
 
+static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
+{
+    switch (rule)
+    {
+        case FormatSettings::EscapingRule::JSON:
+            [[fallthrough]];
+        case FormatSettings::EscapingRule::CSV:
+            return 3;
+        case FormatSettings::EscapingRule::Quoted:
+            return 2;
+        case FormatSettings::EscapingRule::Escaped:
+            [[fallthrough]];
+        case FormatSettings::EscapingRule::Raw:
+            return 1;
+        default:
+            return 0;
+    }
+    UNREACHABLE();
+}
+
+static size_t scoreForField(const FormatSettings::EscapingRule & rule, DataTypePtr type)
+{
+    return scoreForRule(rule) * scoreForType(type);
+}
+
 static DataTypePtr makeFloatIfInt(const DataTypePtr & type)
 {
     WhichDataType which(type);
@@ -125,7 +150,7 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
     {
         matchers.back()->parseField(field, in);
         auto type = matchers.back()->getDataTypeFromField(field);
-        fields.emplace_back(type, matchers.size() - 1, scoreForType(type), in.position(), false);
+        fields.emplace_back(type, matchers.size() - 1, scoreForField(matchers.back()->getEscapingRule(), type), in.position(), false);
         return fields;
     }
 
@@ -135,11 +160,10 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
         try
         {
             matcher->parseField(field, in);
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got field: {} , matcher: {}", field, matcher->getName());
             auto type = matcher->getDataTypeFromField(field);
             if (type)
             {
-                type = makeFloatIfInt(type); // for the sake of correctness, make all int to be float
+                type = makeFloatIfInt(type);
                 score = scoreForType(type);
 
                 // add a new field only if current score > prev_score or if we haven't found a field other than string
@@ -149,10 +173,15 @@ std::vector<FreeformFieldMatcher::Field> FreeformFieldMatcher::readNextPossibleF
                     fields.emplace_back(
                         type,
                         i,
-                        scoreForType(type),
+                        scoreForField(matcher->getEscapingRule(), type),
                         in.position(),
                         field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher");
-                    LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got type: {}, score: {}", type->getName(), scoreForType(type));
+                    LOG_DEBUG(
+                        &Poco::Logger::get("FreeformFieldMatcher"),
+                        "got field: {}, type: {}, score: {}",
+                        field,
+                        type->getName(),
+                        scoreForField(matcher->getEscapingRule(), type));
                 }
             }
         }
@@ -225,7 +254,6 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution.");
 
     ::sort(solutions.begin(), solutions.end(), [](const Solution & first, const Solution & second) { return first.score > second.score; });
-    in.position() = start;
 
     // after finding and ranking the solutions, we now run them through max_rows_to_check and pick the first one that works for all rows
     String tmp;
@@ -233,6 +261,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
     {
         try
         {
+            in.position() = start;
             for (size_t row = 0; row < max_rows_to_check; ++row)
             {
                 if (in.eof())
