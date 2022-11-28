@@ -147,7 +147,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
             {
                 if (const auto hints = current_settings.getHints(change.name); !hints.empty())
                 {
-                      e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
+                    e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
                 }
             }
             throw;

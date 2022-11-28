@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
@@ -311,22 +310,12 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 }
 
 
-size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
+std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
+    auto it = volume_index_by_disk_name.find(disk_name);
     if (it != volume_index_by_disk_name.end())
         return it->second;
-    else
-        throw Exception("No disk " + backQuote(disk_ptr->getName()) + " in policy " + backQuote(name), ErrorCodes::UNKNOWN_DISK);
-}
-
-
-VolumePtr StoragePolicy::tryGetVolumeByDisk(const DiskPtr & disk_ptr) const
-{
-    auto it = volume_index_by_disk_name.find(disk_ptr->getName());
-    if (it == volume_index_by_disk_name.end())
-        return nullptr;
-    return getVolume(it->second);
+    return {};
 }
 
 

@@ -101,18 +101,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 }
 
 
-void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    int32_t num_entries;
-    auto * files_list = hdfsListDirectory(hdfs_fs.get(), path.substr(begin_of_path).c_str(), &num_entries);
-    if (num_entries == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
-
-    for (int32_t i = 0; i < num_entries; ++i)
-        children.emplace_back(files_list[i].mName, files_list[i].mSize);
-}
-
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {

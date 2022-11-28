@@ -8,20 +8,10 @@
 namespace DB
 {
 
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DataPartStoragePtr & data_part_storage, const String & path)
-{
-    size_t file_size = data_part_storage->getFileSize(path);
-    return data_part_storage->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
-}
-
-PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_)
-{
-}
-
-
 std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    auto res = openForReading(part->data_part_storage, file_name);
+    size_t file_size = part->getDataPartStorage().getFileSize(file_name);
+    auto res = part->getDataPartStorage().readFile(file_name, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -31,7 +21,7 @@ std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & fil
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const
 {
-    return part->data_part_storage->exists(file_name);
+    return part->getDataPartStorage().exists(file_name);
 }
 
 
