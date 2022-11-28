@@ -895,7 +895,7 @@ class FunctionBinaryArithmetic : public IFunction
         const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
             agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
-        AggregateFunctionPtr function = column.getAggregateFunction();
+        ConstAggregateFunctionPtr function = column.getAggregateFunction();
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
@@ -960,7 +960,7 @@ class FunctionBinaryArithmetic : public IFunction
         const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
             rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
 
-        AggregateFunctionPtr function = lhs.getAggregateFunction();
+        ConstAggregateFunctionPtr function = lhs.getAggregateFunction();
 
         size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
 

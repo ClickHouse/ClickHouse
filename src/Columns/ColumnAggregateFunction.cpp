@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
+static String getTypeString(const ConstAggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
 
@@ -62,18 +62,18 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 }
 
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
+ColumnAggregateFunction::ColumnAggregateFunction(const ConstAggregateFunctionPtr & func_, std::optional<size_t> version_)
     : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
+ColumnAggregateFunction::ColumnAggregateFunction(const ConstAggregateFunctionPtr & func_, const ConstArenas & arenas_)
     : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
+void ColumnAggregateFunction::set(const ConstAggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
     version = version_;
@@ -146,7 +146,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     /// insertResultInto may invalidate states, so we must unshare ownership of them
     column_aggregate_func.ensureOwnership();
 
-    MutableColumnPtr res = func->getReturnType()->createColumn();
+    MutableColumnPtr res = func->getResultType()->createColumn();
     res->reserve(data.size());
 
     /// If there are references to states in final column, we must hold their ownership

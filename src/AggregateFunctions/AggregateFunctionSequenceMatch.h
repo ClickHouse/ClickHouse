@@ -8,6 +8,7 @@
 #include <base/range.h>
 #include <base/sort.h>
 #include <Common/PODArray.h>
+#include "DataTypes/Serializations/ISerialization.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>
@@ -126,8 +127,8 @@ template <typename T, typename Data, typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params, result_type_)
         , pattern(pattern_)
     {
         arg_count = arguments.size();
@@ -617,13 +618,11 @@ class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt8>()) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceMatch"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -655,13 +654,11 @@ class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt64>()) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceCount"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 

@@ -3,6 +3,8 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
+#include <Core/IResolvedFunction.h>
+#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 
 #include "config.h"
@@ -122,11 +124,11 @@ using Values = std::vector<llvm::Value *>;
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
-class IFunctionBase
+class IFunctionBase : public IResolvedFunction
 {
 public:
 
-    virtual ~IFunctionBase() = default;
+    ~IFunctionBase() override = default;
 
     virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
@@ -137,8 +139,10 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getResultType() const = 0;
+    const Array & getParameters() const final
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
+    }
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.

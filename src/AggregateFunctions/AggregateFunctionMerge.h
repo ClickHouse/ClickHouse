@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType())
         , nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
@@ -45,9 +45,9 @@ public:
         return nested_func->getName() + "Merge";
     }
 
-    DataTypePtr getReturnType() const override
+    DataTypePtr createResultType() const
     {
-        return nested_func->getReturnType();
+        return nested_func->getResultType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override

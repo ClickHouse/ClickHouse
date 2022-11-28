@@ -11,6 +11,7 @@
 
 #include <Common/SpaceSaving.h>
 #include <Common/assert_cast.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -40,14 +41,20 @@ protected:
 
 public:
     AggregateFunctionTopK(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params)
-        , threshold(threshold_), reserved(load_factor * threshold) {}
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, createResultType(argument_types_))
+        , threshold(threshold_), reserved(load_factor * threshold)
+    {}
+
+    AggregateFunctionTopK(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, result_type_)
+        , threshold(threshold_), reserved(load_factor * threshold)
+    {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        return std::make_shared<DataTypeArray>(this->argument_types[0]);
+        return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -126,21 +133,20 @@ private:
 
     UInt64 threshold;
     UInt64 reserved;
-    DataTypePtr & input_data_type;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
     AggregateFunctionTopKGeneric(
         UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>(argument_types_, params)
-        , threshold(threshold_), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>(argument_types_, params, createResultType(argument_types_))
+        , threshold(threshold_), reserved(load_factor * threshold) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        return std::make_shared<DataTypeArray>(input_data_type);
+        return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
     bool allocatesMemoryInArena() const override

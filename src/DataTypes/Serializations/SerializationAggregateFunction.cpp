@@ -108,14 +108,14 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     }
 }
 
-static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)
+static String serializeToString(const ConstAggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)
 {
     WriteBufferFromOwnString buffer;
     function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer, version);
     return buffer.str();
 }
 
-static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s, size_t version)
+static void deserializeFromString(const ConstAggregateFunctionPtr & function, IColumn & column, const String & s, size_t version)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 

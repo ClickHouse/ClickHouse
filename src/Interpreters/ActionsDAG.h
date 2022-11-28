@@ -74,7 +74,6 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
-        FunctionOverloadResolverPtr function_builder;
         /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
@@ -139,6 +138,10 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
+    const Node & addFunction(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        std::string result_name);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;

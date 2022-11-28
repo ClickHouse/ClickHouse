@@ -133,7 +133,7 @@ private:
 
 public:
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
-        :IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {})
+        :IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
             throw Exception("Aggregate function " + getName() + " require two parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -174,7 +174,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return true; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types
         {
