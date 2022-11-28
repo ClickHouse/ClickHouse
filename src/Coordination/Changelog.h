@@ -210,6 +210,8 @@ private:
     uint64_t last_durable_idx{0};
 
     nuraft::wptr<nuraft::raft_server> raft_server;
+
+    bool initialized = false;
 };
 
 }
