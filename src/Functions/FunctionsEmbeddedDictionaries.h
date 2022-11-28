@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 
 namespace DB

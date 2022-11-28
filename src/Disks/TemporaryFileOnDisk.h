@@ -5,6 +5,12 @@
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric TotalTemporaryFiles;
+}
+
 namespace DB
 {
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -18,21 +24,20 @@ class TemporaryFileOnDisk
 public:
     explicit TemporaryFileOnDisk(const DiskPtr & disk_);
     explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope);
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_);
 
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }
-    String getPath() const;
+    const String & getPath() const { return filepath; }
+    const String & path() const { return filepath; }
 
 private:
     DiskPtr disk;
 
-    /// Relative path in disk to the temporary file or directory
-    String relative_path;
+    String filepath;
 
-    CurrentMetrics::Increment metric_increment;
-
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::TotalTemporaryFiles};
     /// Specified if we know what for file is used (sort/aggregate/join).
     std::optional<CurrentMetrics::Increment> sub_metric_increment = {};
 };

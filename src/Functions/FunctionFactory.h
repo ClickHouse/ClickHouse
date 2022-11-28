@@ -88,6 +88,4 @@ private:
     String getFactoryName() const override { return "FunctionFactory"; }
 };
 
-const String & getFunctionCanonicalNameIfAny(const String & name);
-
 }

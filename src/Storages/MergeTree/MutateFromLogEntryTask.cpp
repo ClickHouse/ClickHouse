@@ -92,7 +92,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->data_part_storage);
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -193,7 +193,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr);
+    auto builder = mutate_task->getBuilder();
+
+    if (!builder)
+        builder = new_part->data_part_storage->getBuilder();
+
+    storage.renameTempPartAndReplace(new_part, *transaction_ptr, builder);
 
     try
     {
@@ -213,7 +218,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             write_part_log(ExecutionStatus::fromCurrentException());
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
-                storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(new_part), "mutate-not-byte-identical");
+                storage.forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
             else
                 storage.tryRemovePartImmediately(std::move(new_part));
 

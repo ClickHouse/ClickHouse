@@ -34,8 +34,9 @@ struct BlockIO
     void onFinish()
     {
         if (finish_callback)
+        {
             finish_callback(pipeline);
-
+        }
         pipeline.reset();
     }
 

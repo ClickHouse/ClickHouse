@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -12,7 +12,6 @@ class Logger;
 namespace DB
 {
 
-/// Treat local disk as an object storage (for interface compatibility).
 class LocalObjectStorage : public IObjectStorage
 {
 public:
@@ -44,6 +43,8 @@ public:
         FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
+
+    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     void removeObject(const StoredObject & object) override;
 

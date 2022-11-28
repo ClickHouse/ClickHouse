@@ -7,8 +7,6 @@
 namespace DB
 {
 
-constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
-
 /** SET query
   */
 class ASTSetQuery : public IAST
@@ -23,8 +21,6 @@ public:
     bool print_in_format = true;
 
     SettingsChanges changes;
-    /// settings that will be reset to default value
-    std::vector<String> default_settings;
     NameToNameMap query_parameters;
 
     /** Get the text that identifies this element. */
