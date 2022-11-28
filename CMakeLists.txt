@@ -588,6 +588,7 @@ if (ENABLE_RUST)
 endif()
 
 add_subdirectory (base)
+add_subdirectory (benchmark)
 add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
