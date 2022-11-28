@@ -11,6 +11,17 @@ import requests
 import boto3
 from botocore.exceptions import ClientError
 
+UNIVERSAL_LABEL = "universal"
+RUNNER_TYPE_LABELS = [
+    "builder",
+    "func-tester",
+    "func-tester-aarch64",
+    "fuzzer-unit-tester",
+    "stress-tester",
+    "style-checker",
+    "style-checker-aarch64",
+]
+
 
 def get_dead_runners_in_ec2(runners):
     ids = {
@@ -170,26 +181,23 @@ def list_runners(access_token):
 def group_runners_by_tag(listed_runners):
     result = {}
 
-    RUNNER_TYPE_LABELS = [
-        "builder",
-        "func-tester",
-        "func-tester-aarch64",
-        "fuzzer-unit-tester",
-        "stress-tester",
-        "style-checker",
-        "style-checker-aarch64",
-    ]
+    def add_to_result(tag, runner):
+        if tag not in result:
+            result[tag] = []
+        result[tag].append(runner)
+
     for runner in listed_runners:
+        if UNIVERSAL_LABEL in runner.tags:
+            # Do not proceed other labels if UNIVERSAL_LABEL is included
+            add_to_result(UNIVERSAL_LABEL, runner)
+            continue
+
         for tag in runner.tags:
             if tag in RUNNER_TYPE_LABELS:
-                if tag not in result:
-                    result[tag] = []
-                result[tag].append(runner)
+                add_to_result(tag, runner)
                 break
         else:
-            if "unlabeled" not in result:
-                result["unlabeled"] = []
-            result["unlabeled"].append(runner)
+            add_to_result("unlabeled", runner)
     return result
 
 
