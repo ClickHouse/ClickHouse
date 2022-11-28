@@ -1076,6 +1076,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
 void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
 {
+    std::cerr << "========== Req prefix " << prefix_size << std::endl;
     /// if dirction is not set, use current one
     if (!direction)
         direction = getSortDirection();

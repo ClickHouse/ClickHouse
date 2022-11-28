@@ -11,11 +11,13 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
+#include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include "Common/JSONBuilder.h"
 
 namespace DB
 {
@@ -404,11 +406,18 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+    if (!sort_description_for_merging.empty())
+    {
+        String prefix(settings.offset, settings.indent_char);
+        settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
+    }
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (!sort_description_for_merging.empty())
+        map.add("Order", dumpSortDescription(sort_description_for_merging));
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

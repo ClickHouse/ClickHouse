@@ -679,6 +679,19 @@ InputOrderInfoPtr buildInputOrderInfo(
     return std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 }
 
+/// We really need three different sort descriptions here.
+/// For example:
+///
+///   create table tab (a Int32, b Int32, c Int32, d Int32) engine = MergeTree order by (a, b, c);
+///   select a, any(b), c, d from tab where b = 1 group by a, c, d order by c, d;
+///
+/// We would like to have:
+/// (a, b, c) - a sort description for reading from table (it's into input_order)
+/// (a, c) - a sort description for merging (an input of AggregatingInOrderTransfrom is sorted by this GROUP BY keys)
+/// (a, c, d) - a group by soer description (an input of FinishAggregatingInOrderTransform is sorted by all GROUP BY keys)
+///
+/// Sort description from input_order is not actually used. ReadFromMergeTree reads only PK prefix size.
+/// We should remove it later.
 struct AggregationInputOrder
 {
     InputOrderInfoPtr input_order;
@@ -1162,6 +1175,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (aggregating->inOrder() || aggregating->isGroupingSets())
         return;
 
+    /// TODO: maybe add support for UNION later.
     if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front()); order_info.input_order)
     {
         aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
