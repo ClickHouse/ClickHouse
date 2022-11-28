@@ -22,6 +22,8 @@ on:  # yamllint disable-line rule:truthy
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
+    # Run the first check always, even if the CI is cancelled
+    if: ${{ always() }}
     steps:
       - name: Clear repository
         run: |
