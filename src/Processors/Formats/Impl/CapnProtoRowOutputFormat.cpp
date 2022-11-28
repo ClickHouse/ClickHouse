@@ -148,7 +148,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
         {
             auto struct_builder = builder.as<capnp::DynamicStruct>();
             auto nested_struct_schema = struct_builder.getSchema();
-            /// Struct can be represent Tuple, Nullable (named union with two fields) or single column when it contains one nested column.
+            /// Struct can represent Tuple, Nullable (named union with two fields) or single column when it contains one nested column.
             if (data_type->isNullable())
             {
                 const auto * nullable_type = assert_cast<const DataTypeNullable *>(data_type.get());
