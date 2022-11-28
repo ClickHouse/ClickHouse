@@ -23,17 +23,17 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_)
-        : s3_settings(s3_settings_)
+        : request_settings(request_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
     {}
 
-    S3Settings::ReadWriteSettings s3_settings;
+    S3Settings::RequestSettings request_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -216,6 +216,11 @@ public:
     {
         data_source_description.type = DataSourceType::S3_Plain;
     }
+
+    /// Notes:
+    /// - supports BACKUP to this disk
+    /// - does not support INSERT into MergeTree table on this disk
+    bool isWriteOnce() const override { return true; }
 };
 
 }

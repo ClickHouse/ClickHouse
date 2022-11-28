@@ -76,7 +76,9 @@ ReadFromRemote::ReadFromRemote(
     Tables external_tables_,
     Poco::Logger * log_,
     UInt32 shard_count_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    SortDescription output_sort_description_,
+    DataStream::SortScope output_sort_scope_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shards(std::move(shards_))
     , stage(stage_)
@@ -90,6 +92,8 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
 {
+    output_stream->sort_description = std::move(output_sort_description_);
+    output_stream->sort_scope = output_sort_scope_;
 }
 
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -239,7 +243,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     Poco::Logger * log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    SortDescription output_sort_description_,
+    DataStream::SortScope output_sort_scope_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , coordinator(std::move(coordinator_))
     , shard(std::move(shard_))
@@ -260,6 +266,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
             description.push_back(fmt::format("Replica: {}", address.host_name));
 
     setStepDescription(boost::algorithm::join(description, ", "));
+
+    output_stream->sort_description = std::move(output_sort_description_);
+    output_stream->sort_scope = output_sort_scope_;
 }
 
 
