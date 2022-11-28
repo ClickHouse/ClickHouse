@@ -3,11 +3,8 @@
 #include <string>
 #include <vector>
 
-#include <Common/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Element.h>
-#include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/ObjectId.h>
 
 #include <Columns/ColumnNullable.h>
@@ -18,7 +15,6 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <Poco/URI.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 
 // only after poco
