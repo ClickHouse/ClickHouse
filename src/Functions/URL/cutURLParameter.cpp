@@ -41,12 +41,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
 
         if (!isString(arguments[1]) && !isArray(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                 arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -60,7 +62,9 @@ public:
         const ColumnArray * col_const_array = checkAndGetColumnConstData<ColumnArray>(column_needle.get());
 
         if (!col_needle && !col_const_array)
-            throw Exception("Second argument of function " + getName() + " must be constant string or constant array", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Second argument of function {} must be constant string or constant array",
+                getName());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -72,9 +76,9 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     static void cutURL(ColumnString::Chars & data, std::string pattern)
