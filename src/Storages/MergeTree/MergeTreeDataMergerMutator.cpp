@@ -244,7 +244,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+            if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                 continue;
 
             /// This part can be merged only with next parts (no prev part exists), so start
@@ -256,7 +256,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, txn.get(), nullptr))
+            if (!can_merge_callback(*prev_part, part, txn.get(), out_disable_reason))
             {
                 /// Now we have no previous part
                 prev_part = nullptr;
@@ -268,7 +268,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
                 /// for example, merge is already assigned for such parts, or they participate in quorum inserts
                 /// and so on.
                 /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
-                if (!can_merge_callback(nullptr, part, txn.get(), nullptr))
+                if (!can_merge_callback(nullptr, part, txn.get(), out_disable_reason))
                     continue;
 
                 /// Starting new interval in the same partition
