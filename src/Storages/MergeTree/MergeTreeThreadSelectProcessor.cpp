@@ -103,18 +103,12 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 
     IMergeTreeReader::ValueSizeMap value_size_map;
 
-    if (!reader)
-    {
-        if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
-        owned_mark_cache = storage.getContext()->getMarkCache();
-    }
-    else if (part_name != last_readed_part_name)
+    if (reader && part_name != last_readed_part_name)
     {
         value_size_map = reader->getAvgValueSizeHints();
     }
 
-    const bool init_new_readers = !reader || part_name != last_readed_part_name;
+    const bool init_new_readers = !reader || task->reader.valid() || part_name != last_readed_part_name;
     if (init_new_readers)
     {
         initializeMergeTreeReadersForCurrentTask(metadata_snapshot, value_size_map, profile_callback);

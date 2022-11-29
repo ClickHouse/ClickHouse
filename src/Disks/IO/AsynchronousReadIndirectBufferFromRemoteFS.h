@@ -87,6 +87,8 @@ private:
 
     std::string query_id;
 
+    std::string current_reader_id;
+
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;

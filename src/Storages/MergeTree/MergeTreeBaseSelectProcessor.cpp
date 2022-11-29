@@ -51,6 +51,8 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
+    , owned_uncompressed_cache(use_uncompressed_cache ? storage.getContext()->getUncompressedCache() : nullptr)
+    , owned_mark_cache(storage.getContext()->getMarkCache())
     , extension(extension_)
 {
     header_without_virtual_columns = getPort().getHeader();
@@ -259,7 +261,9 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForCurrentTask(
 
     if (!task->pre_reader_for_step.empty())
     {
-        pre_reader_for_step = std::move(task->pre_reader_for_step);
+        pre_reader_for_step.clear();
+        for (auto & pre_reader : task->pre_reader_for_step)
+            pre_reader_for_step.push_back(pre_reader.get());
     }
     else
     {

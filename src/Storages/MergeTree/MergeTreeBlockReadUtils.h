@@ -68,7 +68,7 @@ struct MergeTreeReadTask
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     std::future<MergeTreeReaderPtr> reader;
-    std::vector<MergeTreeReaderPtr> pre_reader_for_step;
+    std::vector<std::future<MergeTreeReaderPtr>> pre_reader_for_step;
 
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
@@ -82,7 +82,7 @@ struct MergeTreeReadTask
         bool remove_prewhere_column_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
         std::future<MergeTreeReaderPtr> reader_ = {},
-        std::vector<MergeTreeReaderPtr> && pre_reader_for_step_ = {});
+        std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
 };
 
 

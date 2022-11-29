@@ -25,6 +25,7 @@ NamesAndTypesList FilesystemReadPrefetchesLogElement::getNamesAndTypes()
         {"prefetch_time_ms", std::make_shared<DataTypeDateTime64>(6)},
         {"state", std::make_shared<DataTypeString>()}, /// Was this prefetch used or we downloaded it in vain?
         {"thread_id", std::make_shared<DataTypeUInt64>()},
+        {"reader_id", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -32,7 +33,6 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
 {
     size_t i = 0;
 
-    std::cerr << "\n\nadding: " << path << " for query: " << query_id << "\n\n";
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_id);
@@ -41,6 +41,7 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
     columns[i++]->insert(prefetch_start_time);
     columns[i++]->insert(magic_enum::enum_name(state));
     columns[i++]->insert(thread_id);
+    columns[i++]->insert(reader_id);
 }
 
 }

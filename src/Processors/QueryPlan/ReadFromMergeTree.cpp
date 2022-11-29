@@ -29,7 +29,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeRemoteReadPool.h>
+#include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -193,10 +193,9 @@ Pipe ReadFromMergeTree::readFromPool(
 
     MergeTreeReadPoolPtr pool;
 
-    if (checkAllPartsOnRemoteFS(parts_with_range)
-        && !settings.prefer_canonical_merge_tree_read_pool_for_remote_fs)
+    if (checkAllPartsOnRemoteFS(parts_with_range) && settings.prefer_prefetched_read_pool)
     {
-        pool = std::make_shared<MergeTreeRemoteReadPool>(
+        pool = std::make_shared<MergeTreePrefetchedReadPool>(
             max_streams,
             sum_marks,
             min_marks_for_concurrent_read,
@@ -207,10 +206,8 @@ Pipe ReadFromMergeTree::readFromPool(
             virt_column_names,
             settings.preferred_block_size_bytes,
             reader_settings,
-            data.getContext(),
-            data.getContext()->getMarkCache().get(),
-            use_uncompressed_cache ? data.getContext()->getUncompressedCache().get() : nullptr,
-            settings.prefetch_all_parts_in_advance);
+            context,
+            use_uncompressed_cache);
     }
     else
     {

@@ -300,8 +300,7 @@ void MergeTreeReaderWide::prefetch(
     {
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        const bool has = prefetched_streams.contains(stream_name);
-        if (!has)
+        if (!prefetched_streams.contains(stream_name))
         {
             bool seek_to_mark = !continue_reading;
             if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))

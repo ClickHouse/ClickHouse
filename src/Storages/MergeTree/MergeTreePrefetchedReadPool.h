@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -25,10 +26,10 @@ struct MarkRange;
 using MarkRanges = std::deque<MarkRange>;
 
 
-class MergeTreeRemoteReadPool : public IMergeTreeReadPool, private WithContext
+class MergeTreePrefetchedReadPool : public IMergeTreeReadPool, private WithContext
 {
 public:
-    MergeTreeRemoteReadPool(
+    MergeTreePrefetchedReadPool(
         size_t threads,
         size_t sum_marks_,
         size_t min_marks_for_concurrent_read_,
@@ -40,9 +41,7 @@ public:
         size_t preferred_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         ContextPtr context_,
-        MarkCache * mark_cache_,
-        UncompressedCache * uncompressed_cache,
-        bool prefetch_all_parts_in_advance_);
+        bool use_uncompressed_cache_);
 
     MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread) override;
 
@@ -73,16 +72,18 @@ private:
         size_t min_marks_for_concurrent_read,
         const PrewhereInfoPtr & prewhere_info) const;
 
+    static MarkRanges getMarkRangesToRead(size_t need_marks, PartInfo & part);
+
     mutable std::mutex mutex;
     Poco::Logger * log;
 
     Block header;
     StorageSnapshotPtr storage_snapshot;
-    bool prefetch_all_parts_in_advance;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     MergeTreeReaderSettings reader_settings;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
+    ThreadPool & prefetch_threadpool;
 
     /// Saved here, because MergeTreeReadTask in threads_tasks
     /// holds reference to its values.

@@ -223,7 +223,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
-    mutable std::unique_ptr<ThreadPool> read_task_threadpool; /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> prefetch_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -393,6 +393,20 @@ struct ContextSharedPart : boost::noncopyable
                 LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (prefetch_threadpool)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                prefetch_threadpool->wait();
+                prefetch_threadpool.reset();
             }
             catch (...)
             {
@@ -1838,26 +1852,30 @@ void Context::dropMarkCache() const
 
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
+    const auto & config = getConfigRef();
+
     auto lock = getLock();
     if (!shared->load_marks_threadpool)
     {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
+        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
+        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;
 }
 
-ThreadPool & Context::getReadTaskThreadpool() const
+ThreadPool & Context::getPrefetchThreadpool() const
 {
+    const auto & config = getConfigRef();
+
     auto lock = getLock();
-    if (!shared->read_task_threadpool)
+    if (!shared->prefetch_threadpool)
     {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
-        shared->read_task_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 50);
+        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }
-    return *shared->read_task_threadpool;
+    return *shared->prefetch_threadpool;
 }
 
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
@@ -3613,7 +3631,7 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_remote_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 300);
+                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 200);
                 auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
 
                 shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
@@ -3685,7 +3703,7 @@ ReadSettings Context::getReadSettings() const
 
     res.load_marks_asynchronously = settings.load_marks_asynchronously;
 
-    res.enable_filesystem_read_prefetch_log = settings.enable_filesystem_read_prefetch_log;
+    res.enable_filesystem_read_prefetches_log = settings.enable_filesystem_read_prefetches_log;
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;

@@ -1,14 +1,9 @@
 #pragma once
 
 #include <Common/ThreadPool.h>
-#include <future>
-
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MarkCache.h>
-#include <IO/AsynchronousReader.h>
 #include <future>
 
 namespace DB

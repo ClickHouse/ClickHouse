@@ -24,6 +24,7 @@ struct FilesystemReadPrefetchesLogElement
     Decimal64 prefetch_start_time{};
     FilesystemPrefetchState state;
     UInt64 thread_id;
+    String reader_id;
 
     static std::string name() { return "FilesystemReadPrefetchesLog"; }
 

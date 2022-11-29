@@ -2,6 +2,7 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
@@ -52,6 +53,7 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , min_bytes_for_seek(min_bytes_for_seek_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr
                ? CurrentThread::getQueryId() : "")
+    , current_reader_id(getRandomASCIIString(8))
 #ifndef NDEBUG
     , log(&Poco::Logger::get("AsynchronousBufferFromRemoteFS"))
 #else
@@ -141,7 +143,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::resetPrefetch(FilesystemPrefetc
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-        if (read_settings.enable_filesystem_read_prefetch_log)
+        if (read_settings.enable_filesystem_read_prefetches_log)
         {
             appendToPrefetchLog(state);
         }
@@ -183,6 +185,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::appendToPrefetchLog(FilesystemP
         .prefetch_start_time = prefetch_start_time,
         .state = state,
         .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
     };
 
     if (auto log = Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog())
@@ -226,7 +229,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         working_buffer = Buffer(memory.data() + offset, memory.data() + size);
         pos = working_buffer.begin();
 
-        if (read_settings.enable_filesystem_read_prefetch_log)
+        if (read_settings.enable_filesystem_read_prefetches_log)
         {
             appendToPrefetchLog(FilesystemPrefetchState::USED);
         }
@@ -266,9 +269,12 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
     prefetch_future = {};
 
-    /// Prefetch next data. Will do nothing if the requested range (set with setReadUntilPosition())
-    /// is already fulfilled.
-    prefetch();
+    if (bytes_read)
+    {
+        /// Prefetch next data. Will do nothing if the requested range
+        /// (set with setReadUntilPosition()) is already fulfilled.
+        prefetch();
+    }
 
     return bytes_read;
 }
@@ -326,7 +332,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
         if (read_from_prefetch)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-            if (read_settings.enable_filesystem_read_prefetch_log)
+            if (read_settings.enable_filesystem_read_prefetches_log)
             {
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK);
             }
