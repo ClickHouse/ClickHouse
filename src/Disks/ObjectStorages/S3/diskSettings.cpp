@@ -137,7 +137,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler);
 
-    S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
+    S3::URI uri(config.getString(config_prefix + ".endpoint"));
     if (uri.key.back() != '/')
         throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
