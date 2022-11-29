@@ -67,7 +67,9 @@ size_t FileSegmentRangeWriter::tryWrite(const char * data, size_t size, size_t o
         if (written_size == 0)
             break;
 
-        data += written_size;
+        if (data)
+            data += written_size;
+
         size -= written_size;
         offset += written_size;
         total_written_size += written_size;
@@ -158,24 +160,17 @@ bool FileSegmentRangeWriter::reserve(size_t size, size_t offset)
     return write(nullptr, size, offset, FileSegmentKind::Temporary);
 }
 
-void FileSegmentRangeWriter::finalize(bool clear)
+size_t FileSegmentRangeWriter::tryReserve(size_t size, size_t offset)
+{
+    return tryWrite(nullptr, size, offset, FileSegmentKind::Temporary);
+}
+
+void FileSegmentRangeWriter::finalize()
 {
     if (finalized)
         return;
 
     auto & file_segments = file_segments_holder.file_segments;
-
-    /// Set all segments state to SKIP_CACHE to remove it from cache immediately on complete
-    /// Note: if segments are hold by someone else, it won't be removed
-    if (clear)
-    {
-        for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end(); ++file_segment_it)
-        {
-            completeFileSegment(**file_segment_it, FileSegment::State::SKIP_CACHE);
-            file_segments.erase(file_segment_it);
-        }
-        finalized = true;
-    }
 
     if (file_segments.empty() || current_file_segment_it == file_segments.end())
         return;

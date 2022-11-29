@@ -53,32 +53,21 @@ void FileCachePlaceholder::reserveImpl(size_t requested_size)
                                                                  /* source_path_ */ key);
 
     size_t current_offset = cache_writer->currentOffset();
-    bool is_reserved = cache_writer->reserve(requested_size, current_offset);
-    if (!is_reserved)
+    size_t reserved_size = cache_writer->tryReserve(requested_size, current_offset);
+    if (reserved_size != requested_size)
     {
-        cache_writer->finalize(/* clear */ true);
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-            "Cannot reserve space in file cache ({} bytes required, {} / {} bytes used, {} / {} elements used)",
-            requested_size, file_cache->getUsedCacheSize(), file_cache->getTotalMaxSize(),
-            file_cache->getFileSegmentsNum(), file_cache->getTotalMaxElements());
+            "Cannot reserve space in file cache "
+            "({} bytes required, got {} reserved "
+            "{} / {} bytes used, "
+            "{} / {} elements used)"
+            , requested_size, reserved_size
+            , file_cache->getUsedCacheSize(), file_cache->getTotalMaxSize()
+            , file_cache->getFileSegmentsNum(), file_cache->getTotalMaxElements());
     }
-
+    /// Add to cache_writers only if we successfully reserved space, otherwise free reserved_size back
     cache_writers.push_back(std::move(cache_writer));
 }
 
-FileCachePlaceholder::~FileCachePlaceholder()
-{
-    try
-    {
-        for (auto & cache_writer : cache_writers)
-        {
-            cache_writer->finalize(/* clear */ true);
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
 
 }

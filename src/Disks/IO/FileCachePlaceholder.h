@@ -49,13 +49,12 @@ public:
 
     void reserveImpl(size_t requested_size) override;
 
-    ~FileCachePlaceholder() override;
-
 private:
     std::string key_name;
     FileCache * file_cache;
 
     /// On each reserveImpl() call we create new FileSegmentRangeWriter that would be hold space
+    /// It's required to easily release already reserved space on unsuccessful attempt
     std::vector<std::unique_ptr<FileSegmentRangeWriter>> cache_writers;
 };
 

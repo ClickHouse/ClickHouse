@@ -575,8 +575,10 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
 
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
-        cache->remove(key(), offset(), cache_lock, segment_lock);
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
+        detach(cache_lock, segment_lock);
+        setDownloadState(State::SKIP_CACHE);
+        cache->remove(key(), offset(), cache_lock, segment_lock);
         return;
     }
 
