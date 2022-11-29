@@ -363,16 +363,17 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
     return hash_join->checkTypesOfKeys(block);
 }
 
+void GraceHashJoin::initialize(const Block & sample_block)
+{
+    left_sample_block = sample_block.cloneEmpty();
+    output_sample_block = left_sample_block.cloneEmpty();
+    ExtraBlockPtr not_processed;
+    hash_join->joinBlock(output_sample_block, not_processed);
+    initBuckets();
+}
+
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
-    if (need_left_sample_block.exchange(false))
-    {
-        left_sample_block = block.cloneEmpty();
-        output_sample_block = block.cloneEmpty();
-        hash_join->joinBlock(output_sample_block, not_processed);
-        initBuckets();
-    }
-
     if (block.rows() == 0)
     {
         hash_join->joinBlock(block, not_processed);

@@ -55,6 +55,12 @@ public:
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0; /// NOLINT
 
+    /* Some initialization may be required before joinBlock() call.
+     * It's better to done in in constructor, but left block exact structure is not known at that moment.
+     * TODO: pass correct left block sample to the constructor.
+     */
+    virtual void initialize(const Block & /* left_sample_block */) {}
+
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).

@@ -62,6 +62,8 @@ public:
 
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    void initialize(const Block & sample_block) override;
+
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
@@ -115,7 +117,6 @@ private:
     Poco::Logger * log;
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
-    std::atomic<bool> need_left_sample_block{true};
     Block left_sample_block;
     Block right_sample_block;
     Block output_sample_block;
