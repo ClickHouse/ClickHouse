@@ -25,7 +25,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
-        "configs/ports_from_zk.xml",
+        "configs/overrides_from_zk.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
         "configs/server.crt",
@@ -58,7 +58,7 @@ import clickhouse_grpc_pb2_grpc
 @pytest.fixture(name="cluster", scope="module")
 def fixture_cluster():
     try:
-        cluster.add_zookeeper_startup_command(configure_ports_from_zk)
+        cluster.add_zookeeper_startup_command(configure_from_zk)
         cluster.start()
         yield cluster
     finally:
@@ -128,7 +128,7 @@ def grpc_query(channel, query_text):
     return result.output.decode()
 
 
-def configure_ports_from_zk(zk, querier=None):
+def configure_from_zk(zk, querier=None):
     default_config = [
         ("/clickhouse/listen_hosts", b"<listen_host>0.0.0.0</listen_host>"),
         ("/clickhouse/ports/tcp", b"9000"),
@@ -136,6 +136,7 @@ def configure_ports_from_zk(zk, querier=None):
         ("/clickhouse/ports/mysql", b"9004"),
         ("/clickhouse/ports/postgresql", b"9005"),
         ("/clickhouse/ports/grpc", b"9100"),
+        ("/clickhouse/http_handlers", b"<defaults/>"),
     ]
     for path, value in default_config:
         if querier is not None:
@@ -182,7 +183,7 @@ def default_client(cluster, zk, restore_via_http=False):
         yield client
     finally:
         querier = instance.http_query if restore_via_http else client.query
-        configure_ports_from_zk(zk, querier)
+        configure_from_zk(zk, querier)
 
 
 def test_change_tcp_port(cluster, zk):
@@ -320,7 +321,7 @@ def test_change_listen_host(cluster, zk):
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
         with sync_loaded_config(localhost_client.query):
-            configure_ports_from_zk(zk)
+            configure_from_zk(zk)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting
@@ -371,7 +372,7 @@ def test_reload_via_client(cluster, zk):
             while True:
                 try:
                     with sync_loaded_config(localhost_client.query):
-                        configure_ports_from_zk(zk)
+                        configure_from_zk(zk)
                     break
                 except QueryRuntimeException:
                     logging.exception("The new socket is not binded yet")
@@ -379,3 +380,33 @@ def test_reload_via_client(cluster, zk):
 
     if exception:
         raise exception
+
+
+def test_change_http_handlers(cluster, zk):
+    with default_client(cluster, zk) as client:
+        curl_result = instance.exec_in_container(
+            ["bash", "-c", "curl -s '127.0.0.1:8123/it_works'"]
+        )
+        assert "There is no handle /it_works" in curl_result
+
+        with sync_loaded_config(client.query):
+            zk.set(
+                "/clickhouse/http_handlers",
+                b"""
+                <defaults/>
+
+                <rule>
+                    <url>/it_works</url>
+                    <methods>GET</methods>
+                    <handler>
+                        <type>predefined_query_handler</type>
+                        <query>SELECT 'It works.'</query>
+                    </handler>
+                </rule>
+            """,
+            )
+
+        curl_result = instance.exec_in_container(
+            ["bash", "-c", "curl -s '127.0.0.1:8123/it_works'"]
+        )
+        assert curl_result == "It works.\n"

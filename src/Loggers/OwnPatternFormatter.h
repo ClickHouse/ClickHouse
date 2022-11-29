@@ -27,7 +27,7 @@ public:
     OwnPatternFormatter(bool color_ = false);
 
     void format(const Poco::Message & msg, std::string & text) override;
-    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
+    virtual void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
 
 private:
     bool color;

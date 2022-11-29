@@ -15,18 +15,18 @@ std::string_view toString(BackupStatus backup_status)
 {
     switch (backup_status)
     {
-        case BackupStatus::MAKING_BACKUP:
-            return "MAKING_BACKUP";
-        case BackupStatus::BACKUP_COMPLETE:
-            return "BACKUP_COMPLETE";
-        case BackupStatus::FAILED_TO_BACKUP:
-            return "FAILED_TO_BACKUP";
+        case BackupStatus::CREATING_BACKUP:
+            return "CREATING_BACKUP";
+        case BackupStatus::BACKUP_CREATED:
+            return "BACKUP_CREATED";
+        case BackupStatus::BACKUP_FAILED:
+            return "BACKUP_FAILED";
         case BackupStatus::RESTORING:
             return "RESTORING";
         case BackupStatus::RESTORED:
             return "RESTORED";
-        case BackupStatus::FAILED_TO_RESTORE:
-            return "FAILED_TO_RESTORE";
+        case BackupStatus::RESTORE_FAILED:
+            return "RESTORE_FAILED";
         default:
             break;
     }

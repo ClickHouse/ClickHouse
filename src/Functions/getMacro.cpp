@@ -84,7 +84,7 @@ public:
 
 }
 
-void registerFunctionGetMacro(FunctionFactory & factory)
+REGISTER_FUNCTION(GetMacro)
 {
     factory.registerFunction<FunctionGetMacro>();
 }

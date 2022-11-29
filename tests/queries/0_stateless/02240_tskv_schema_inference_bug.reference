@@ -1,6 +1,6 @@
-a	Nullable(Float64)					
+a	Nullable(Int64)					
 b	Nullable(String)					
-c	Array(Nullable(Float64))					
+c	Array(Nullable(Int64))					
 1	s1	[]
 2	}	[2]
 \N	\N	[]

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/zookeeper_log
+---
 # system.zookeeper_log {#system-zookeeper_log}
 
 Эта таблица содержит информацию о параметрах запроса к серверу ZooKeeper и ответа от него.
@@ -125,5 +128,5 @@ children:         ['query-0000000006','query-0000000005','query-0000000004','que
 
 **См. также**
 
--   [ZooKeeper](../../operations/tips.md#zookeeper)
+-   [ZooKeeper](../../operations/tips.mdx#zookeeper)
 -   [Руководство по ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

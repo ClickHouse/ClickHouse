@@ -1,0 +1,30 @@
+99
+99
+95
+0
+0
+-----Check that select and merge with lightweight delete.-----
+7
+0	0	0
+2	2	2
+3	3	3
+5	5	5
+7	7	7
+8	8	8
+9	9	9
+0	0	0
+2	2	2
+3	3	3
+5	5	5
+7	7	7
+8	8	8
+9	9	9
+7
+-----Check fetch part with lightweight delete-----
+0	0	0
+2	2	2
+3	3	3
+5	5	5
+6	6	6
+8	8	8
+9	9	9

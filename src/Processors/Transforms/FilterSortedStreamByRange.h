@@ -23,7 +23,7 @@ public:
         bool on_totals_ = false)
         : ISimpleTransform(
             header_,
-            FilterTransform::transformHeader(header_, expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
+            FilterTransform::transformHeader(header_, &expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
             true)
         , filter_transform(header_, expression_, filter_column_name_, remove_filter_column_, on_totals_)
     {

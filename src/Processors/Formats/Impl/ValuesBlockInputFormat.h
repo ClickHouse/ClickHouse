@@ -103,7 +103,6 @@ private:
     DataTypes readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
-    const FormatSettings format_settings;
     ParserExpression parser;
     bool first_row = true;
     bool end_of_data = false;

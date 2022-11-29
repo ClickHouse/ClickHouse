@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -109,7 +109,7 @@ namespace
 
 }
 
-void registerFunctionH3ToCenterChild(FunctionFactory & factory)
+REGISTER_FUNCTION(H3ToCenterChild)
 {
     factory.registerFunction<FunctionH3ToCenterChild>();
 }

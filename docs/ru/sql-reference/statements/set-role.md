@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/set-role
 sidebar_position: 50
 sidebar_label: SET ROLE
 ---

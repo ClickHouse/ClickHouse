@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
+
 namespace DB
 {
 
@@ -29,8 +30,8 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
-    , column_indexes_by_names(header_.getNamesToIndexesMap())
 {
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
@@ -229,12 +230,12 @@ void RowInputFormatWithNamesAndTypes::setReadBuffer(ReadBuffer & in_)
 
 FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
     ReadBuffer & in_,
-    const FormatSettings & format_settings,
+    const FormatSettings & format_settings_,
     bool with_names_,
     bool with_types_,
     FormatWithNamesAndTypesReader * format_reader_,
     DataTypePtr default_type_)
-    : IRowSchemaReader(in_, format_settings, default_type_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
+    : IRowSchemaReader(in_, format_settings_, default_type_), with_names(with_names_), with_types(with_types_), format_reader(format_reader_)
 {
 }
 

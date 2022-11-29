@@ -64,8 +64,8 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            StringRef encoded_string = encoded->getDataAt(i);
-            geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
+            std::string_view encoded_string = encoded->getDataAt(i).toView();
+            geohashDecode(encoded_string.data(), encoded_string.size(), &lon_data[i], &lat_data[i]);
         }
 
         MutableColumns result;
@@ -93,7 +93,7 @@ public:
 
 }
 
-void registerFunctionGeohashDecode(FunctionFactory & factory)
+REGISTER_FUNCTION(GeohashDecode)
 {
     factory.registerFunction<FunctionGeohashDecode>();
 }

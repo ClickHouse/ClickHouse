@@ -45,8 +45,6 @@ public:
       */
     static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
-    static void deduceTypesOfObjectColumns(const StorageSnapshotPtr & storage_snapshot, Block & block);
-
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
     /// You should call finalize() to wait until all data is written.
@@ -54,7 +52,6 @@ public:
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
-        DataPartStorageBuilderPtr builder;
 
         struct Stream
         {
@@ -63,6 +60,8 @@ public:
         };
 
         std::vector<Stream> streams;
+
+        scope_guard temporary_directory_lock;
 
         void finalize();
     };
@@ -74,31 +73,20 @@ public:
 
     /// For insertion.
     static TemporaryPart writeProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part);
-
-    /// For mutation: MATERIALIZE PROJECTION.
-    static TemporaryPart writeTempProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part,
-        size_t block_num);
-
-    /// For WriteAheadLog AddPart.
-    static TemporaryPart writeInMemoryProjectionPart(
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
-        const IMergeTreeDataPart * parent_part);
+        IMergeTreeDataPart * parent_part);
+
+    /// For mutation: MATERIALIZE PROJECTION.
+    static TemporaryPart writeTempProjectionPart(
+        const MergeTreeData & data,
+        Poco::Logger * log,
+        Block block,
+        const ProjectionDescription & projection,
+        IMergeTreeDataPart * parent_part,
+        size_t block_num);
 
     static Block mergeBlock(
         const Block & block,
@@ -110,18 +98,14 @@ public:
 private:
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
-        MergeTreeDataPartType part_type,
-        const String & relative_path,
-        const DataPartStorageBuilderPtr & data_part_storage_builder,
         bool is_temp,
-        const IMergeTreeDataPart * parent_part,
+        IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection);
 
     MergeTreeData & data;
-
     Poco::Logger * log;
 };
 

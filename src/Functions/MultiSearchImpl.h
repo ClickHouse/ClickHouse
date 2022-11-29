@@ -38,7 +38,7 @@ struct MultiSearchImpl
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-                name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
+                name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());

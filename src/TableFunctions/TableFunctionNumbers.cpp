@@ -51,8 +51,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>();
-    factory.registerFunction<TableFunctionNumbers<false>>();
+    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
 }
 
 template <bool multithreaded>

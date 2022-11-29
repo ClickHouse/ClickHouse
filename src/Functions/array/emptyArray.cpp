@@ -55,7 +55,7 @@ void registerFunction(FunctionFactory & factory)
 
 }
 
-void registerFunctionsEmptyArray(FunctionFactory & factory)
+REGISTER_FUNCTION(EmptyArray)
 {
     registerFunction<FunctionEmptyArray<DataTypeUInt8>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeUInt16>>(factory);

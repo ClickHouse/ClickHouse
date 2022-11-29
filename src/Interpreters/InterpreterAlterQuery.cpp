@@ -22,6 +22,9 @@
 #include <Storages/PartitionCommands.h>
 #include <Common/typeid_cast.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 #include <algorithm>
@@ -66,7 +69,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     BlockIO res;
 
-    if (!alter.cluster.empty())
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+
+    if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
@@ -78,15 +84,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (typeid_cast<DatabaseReplicated *>(database.get())
-        && !getContext()->getClientInfo().is_replicated_database_internal
-        && !alter.isAttachAlter()
-        && !alter.isFetchAlter()
-        && !alter.isDropPartitionAlter())
+    if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

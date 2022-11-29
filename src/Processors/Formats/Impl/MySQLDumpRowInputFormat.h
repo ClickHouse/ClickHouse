@@ -22,7 +22,7 @@ private:
 
     String table_name;
     DataTypes types;
-    std::unordered_map<String, size_t> column_indexes_by_names;
+    Block::NameMap column_indexes_by_names;
     const FormatSettings format_settings;
 };
 
@@ -35,7 +35,6 @@ private:
     NamesAndTypesList readSchema() override;
     DataTypes readRowAndGetDataTypes() override;
 
-    const FormatSettings format_settings;
     String table_name;
 };
 

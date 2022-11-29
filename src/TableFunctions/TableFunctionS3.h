@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -29,6 +29,8 @@ public:
     bool needStructureHint() const override { return configuration.structure == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+
+    bool supportsReadingSubsetOfColumns() override;
 
 protected:
     friend class TableFunctionS3Cluster;
@@ -60,6 +62,18 @@ public:
     }
 private:
     const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
 };
 
 }

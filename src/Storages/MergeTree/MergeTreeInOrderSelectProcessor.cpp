@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-bool MergeTreeInOrderSelectProcessor::getNewTaskImpl()
+bool MergeTreeInOrderSelectAlgorithm::getNewTaskImpl()
 try
 {
     if (all_mark_ranges.empty())
@@ -44,7 +44,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
     throw;
 }
 

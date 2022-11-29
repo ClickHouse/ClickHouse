@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/configuration-files
+---
 # 配置文件 {#configuration_files}
 
 ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-server/config.xml`。其余文件须在目录`/etc/clickhouse-server/config.d`。

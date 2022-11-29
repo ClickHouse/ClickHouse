@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
-from kazoo.client import KazooClient, KazooState
-from kazoo.security import ACL, make_digest_acl, make_acl
-from kazoo.exceptions import (
-    AuthFailedError,
-    InvalidACLError,
-    NoAuthError,
-    KazooException,
-)
+import helpers.keeper_utils as keeper_utils
+from kazoo.client import KazooClient
+from kazoo.retry import KazooRetry
+from kazoo.security import make_acl
 import os
 import time
 
@@ -60,6 +56,7 @@ def stop_clickhouse():
 
 def start_clickhouse():
     node.start_clickhouse()
+    keeper_utils.wait_until_connected(cluster, node)
 
 
 def copy_zookeeper_data(make_zk_snapshots):
@@ -97,7 +94,9 @@ def get_fake_zk(timeout=60.0):
 
 def get_genuine_zk(timeout=60.0):
     _genuine_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":2181", timeout=timeout
+        hosts=cluster.get_instance_ip("node") + ":2181",
+        timeout=timeout,
+        connection_retry=KazooRetry(max_tries=20),
     )
     _genuine_zk_instance.start()
     return _genuine_zk_instance
@@ -193,11 +192,18 @@ def compare_states(zk1, zk2, path="/", exclude_paths=[]):
     second_children = list(sorted(zk2.get_children(path)))
     print("Got children left", first_children)
     print("Got children rigth", second_children)
-    assert first_children == second_children, "Childrens are not equal on path " + path
+
+    if path == "/":
+        assert set(first_children) ^ set(second_children) == set(["keeper"])
+    else:
+        assert first_children == second_children, (
+            "Childrens are not equal on path " + path
+        )
 
     for children in first_children:
-        print("Checking child", os.path.join(path, children))
-        compare_states(zk1, zk2, os.path.join(path, children), exclude_paths)
+        if path != "/" or children != "keeper":
+            print("Checking child", os.path.join(path, children))
+            compare_states(zk1, zk2, os.path.join(path, children), exclude_paths)
 
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
@@ -215,6 +221,12 @@ def test_smoke(started_cluster, create_snapshots):
     fake_connection = get_fake_zk()
 
     compare_states(genuine_connection, fake_connection)
+
+    genuine_connection.stop()
+    genuine_connection.close()
+
+    fake_connection.stop()
+    fake_connection.close()
 
 
 def get_bytes(s):
@@ -300,6 +312,12 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
     second_children = list(sorted(fake_connection.get_children("/test_sequential")))
     assert first_children == second_children, "Childrens are not equal on path " + path
 
+    genuine_connection.stop()
+    genuine_connection.close()
+
+    fake_connection.stop()
+    fake_connection.close()
+
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_multi_and_failed_requests(started_cluster, create_snapshots):
@@ -370,6 +388,12 @@ def test_multi_and_failed_requests(started_cluster, create_snapshots):
     assert eph1 == eph2
     compare_stats(stat1, stat2, "/test_multitransactions", ignore_pzxid=True)
 
+    genuine_connection.stop()
+    genuine_connection.close()
+
+    fake_connection.stop()
+    fake_connection.close()
+
 
 @pytest.mark.parametrize(("create_snapshots"), [True, False])
 def test_acls(started_cluster, create_snapshots):
@@ -437,3 +461,9 @@ def test_acls(started_cluster, create_snapshots):
             "user2:lo/iTtNMP+gEZlpUNaCqLYO3i5U=",
             "user3:wr5Y0kEs9nFX3bKrTMKxrlcFeWo=",
         )
+
+    genuine_connection.stop()
+    genuine_connection.close()
+
+    fake_connection.stop()
+    fake_connection.close()
