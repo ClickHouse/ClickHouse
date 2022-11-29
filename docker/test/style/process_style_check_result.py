@@ -15,6 +15,7 @@ def process_result(result_folder):
         "shellcheck",
         "style",
         "black",
+        "mypy",
         "typos",
         "whitespaces",
         "workflows",
