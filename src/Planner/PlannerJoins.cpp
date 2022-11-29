@@ -21,6 +21,7 @@
 #include <Functions/CastOverloadResolver.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -293,12 +294,6 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     for (const auto & node : join_expression_actions_nodes)
         join_expression_dag_input_nodes.insert(&node);
 
-    auto * function_node = join_node.getJoinExpression()->as<FunctionNode>();
-    if (!function_node)
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "JOIN {} join expression expected function",
-            join_node.formatASTForErrorMessage());
-
     /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
       * If we do not ignore it, this function will be replaced by underlying constant.
       * For example ASOF JOIN does not support JOIN with constants, and we should process it like ordinary JOIN.
@@ -306,17 +301,25 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
       * Example: SELECT * FROM (SELECT 1 AS id, 1 AS value) AS t1 ASOF LEFT JOIN (SELECT 1 AS id, 1 AS value) AS t2
       * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
       */
-    auto constant_value = function_node->getConstantValueOrNull();
-    function_node->performConstantFolding({});
+    auto join_expression = join_node.getJoinExpression();
+    auto * constant_join_expression = join_expression->as<ConstantNode>();
+
+    if (constant_join_expression && constant_join_expression->hasSourceExpression()) {
+        join_expression = constant_join_expression->getSourceExpression();
+    }
+
+    auto * function_node = join_expression->as<FunctionNode>();
+    if (!function_node)
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "JOIN {} join expression expected function",
+            join_node.formatASTForErrorMessage());
 
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_node.getJoinExpression());
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(join_expression_actions, join_expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
             join_node.formatASTForErrorMessage());
-
-    function_node->performConstantFolding(std::move(constant_value));
 
     const auto * join_expressions_actions_root_node = join_expression_dag_node_raw_pointers[0];
     if (!join_expressions_actions_root_node->function)
@@ -540,12 +543,12 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     if (!join_node_typed.getJoinExpression())
         return {};
 
-    auto constant_value = join_node_typed.getJoinExpression()->getConstantValueOrNull();
-    if (!constant_value)
+    const auto * constant_node = join_node_typed.getJoinExpression()->as<ConstantNode>();
+    if (!constant_node)
         return {};
 
-    const auto & value = constant_value->getValue();
-    auto constant_type = constant_value->getType();
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
     constant_type = removeNullable(removeLowCardinality(constant_type));
 
     auto which_constant_type = WhichDataType(constant_type);
