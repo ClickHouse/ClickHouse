@@ -228,7 +228,10 @@ private:
         }
 
         if (temp_buffer.empty())
+        {
+            buffer_iter = buffer.begin();
             return;
+        }
 
         if (!filter_ast.has_value())
             createFilterAST(temp_buffer.front().key);

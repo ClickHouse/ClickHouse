@@ -1,6 +1,6 @@
 import sys
 
-from bottle import abort, route, run, request, response
+from bottle import route, run, request, response
 
 
 @route("/redirected/<_path:path>")
@@ -15,7 +15,8 @@ def server(_bucket, _path):
     for name in request.headers:
         if name == "Authorization" and request.headers[name] == "Bearer TOKEN":
             result = "1, 2, 3"
-            response.headers["Content-Length"] = len(result)
+            response.content_type = "text/plain"
+            response.set_header("Content-Length", len(result))
             return result
 
     result = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ForbiddenError</Code><Message>Forbidden Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
@@ -27,6 +28,7 @@ def server(_bucket, _path):
 
 @route("/")
 def ping():
+    response.content_type = "text/plain"
     response.set_header("Content-Length", 2)
     return "OK"
 
