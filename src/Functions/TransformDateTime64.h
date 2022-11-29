@@ -48,7 +48,7 @@ public:
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
-    TransformDateTime64(DateTime64::NativeType scale_multiplier_ = 1) /// NOLINT
+    TransformDateTime64(DateTime64::NativeType scale_multiplier_ = 1) /// NOLINT(google-explicit-constructor)
         : scale_multiplier(scale_multiplier_)
     {}
 
