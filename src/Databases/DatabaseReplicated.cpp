@@ -730,7 +730,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
-                    String intermediate_name = fmt::format("{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
+                    String intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
                     replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
