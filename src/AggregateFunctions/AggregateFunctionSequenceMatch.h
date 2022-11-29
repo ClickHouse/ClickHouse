@@ -8,7 +8,6 @@
 #include <base/range.h>
 #include <base/sort.h>
 #include <Common/PODArray.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>

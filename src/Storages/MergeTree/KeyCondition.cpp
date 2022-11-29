@@ -13,7 +13,6 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include "Common/tests/gtest_global_context.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>

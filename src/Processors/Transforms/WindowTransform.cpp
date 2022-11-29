@@ -6,7 +6,6 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>

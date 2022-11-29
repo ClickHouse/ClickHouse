@@ -11,7 +11,6 @@
 
 #include <Common/SpaceSaving.h>
 #include <Common/assert_cast.h>
-#include "DataTypes/Serializations/ISerialization.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 

@@ -2,7 +2,6 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include "Core/ColumnsWithTypeAndName.h"
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
