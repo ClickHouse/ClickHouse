@@ -733,7 +733,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     String intermediate_name;
                     /// Possibly we failed to rename it on previous iteration
                     /// And this table was already renamed to an intermediate name
-                    if (startsWith(name, ".rename-"))
+                    if (startsWith(name, ".rename-") && !startsWith(it->second, ".rename-"))
                         intermediate_name = name;
                     else
                         intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
