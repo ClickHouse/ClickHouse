@@ -8,7 +8,7 @@
 namespace DB
 {
 
-MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
+MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
@@ -25,7 +25,7 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     size_t part_index_in_query_,
     bool has_limit_below_one_block_,
     std::optional<ParallelReadingExtension> extension_)
-    : IMergeTreeSelectAlgorithm{
+    : MergeTreeBaseSelectProcessor{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
         storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
@@ -38,10 +38,10 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     has_limit_below_one_block(has_limit_below_one_block_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    ordered_names = header_without_const_virtual_columns.getNames();
+    ordered_names = header_without_virtual_columns.getNames();
 }
 
-void MergeTreeSelectAlgorithm::initializeReaders()
+void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
@@ -61,7 +61,7 @@ void MergeTreeSelectAlgorithm::initializeReaders()
 }
 
 
-void MergeTreeSelectAlgorithm::finish()
+void MergeTreeSelectProcessor::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -72,6 +72,6 @@ void MergeTreeSelectAlgorithm::finish()
     data_part.reset();
 }
 
-MergeTreeSelectAlgorithm::~MergeTreeSelectAlgorithm() = default;
+MergeTreeSelectProcessor::~MergeTreeSelectProcessor() = default;
 
 }

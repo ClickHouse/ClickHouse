@@ -7,7 +7,6 @@
 #include <vector>
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Throttler_fwd.h>
 #include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
@@ -24,7 +23,7 @@ struct Settings;
 
 struct S3Settings
 {
-    struct RequestSettings
+    struct ReadWriteSettings
     {
         size_t max_single_read_retries = 0;
         size_t min_upload_part_size = 0;
@@ -36,13 +35,11 @@ struct S3Settings
         size_t max_connections = 0;
         bool check_objects_after_upload = false;
         size_t max_unexpected_write_error_retries = 0;
-        ThrottlerPtr get_request_throttler;
-        ThrottlerPtr put_request_throttler;
 
-        RequestSettings() = default;
-        explicit RequestSettings(const Settings & settings);
+        ReadWriteSettings() = default;
+        explicit ReadWriteSettings(const Settings & settings);
 
-        inline bool operator==(const RequestSettings & other) const
+        inline bool operator==(const ReadWriteSettings & other) const
         {
             return max_single_read_retries == other.max_single_read_retries
                 && min_upload_part_size == other.min_upload_part_size
@@ -53,20 +50,18 @@ struct S3Settings
                 && max_single_operation_copy_size == other.max_single_operation_copy_size
                 && max_connections == other.max_connections
                 && check_objects_after_upload == other.check_objects_after_upload
-                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries
-                && get_request_throttler == other.get_request_throttler
-                && put_request_throttler == other.put_request_throttler;
+                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries;
         }
 
         void updateFromSettingsIfEmpty(const Settings & settings);
     };
 
     S3::AuthSettings auth_settings;
-    RequestSettings request_settings;
+    ReadWriteSettings rw_settings;
 
     inline bool operator==(const S3Settings & other) const
     {
-        return auth_settings == other.auth_settings && request_settings == other.request_settings;
+        return auth_settings == other.auth_settings && rw_settings == other.rw_settings;
     }
 };
 

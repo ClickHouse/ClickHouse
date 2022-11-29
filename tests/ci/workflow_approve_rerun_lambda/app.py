@@ -491,12 +491,6 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
-
-        return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": '{"status": "OK"}',
-        }
     except Exception:
         print("Received event: ", event)
         raise

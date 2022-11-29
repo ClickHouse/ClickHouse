@@ -183,19 +183,19 @@ public:
     }
 
 private:
-    /// Valid for table, table function, array join, query, union nodes
+    /// Valid for table, table function, query, union, array join table expression nodes
     NamesAndTypesList columns;
 
-    /// Valid for table, table function, array join, query, union nodes
+    /// Valid for table, table function, query, union, array join table expression nodes
     NameSet columns_names;
 
-    /// Valid only for table node
+    /// Valid only for table table expression node
     NameSet alias_columns_names;
 
-    /// Valid for table, table function, array join, query, union nodes
+    /// Valid for table, table function, query, union table, array join expression nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 
-    /// Valid for table, table function, array join, query, union nodes
+    /// Valid for table, table function, query, union table, array join expression nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
 
     /// Is storage remote

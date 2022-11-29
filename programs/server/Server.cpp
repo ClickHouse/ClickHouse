@@ -99,10 +99,6 @@
 #include "config_version.h"
 
 #if defined(OS_LINUX)
-#    include <cstddef>
-#    include <cstdlib>
-#    include <sys/socket.h>
-#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
@@ -277,7 +273,6 @@ namespace ErrorCodes
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
-    extern const int SYSTEM_ERROR;
 }
 
 
@@ -651,53 +646,7 @@ static void sanityChecks(Server & server)
     }
 }
 
-#if defined(OS_LINUX)
-/// Sends notification to systemd, analogous to sd_notify from libsystemd
-static void systemdNotify(const std::string_view & command)
-{
-    const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
-
-    if (path == nullptr)
-        return; /// not using systemd
-
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
-
-    SCOPE_EXIT({ close(s); });
-
-    const size_t len = strlen(path);
-
-    struct sockaddr_un addr;
-
-    addr.sun_family = AF_UNIX;
-
-    if (len < 2 || len > sizeof(addr.sun_path) - 1)
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "NOTIFY_SOCKET env var value \"{}\" is wrong.", path);
-
-    memcpy(addr.sun_path, path, len + 1); /// write last zero as well.
-
-    size_t addrlen = offsetof(struct sockaddr_un, sun_path) + len;
-
-    /// '@' meass this is Linux abstract socket, per documentation it must be sun_path[0] must be set to '\0' for it.
-    if (path[0] == '@')
-        addr.sun_path[0] = 0;
-    else if (path[0] == '/')
-        addrlen += 1; /// non-abstract-addresses should be zero terminated.
-    else
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Wrong UNIX path \"{}\" in NOTIFY_SOCKET env var", path);
-
-    const struct sockaddr *sock_addr = reinterpret_cast <const struct sockaddr *>(&addr);
-
-    if (sendto(s, command.data(), command.size(), 0, sock_addr, static_cast <socklen_t>(addrlen)) != static_cast <ssize_t>(command.size()))
-        throw Exception("Failed to notify systemd.", ErrorCodes::SYSTEM_ERROR);
-
-}
-#endif
-
 int Server::main(const std::vector<std::string> & /*args*/)
-try
 {
     Poco::Logger * log = &logger();
 
@@ -730,7 +679,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ false);
+    registerDisks();
     registerFormats();
     registerRemoteFileMetadatas();
 
@@ -1199,9 +1148,6 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
-            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
-
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
 
@@ -1475,7 +1421,8 @@ try
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            settings.async_insert_threads));
+            settings.async_insert_threads,
+            settings.async_insert_cleanup_timeout_ms));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
@@ -1829,10 +1776,6 @@ try
             tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
-#if defined(OS_LINUX)
-        systemdNotify("READY=1\n");
-#endif
-
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
@@ -1901,12 +1844,6 @@ try
     }
 
     return Application::EXIT_OK;
-}
-catch (...)
-{
-    /// Poco does not provide stacktrace.
-    tryLogCurrentException("Application");
-    throw;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(

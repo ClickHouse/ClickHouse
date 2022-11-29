@@ -10,7 +10,7 @@
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Interpreters/parseColumnsListForTableFunction.h>
 #    include <Parsers/ASTLiteral.h>
-#    include <Storages/StorageDeltaLake.h>
+#    include <Storages/StorageDelta.h>
 #    include <Storages/StorageURL.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
 #    include <TableFunctions/TableFunctionDeltaLake.h>
@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionDeltaLake::parseArgumentsImpl(
+void TableFunctionDelta::parseArgumentsImpl(
     const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & base_configuration)
 {
     if (args.empty() || args.size() > 6)
@@ -100,7 +100,7 @@ void TableFunctionDeltaLake::parseArgumentsImpl(
             = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
 }
 
-void TableFunctionDeltaLake::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionDelta::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -125,27 +125,28 @@ void TableFunctionDeltaLake::parseArguments(const ASTPtr & ast_function, Context
     parseArgumentsImpl(message, args, context, configuration);
 }
 
-ColumnsDescription TableFunctionDeltaLake::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionDelta::getActualTableStructure(ContextPtr context) const
 {
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageDeltaLake::getTableStructureFromData(configuration, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-StoragePtr TableFunctionDeltaLake::executeImpl(
+StoragePtr TableFunctionDelta::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri(configuration.url);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
         columns = parseColumnsListFromString(configuration.structure, context);
 
-    StoragePtr storage = std::make_shared<StorageDeltaLake>(
+    StoragePtr storage = std::make_shared<StorageDelta>(
         configuration, StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription{}, String{}, context, std::nullopt);
 
     storage->startup();
@@ -154,9 +155,9 @@ StoragePtr TableFunctionDeltaLake::executeImpl(
 }
 
 
-void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
+void registerTableFunctionDelta(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDeltaLake>(
+    factory.registerFunction<TableFunctionDelta>(
         {.documentation
          = {R"(The table function can be used to read the DeltaLake table stored on object store.)",
             Documentation::Examples{{"deltaLake", "SELECT * FROM deltaLake(url, access_key_id, secret_access_key)"}},

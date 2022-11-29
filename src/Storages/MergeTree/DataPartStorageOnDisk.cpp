@@ -372,12 +372,7 @@ std::optional<String> DataPartStorageOnDisk::getRelativePathForPrefix(Poco::Logg
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
-        if (prefix.empty())
-            res = part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
-        else if (prefix.ends_with("_"))
-            res = prefix + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
-        else
-            res = prefix + "_" + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        res = (prefix.empty() ? "" : prefix + "_") + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;

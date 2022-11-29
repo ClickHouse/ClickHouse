@@ -290,6 +290,3 @@
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
-[submodule "contrib/xxHash"]
-	path = contrib/xxHash
-	url = https://github.com/Cyan4973/xxHash.git

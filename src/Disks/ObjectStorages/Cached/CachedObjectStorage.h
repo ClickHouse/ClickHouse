@@ -101,8 +101,6 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
-
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
     ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }

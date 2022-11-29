@@ -71,9 +71,6 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
 
 #define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
@@ -371,7 +368,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
         column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        column_declaration->children.push_back(column_declaration->default_expression);
 
         columns_list->children.emplace_back(column_declaration);
     }
@@ -1159,10 +1155,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.columns_list);
     }
-
-    // substitute possible UDFs with their definitions
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);

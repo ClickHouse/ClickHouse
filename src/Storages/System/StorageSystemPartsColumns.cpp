@@ -192,13 +192,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-            {
-                // The full path changes at clean up thread under deleting state, do not read it, avoid the race
-                if (part_state != State::Deleting)
-                    columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-                else
-                    columns[res_index++]->insertDefault();
-            }
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);

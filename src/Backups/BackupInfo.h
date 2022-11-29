@@ -22,7 +22,7 @@ struct BackupInfo
     ASTPtr toAST() const;
     static BackupInfo fromAST(const IAST & ast);
 
-    String toStringForLogging() const;
+    String toStringForLogging(const ContextPtr & context) const;
 };
 
 }

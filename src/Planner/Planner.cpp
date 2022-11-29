@@ -495,8 +495,7 @@ void Planner::buildQueryPlanIfNeeded()
             settings.group_by_use_nulls,
             std::move(input_order_info),
             std::move(group_by_sort_description),
-            should_produce_results_in_order_of_bucket_number,
-            settings.enable_memory_bound_merging_of_aggregation_results);
+            should_produce_results_in_order_of_bucket_number);
         query_plan.addStep(std::move(aggregating_step));
 
         if (query_node.isGroupByWithTotals())

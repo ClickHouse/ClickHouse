@@ -1015,7 +1015,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->exists(data_path))
+        if (!disk->exists(data_path) || disk->isReadOnly())
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -1215,8 +1215,6 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
 
         if (affected_dirs)
             LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
-        else
-            LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
     (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);

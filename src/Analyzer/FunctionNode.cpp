@@ -166,12 +166,7 @@ ASTPtr FunctionNode::toASTImpl() const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
-
-    if (isWindowFunction())
-    {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
-    }
+    function_ast->is_window_function = isWindowFunction();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())

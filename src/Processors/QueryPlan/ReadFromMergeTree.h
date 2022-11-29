@@ -184,8 +184,7 @@ private:
     ContextPtr context;
 
     const size_t max_block_size;
-    size_t requested_num_streams;
-    size_t output_streams_limit = 0;
+    const size_t requested_num_streams;
     const size_t preferred_block_size_bytes;
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;

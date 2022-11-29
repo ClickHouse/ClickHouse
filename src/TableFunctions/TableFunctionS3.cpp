@@ -153,7 +153,8 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri (configuration.url);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
