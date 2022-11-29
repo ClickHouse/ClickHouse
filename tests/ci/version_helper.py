@@ -147,7 +147,7 @@ class ClickHouseVersion:
     def __eq__(self, other: Any) -> bool:
         if not isinstance(self, type(other)):
             return NotImplemented
-        return (  # type: ignore
+        return bool(
             self.major == other.major
             and self.minor == other.minor
             and self.patch == other.patch
