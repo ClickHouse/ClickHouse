@@ -66,6 +66,14 @@ public:
                 "Second argument of function {} must be constant string or constant array",
                 getName());
 
+        if (col_const_array)
+        {
+            if (col_const_array->getData().size() > 0 && typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType()->getTypeId() != TypeIndex::String)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Second argument of function {} must be constant array of strings",
+                    getName());
+        }
+
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
