@@ -87,7 +87,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     if (objects.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
 
-    assert(!objects[0].getPathKeyForCache().empty());
+    chassert(!objects[0].getPathKeyForCache().empty());
 
     /// Add cache relating settings to ReadSettings.
     auto modified_read_settings = patchSettings(read_settings);

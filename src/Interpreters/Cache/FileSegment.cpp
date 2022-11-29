@@ -189,8 +189,8 @@ String FileSegment::getOrSetDownloader()
 
 void FileSegment::resetDownloadingStateUnlocked([[maybe_unused]] std::unique_lock<std::mutex> & segment_lock)
 {
-    assert(isDownloaderUnlocked(segment_lock));
-    assert(download_state == State::DOWNLOADING);
+    chassert(isDownloaderUnlocked(segment_lock));
+    chassert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
     /// range().size() can equal 0 in case of write-though cache.
@@ -475,8 +475,8 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::m
     download_state = State::DOWNLOADED;
     is_downloaded = true;
 
-    assert(getDownloadedSizeUnlocked(segment_lock) > 0);
-    assert(std::filesystem::file_size(getPathInLocalCache()) > 0);
+    chassert(getDownloadedSizeUnlocked(segment_lock) > 0);
+    chassert(std::filesystem::file_size(getPathInLocalCache()) > 0);
 }
 
 void FileSegment::setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock)
@@ -595,8 +595,8 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         case State::DOWNLOADED:
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            assert(is_downloaded);
-            assert(!cache_writer);
+            chassert(is_downloaded);
+            chassert(!cache_writer);
             break;
         }
         case State::DOWNLOADING:
