@@ -258,8 +258,6 @@ public:
 
     static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
-        if (columns[num_arguments - 1]->onlyNull())
-            return false;
         return assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num];
     }
 
