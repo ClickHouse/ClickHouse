@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
-#include "DataTypes/DataTypeIPv4andIPv6.h"
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>

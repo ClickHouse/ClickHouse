@@ -11,8 +11,6 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
-#include "Core/Types.h"
-#include "Core/iostream_debug_helpers.h"
 #include <base/itoa.h>
 #include <base/map.h>
 #include <base/range.h>
@@ -133,10 +131,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 
     TypeIndex type_id = key_types[0]->getTypeId();
     const auto * key_string = typeid_cast<const DataTypeFixedString *>(key_types[0].get());
-//    const auto * key_ipv4type = typeid_cast<const DataTypeIPv4 *>(key_types[0].get());
-//    const auto * key_ipv6type = typeid_cast<const DataTypeIPv6 *>(key_types[0].get());
 
-    //if (key_ipv4type == nullptr && key_ipv6type == nullptr)
     if (type_id != TypeIndex::IPv4 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::IPv6 && !(key_string && key_string->getN() == IPV6_BINARY_LENGTH))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Key does not match, expected either IPv4 (or UInt32) or IPv6 (or FixedString(16))");
