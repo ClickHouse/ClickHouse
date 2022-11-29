@@ -439,6 +439,7 @@ void DNSResolver::addToNewAddresses(const Poco::Net::IPAddress & address)
 
 std::vector<DNSResolver::CacheEntry> DNSResolver::cacheEntries() const
 {
+    std::lock_guard lock(impl->drop_mutex);
     std::vector<DNSResolver::CacheEntry> entries;
 
     for (const auto & host : impl->known_hosts)
