@@ -388,7 +388,7 @@ RENAME TABLE myNewTable TO myOldTable;
 Instead of above, you can use the following:
 
 ```sql
-REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
+REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
 ```
 
 ### Syntax
