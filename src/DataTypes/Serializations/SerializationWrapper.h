@@ -21,11 +21,12 @@ public:
     Kind getKind() const override { return nested_serialization->getKind(); }
 
     void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 

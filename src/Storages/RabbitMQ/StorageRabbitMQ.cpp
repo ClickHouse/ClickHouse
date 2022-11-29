@@ -87,7 +87,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , semaphore(0, num_consumers)
+        , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(RESCHEDULE_MS)
@@ -242,6 +242,8 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
+    modified_context->setSetting("max_analyze_depth", Field{0});
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
@@ -578,16 +580,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         }
     }
 
-    /// Impose default settings if there are no user-defined settings.
-    if (!queue_settings.contains("x-max-length"))
-    {
-        queue_settings["x-max-length"] = queue_size;
-    }
-    if (!queue_settings.contains("x-overflow"))
-    {
-        queue_settings["x-overflow"] = "reject-publish";
-    }
-
     /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
     /// Otherwise it is used as a generator (unique for current table) of queue names, because it allows to
     /// maximize performance - via setting `rabbitmq_num_queues`.
@@ -682,7 +674,7 @@ void StorageRabbitMQ::read(
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
-        unsigned /* num_streams */)
+        size_t /* num_streams */)
 {
     if (!rabbit_is_ready)
         throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);

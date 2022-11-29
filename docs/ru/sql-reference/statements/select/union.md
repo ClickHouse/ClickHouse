@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/select/union
 sidebar_label: UNION
 ---
 

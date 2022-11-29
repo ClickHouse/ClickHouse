@@ -1,6 +1,8 @@
 add_executable (pre_compressor compressor.cpp)
 target_link_libraries(pre_compressor PUBLIC ch_contrib::zstd)
 
+add_native_target (pre_compressor)
+
 add_executable (decompressor decompressor.cpp)
 target_link_libraries(decompressor PUBLIC ch_contrib::zstd)
 

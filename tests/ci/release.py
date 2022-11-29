@@ -1,5 +1,14 @@
 #!/usr/bin/env python
 
+"""
+script to create releases for ClickHouse
+
+The `gh` CLI prefered over the PyGithub to have an easy way to rollback bad
+release in command line by simple execution giving rollback commands
+
+On another hand, PyGithub is used for convenient getting commit's status from API
+"""
+
 
 from contextlib import contextmanager
 from typing import List, Optional
@@ -8,6 +17,8 @@ import logging
 import subprocess
 
 from git_helper import commit, release_branch
+from github_helper import GitHub
+from mark_release_ready import RELEASE_READY_STATUS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -67,12 +78,12 @@ class Release:
         self._release_branch = ""
         self._rollback_stack = []  # type: List[str]
 
-    def run(self, cmd: str, cwd: Optional[str] = None) -> str:
+    def run(self, cmd: str, cwd: Optional[str] = None, **kwargs) -> str:
         cwd_text = ""
         if cwd:
             cwd_text = f" (CWD='{cwd}')"
         logging.info("Running command%s:\n    %s", cwd_text, cmd)
-        return self._git.run(cmd, cwd)
+        return self._git.run(cmd, cwd, **kwargs)
 
     def set_release_branch(self):
         # Fetch release commit in case it does not exist locally
@@ -94,12 +105,53 @@ class Release:
             return VersionType.LTS
         return VersionType.STABLE
 
+    def check_commit_release_ready(self):
+        # First, get the auth token from gh cli
+        auth_status = self.run(
+            "gh auth status -t", stderr=subprocess.STDOUT
+        ).splitlines()
+        token = ""
+        for line in auth_status:
+            if "✓ Token:" in line:
+                token = line.split()[-1]
+        if not token:
+            logging.error("Can not extract token from `gh auth`")
+            raise subprocess.SubprocessError("Can not extract token from `gh auth`")
+        gh = GitHub(token, per_page=100)
+        repo = gh.get_repo(str(self.repo))
+
+        # Statuses are ordered by descending updated_at, so the first necessary
+        # status in the list is the most recent
+        statuses = repo.get_commit(self.release_commit).get_statuses()
+        for status in statuses:
+            if status.context == RELEASE_READY_STATUS:
+                if status.state == "success":
+                    return
+
+                raise Exception(
+                    f"the status {RELEASE_READY_STATUS} is {status.state}, not success"
+                )
+
+        raise Exception(
+            f"the status {RELEASE_READY_STATUS} "
+            f"is not found for commit {self.release_commit}"
+        )
+
     def check_prerequisites(self):
         """
-        Check tooling installed in the system
+        Check tooling installed in the system, `git` is checked by Git() init
         """
-        self.run("gh auth status")
-        self.run("git status")
+        try:
+            self.run("gh auth status")
+        except subprocess.SubprocessError:
+            logging.error(
+                "The github-cli either not installed or not setup, please follow "
+                "the instructions on https://github.com/cli/cli#installation and "
+                "https://cli.github.com/manual/"
+            )
+            raise
+
+        self.check_commit_release_ready()
 
     def do(self, check_dirty: bool, check_branch: bool, with_release_branch: bool):
         self.check_prerequisites()
@@ -111,6 +163,8 @@ class Release:
             except subprocess.CalledProcessError:
                 logging.fatal("Repo contains uncommitted changes")
                 raise
+            if self._git.branch != "master":
+                raise Exception("the script must be launched only from master")
 
         self.set_release_branch()
 
@@ -141,6 +195,7 @@ class Release:
                 with self.stable():
                     logging.info("Stable part of the releasing is done")
 
+        self.log_post_workflows()
         self.log_rollback()
 
     def check_no_tags_after(self):
@@ -178,12 +233,21 @@ class Release:
 
     def log_rollback(self):
         if self._rollback_stack:
-            rollback = self._rollback_stack
+            rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
                 "To rollback the action run the following commands:\n  %s",
                 "\n  ".join(rollback),
             )
+
+    def log_post_workflows(self):
+        logging.info(
+            "To verify all actions are running good visit the following links:\n  %s",
+            "\n  ".join(
+                f"https://github.com/{self.repo}/actions/workflows/{action}.yml"
+                for action in ("release", "tags_stable")
+            ),
+        )
 
     @contextmanager
     def create_release_branch(self):
@@ -335,7 +399,7 @@ class Release:
             yield
         except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
-            self.run(f"git reset --hard; git checkout {orig_ref}")
+            self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         else:
             if with_checkout_back and need_rollback:
@@ -427,7 +491,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Script to release a new ClickHouse version, requires `git` and "
-        "`gh` (github-cli) commands",
+        "`gh` (github-cli) commands "
+        "!!! LAUNCH IT ONLY FROM THE MASTER BRANCH !!!",
     )
 
     parser.add_argument(
@@ -451,10 +516,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--type",
-        default="minor",
+        required=True,
         choices=Release.BIG + Release.SMALL,
         dest="release_type",
-        help="a release type, new branch is created only for 'major' and 'minor'",
+        help="a release type to bump the major.minor.patch version part, "
+        "new branch is created only for 'major' and 'minor'",
     )
     parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(

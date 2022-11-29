@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
@@ -18,7 +18,7 @@ include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
-include (cmake/git_status.cmake)
+include (cmake/git.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -74,18 +74,12 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
-
-if (NOT USE_STATIC_LIBRARIES)
-    # DEVELOPER ONLY.
-    # Faster linking if turned on.
-    option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files")
-
-    option(CLICKHOUSE_SPLIT_BINARY
-        "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled")
-endif ()
+# DEVELOPER ONLY.
+# Faster linking if turned on.
+option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files" OFF)
 
 if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without USE_STATIC_LIBRARIES=0 has no effect.")
+    message(FATAL_ERROR "SPLIT_SHARED_LIBRARIES=1 must not be used together with USE_STATIC_LIBRARIES=1")
 endif()
 
 if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
@@ -149,6 +143,8 @@ include (cmake/add_warning.cmake)
 if (COMPILER_CLANG)
     # generate ranges for fast "addr2line" search
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+        # NOTE: that clang has a bug because of it does not emit .debug_aranges
+        # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
@@ -159,6 +155,8 @@ if (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
     endif()
+
+    no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
 
 # If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
@@ -168,7 +166,6 @@ if (HAS_RESERVED_IDENTIFIER)
     add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
-# If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
@@ -204,8 +201,8 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # Can be lld or ld-lld.
-    if (LINKER_NAME MATCHES "lld$")
+    # Can be lld or ld-lld or lld-13 or /path/to/lld.
+    if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
@@ -250,7 +247,8 @@ else ()
 endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
-if (LINKER_NAME MATCHES "lld$")
+# (NOTE: LINKER_NAME can be either path or name, and in different variants)
+if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
@@ -334,6 +332,22 @@ endif ()
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
+
+if (ARCH_AMD64)
+    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+    # which makes benchmark results more stable.
+    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+    if (COMPILER_GCC)
+        # gcc is in assembler, need to add "-Wa," prefix
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("${BRANCHES_WITHIN_32B_BOUNDARIES}" HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
+    if (HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+endif()
 
 if (COMPILER_GCC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
@@ -428,8 +442,9 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
 
 if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
@@ -481,6 +496,14 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
+option(ENABLE_EXTERNAL_OPENSSL "This option is insecure and not recommended for any occasions. If it is enabled, it allows building with alternative OpenSSL library. By default, ClickHouse is using BoringSSL, which is better. Do not use this option." OFF)
+
+if (ENABLE_EXTERNAL_OPENSSL)
+    message (STATUS "Build and uses OpenSSL library instead of BoringSSL. This is strongly discouraged. Your build of ClickHouse will be unsupported.")
+    set(ENABLE_SSL 1)
+    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
+endif ()
+
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
     set (CLICKHOUSE_ETC_DIR "/etc")
@@ -491,7 +514,7 @@ endif ()
 message (STATUS
     "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}")
+    SPLIT_SHARED_LIBRARIES=${SPLIT_SHARED_LIBRARIES}")
 
 include (GNUInstallDirs)
 
@@ -507,14 +530,14 @@ if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
 
-macro (add_executable target)
+macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
     get_target_property (type ${target} TYPE)
@@ -543,12 +566,26 @@ macro (add_executable target)
     endif()
 endmacro()
 
-set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
-include_directories(${ConfigIncludePath})
+# With cross-compiling, all targets are built for the target platform which usually different from the host
+# platform. This is problematic if a build artifact X (e.g. a file or an executable) is generated by running
+# another executable Y previously produced in the build. This is solved by compiling and running Y for/on
+# the host platform. Add target to the list:
+#    add_native_target(<target> ...)
+set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+function (add_native_target)
+    set_property (GLOBAL APPEND PROPERTY NATIVE_BUILD_TARGETS ${ARGV})
+endfunction (add_native_target)
+
+set(CONFIG_INCLUDE_PATH ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
+
+if (ENABLE_RUST)
+    add_subdirectory (rust)
+endif()
 
 add_subdirectory (base)
 add_subdirectory (src)
@@ -556,4 +593,35 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
-include (cmake/sanitize_target_link_libraries.cmake)
+include (cmake/sanitize_targets.cmake)
+
+# Build native targets if necessary
+get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+if (NATIVE_BUILD_TARGETS
+    AND NOT(
+        CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+        AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+    )
+)
+    message (STATUS "Building native targets...")
+
+    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
+        COMMAND_ECHO STDOUT)
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND}
+            "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
+        ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
+        COMMAND_ECHO STDOUT)
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
+        COMMAND_ECHO STDOUT)
+endif ()

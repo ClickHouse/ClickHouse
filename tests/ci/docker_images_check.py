@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push to Dockerhub (actions)"
+NAME = "Push to Dockerhub"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
@@ -164,7 +164,7 @@ def gen_versions(
     # The order is important, PR number is used as cache during the build
     versions = [str(pr_info.number), pr_commit_version]
     result_version = pr_commit_version
-    if pr_info.number == 0:
+    if pr_info.number == 0 and pr_info.base_ref == "master":
         # First get the latest for cache
         versions.insert(0, "latest")
 
@@ -441,11 +441,15 @@ def main():
 
     result_images = {}
     images_processing_result = []
+    additional_cache = ""
+    if pr_info.release_pr or pr_info.merged_pr:
+        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined
         # We use it as tag to reduce rebuilding time
         images_processing_result += process_image_with_parents(
-            image, image_versions, pr_info.release_pr, args.push
+            image, image_versions, additional_cache, args.push
         )
         result_images[image.repo] = result_version
 
@@ -460,7 +464,7 @@ def main():
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     s3_path_prefix = (
         str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(" ", "_")
@@ -477,7 +481,7 @@ def main():
     if not args.reports:
         return
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

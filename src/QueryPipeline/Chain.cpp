@@ -96,7 +96,7 @@ void Chain::addSink(ProcessorPtr processor)
     if (!processors.empty())
         connect(getOutputPort(), processor->getInputs().front());
 
-    processors.emplace_front(std::move(processor));
+    processors.emplace_back(std::move(processor));
 }
 
 IProcessor & Chain::getSource()

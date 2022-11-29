@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/geo
 sidebar_position: 62
 sidebar_label: Географические структуры
 ---

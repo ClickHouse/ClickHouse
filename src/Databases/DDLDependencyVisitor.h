@@ -14,11 +14,19 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
 TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast);
 
+
+class DDLMatcherBase
+{
+public:
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
+    static ssize_t getPositionOfTableNameArgument(const ASTFunction & function);
+};
+
 /// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
 /// from column default expressions (joinGet, dictGet, etc)
 /// or dictionary source (for dictionaries from local ClickHouse table).
 /// Does not validate AST, works a best-effort way.
-class DDLDependencyVisitor
+class DDLDependencyVisitor : public DDLMatcherBase
 {
 public:
     struct Data
@@ -32,7 +40,6 @@ public:
     using Visitor = ConstInDepthNodeVisitor<DDLDependencyVisitor, true>;
 
     static void visit(const ASTPtr & ast, Data & data);
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 private:
     static void visit(const ASTFunction & function, Data & data);
@@ -42,6 +49,24 @@ private:
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };
 
-using TableLoadingDependenciesVisitor = DDLDependencyVisitor::Visitor;
+class NormalizeAndEvaluateConstants : public DDLMatcherBase
+{
+public:
+    struct Data
+    {
+        ContextPtr create_query_context;
+    };
+
+    using Visitor = ConstInDepthNodeVisitor<NormalizeAndEvaluateConstants, true>;
+
+    static void visit(const ASTPtr & ast, Data & data);
+
+private:
+    static void visit(const ASTFunction & function, Data & data);
+    static void visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data);
+
+};
+
+using NormalizeAndEvaluateConstantsVisitor = NormalizeAndEvaluateConstants::Visitor;
 
 }

@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-bool MergeTreeReverseSelectProcessor::getNewTaskImpl()
+bool MergeTreeReverseSelectAlgorithm::getNewTaskImpl()
 try
 {
     if (chunks.empty() && all_mark_ranges.empty())
@@ -44,9 +44,9 @@ catch (...)
     throw;
 }
 
-Chunk MergeTreeReverseSelectProcessor::readFromPart()
+MergeTreeReverseSelectAlgorithm::BlockAndProgress MergeTreeReverseSelectAlgorithm::readFromPart()
 {
-    Chunk res;
+    BlockAndProgress res;
 
     if (!chunks.empty())
     {
@@ -60,7 +60,7 @@ Chunk MergeTreeReverseSelectProcessor::readFromPart()
 
     while (!task->isFinished())
     {
-        Chunk chunk = readFromPartImpl();
+        auto chunk = readFromPartImpl();
         chunks.push_back(std::move(chunk));
     }
 

@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/json
 sidebar_position: 54
 sidebar_label: JSON
 ---

@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include "registerTableFunctions.h"
 
 #if USE_HDFS
@@ -6,7 +6,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
+#include <Access/Common/AccessFlags.h>
 
 namespace DB
 {
@@ -29,7 +31,10 @@ StoragePtr TableFunctionHDFS::getStorage(
 ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
+    {
+        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
+    }
 
     return parseColumnsListFromString(structure, context);
 }

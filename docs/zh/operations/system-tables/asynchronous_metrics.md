@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/asynchronous_metrics
+---
 # system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 包含在后台定期计算的指标。 例如，在使用的RAM量。

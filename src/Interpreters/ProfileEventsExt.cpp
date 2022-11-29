@@ -162,9 +162,8 @@ void getProfileEvents(
     dumpMemoryTracker(group_snapshot, columns, server_display_name);
 
     Block curr_block;
-    size_t rows = 0;
 
-    for (; profile_queue->tryPop(curr_block); ++rows)
+    while (profile_queue->tryPop(curr_block))
     {
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)

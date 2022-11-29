@@ -58,6 +58,10 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
+*.so
+*.dll
+*.lib
+*.dylib
 cmake-build-*
 
 # Python cache
@@ -76,6 +80,7 @@ core
 vgcore*
 
 *.deb
+*.tar.zst
 *.build
 *.upload
 *.changes
@@ -149,3 +154,6 @@ website/package-lock.json
 /programs/server/metadata
 /programs/server/store
 
+# temporary test files
+tests/queries/0_stateless/test_*
+tests/queries/0_stateless/*.binary

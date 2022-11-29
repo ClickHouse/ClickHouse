@@ -155,7 +155,6 @@ getting_started/index.md getting-started/index.md
 getting_started/install.md getting-started/install.md
 getting_started/playground.md getting-started/playground.md
 getting_started/tutorial.md getting-started/tutorial.md
-guides/apply_catboost_model.md guides/apply-catboost-model.md
 images/column_oriented.gif images/column-oriented.gif
 images/row_oriented.gif images/row-oriented.gif
 interfaces/http_interface.md interfaces/http.md

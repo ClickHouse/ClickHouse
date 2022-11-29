@@ -30,11 +30,14 @@ public:
     /// like removal of blobs. Such implementation can lead to garbage.
     virtual void finalize() = 0;
     virtual ~IDiskObjectStorageOperation() = default;
+
+    virtual std::string getInfoForLog() const = 0;
 };
 
 using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
 
 using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
+
 
 /// Disk object storage transaction, actually implement some part of disk object storage
 /// logic. Works on top of non atomic operations with blobs and possibly atomic implementation
@@ -52,17 +55,18 @@ struct DiskObjectStorageTransaction final : public IDiskTransaction, std::enable
 private:
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
+
     MetadataTransactionPtr metadata_transaction;
+
     /// TODO we can get rid of this params
-    const std::string & remote_fs_root_path;
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
 
     DiskObjectStorageOperations operations_to_execute;
+
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        const std::string & remote_fs_root_path_,
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
@@ -105,6 +109,7 @@ public:
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+    void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
 };

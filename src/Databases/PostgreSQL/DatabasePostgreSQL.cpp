@@ -290,7 +290,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};
@@ -442,6 +442,11 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
 
     if (which.isArray())
         return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+
+    if (which.isDateTime64())
+    {
+        return makeASTFunction("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+    }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
 }

@@ -87,7 +87,7 @@ struct ArrayExistsImpl
 struct NameArrayExists { static constexpr auto name = "arrayExists"; };
 using FunctionArrayExists = FunctionArrayMapped<ArrayExistsImpl, NameArrayExists>;
 
-void registerFunctionArrayExists(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayExists)
 {
     factory.registerFunction<FunctionArrayExists>();
 }

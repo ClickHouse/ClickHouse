@@ -85,7 +85,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 }
 
 PartialSortingTransform::PartialSortingTransform(
-    const Block & header_, SortDescription & description_, UInt64 limit_)
+    const Block & header_, const SortDescription & description_, UInt64 limit_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
@@ -93,9 +93,8 @@ PartialSortingTransform::PartialSortingTransform(
     // Sorting by no columns doesn't make sense.
     assert(!description_.empty());
 
-    size_t description_size = description.size();
-    for (size_t i = 0; i < description_size; ++i)
-        description_with_positions.emplace_back(description[i], header_.getPositionByName(description[i].column_name));
+    for (const auto & column_sort_desc : description)
+        description_with_positions.emplace_back(column_sort_desc, header_.getPositionByName(column_sort_desc.column_name));
 }
 
 void PartialSortingTransform::transform(Chunk & chunk)
@@ -112,7 +111,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    size_t block_rows_before_filter = block.rows();
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
@@ -139,10 +137,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    size_t block_rows_after_filter = block.rows();
-
     /// Check if we can use this block for optimization.
-    if (min_limit_for_partial_sort_optimization <= limit && block_rows_after_filter > 0 && limit <= block_rows_before_filter)
+    if (min_limit_for_partial_sort_optimization <= limit && limit <= block.rows())
     {
         /** If we filtered more than limit rows from block take block last row.
           * Otherwise take last limit row.
@@ -150,7 +146,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
           * If current threshold value is empty, update current threshold value.
           * If min block value is less than current threshold value, update current threshold value.
           */
-        size_t min_row_to_compare = limit <= block_rows_after_filter ? (limit - 1) : (block_rows_after_filter - 1);
+        size_t min_row_to_compare = limit - 1;
         auto raw_block_columns = extractRawColumns(block, description_with_positions);
 
         if (sort_description_threshold_columns.empty() ||
