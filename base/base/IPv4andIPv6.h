@@ -3,7 +3,6 @@
 #include <base/strong_typedef.h>
 #include <base/extended_types.h>
 #include <Common/memcmpSmall.h>
-#include "base/Decimal.h"
 
 namespace DB
 {

@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-#include "base/IPv4andIPv6.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

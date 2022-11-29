@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
-#include "DataTypes/Serializations/SerializationInfo.h"
 #include <base/TypeName.h>
 
 namespace DB
