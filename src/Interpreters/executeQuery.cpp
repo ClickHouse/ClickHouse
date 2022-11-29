@@ -14,12 +14,14 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -38,6 +40,8 @@
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
+
+#include <Functions/FunctionFactory.h>
 
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -306,6 +310,25 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     {
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
     }
+}
+
+static bool hasNonCacheableFunctions(ASTPtr ast, ContextPtr context)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const FunctionFactory & function_factory = FunctionFactory::instance();
+        if (const FunctionOverloadResolverPtr resolver = function_factory.tryGet(function->name, context))
+        {
+            if (!resolver->isDeterministic())
+                return true;
+        }
+    }
+
+    bool has_non_cacheable_functions = false;
+    for (const auto & child : ast->children)
+        has_non_cacheable_functions |= hasNonCacheableFunctions(child, context);
+
+    return has_non_cacheable_functions;
 }
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
@@ -679,10 +702,37 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                    String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
+
                 res = interpreter->execute();
+
+                auto query_result_cache = context->getQueryResultCache();
+
+                if (settings.experimental_query_result_cache_passive_usage && query_result_cache != nullptr && res.pipeline.pulling())
+                {
+                    QueryResultCache::Key key{
+                        ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive)};
+                    QueryResultCache::Reader reader = query_result_cache->createReader(key);
+                    if (reader.hasEntryForKey())
+                        res.pipeline = QueryPipeline(reader.getPipe());
+                }
+
+                if (settings.experimental_query_result_cache_active_usage && query_result_cache != nullptr && res.pipeline.pulling() && !hasNonCacheableFunctions(ast, context))
+                {
+                    QueryResultCache::Key key{
+                        ast, context->getUserName(), settings.query_result_cache_partition_key, res.pipeline.getHeader(),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_result_cache_keep_seconds_alive)};
+
+                    const size_t num_query_runs = query_result_cache->recordQueryRun(key);
+                    if (num_query_runs > settings.query_result_cache_min_query_runs)
+                    {
+                        auto stream_in_query_result_cache_transform = std::make_shared<StreamInQueryResultCacheTransform>(res.pipeline.getHeader(), query_result_cache, key, context->getSettings().query_result_cache_max_entry_size);
+                        res.pipeline.streamIntoQueryResultCache(stream_in_query_result_cache_transform);
+                    }
+                }
             }
         }
 

@@ -72,7 +72,7 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 
 ## DROP MARK CACHE
 
-Resets the mark cache. Used in development of ClickHouse and performance tests.
+Resets the mark cache.
 
 ## DROP REPLICA
 
@@ -94,13 +94,20 @@ The fourth one is useful to remove metadata of dead replica when all other repli
 
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+Reset the uncompressed data cache.
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
+Reset the compiled expression cache.
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
+
+## DROP QUERY RESULT CACHE
+
+Resets the query result cache.
+The uncompressed data cache is enabled/disabled with the query/user/profile-level settings [experimental_query_result_cache_active_usage](../../operations/settings/settings.md#setting-experimental_query_result_cache_active_usage) and [experimental_query_result_cache_size_passive_usage](../../operations/settings/settings.md#settings-experimental_query_result_cache_passive_usage).
+Its size can be configured using the server-level setting [query_result_cache_size](../../operations/settings/setting#query-result-cache-size).
 
 ## FLUSH LOGS
 

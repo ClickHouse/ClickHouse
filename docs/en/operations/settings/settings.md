@@ -1170,6 +1170,79 @@ Possible values:
 
 Default value: `3`.
 
+## experimental_query_result_cache_active_usage {#experimental-query-result-cache-active-usage}
+
+If turned on, results of SELECT queries are stored in the query result cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## experimental_query_result_cache_passive_usage {#experimental-query-result-cache-passive-usage}
+
+If turned on, the database tries to answer SELECT queries using a lookup in the query result cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## query_result_cache_size {#query-result-cache-size}
+
+Maximum size of the query result cache in bytes. 0 means disabled.
+This is a server-level setting which takes effect only after server restart.
+
+Possible values:
+
+-   Positive integer >= 0.
+
+Default value: `1073741824` (ca. 1 GB.)
+
+## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
+
+Minimum number a SELECT query must run before its result is stored in the query result cache.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
+## query_result_cache_max_entry_size {#query-result-cache-max-entry-size}
+
+Maximum size in bytes of SELECT query results to be saved in the query result cache.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `33554432` (ca. 33 MB)
+
+## query_result_cche_keep_seconds_alive {#query-result-cache-keep-seconds-alive}
+
+After this time entries in the query result cache become stale.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `60`
+
+## query_result_cache_partition_key {#query-result-cache-partition-key}
+
+Represents a partition of the query result cache.
+
+Possible values:
+
+- Any string.
+
+Default value: `` (empty string)
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
