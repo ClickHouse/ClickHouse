@@ -65,7 +65,7 @@ MergeListElement::MergeListElement(
     for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->data_part_storage->getFullPath());
+        source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();
@@ -89,7 +89,7 @@ MergeListElement::MergeListElement(
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
     memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
-    if (settings.memory_tracker_fault_probability)
+    if (settings.memory_tracker_fault_probability > 0.0)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 
     /// Let's try to copy memory related settings from the query,
@@ -142,7 +142,11 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement() = default;
+MergeListElement::~MergeListElement()
+{
+    CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
+    untracked_memory = 0;
+}
 
 
 }

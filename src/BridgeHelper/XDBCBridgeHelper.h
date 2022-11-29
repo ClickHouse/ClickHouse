@@ -16,7 +16,7 @@
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 
 namespace DB
@@ -109,7 +109,7 @@ protected:
 
     String getName() const override { return BridgeHelperMixin::getName(); }
 
-    size_t getDefaultPort() const override { return DEFAULT_PORT; }
+    unsigned getDefaultPort() const override { return DEFAULT_PORT; }
 
     String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
 

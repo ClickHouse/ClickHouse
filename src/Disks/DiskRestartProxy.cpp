@@ -79,7 +79,8 @@ private:
 };
 
 DiskRestartProxy::DiskRestartProxy(DiskPtr & delegate_)
-    : DiskDecorator(delegate_) { }
+    : DiskDecorator(delegate_)
+{}
 
 ReservationPtr DiskRestartProxy::reserve(UInt64 bytes)
 {
@@ -331,6 +332,20 @@ void DiskRestartProxy::getRemotePathsRecursive(
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
+DiskPtr DiskRestartProxy::getNestedDisk() const
+{
+    DiskPtr delegate_copy;
+
+    {
+        ReadLock lock (mutex);
+        delegate_copy = delegate;
+    }
+
+    if (const auto * decorator = dynamic_cast<const DiskDecorator *>(delegate_copy.get()))
+        return decorator->getNestedDisk();
+    return delegate_copy;
+}
+
 void DiskRestartProxy::restart(ContextPtr context)
 {
     /// Speed up processing unhealthy requests.
@@ -354,7 +369,8 @@ void DiskRestartProxy::restart(ContextPtr context)
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup(context);
+    /// NOTE: access checking will cause deadlock here, so skip it.
+    DiskDecorator::startup(context, /* skip_access_check= */ true);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }

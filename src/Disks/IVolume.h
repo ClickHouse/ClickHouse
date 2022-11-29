@@ -66,6 +66,9 @@ public:
 
     virtual ReservationPtr reserve(UInt64 bytes) override = 0;
 
+    /// This is a volume.
+    bool isVolume() const override { return true; }
+
     /// Volume name from config
     const String & getName() const override { return name; }
     virtual VolumeType getType() const = 0;

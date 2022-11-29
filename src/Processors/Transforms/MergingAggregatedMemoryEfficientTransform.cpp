@@ -1,5 +1,6 @@
 #include <limits>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/sortBlock.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
@@ -305,8 +306,9 @@ void GroupingAggregatedTransform::work()
 }
 
 
-MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(AggregatingTransformParamsPtr params_)
-    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_))
+MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
+    AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
+    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
 {
     setInputNotNeededAfterRead(true);
 }
@@ -356,9 +358,14 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     auto res_info = std::make_shared<AggregatedChunkInfo>();
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
+    res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.setChunkInfo(std::move(res_info));
 
     auto block = params->aggregator.mergeBlocks(blocks_list, params->final);
+
+    if (!required_sort_description.empty())
+        sortBlock(block, required_sort_description);
+
     size_t num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }

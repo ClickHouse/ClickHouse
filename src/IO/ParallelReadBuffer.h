@@ -33,12 +33,13 @@ public:
     class ReadBufferFactory : public WithFileSize
     {
     public:
+        ~ReadBufferFactory() override = default;
+
         virtual SeekableReadBufferPtr getReader() = 0;
-        virtual ~ReadBufferFactory() override = default;
         virtual off_t seek(off_t off, int whence) = 0;
     };
 
-    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers);
+    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -75,7 +76,7 @@ private:
     size_t max_working_readers;
     std::atomic_size_t active_working_reader{0};
 
-    CallbackRunner schedule;
+    ThreadPoolCallbackRunner<void> schedule;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
 

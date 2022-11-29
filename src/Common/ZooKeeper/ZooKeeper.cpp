@@ -6,6 +6,8 @@
 #include <functional>
 #include <filesystem>
 
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
@@ -97,7 +99,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
             if (dns_error)
                 throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
             else
-                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
+                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZCONNECTIONLOSS);
         }
 
         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
@@ -139,11 +141,13 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
+
 ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : zk_log(std::move(zk_log_))
 {
-    zk_log = std::move(zk_log_);
     init(args_);
 }
+
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : zk_log(std::move(zk_log_))
@@ -773,19 +777,34 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     return false;
 }
 
-void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
+void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
     zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
-    if (!tryGet(path, content, nullptr, eph_node_disappeared))
+    Coordination::Stat stat;
+    if (!tryGet(path, content, &stat, eph_node_disappeared))
         return;
 
-    int32_t timeout_ms = 3 * args.session_timeout_ms;
-    if (!eph_node_disappeared->tryWait(timeout_ms))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                            "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                            "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                            "Node data: '{}'", path, timeout_ms / 1000, content);
+    if (content == fast_delete_if_equal_value)
+    {
+        auto code = tryRemove(path, stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw Coordination::Exception(code, path);
+    }
+    else
+    {
+        LOG_WARNING(log, "Ephemeral node ('{}') already exists but it isn't owned by us. Will wait until it disappears", path);
+        int32_t timeout_ms = 3 * args.session_timeout_ms;
+        if (!eph_node_disappeared->tryWait(timeout_ms))
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
+                "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
+                "Node data: '{}'",
+                path,
+                timeout_ms / 1000,
+                content);
+    }
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
@@ -984,6 +1003,24 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     };
 
     impl->list(path, list_request_type, std::move(callback), watch_callback);
+    return future;
+}
+
+std::future<Coordination::ListResponse>
+ZooKeeper::asyncTryGetChildren(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->list(path, list_request_type, std::move(callback), {});
     return future;
 }
 
@@ -1204,6 +1241,37 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->version = version;
     return request;
 }
+
+Coordination::RequestPtr makeGetRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::GetRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type)
+{
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
+    request->path = path;
+    request->list_request_type = list_request_type;
+    return request;
+}
+
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSimpleListRequest>();
+    request->path = path;
+    return request;
+}
+
+Coordination::RequestPtr makeExistsRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperExistsRequest>();
+    request->path = path;
+    return request;
+}
+
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {

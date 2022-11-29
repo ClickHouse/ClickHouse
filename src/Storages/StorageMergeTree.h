@@ -66,7 +66,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
@@ -169,6 +169,8 @@ private:
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
 
+    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
     /// If not force, then take merges selector and check that part is not participating in background operations.
@@ -187,7 +189,7 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
+    MergeMutateSelectedEntryPtr selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
@@ -200,7 +202,7 @@ private:
         SelectPartsDecision * select_decision_out = nullptr);
 
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(
+    MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, String * disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
@@ -217,7 +219,6 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;

@@ -1,34 +1,45 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Columns/ColumnFixedString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include <Interpreters/Aggregator.h>
-#include <Functions/FunctionFactory.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MemoryBoundMerging.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
+static bool memoryBoundMergingWillBeUsed(
+    bool should_produce_results_in_order_of_bucket_number,
+    bool memory_bound_merging_of_aggregation_results_enabled,
+    InputOrderInfoPtr group_by_info)
+{
+    return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && group_by_info;
+}
+
+static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number, bool memory_bound_merging_will_be_used)
 {
     return ITransformingStep::Traits
     {
         {
             .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
-            .returns_single_stream = should_produce_results_in_order_of_bucket_number, /// Actually, may also return single stream if should_produce_results_in_order_of_bucket_number = false
+            .returns_single_stream = should_produce_results_in_order_of_bucket_number || memory_bound_merging_will_be_used,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
+            .can_enforce_sorting_properties_in_distributed_query = memory_bound_merging_will_be_used,
         },
         {
             .preserves_number_of_rows = false,
@@ -88,9 +99,16 @@ AggregatingStep::AggregatingStep(
     bool group_by_use_nulls_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_,
-    bool should_produce_results_in_order_of_bucket_number_)
+    bool should_produce_results_in_order_of_bucket_number_,
+    bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
-        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+        input_stream_,
+        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_),
+        getTraits(
+            should_produce_results_in_order_of_bucket_number_,
+            DB::memoryBoundMergingWillBeUsed(
+                should_produce_results_in_order_of_bucket_number_, memory_bound_merging_of_aggregation_results_enabled_, group_by_info_)),
+        false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
@@ -103,7 +121,13 @@ AggregatingStep::AggregatingStep(
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
+    , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    }
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -177,12 +201,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.group_by_two_level_threshold_bytes,
                     transform_params->params.max_bytes_before_external_group_by,
                     transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_volume,
+                    transform_params->params.tmp_data_scope,
                     transform_params->params.max_threads,
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
                     transform_params->params.max_block_size,
+                    transform_params->params.enable_prefetch,
                     /* only_merge */ false,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
@@ -335,10 +360,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// Do merge of aggregated data in parallel.
             pipeline.resize(merge_threads);
 
-            pipeline.addSimpleTransform([&](const Block &)
+            const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            pipeline.addSimpleTransform(
+                [&](const Block &)
+                { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
+
+            if (memoryBoundMergingWillBeUsed())
             {
-                return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
-            });
+                pipeline.addTransform(
+                    std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
+            }
 
             aggregating_sorted = collector.detachProcessors(1);
         }
@@ -379,7 +410,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
 
-        /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
         aggregating = collector.detachProcessors(0);
@@ -423,6 +453,19 @@ void AggregatingStep::updateOutputStream()
         input_streams.front(),
         appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, grouping_sets_params, group_by_use_nulls),
         getDataStreamTraits());
+}
+
+void AggregatingStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr context) const
+{
+    context->setSetting("enable_memory_bound_merging_of_aggregation_results", true);
+    context->setSetting("optimize_aggregation_in_order", true);
+    context->setSetting("force_aggregation_in_order", true);
+}
+
+bool AggregatingStep::memoryBoundMergingWillBeUsed() const
+{
+    return DB::memoryBoundMergingWillBeUsed(
+        should_produce_results_in_order_of_bucket_number, memory_bound_merging_of_aggregation_results_enabled, group_by_info);
 }
 
 }

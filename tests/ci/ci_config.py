@@ -131,6 +131,16 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
+        "binary_aarch64_v80compat": {
+            "compiler": "clang-15-aarch64-v80compat",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "binary",
+            "static_binary_name": "aarch64v80compat",
+            "libraries": "static",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
         "binary_freebsd": {
             "compiler": "clang-15-freebsd",
             "build_type": "",
@@ -189,6 +199,7 @@ CI_CONFIG = {
             "binary_shared",
             "binary_darwin",
             "binary_aarch64",
+            "binary_aarch64_v80compat",
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
@@ -336,6 +347,9 @@ CI_CONFIG = {
         "ClickHouse Keeper Jepsen": {
             "required_build": "binary_release",
         },
+        "ClickHouse Server Jepsen": {
+            "required_build": "binary_release",
+        },
         "Performance Comparison": {
             "required_build": "package_release",
             "test_grep_exclude_filter": "",
@@ -343,6 +357,12 @@ CI_CONFIG = {
         "Performance Comparison Aarch64": {
             "required_build": "package_aarch64",
             "test_grep_exclude_filter": "",
+        },
+        "SQLancer (release)": {
+            "required_build": "package_release",
+        },
+        "SQLancer (debug)": {
+            "required_build": "package_debug",
         },
     },
 }  # type: dict

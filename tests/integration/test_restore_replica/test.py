@@ -8,6 +8,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 def fill_nodes(nodes):
     for node in nodes:
+        node.query("DROP TABLE IF EXISTS test SYNC")
+
+    for node in nodes:
         node.query(
             """
             CREATE TABLE test(n UInt32)
@@ -29,11 +32,7 @@ nodes = [node_1, node_2, node_3]
 
 
 def fill_table():
-    node_1.query("TRUNCATE TABLE test")
-
-    for node in nodes:
-        node.query("SYSTEM SYNC REPLICA test")
-
+    fill_nodes(nodes)
     check_data(0, 0)
 
     # it will create multiple parts in each partition and probably cause merges

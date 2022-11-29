@@ -70,8 +70,6 @@ public:
 
     bool isVersioned() const { return function->isVersioned(); }
 
-    size_t getVersionFromRevision(size_t revision) const { return function->getVersionFromRevision(revision); }
-
     /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according
     /// to server revision.
     /// It is ok to have an empty version value here - then for serialization a default (latest)
@@ -84,6 +82,13 @@ public:
 
         version = version_;
     }
+
+    void updateVersionFromRevision(size_t revision, bool if_empty) const
+    {
+        setVersion(function->getVersionFromRevision(revision), if_empty);
+    }
 };
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
 
 }

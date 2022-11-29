@@ -3,7 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB

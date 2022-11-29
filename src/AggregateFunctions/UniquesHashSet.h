@@ -118,7 +118,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return Hash()(key);
+        return static_cast<HashValue>(Hash()(key));
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
@@ -329,7 +329,7 @@ public:
         free();
     }
 
-    void insert(Value x)
+    void ALWAYS_INLINE insert(Value x)
     {
         HashValue hash_value = hash(x);
         if (!good(hash_value))
@@ -358,7 +358,7 @@ public:
           *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
-        size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));
+        size_t fixed_res = static_cast<size_t>(round(p32 * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
 

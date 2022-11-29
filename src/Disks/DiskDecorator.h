@@ -74,12 +74,14 @@ public:
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DataSourceDescription getDataSourceDescription() const override { return delegate->getDataSourceDescription(); }
     bool isRemote() const override { return delegate->isRemote(); }
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     bool supportsCache() const override { return delegate->supportsCache(); }
@@ -89,6 +91,7 @@ public:
     void getRemotePathsRecursive(const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override { return delegate->getRemotePathsRecursive(path, paths_map); }
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
+    ObjectStoragePtr getObjectStorage() override;
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
     MetadataStoragePtr getMetadataStorage() override { return delegate->getMetadataStorage(); }
@@ -106,6 +109,8 @@ public:
 
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
+
+    virtual DiskPtr getNestedDisk() const;
 
 protected:
     Executor & getExecutor() override;

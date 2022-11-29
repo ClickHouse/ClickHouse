@@ -265,10 +265,11 @@ public:
         }
     }
 
-    void insertResultInto(
+    template <bool merge>
+    void insertResultIntoImpl(
         AggregateDataPtr __restrict place,
         IColumn & to,
-        Arena * arena) const override
+        Arena * arena) const
     {
         if (place[size_of_data])
         {
@@ -277,7 +278,12 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to, arena);
+                {
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, to, arena);
+                    else
+                        nested_function->insertResultInto(place, to, arena);
+                }
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
@@ -289,12 +295,24 @@ public:
             else
             {
                 // -OrDefault
-
-                nested_function->insertResultInto(place, to, arena);
+                if constexpr (merge)
+                    nested_function->insertMergeResultInto(place, to, arena);
+                else
+                    nested_function->insertResultInto(place, to, arena);
             }
         }
         else
             to.insertDefault();
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

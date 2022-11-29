@@ -66,8 +66,8 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine(
         "HiveText",
-        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size) -> std::pair<bool, size_t> {
-            return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, 0);
+        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t> {
+            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows);
         });
 }
 

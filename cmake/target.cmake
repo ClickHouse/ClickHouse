@@ -51,6 +51,8 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_GRPC OFF CACHE INTERNAL "")
         set (ENABLE_HDFS OFF CACHE INTERNAL "")
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+        # use of drand48_data
+        set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation

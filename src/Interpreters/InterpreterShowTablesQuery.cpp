@@ -150,7 +150,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     const auto & query = query_ptr->as<ASTShowTablesQuery &>();
     if (query.caches)
     {
-        getContext()->checkAccess(AccessType::SHOW_CACHES);
+        getContext()->checkAccess(AccessType::SHOW_FILESYSTEM_CACHES);
 
         Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
         MutableColumns res_columns = sample_block.cloneEmptyColumns();

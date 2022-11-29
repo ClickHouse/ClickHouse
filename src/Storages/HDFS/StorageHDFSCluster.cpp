@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -11,7 +11,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/getTableExpressions.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -25,6 +24,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 
 #include <memory>
 
@@ -56,6 +57,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     {
         auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
+        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -72,7 +74,7 @@ Pipe StorageHDFSCluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
@@ -92,32 +94,29 @@ Pipe StorageHDFSCluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    for (const auto & replicas : cluster->getShardsAddresses())
+    auto query_to_send = query_info.original_query->clone();
+    if (add_columns_structure_to_query)
+        addColumnsStructureToQueryWithClusterEngine(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
+
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
+        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
         {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
-                "HDFSClusterInititiator",
-                node.compression,
-                node.secure
-            );
-
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_info.original_query),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                    shard_info.pool,
+                    std::vector<IConnectionPool::Entry>{try_result},
+                    queryToString(query_to_send),
+                    header,
+                    context,
+                    /*throttler=*/nullptr,
+                    scalars,
+                    Tables(),
+                    processed_stage,
+                    RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

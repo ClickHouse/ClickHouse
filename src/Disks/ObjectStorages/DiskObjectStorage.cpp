@@ -82,6 +82,11 @@ DiskTransactionPtr DiskObjectStorage::createTransaction()
     return std::make_shared<FakeDiskTransaction>(*this);
 }
 
+ObjectStoragePtr DiskObjectStorage::getObjectStorage()
+{
+    return object_storage;
+}
+
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
@@ -104,8 +109,7 @@ DiskObjectStorage::DiskObjectStorage(
     ObjectStoragePtr object_storage_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
-    : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
-    , name(name_)
+    : IDisk(name_, getAsyncExecutor(log_name, thread_pool_size_))
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
@@ -285,7 +289,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
     if (!id.starts_with(object_storage_root_path))
     {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}", id, object_storage_root_path);
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
         return false;
     }
 
@@ -415,9 +419,8 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startup(ContextPtr context)
+void DiskObjectStorage::startupImpl(ContextPtr context)
 {
-
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
 
@@ -459,18 +462,26 @@ std::optional<UInt64> DiskObjectStorage::tryReserve(UInt64 bytes)
 
     if (bytes == 0)
     {
-        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserved 0 bytes on remote disk {}", backQuote(name));
         ++reservation_count;
         return {unreserved_space};
     }
 
     if (unreserved_space >= bytes)
     {
-        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
-            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
+        LOG_TRACE(
+            log,
+            "Reserved {} on remote disk {}, having unreserved {}.",
+            ReadableSize(bytes),
+            backQuote(name),
+            ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
+    }
+    else
+    {
+        LOG_TRACE(log, "Could not reserve {} on remote disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
     }
 
     return {};
@@ -484,6 +495,11 @@ bool DiskObjectStorage::supportsCache() const
 bool DiskObjectStorage::isReadOnly() const
 {
     return object_storage->isReadOnly();
+}
+
+bool DiskObjectStorage::isWriteOnce() const
+{
+    return object_storage->isWriteOnce();
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()

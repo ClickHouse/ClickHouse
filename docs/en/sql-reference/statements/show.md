@@ -198,7 +198,7 @@ Result:
 
 ## SHOW DICTIONARIES
 
-Displays a list of [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+Displays a list of [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -362,7 +362,7 @@ SHOW ACCESS
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
-:::note    
+:::note
 `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 :::
 
@@ -491,6 +491,20 @@ Result:
 ┌─name─────────────┬─type───┬─value───────┐
 │ max_memory_usage │ UInt64 │ 10000000000 │
 └──────────────────┴────────┴─────────────┘
+```
+
+## SHOW FILESYSTEM CACHES
+
+```sql
+SHOW FILESYSTEM CACHES
+```
+
+Result:
+
+``` text
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
 ```
 
 **See Also**

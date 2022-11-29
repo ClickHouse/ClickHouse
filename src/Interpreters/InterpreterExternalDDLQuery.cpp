@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/Context.h>
@@ -13,6 +13,7 @@
 #    include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
+#    include <Parsers/MySQL/ASTDropQuery.h>
 #endif
 
 namespace DB
@@ -44,7 +45,7 @@ BlockIO InterpreterExternalDDLQuery::execute()
         if (arguments.size() != 2 || !arguments[0]->as<ASTIdentifier>() || !arguments[1]->as<ASTIdentifier>())
             throw Exception("MySQL External require two identifier arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-        if (external_ddl_query.external_ddl->as<ASTDropQuery>())
+        if (external_ddl_query.external_ddl->as<MySQLParser::ASTDropQuery>())
             return MySQLInterpreter::InterpreterMySQLDropQuery(
                 external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
                 getIdentifierName(arguments[1])).execute();

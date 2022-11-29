@@ -40,12 +40,14 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
-            return [step, scale, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(static_cast<T>(field.get<T>()), step, date_lut, scale); };
+            return [step, scale, &date_lut](Field & field) { \
+                field = Add##NAME##sImpl::execute(static_cast<T>(\
+                    field.get<T>()), static_cast<Int32>(step), date_lut, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)

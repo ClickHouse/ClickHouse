@@ -29,6 +29,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -687,7 +688,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     /// The size without taking into account the row in which data is written for the calculation of TOTALS.
@@ -704,7 +705,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     const char * getMethodName() const
@@ -720,7 +721,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     bool isTwoLevel() const
@@ -736,7 +737,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         #undef M
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -925,7 +926,7 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set;
 
-        VolumePtr tmp_volume;
+        TemporaryDataOnDiskScopePtr tmp_data_scope;
 
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
@@ -938,6 +939,8 @@ public:
         size_t max_block_size;
 
         bool only_merge;
+
+        bool enable_prefetch;
 
         struct StatsCollectingParams
         {
@@ -968,13 +971,14 @@ public:
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            VolumePtr tmp_volume_,
+            TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
             size_t max_block_size_,
-            bool only_merge_ = false, // true for projections
+            bool enable_prefetch_,
+            bool only_merge_, // true for projections
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
@@ -987,13 +991,14 @@ public:
             , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
             , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
             , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-            , tmp_volume(tmp_volume_)
+            , tmp_data_scope(std::move(tmp_data_scope_))
             , max_threads(max_threads_)
             , min_free_disk_space(min_free_disk_space_)
             , compile_aggregate_expressions(compile_aggregate_expressions_)
             , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
             , max_block_size(max_block_size_)
             , only_merge(only_merge_)
+            , enable_prefetch(enable_prefetch_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
@@ -1001,7 +1006,7 @@ public:
         /// Only parameters that matter during merge.
         Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, true, {})
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, {})
         {
         }
 
@@ -1067,25 +1072,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    TemporaryFileOnDiskHolder createTempFile(size_t max_temp_file_size) const;
+    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
 
-    bool hasTemporaryFiles() const { return !temporary_files.empty(); }
-
-    struct TemporaryFiles
-    {
-        std::vector<TemporaryFileOnDiskHolder> files;
-        size_t sum_size_uncompressed = 0;
-        size_t sum_size_compressed = 0;
-        mutable std::mutex mutex;
-
-        bool empty() const
-        {
-            std::lock_guard lock(mutex);
-            return files.empty();
-        }
-    };
-
-    const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }
+    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -1144,7 +1133,9 @@ private:
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
 
     /// For external aggregation.
-    mutable TemporaryFiles temporary_files;
+    TemporaryDataOnDiskPtr tmp_data;
+
+    size_t min_bytes_for_prefetch = 0;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
@@ -1211,7 +1202,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_functions, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method>
     void executeImplBatch(
         Method & method,
         typename Method::State & state,
@@ -1245,7 +1236,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        NativeWriter & out) const;
+        TemporaryFileStream & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -1255,11 +1246,8 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    template <typename Method, bool use_compiled_functions, typename Table>
-    void mergeDataImpl(
-        Table & table_dst,
-        Table & table_src,
-        Arena * arena) const;
+    template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -1313,13 +1301,13 @@ private:
         Method & method,
         Arena * arena,
         bool final,
-        size_t bucket) const;
+        Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
-        size_t bucket,
+        Int32 bucket,
         std::atomic<bool> * is_cancelled = nullptr) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;

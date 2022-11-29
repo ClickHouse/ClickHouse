@@ -45,8 +45,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     SelectUnionModesSet current_set_of_modes;
     bool distinct_found = false;
 
-    int i;
-    for (i = union_modes.size() - 1; i >= 0; --i)
+    for (Int64 i = union_modes.size() - 1; i >= 0; --i)
     {
         current_set_of_modes.insert(union_modes[i]);
         if (const auto * union_ast = typeid_cast<const ASTSelectWithUnionQuery *>(select_list[i + 1].get()))

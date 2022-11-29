@@ -403,7 +403,7 @@ Pipe StorageEmbeddedRocksDB::read(
         ContextPtr context_,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        unsigned num_streams)
+        size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -467,7 +467,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String rocksdb_dir;
     bool read_only{false};
     if (!engine_args.empty())
-        ttl = checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl");
+        ttl = static_cast<Int32>(checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl"));
     if (engine_args.size() > 1)
         rocksdb_dir = checkAndGetLiteralArgument<String>(engine_args[1], "rocksdb_dir");
     if (engine_args.size() > 2)
