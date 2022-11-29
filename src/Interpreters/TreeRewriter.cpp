@@ -1473,10 +1473,7 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-    {
-        UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-        UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
-    }
+        UserDefinedSQLFunctionVisitor::visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
