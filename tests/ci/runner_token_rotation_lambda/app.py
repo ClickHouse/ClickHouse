@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
-import requests
 import argparse
-import jwt
 import sys
 import json
 import time
+
+import boto3  # type: ignore
+import jwt
+import requests  # type: ignore
 
 
 def get_installation_id(jwt_token):
@@ -51,8 +53,6 @@ def get_runner_registration_token(access_token):
 
 
 def get_key_and_app_from_aws():
-    import boto3
-
     secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
