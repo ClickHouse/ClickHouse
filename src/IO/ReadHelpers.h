@@ -872,17 +872,21 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
     const char * end = parseIPv4(buf.position(), buf.position() + buf.available(), p);
     if (end)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        p[15] = p[3]; p[3] = 0;
-        p[14] = p[2]; p[2] = 0;
-        p[13] = p[1]; p[1] = 0;
-        p[12] = p[0]; p[0] = 0;
-#else
-        p[15] = p[0]; p[0] = 0;
-        p[14] = p[1]; p[1] = 0;
-        p[13] = p[2]; p[2] = 0;
-        p[12] = p[3]; p[3] = 0;
-#endif
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            p[15] = p[0]; p[0] = 0;
+            p[14] = p[1]; p[1] = 0;
+            p[13] = p[2]; p[2] = 0;
+            p[12] = p[3]; p[3] = 0;
+        }
+        else
+        {
+            p[15] = p[3]; p[3] = 0;
+            p[14] = p[2]; p[2] = 0;
+            p[13] = p[1]; p[1] = 0;
+            p[12] = p[0]; p[0] = 0;
+        }
+
         p[11] = 0xff;
         p[10] = 0xff;
         buf.position() += end - buf.position();
