@@ -61,7 +61,7 @@ public:
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
 
@@ -102,15 +102,16 @@ public:
             function_node_arguments_nodes[0] = std::move(nested_if_function_arguments_nodes[0]);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
 
         /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))`.
         if (if_true_condition_value == 0 && if_false_condition_value == 1)
         {
-            auto condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
             DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
+
+            const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
             if (condition_result_type->isNullable())
                 not_function_result_type = makeNullable(not_function_result_type);
 
@@ -123,23 +124,21 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNode(*function_node, "countIf");
+            resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
             return;
         }
     }
 
 private:
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
+    static inline void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
-        auto function_result_type = function_node.getResultType();
-        auto function_aggregate_function = function_node.getAggregateFunction();
-
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
-            function_aggregate_function->getArgumentTypes(),
-            function_aggregate_function->getParameters(),
+        auto aggregate_function = AggregateFunctionFactory::instance().get("countIf",
+            {argument_type},
+            function_node.getAggregateFunction()->getParameters(),
             properties);
 
+        auto function_result_type = function_node.getResultType();
         function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 
