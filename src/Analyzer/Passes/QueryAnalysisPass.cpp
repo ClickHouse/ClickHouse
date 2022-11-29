@@ -4063,6 +4063,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         in_subquery->getJoinTree() = exists_subquery_argument;
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
         in_subquery->resolveProjectionColumns({NameAndTypePair("1", constant_data_type)});
+        in_subquery->setIsSubquery(true);
 
         function_node_ptr = std::make_shared<FunctionNode>("in");
         function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
@@ -5455,25 +5456,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 }
             }
 
-            /// TODO: Special functions that can take query
-            /// TODO: Support qualified matchers for table function
-
-            for (auto & argument_node : table_function_node.getArguments().getNodes())
-            {
-                if (argument_node->getNodeType() == QueryTreeNodeType::MATCHER)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Matcher as table function argument is not supported {}. In scope {}",
-                        join_tree_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
-                }
-
-                auto * function_node = argument_node->as<FunctionNode>();
-                if (function_node && table_function_factory.hasNameOrAlias(function_node->getFunctionName()))
-                    continue;
-
-                resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
-            }
+            resolveExpressionNodeList(table_function_node.getArgumentsNode(), scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
             auto table_function_ast = table_function_node.toAST();
             table_function_ptr->parseArguments(table_function_ast, scope_context);
