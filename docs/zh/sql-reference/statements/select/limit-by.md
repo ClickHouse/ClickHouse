@@ -55,7 +55,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 
 与 `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` 返回相同的结果。
 
-以下查询返回每个`domain,device_type`组合的前5个refferrer，总计返回100行(`LIMIT n BY + LIMIT`)。
+以下查询返回每个`domain,device_type`组合的前5个refferrer，总计返回至多100行(`LIMIT n BY + LIMIT`)。
 
 ``` sql
 SELECT
