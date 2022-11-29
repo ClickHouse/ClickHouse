@@ -229,7 +229,7 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeMinuteNumImpl<ResultPrecision::Extended>>>)
             {
-                if (x_comp.time.second > y_comp.time.minute)
+                if (x_comp.time.second > y_comp.time.second)
                     --res;
             }
             return res;

@@ -45,7 +45,7 @@ SELECT age('minute', materialize(toDate('2017-12-31')), materialize(toDate('2018
 
 SELECT 'Case insensitive';
 
-SELECT DATEDIFF('year', today(), today() - INTERVAL 10 YEAR);
+SELECT age('year', today(), today() - INTERVAL 10 YEAR);
 
 SELECT 'Dependance of timezones';
 
