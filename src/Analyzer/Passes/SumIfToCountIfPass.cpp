@@ -80,6 +80,7 @@ public:
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
+        auto & cond_argument = nested_if_function_arguments_nodes[0];
         auto if_true_condition_constant_value = nested_if_function_arguments_nodes[1]->getConstantValueOrNull();
         auto if_false_condition_constant_value = nested_if_function_arguments_nodes[2]->getConstantValueOrNull();
 
@@ -106,8 +107,8 @@ public:
             return;
         }
 
-        /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))`.
-        if (if_true_condition_value == 0 && if_false_condition_value == 1)
+        /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+        if (if_true_condition_value == 0 && if_false_condition_value == 1 && !cond_argument->getResultType()->isNullable())
         {
             DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
 
