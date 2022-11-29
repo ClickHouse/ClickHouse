@@ -140,7 +140,7 @@ public:
          * when we add lots of column with same prefix. One counter for all
          * prefixes is good enough.
          */
-        int next_unique_suffix;
+        size_t next_unique_suffix;
 
         Data(
             ContextPtr context_,

@@ -67,14 +67,6 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     }
 }
 
-void DiskObjectStorageMetadata::createFromSingleObject(const std::string & relative_path, size_t bytes_size, size_t ref_count_, bool read_only_)
-{
-    storage_objects.emplace_back(relative_path, bytes_size);
-    total_size = bytes_size;
-    ref_count = ref_count_;
-    read_only = read_only_;
-}
-
 void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 {
     ReadBufferFromString buf(data);

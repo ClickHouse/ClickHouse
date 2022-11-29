@@ -230,14 +230,14 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
-        callback(data);
+        callback(*data);
         data->forEachSubcolumnRecursively(callback);
     }
 
@@ -282,7 +282,7 @@ public:
 
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
-    T getValue() const { return getField().safeGet<T>(); }
+    T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };

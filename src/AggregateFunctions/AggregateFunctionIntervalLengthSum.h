@@ -196,7 +196,7 @@ public:
         const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override

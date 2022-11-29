@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -15,6 +15,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
@@ -33,7 +34,6 @@ namespace Aws::S3::Model
 namespace DB
 {
 
-using ScheduleFunc = std::function<void(std::function<void()>)>;
 class WriteBufferFromFile;
 
 /**
@@ -50,10 +50,10 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {},
+        ThreadPoolCallbackRunner<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
@@ -88,7 +88,7 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::ReadWriteSettings s3_settings;
+    const S3Settings::RequestSettings request_settings;
     const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
@@ -106,12 +106,12 @@ private:
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters
-    const ScheduleFunc schedule;
+    const ThreadPoolCallbackRunner<void> schedule;
 
     std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
     std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
-    size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-    size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
 
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;

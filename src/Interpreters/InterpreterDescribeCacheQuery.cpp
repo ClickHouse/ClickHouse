@@ -31,7 +31,7 @@ static Block getSampleBlock()
 
 BlockIO InterpreterDescribeCacheQuery::execute()
 {
-    getContext()->checkAccess(AccessType::SHOW_CACHES);
+    getContext()->checkAccess(AccessType::SHOW_FILESYSTEM_CACHES);
 
     const auto & ast = query_ptr->as<ASTDescribeCacheQuery &>();
     Block sample_block = getSampleBlock();

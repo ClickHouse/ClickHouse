@@ -3,6 +3,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Common/checkStackSize.h>
+
 
 namespace DB
 {
@@ -71,6 +73,8 @@ void ApplyWithGlobalVisitor::visit(
 
 void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
+    checkStackSize();
+
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
         if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))

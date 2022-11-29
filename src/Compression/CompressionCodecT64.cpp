@@ -307,7 +307,19 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 template <typename T>
 void load(const char * src, T * buf, UInt32 tail = 64)
 {
-    memcpy(buf, src, tail * sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        memcpy(buf, src, tail * sizeof(T));
+    }
+    else
+    {
+        /// Since the algorithm uses little-endian integers, data is loaded
+        /// as little-endian types on big-endian machine (s390x, etc).
+        for (UInt32 i = 0; i < tail; ++i)
+        {
+            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
+        }
+    }
 }
 
 template <typename T>
@@ -538,7 +550,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 num_bits = getValuableBitsNumber(min, max);
     if (!num_bits)
     {
-        T min_value = min;
+        T min_value = static_cast<T>(min);
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
         return;
@@ -560,14 +572,14 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     T upper_max [[maybe_unused]] = 0;
     T sign_bit [[maybe_unused]] = 0;
     if (num_bits < 64)
-        upper_min = static_cast<UInt64>(min) >> num_bits << num_bits;
+        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
-            sign_bit = 1ull << (num_bits - 1);
-            upper_max = static_cast<UInt64>(max) >> num_bits << num_bits;
+            sign_bit = static_cast<T>(1ull << (num_bits - 1));
+            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
         }
     }
 

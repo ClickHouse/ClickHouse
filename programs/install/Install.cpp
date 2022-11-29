@@ -888,12 +888,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file)
+    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries)
     {
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            UInt64 pid;
+            Int32 pid;
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
@@ -927,7 +927,11 @@ namespace
             executable.string(), config.string(), pid_file.string());
 
         if (!user.empty())
-            command = fmt::format("clickhouse su '{}' {}", user, command);
+        {
+            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
+            /// that's why we are using it instead of the 'clickhouse su' tool.
+            command = fmt::format("sudo -u '{}' {}", user, command);
+        }
 
         fmt::print("Will run {}\n", command);
         executeScript(command, true);
@@ -935,8 +939,7 @@ namespace
         /// Wait to start.
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to start\n");
             if (fs::exists(pid_file))
@@ -947,7 +950,7 @@ namespace
             sleepForSeconds(1);
         }
 
-        if (try_num == num_tries)
+        if (try_num == max_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
 
@@ -978,9 +981,9 @@ namespace
         return 0;
     }
 
-    UInt64 isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file)
     {
-        UInt64 pid = 0;
+        int pid = 0;
 
         if (fs::exists(pid_file))
         {
@@ -1048,12 +1051,12 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file, bool force, bool do_not_kill)
+    int stop(const fs::path & pid_file, bool force, bool do_not_kill, unsigned max_tries)
     {
         if (force && do_not_kill)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
 
-        UInt64 pid = isRunning(pid_file);
+        int pid = isRunning(pid_file);
 
         if (!pid)
             return 0;
@@ -1067,8 +1070,7 @@ namespace
             throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
             if (!isRunning(pid_file))
@@ -1079,7 +1081,7 @@ namespace
             sleepForSeconds(1);
         }
 
-        if (try_num == num_tries)
+        if (try_num == max_tries)
         {
             if (do_not_kill)
             {
@@ -1132,6 +1134,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1149,8 +1152,9 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {
@@ -1171,6 +1175,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
             ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server to finish after sending TERM (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1187,7 +1192,8 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 
         bool force = options["force"].as<bool>();
         bool do_not_kill = options["do-not-kill"].as<bool>();
-        return stop(pid_file, force, do_not_kill);
+        unsigned max_tries = options["max-tries"].as<unsigned>();
+        return stop(pid_file, force, do_not_kill, max_tries);
     }
     catch (...)
     {
@@ -1246,6 +1252,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
             ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
             ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1266,10 +1273,11 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         bool force = options["force"].as<bool>();
         bool do_not_kill = options["do-not-kill"].as<bool>();
-        if (int res = stop(pid_file, force, do_not_kill))
-            return res;
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        if (int res = stop(pid_file, force, do_not_kill, max_tries))
+            return res;
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {

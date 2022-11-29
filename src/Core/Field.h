@@ -444,7 +444,9 @@ public:
     }
 
     template <typename T> auto & safeGet() const
-    { return const_cast<Field *>(this)->safeGet<T>(); }
+    {
+        return const_cast<Field *>(this)->safeGet<T>();
+    }
 
     template <typename T> auto & safeGet();
 
@@ -602,7 +604,7 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     String dump() const;

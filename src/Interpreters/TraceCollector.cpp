@@ -72,7 +72,7 @@ void TraceCollector::run()
         UInt8 query_id_size = 0;
         readBinary(query_id_size, in);
         query_id.resize(query_id_size);
-        in.read(query_id.data(), query_id_size);
+        in.readStrict(query_id.data(), query_id_size);
 
         UInt8 trace_size = 0;
         readIntBinary(trace_size, in);

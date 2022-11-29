@@ -12,7 +12,8 @@ public:
     explicit LoadedMergeTreeDataPartInfoForReader(MergeTreeData::DataPartPtr data_part_)
         : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
         , data_part(data_part_)
-    {}
+    {
+    }
 
     bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
@@ -22,7 +23,7 @@ public:
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
-    const DataPartStoragePtr & getDataPartStorage() const override { return data_part->data_part_storage; }
+    DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 

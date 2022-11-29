@@ -1,7 +1,7 @@
 # docker build -t clickhouse/style-test .
 FROM ubuntu:20.04
-ARG ACT_VERSION=0.2.25
-ARG ACTIONLINT_VERSION=1.6.8
+ARG ACT_VERSION=0.2.33
+ARG ACTIONLINT_VERSION=1.6.22
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"

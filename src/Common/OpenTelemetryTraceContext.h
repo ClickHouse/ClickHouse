@@ -7,6 +7,8 @@ namespace DB
 
 struct Settings;
 class OpenTelemetrySpanLog;
+class WriteBuffer;
+class ReadBuffer;
 
 namespace OpenTelemetry
 {
@@ -63,6 +65,9 @@ struct TracingContext
     {
         return trace_id != UUID();
     }
+
+    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf) const;
 };
 
 /// Tracing context kept on each thread
@@ -157,5 +162,16 @@ struct SpanHolder : public Span
 
 }
 
+inline WriteBuffer & operator<<(WriteBuffer & buf, const OpenTelemetry::TracingContext & context)
+{
+    context.serialize(buf);
+    return buf;
 }
 
+inline ReadBuffer & operator>> (ReadBuffer & buf, OpenTelemetry::TracingContext & context)
+{
+    context.deserialize(buf);
+    return buf;
+}
+
+}

@@ -37,7 +37,7 @@ def test_disks_app_func_ld(started_cluster):
     source = cluster.instances["disks_app_test"]
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "list-disks"]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "list-disks"]
     )
 
     disks = out.split("\n")
@@ -51,7 +51,7 @@ def test_disks_app_func_ls(started_cluster):
     init_data(source)
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test1", "list", "."]
     )
 
     files = out.split("\n")
@@ -62,7 +62,7 @@ def test_disks_app_func_ls(started_cluster):
         [
             "/usr/bin/clickhouse",
             "disks",
-            "--send-logs",
+            "--save-logs",
             "--disk",
             "test1",
             "list",
@@ -89,7 +89,7 @@ def test_disks_app_func_cp(started_cluster):
                 [
                     "/usr/bin/clickhouse",
                     "disks",
-                    "--send-logs",
+                    "--save-logs",
                     "--disk",
                     "test1",
                     "write",
@@ -114,10 +114,48 @@ def test_disks_app_func_cp(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test2", "list", "."]
     )
 
     assert "path1" in out
+
+    source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--disk",
+            "test2",
+            "remove",
+            "path1",
+        ]
+    )
+
+    source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--disk",
+            "test1",
+            "remove",
+            "path1",
+        ]
+    )
+
+    # alesapin: Why we need list one more time?
+    # kssenii: it is an assertion that the file is indeed deleted
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test2", "list", "."]
+    )
+
+    assert "path1" not in out
+
+    out = source.exec_in_container(
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test1", "list", "."]
+    )
+
+    assert "path1" not in out
 
 
 def test_disks_app_func_ln(started_cluster):
@@ -136,7 +174,7 @@ def test_disks_app_func_ln(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "list", "data/default/"]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "list", "data/default/"]
     )
 
     files = out.split("\n")
@@ -158,7 +196,7 @@ def test_disks_app_func_rm(started_cluster):
                 [
                     "/usr/bin/clickhouse",
                     "disks",
-                    "--send-logs",
+                    "--save-logs",
                     "--disk",
                     "test2",
                     "write",
@@ -169,7 +207,7 @@ def test_disks_app_func_rm(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test2", "list", "."]
     )
 
     assert "path3" in out
@@ -178,7 +216,7 @@ def test_disks_app_func_rm(started_cluster):
         [
             "/usr/bin/clickhouse",
             "disks",
-            "--send-logs",
+            "--save-logs",
             "--disk",
             "test2",
             "remove",
@@ -187,7 +225,7 @@ def test_disks_app_func_rm(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test2", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test2", "list", "."]
     )
 
     assert "path3" not in out
@@ -199,7 +237,7 @@ def test_disks_app_func_mv(started_cluster):
     init_data(source)
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test1", "list", "."]
     )
 
     files = out.split("\n")
@@ -219,7 +257,7 @@ def test_disks_app_func_mv(started_cluster):
     )
 
     out = source.exec_in_container(
-        ["/usr/bin/clickhouse", "disks", "--send-logs", "--disk", "test1", "list", "."]
+        ["/usr/bin/clickhouse", "disks", "--save-logs", "--disk", "test1", "list", "."]
     )
 
     files = out.split("\n")
@@ -239,7 +277,7 @@ def test_disks_app_func_read_write(started_cluster):
                 [
                     "/usr/bin/clickhouse",
                     "disks",
-                    "--send-logs",
+                    "--save-logs",
                     "--disk",
                     "test1",
                     "write",
@@ -253,7 +291,7 @@ def test_disks_app_func_read_write(started_cluster):
         [
             "/usr/bin/clickhouse",
             "disks",
-            "--send-logs",
+            "--save-logs",
             "--disk",
             "test1",
             "read",

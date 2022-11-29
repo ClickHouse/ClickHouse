@@ -148,7 +148,7 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
     size_t data_hash = element_hash.getData()[0];
 
     for (auto & value : hash.getData())
-        value = intHashCRC32(data_hash, value);
+        value = static_cast<UInt32>(intHashCRC32(data_hash, value));
 }
 
 void ColumnConst::compareColumn(

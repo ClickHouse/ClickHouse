@@ -81,7 +81,7 @@ Pipe StoragePostgreSQL::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names_);
 

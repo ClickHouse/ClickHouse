@@ -124,7 +124,7 @@ namespace DB
                 return "none";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     QueryPipeline RedisDictionarySource::loadAll()

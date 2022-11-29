@@ -219,10 +219,6 @@ cutFragment
 cutIPv6
 cutQueryString
 cutQueryStringAndFragment
-cutToFirstSignificantSubdomain
-cutToFirstSignificantSubdomainCustom
-cutToFirstSignificantSubdomainCustomWithWWW
-cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 dateDiff
@@ -280,8 +276,6 @@ dictGetUUIDOrDefault
 dictHas
 dictIsIn
 divide
-domain
-domainWithoutWWW
 dotProduct
 dumpColumnStructure
 e
@@ -328,10 +322,10 @@ farmHash64
 file
 filesystemAvailable
 filesystemCapacity
-filesystemFree
+filesystemUnreserved
 finalizeAggregation
-firstSignificantSubdomain
 firstSignificantSubdomainCustom
+firstSignificantSubdomainCustomRFC
 flattenTuple
 floor
 format
@@ -592,7 +586,6 @@ polygonsUnionCartesian
 polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
-port
 position
 positionCaseInsensitive
 positionCaseInsensitiveUTF8
@@ -897,7 +890,6 @@ toYear
 toYearWeek
 today
 tokens
-topLevelDomain
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
@@ -908,6 +900,7 @@ trimBoth
 trimLeft
 trimRight
 trunc
+tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart

@@ -38,7 +38,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
             if (depths.size() < array_num && prev_array_depth)
                 depths.emplace_back(prev_array_depth);
 
-            prev_array_depth = type_array->getNumberOfDimensions();
+            prev_array_depth = static_cast<DepthType>(type_array->getNumberOfDimensions());
             ++array_num;
         }
         else
@@ -55,7 +55,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
 
                 if (i == 0)
                 {
-                    clear_depth = value;
+                    clear_depth = static_cast<DepthType>(value);
                 }
                 else
                 {

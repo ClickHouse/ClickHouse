@@ -61,13 +61,16 @@ public:
     using ReadCallback = std::function<void()>;
 
     /** Fast reading data from buffer and save result to memory.
-      * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
+      * Reads at least `min_bytes` and some more until the end of the chunk, depends on the format.
+      * If `max_rows` is non-zero the function also stops after reading the `max_rows` number of rows
+      * (even if the `min_bytes` boundary isn't reached yet).
       * Used in ParallelParsingInputFormat.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<Allocator<false>> & memory,
-        size_t min_chunk_bytes)>;
+        size_t min_bytes,
+        size_t max_rows)>;
 
     /// This callback allows to perform some additional actions after writing a single row.
     /// It's initial purpose was to flush Kafka message for each row.

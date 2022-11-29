@@ -563,8 +563,11 @@ public:
         }
     }
 
-    void add(UInt64 x)
+    template <typename T>
+    void add(T x_)
     {
+        UInt64 x = static_cast<UInt64>(x_);
+
         if (tiny.count < TINY_MAX_ELEMS)
         {
             tiny.insert(x);
@@ -589,8 +592,11 @@ public:
         }
     }
 
-    void add(UInt64 x, size_t weight)
+    template <typename T>
+    void add(T x_, size_t weight)
     {
+        UInt64 x = static_cast<UInt64>(x_);
+
         /// NOTE: First condition is to avoid overflow.
         if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
         {

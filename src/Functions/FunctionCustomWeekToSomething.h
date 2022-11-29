@@ -45,9 +45,9 @@ public:
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         else
-            throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), this->getName());
     }
 
 };
