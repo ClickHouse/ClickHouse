@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 /** Union node represents union of queries in query tree.
   * Union node must be initialized with normalized union mode.
   *
