@@ -32,4 +32,7 @@ SELECT sum(x), count(x), avg(x) FROM (SELECT number :: Decimal32(0) AS x FROM nu
 SELECT sum(x), count(x), avg(x), toTypeName(sum(x)), toTypeName(count(x)), toTypeName(avg(x)) FROM (SELECT number :: Decimal32(0) AS x FROM numbers(10)) SETTINGS optimize_syntax_fuse_functions = 0;
 SELECT sum(x), count(x), avg(x), toTypeName(sum(x)), toTypeName(count(x)), toTypeName(avg(x)) FROM (SELECT number :: Decimal32(0) AS x FROM numbers(10));
 
+-- TODO: uncomment after https://github.com/ClickHouse/ClickHouse/pull/43372
+-- SELECT avg(b), x - 2 AS b FROM (SELECT number as x FROM numbers(1)) GROUP BY x;
+
 DROP TABLE fuse_tbl;
