@@ -304,9 +304,8 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
     auto join_expression = join_node.getJoinExpression();
     auto * constant_join_expression = join_expression->as<ConstantNode>();
 
-    if (constant_join_expression && constant_join_expression->hasSourceExpression()) {
+    if (constant_join_expression && constant_join_expression->hasSourceExpression())
         join_expression = constant_join_expression->getSourceExpression();
-    }
 
     auto * function_node = join_expression->as<FunctionNode>();
     if (!function_node)

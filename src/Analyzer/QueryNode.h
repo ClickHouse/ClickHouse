@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 /** Query node represents query in query tree.
   *
   * Example: SELECT * FROM test_table WHERE id == 0;
