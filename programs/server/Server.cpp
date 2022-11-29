@@ -1505,6 +1505,11 @@ try
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+    /// A cache for query results.
+    size_t query_result_cache_size = config().getUInt64("query_result_cache_size", settings.query_result_cache_size);
+    if (query_result_cache_size)
+        global_context->setQueryResultCache(query_result_cache_size);
+
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;

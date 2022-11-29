@@ -21,6 +21,7 @@ Additional cache types:
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
+- [(Experimental) Query result cache](query-result-cache.md).
 
 Indirectly used:
 

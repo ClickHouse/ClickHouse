@@ -665,6 +665,13 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
+    M(Bool, experimental_query_result_cache_active_usage, false, "Store results of SELECT queries in the query result cache", 0) \
+    M(Bool, experimental_query_result_cache_passive_usage, false, "Lookup results of SELECT queries in the query result cache", 0) \
+    M(UInt64, query_result_cache_size, (1ull << 30), "Maximum size of the query result cache in bytes. 0 means disabled.", 0) \
+    M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
+    M(UInt64, query_result_cache_max_entry_size, (1ull << 20), "Maximum size in bytes of SELECT query results to be saved in the query result cache", 0) \
+    M(Seconds, query_result_cache_keep_seconds_alive, 60, "After this time in seconds entries in the query result cache become stale", 0) \
+    M(String, query_result_cache_partition_key, "", "Represents a partition of the query result cache", 0) \
     M(UInt64, insert_keeper_max_retries, 0, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
