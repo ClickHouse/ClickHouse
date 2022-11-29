@@ -44,10 +44,11 @@ public:
      */
     size_t tryWrite(const char * data, size_t size, size_t offset, FileSegmentKind segment_kind = FileSegmentKind::Regular, bool strict = false);
 
-    /// Same as `write`, but doesn't write anything, just reserves some space in cache
+    /// Same as `write/tryWrite`, but doesn't write anything, just reserves some space in cache
     bool reserve(size_t size, size_t offset);
+    size_t tryReserve(size_t size, size_t offset);
 
-    void finalize(bool clear = false);
+    void finalize();
 
     size_t currentOffset() const { return current_file_segment_write_offset; }
 
