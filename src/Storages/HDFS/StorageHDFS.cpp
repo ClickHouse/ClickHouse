@@ -461,7 +461,6 @@ public:
     {
         std::lock_guard lock(cancel_mutex);
         finalize();
-        finalize();
         cancelled = true;
     }
 
