@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -83,16 +84,7 @@ void KeeperDispatcher::requestThread()
                 {
                     current_batch.emplace_back(request);
 
-                    bool quick_batch_done = false;
-                    size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    /// Waiting until previous append will be successful, or batch is big enough
-                    /// has_result == false && get_result_code == OK means that our request still not processed.
-                    /// Sometimes NuRaft set errorcode without setting result, so we check both here.
-                    /// Regardless of the status of previous request, if we have enough requests in queue, we will try
-                    /// to batch at least max_quick_batch_size of them.
-                    while ((!quick_batch_done && current_batch.size() < max_quick_batch_size)
-                           || (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK)
-                               && current_batch.size() <= max_batch_size))
+                    const auto try_get_request = [&]
                     {
                         /// Trying to get batch requests as fast as possible
                         if (requests_queue->tryPop(request))
@@ -100,22 +92,32 @@ void KeeperDispatcher::requestThread()
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
-                            {
                                 has_read_request = true;
-                                break;
-                            }
                             else
-                            {
                                 current_batch.emplace_back(request);
-                            }
-                        }
-                        else
-                        {
-                            quick_batch_done = true;
+
+                            return true;
                         }
 
-                        if (shutdown_called)
-                            break;
+                        return false;
+                    };
+
+                    /// If we have enough requests in queue, we will try to batch at least max_quick_batch_size of them.
+                    size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
+                    while (!shutdown_called && !has_read_request && current_batch.size() < max_quick_batch_size && try_get_request())
+                        ;
+
+                    const auto prev_result_done = [&]
+                    {
+                        /// has_result == false && get_result_code == OK means that our request still not processed.
+                        /// Sometimes NuRaft set errorcode without setting result, so we check both here.
+                        return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK;
+                    };
+
+                    /// Waiting until previous append will be successful, or batch is big enough
+                    while (!shutdown_called && !has_read_request && !prev_result_done() && current_batch.size() <= max_batch_size)
+                    {
+                        try_get_request();
                     }
                 }
                 else
