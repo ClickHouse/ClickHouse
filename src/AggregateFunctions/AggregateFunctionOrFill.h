@@ -4,7 +4,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

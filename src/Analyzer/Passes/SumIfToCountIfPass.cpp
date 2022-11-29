@@ -13,7 +13,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include "Core/ColumnsWithTypeAndName.h"
 
 namespace DB
 {

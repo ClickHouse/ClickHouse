@@ -6,7 +6,7 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/ConstantValue.h>
 #include <Common/typeid_cast.h>
-#include "Core/ColumnsWithTypeAndName.h"
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {

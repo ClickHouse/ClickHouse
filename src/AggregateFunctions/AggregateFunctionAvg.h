@@ -10,10 +10,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/IResolvedFunction.h>
 
-#include "Core/IResolvedFunction.h"
-#include "DataTypes/IDataType.h"
-#include "DataTypes/Serializations/ISerialization.h"
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
