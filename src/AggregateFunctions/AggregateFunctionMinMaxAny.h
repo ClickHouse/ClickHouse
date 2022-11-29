@@ -1219,7 +1219,7 @@ private:
 
 public:
     explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {}, createResultType())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {}, createResultType(type))
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
@@ -1233,12 +1233,11 @@ public:
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr createResultType() const
+    static DataTypePtr createResultType(const DataTypePtr & type_)
     {
-        auto result_type = this->argument_types.at(0);
         if constexpr (Data::is_nullable)
-            return makeNullable(result_type);
-        return result_type;
+            return makeNullable(type_);
+        return type_;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
