@@ -730,7 +730,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
-                    String intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
+                    String intermediate_name;
+                    /// Possibly we failed to rename it on previous iteration
+                    /// And this table was already renamed to an intermediate name
+                    if (startsWith(name, ".rename-"))
+                        intermediate_name = name;
+                    else
+                        intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
                     replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
@@ -874,8 +880,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
     for (auto & [from, intermediate, _] : replicated_tables_to_rename)
+    {
+        /// Due to some unknown failured there could be tables
+        /// which are already in an intermediate state
+        /// For them we skip the first stage
+        if (from == intermediate)
+            continue;
         rename_table(from, intermediate);
-
+    }
     LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermediate to desired names");
     for (auto & [_, intermediate, to] : replicated_tables_to_rename)
         rename_table(intermediate, to);
