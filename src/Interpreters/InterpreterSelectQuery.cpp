@@ -500,7 +500,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
 
-    if (!query.final() && context->getSettingsRef().force_select_final)
+    if (context->getSettingsRef().force_select_final && !query.final() && query.tables())
     {
         query.setFinal();
     }
