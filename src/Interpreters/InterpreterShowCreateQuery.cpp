@@ -92,9 +92,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
-    WriteBufferFromOwnString buf;
-    formatAST(*create_query, buf, false, false);
-    String res = buf.str();
+    String res = create_query->formatWithSecretsHidden(/* max_length= */ 0, /* one_line= */ false);
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);

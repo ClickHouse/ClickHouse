@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/bit_cast.h>
 #include <base/sort.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -104,13 +103,13 @@ private:
     /// Take the most significant 16 bits of the floating point number.
     BFloat16 toBFloat16(const Value & x) const
     {
-        return bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
+        return std::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16;
     }
 
     /// Put the bits into most significant 16 bits of the floating point number and fill other bits with zeros.
     Float32 toFloat32(const BFloat16 & x) const
     {
-        return bit_cast<Float32>(x << 16);
+        return std::bit_cast<Float32>(x << 16);
     }
 
     using Pair = PairNoInit<Float32, Weight>;

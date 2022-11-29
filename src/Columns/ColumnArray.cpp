@@ -524,11 +524,13 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
+    Offsets & cur_offsets = getOffsets();
+    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
+    cur_offsets.reserve(cur_offsets.size() + length);
+
     getData().insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
-    Offsets & cur_offsets = getOffsets();
     const Offsets & src_offsets = src_concrete.getOffsets();
-
     if (start == 0 && cur_offsets.empty())
     {
         cur_offsets.assign(src_offsets.begin(), src_offsets.begin() + length);
