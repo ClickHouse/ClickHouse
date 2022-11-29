@@ -883,7 +883,10 @@ namespace S3
         }
         else if (throw_on_error)
         {
-            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            const auto & error = outcome.GetError();
+            throw DB::Exception(ErrorCodes::S3_ERROR,
+                "Failed to HEAD object: {}. HTTP response code: {}",
+                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
     }

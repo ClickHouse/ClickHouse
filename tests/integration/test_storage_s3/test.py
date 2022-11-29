@@ -806,7 +806,7 @@ def test_custom_auth_headers_exclusion(started_cluster):
         print(result)
 
     assert ei.value.returncode == 243
-    assert "Forbidden Error" in ei.value.stderr
+    assert "HTTP response code: 403" in ei.value.stderr
 
 
 def test_infinite_redirect(started_cluster):
