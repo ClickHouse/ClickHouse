@@ -500,6 +500,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
 
+    // query.tables() is required because not all queries have tables in it, it could be a function.
     if (context->getSettingsRef().force_select_final && !query.final() && query.tables())
     {
         query.setFinal();
