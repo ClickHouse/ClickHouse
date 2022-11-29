@@ -239,6 +239,11 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
+    bool hasTrivialDestructor() const override
+    {
+        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
+    }
+
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
         this->data(place).~Data();

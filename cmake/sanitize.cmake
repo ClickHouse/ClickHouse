@@ -16,7 +16,9 @@ endmacro()
 
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
-        set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
+        # LLVM-15 has a bug in Address Sanitizer, preventing the usage of 'sanitize-address-use-after-scope',
+        # see https://github.com/llvm/llvm-project/issues/58633
+        set (ASAN_FLAGS "-fsanitize=address -fno-sanitize-address-use-after-scope")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
 
