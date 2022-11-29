@@ -60,10 +60,10 @@ client_pid=$!
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH plaintext_password BY ''" 2>&1 | grep -qF \
     "DB::Exception: Invalid password. The password should: be at least 12 characters long, contain at least 1 numeric character, contain at least 1 lowercase character, contain at least 1 uppercase character, contain at least 1 special character" && echo 'OK' || echo 'FAIL' ||:
 
-$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH plaintext_password BY '000000000000'" 2>&1 | grep -qF \
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH sha256_password BY '000000000000'" 2>&1 | grep -qF \
     "DB::Exception: Invalid password. The password should: contain at least 1 lowercase character, contain at least 1 uppercase character, contain at least 1 special character" && echo 'OK' || echo 'FAIL' ||:
 
-$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH plaintext_password BY 'a00000000000'" 2>&1 | grep -qF \
+$CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH double_sha1_password BY 'a00000000000'" 2>&1 | grep -qF \
     "DB::Exception: Invalid password. The password should: contain at least 1 uppercase character, contain at least 1 special character" && echo 'OK' || echo 'FAIL' ||:
 
 $CLICKHOUSE_CLIENT_BINARY --host 127.1 --port "$server_port" -q "CREATE USER u_2474 IDENTIFIED WITH plaintext_password BY 'aA0000000000'" 2>&1 | grep -qF \
