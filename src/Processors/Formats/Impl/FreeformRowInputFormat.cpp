@@ -64,9 +64,9 @@ static size_t scoreForRule(const FormatSettings::EscapingRule & rule)
     switch (rule)
     {
         case FormatSettings::EscapingRule::JSON:
-            [[fallthrough]];
-        case FormatSettings::EscapingRule::CSV:
             return 3;
+        case FormatSettings::EscapingRule::CSV:
+            [[fallthrough]];
         case FormatSettings::EscapingRule::Quoted:
             return 2;
         case FormatSettings::EscapingRule::Escaped:
@@ -253,7 +253,16 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
     if (solutions.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution.");
 
-    ::sort(solutions.begin(), solutions.end(), [](const Solution & first, const Solution & second) { return first.score > second.score; });
+    ::sort(
+        solutions.begin(),
+        solutions.end(),
+        [](const Solution & first, const Solution & second)
+        {
+            if (first.score != second.score)
+                return first.score > second.score;
+
+            return first.matchers_order.size() > second.matchers_order.size();
+        });
 
     // after finding and ranking the solutions, we now run them through max_rows_to_check and pick the first one that works for all rows
     String tmp;

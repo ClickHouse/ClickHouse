@@ -18,7 +18,7 @@ public:
 
     virtual String getName() const = 0;
     virtual void parseField(String & s, ReadBuffer & in) const = 0;
-    DataTypePtr getDataTypeFromField(String & s) const { return determineDataTypeByEscapingRule(s, settings, rule); }
+    DataTypePtr getDataTypeFromField(String & s) const { return tryInferDataTypeByEscapingRule(s, settings, rule); }
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
 
     virtual ~FieldMatcher() = default;
