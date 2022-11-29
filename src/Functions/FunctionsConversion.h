@@ -1315,6 +1315,7 @@ struct ConvertThroughParsing
                     }
                     else
                     {
+                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
                         do
                         {
                             if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
@@ -1327,7 +1328,7 @@ struct ConvertThroughParsing
                             }
 
                             parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
-                        } while(false);
+                        } while (false);
                     }
                 }
 
@@ -1383,6 +1384,7 @@ struct ConvertThroughParsing
                     }
                     else
                     {
+                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
                         do
                         {
                             if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
@@ -1396,7 +1398,7 @@ struct ConvertThroughParsing
                             }
 
                             parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
-                        } while(false);
+                        } while (false);
                     }
                 }
 

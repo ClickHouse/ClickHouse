@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 #include <utility>
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -61,11 +62,11 @@ inline const char * parseIPv4(const char * src, const char * src_end, unsigned c
         ++src;
     }
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    reverseMemcpy(dst, &result, sizeof(result));
-#else
-    memcpy(dst, &result, sizeof(result));
-#endif
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(dst, &result, sizeof(result));
+    else
+        reverseMemcpy(dst, &result, sizeof(result));
+
     return src - 1;
 }
 
