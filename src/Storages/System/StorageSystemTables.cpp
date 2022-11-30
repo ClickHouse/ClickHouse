@@ -103,13 +103,23 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
 }
 
 /// Avoid heavy operation on tables if we only queried columns that we can get without table object.
-/// Otherwise it will require table initialization for Lazy database.
-static bool needLockStructure(const DatabasePtr & database, const Block & header)
+static bool needLockStructure(const Block & header)
 {
-    if (database->getEngineName() != "Lazy")
-        return true;
-
-    static const std::set<std::string> columns_without_lock = { "database", "name", "uuid", "metadata_modification_time" };
+    static const std::set<std::string> columns_without_lock
+        = {"database",
+           "name",
+           "uuid",
+           "is_temporary",
+           "metadata_path",
+           "metadata_modification_time",
+           "dependencies_database",
+           "dependencies_table",
+           "create_table_query",
+           "engine_full",
+           "loading_dependencies_database",
+           "loading_dependencies_table",
+           "loading_dependent_database",
+           "loading_dependent_table"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
         if (columns_without_lock.find(column.name) == columns_without_lock.end())
@@ -275,7 +285,7 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
 
-            const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
+            const bool need_lock_structure = needLockStructure(getPort().getHeader());
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
