@@ -267,9 +267,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
         if (!trailing_newline_found)
             in >> "\n";
-
-        in >> "cleanup: " >> cleanup;
         trailing_newline_found = false;
+
+        if (checkString("cleanup: ", in))
+            in >> cleanup;
     }
     else if (type_str == "drop" || type_str == "detach")
     {
