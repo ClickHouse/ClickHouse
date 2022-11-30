@@ -1,4 +1,3 @@
-#include "RegExpTreeDictionary.h"
 
 #include <optional>
 #include <string_view>
@@ -15,11 +14,13 @@
 #include <Functions/Regexps.h>
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 
-#include "config_dictionaries.h"
+#include "base/types.h"
+#include "config.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -194,7 +195,7 @@ void RegExpTreeDictionary::setAttributeValue(Attribute & attribute, const UInt64
         }
         else
         {
-            container[key] = attribute_value;
+            container[key] = static_cast<ValueType>(attribute_value);
         }
     };
 
@@ -261,10 +262,10 @@ std::unordered_set<UInt64> RegExpTreeDictionary::matchSearchAllIndices(const std
 #if USE_VECTORSCAN
     std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
 
-    const auto & hyperscan_regex = MultiRegexps::get<true, false>(regexps_views, std::nullopt);
+    const auto & hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
 
     hs_scratch_t * scratch = nullptr;
-    hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
+    hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
 
     if (err != HS_SUCCESS)
     {
@@ -284,7 +285,7 @@ std::unordered_set<UInt64> RegExpTreeDictionary::matchSearchAllIndices(const std
         return 0;
     };
 
-    err = hs_scan(hyperscan_regex->getDB(), key.c_str(), key.size(), 0, smart_scratch.get(), on_match, &matches);
+    err = hs_scan(hyperscan_regex->get()->getDB(), key.c_str(), static_cast<UInt32>(key.size()), 0, smart_scratch.get(), on_match, &matches);
 
     if (err != HS_SUCCESS)
     {
@@ -392,7 +393,7 @@ std::string format(const std::string & pattern, const std::vector<std::string> &
         fmt_arguments.push_back(fmt::detail::make_arg<context>(argument));
     }
 
-    return fmt::vformat(pattern, fmt::basic_format_args<context>(fmt_arguments.data(), fmt_arguments.size()));
+    return fmt::vformat(pattern, fmt::basic_format_args<context>(fmt_arguments.data(), static_cast<int>(fmt_arguments.size())));
 }
 
 std::string formatMatches(const std::string & key, const std::string & regexp_pattern, const std::string & pattern)

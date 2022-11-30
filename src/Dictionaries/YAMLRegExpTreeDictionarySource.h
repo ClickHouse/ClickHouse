@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <Common/config.h>
+
+#include "config.h"
 
 #if USE_YAML_CPP
 
