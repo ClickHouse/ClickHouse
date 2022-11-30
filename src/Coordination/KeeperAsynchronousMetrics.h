@@ -13,10 +13,10 @@ class KeeperAsynchronousMetrics : public AsynchronousMetrics
 {
 public:
     KeeperAsynchronousMetrics(
-        const TinyContext & tiny_context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        TinyContextPtr tiny_context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
 private:
-    const TinyContext & tiny_context;
+    TinyContextPtr tiny_context;
 
     void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
 };
