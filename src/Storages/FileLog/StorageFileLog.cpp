@@ -112,8 +112,6 @@ void StorageFileLog::loadMetaFiles(bool attach)
     /// Attach table
     if (attach)
     {
-        const auto & storage = getStorageID();
-
         /// Meta file may lost, log and create directory
         if (!disk->exists(metadata_base_path))
         {
@@ -492,17 +490,17 @@ void StorageFileLog::storeMetas(size_t start, size_t end)
     }
 }
 
-void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset)
+void StorageFileLog::checkOffsetIsValid(const String & full_name, UInt64 offset) const
 {
-    ReadBufferFromFile in(full_name);
+    auto in = disk->readFile(full_name);
     UInt64 _, last_written_pos;
 
-    if (!tryReadIntText(_, in))
+    if (!tryReadIntText(_, *in))
     {
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
-    assertChar('\n', in);
-    if (!tryReadIntText(last_written_pos, in))
+    assertChar('\n', *in);
+    if (!tryReadIntText(last_written_pos, *in))
     {
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_name);
     }
