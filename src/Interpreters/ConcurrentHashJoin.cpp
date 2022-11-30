@@ -161,15 +161,12 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-std::shared_ptr<NotJoinedBlocks> ConcurrentHashJoin::getNonJoinedBlocks(
+IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
-    if (table_join->strictness() == JoinStrictness::Asof ||
-        table_join->strictness() == JoinStrictness::Semi ||
-        !isRightOrFull(table_join->kind()))
-    {
+    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
-    }
+
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
@@ -204,6 +201,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
 
 Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
+    /// TODO: use JoinCommon::scatterBlockByHash
     size_t num_shards = hash_joins.size();
     size_t num_cols = from_block.columns();
 
