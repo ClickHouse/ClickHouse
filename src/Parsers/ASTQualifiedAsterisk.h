@@ -18,11 +18,10 @@ public:
     {
         auto clone = std::make_shared<ASTQualifiedAsterisk>(*this);
 
-        clone->qualifier = qualifier->clone();
-        clone->transformers = transformers->clone();
+        if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
+        clone->qualifier = qualifier->clone();
         clone->children.push_back(clone->qualifier);
-        clone->children.push_back(clone->transformers);
 
         return clone;
     }

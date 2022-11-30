@@ -16,11 +16,9 @@ void ASTQualifiedAsterisk::formatImpl(const FormatSettings & settings, FormatSta
     qualifier->formatImpl(settings, state, frame);
     settings.ostr << ".*";
 
-    /// Format column transformers
-    for (const auto & child : transformers->children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->formatImpl(settings, state, frame);
     }
 }
 

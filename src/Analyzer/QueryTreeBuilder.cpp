@@ -809,6 +809,9 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
 {
     ColumnTransformersNodes column_transformers;
 
+    if (!matcher_expression)
+        return column_transformers;
+
     for (const auto & child : matcher_expression->children)
     {
         if (auto * apply_transformer = child->as<ASTColumnsApplyTransformer>())

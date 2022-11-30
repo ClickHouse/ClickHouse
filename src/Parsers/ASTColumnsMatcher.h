@@ -46,7 +46,6 @@ public:
     String getID(char) const override { return "ColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     ASTPtr expression;
     ASTPtr column_list;
@@ -85,7 +84,6 @@ public:
     String getID(char) const override { return "QualifiedColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     ASTPtr qualifier;
     ASTPtr column_list;

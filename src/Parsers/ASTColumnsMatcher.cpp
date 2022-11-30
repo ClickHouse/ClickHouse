@@ -20,9 +20,7 @@ ASTPtr ASTColumnsRegexpMatcher::clone() const
     auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
-
-    clone->transformers = transformers->clone();
-    clone->children.push_back(clone->transformers);
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     return clone;
 }
@@ -60,11 +58,9 @@ void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, Format
     settings.ostr << quoteString(original_pattern);
     settings.ostr << ")";
 
-    /// Format column transformers
-    for (const auto & child : transformers->children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->formatImpl(settings, state, frame);
     }
 }
 
@@ -98,20 +94,12 @@ ASTPtr ASTColumnsListMatcher::clone() const
     auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     clone->column_list = column_list->clone();
-    clone->transformers = transformers->clone();
-
     clone->children.push_back(clone->column_list);
-    clone->children.push_back(clone->transformers);
 
     return clone;
-}
-
-void ASTColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
-{
-    column_list->updateTreeHash(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
@@ -154,11 +142,9 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
     }
     settings.ostr << ")";
 
-    /// Format column transformers
-    for (const auto & child : transformers->children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->formatImpl(settings, state, frame);
     }
 }
 
@@ -166,11 +152,10 @@ ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
 
-    clone->qualifier = qualifier->clone();
-    clone->transformers = transformers->clone();
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
+    clone->qualifier = qualifier->clone();
     clone->children.push_back(clone->qualifier);
-    clone->children.push_back(clone->transformers);
 
     return clone;
 }
@@ -224,11 +209,9 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & setting
     settings.ostr << quoteString(original_pattern);
     settings.ostr << ")";
 
-    /// Format column transformers
-    for (const auto & child : transformers->children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->formatImpl(settings, state, frame);
     }
 }
 
@@ -236,13 +219,13 @@ ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
 
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
     clone->qualifier = qualifier->clone();
     clone->column_list = column_list->clone();
-    clone->transformers = transformers->clone();
 
     clone->children.push_back(clone->qualifier);
     clone->children.push_back(clone->column_list);
-    clone->children.push_back(clone->transformers);
 
     return clone;
 }
@@ -262,12 +245,6 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
-{
-    column_list->updateTreeHash(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
 void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
@@ -283,11 +260,9 @@ void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings,
     }
     settings.ostr << ")";
 
-    /// Format column transformers
-    for (const auto & child : transformers->children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->formatImpl(settings, state, frame);
     }
 }
 

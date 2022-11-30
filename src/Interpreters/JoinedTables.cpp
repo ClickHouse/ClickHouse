@@ -96,12 +96,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
 
             auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
             new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-
-            auto asterisk = std::make_shared<ASTAsterisk>();
-            asterisk->transformers = std::make_shared<ASTExpressionList>();
-            asterisk->children.push_back(asterisk->transformers);
-            new_select->select()->children.push_back(std::move(asterisk));
-
+            addASTChildren<ASTAsterisk>(*new_select->select());
             new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
 
             auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());

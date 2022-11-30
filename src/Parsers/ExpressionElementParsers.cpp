@@ -80,12 +80,7 @@ static ASTPtr buildSelectFromTableFunction(const std::shared_ptr<ASTFunction> & 
     {
         auto select_ast = std::make_shared<ASTSelectQuery>();
         select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-
-        auto asterisk = std::make_shared<ASTAsterisk>();
-        asterisk->transformers = std::make_shared<ASTExpressionList>();
-        asterisk->children.push_back(asterisk->transformers);
-
-        select_ast->select()->children.push_back(std::move(asterisk));
+        select_ast->select()->children.push_back(std::make_shared<ASTAsterisk>());
 
         auto list_of_selects = std::make_shared<ASTExpressionList>();
         list_of_selects->children.push_back(select_ast);
@@ -1553,7 +1548,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
-        auto transformers = std::make_shared<ASTExpressionList>();
+        auto transformers = std::make_shared<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
@@ -1561,8 +1556,11 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             transformers->children.push_back(transformer);
         }
 
-        asterisk->transformers = std::move(transformers);
-        asterisk->children.push_back(asterisk->transformers);
+        if (!transformers->children.empty())
+        {
+            asterisk->transformers = std::move(transformers);
+            asterisk->children.push_back(asterisk->transformers);
+        }
 
         node = std::move(asterisk);
         return true;
@@ -1585,7 +1583,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     auto res = std::make_shared<ASTQualifiedAsterisk>();
-    auto transformers = std::make_shared<ASTExpressionList>();
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
@@ -1594,9 +1592,13 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     }
 
     res->qualifier = std::move(node);
-    res->transformers = std::move(transformers);
     res->children.push_back(res->qualifier);
-    res->children.push_back(res->transformers);
+
+    if (!transformers->children.empty())
+    {
+        res->transformers = std::move(transformers);
+        res->children.push_back(res->transformers);
+    }
 
     node = std::move(res);
     return true;
@@ -1621,7 +1623,7 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
         return false;
     ++pos;
 
-    auto transformers = std::make_shared<ASTExpressionList>();
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p(allowed_transformers);
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
@@ -1635,9 +1637,13 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
         auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
 
         list_matcher->column_list = std::move(column_list);
-        list_matcher->transformers = std::move(transformers);
         list_matcher->children.push_back(list_matcher->column_list);
-        list_matcher->children.push_back(list_matcher->transformers);
+
+        if (!transformers->children.empty())
+        {
+            list_matcher->transformers = std::move(transformers);
+            list_matcher->children.push_back(list_matcher->transformers);
+        }
 
         node = std::move(list_matcher);
     }
@@ -1646,8 +1652,11 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
         auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
         regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
 
-        regexp_matcher->transformers = std::move(transformers);
-        regexp_matcher->children.push_back(regexp_matcher->transformers);
+        if (!transformers->children.empty())
+        {
+            regexp_matcher->transformers = std::move(transformers);
+            regexp_matcher->children.push_back(regexp_matcher->transformers);
+        }
 
         node = std::move(regexp_matcher);
     }
@@ -1689,11 +1698,15 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
         auto result = std::make_shared<ASTQualifiedColumnsListMatcher>();
         result->qualifier = std::move(identifier_node);
         result->column_list = std::move(columns_list_matcher->column_list);
-        result->transformers = std::move(columns_list_matcher->transformers);
 
         result->children.push_back(result->qualifier);
         result->children.push_back(result->column_list);
-        result->children.push_back(result->transformers);
+
+        if (columns_list_matcher->transformers)
+        {
+            result->transformers = std::move(columns_list_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
 
         node = std::move(result);
     }
@@ -1704,10 +1717,13 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
         result->setMatcher(column_regexp_matcher->getMatcher());
 
         result->qualifier = std::move(identifier_node);
-        result->transformers = std::move(column_regexp_matcher->transformers);
-
         result->children.push_back(result->qualifier);
-        result->children.push_back(result->transformers);
+
+        if (column_regexp_matcher->transformers)
+        {
+            result->transformers = std::move(column_regexp_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
 
         node = std::move(result);
     }

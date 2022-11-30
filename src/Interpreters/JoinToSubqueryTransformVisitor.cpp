@@ -50,9 +50,7 @@ ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
     asterisk->qualifier = std::make_shared<ASTIdentifier>("--.s");
-    asterisk->transformers = std::make_shared<ASTExpressionList>();
     asterisk->children.push_back(asterisk->qualifier);
-    asterisk->children.push_back(asterisk->transformers);
     return asterisk;
 }
 
@@ -142,8 +140,11 @@ private:
                 for (auto & table_name : data.tables_order)
                     data.addTableColumns(table_name, columns);
 
-                for (const auto & transformer : asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (asterisk->transformers)
+                {
+                    for (const auto & transformer : asterisk->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
             {
@@ -155,8 +156,11 @@ private:
 
                 data.addTableColumns(identifier.name(), columns);
 
-                for (const auto & transformer : qualified_asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (qualified_asterisk->transformers)
+                {
+                    for (const auto & transformer : qualified_asterisk->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
             {
@@ -165,8 +169,11 @@ private:
                 for (const auto & ident : columns_list_matcher->column_list->children)
                     columns.emplace_back(ident->clone());
 
-                for (const auto & transformer : columns_list_matcher->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (columns_list_matcher->transformers)
+                {
+                    for (const auto & transformer : columns_list_matcher->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
@@ -178,8 +185,11 @@ private:
                         columns,
                         [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
 
-                for (const auto & transformer : columns_regexp_matcher->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                if (columns_regexp_matcher->transformers)
+                {
+                    for (const auto & transformer : columns_regexp_matcher->transformers->children)
+                        IASTColumnsTransformer::transform(transformer, columns);
+                }
             }
             else
                 data.new_select_expression_list->children.push_back(child);
@@ -409,12 +419,7 @@ private:
         if (!data.done)
         {
             if (data.expression_list->children.empty())
-            {
-                auto asterisk = std::make_shared<ASTAsterisk>();
-                asterisk->transformers = std::make_shared<ASTExpressionList>();
-                asterisk->children.push_back(asterisk->transformers);
-                data.expression_list->children.push_back(std::move(asterisk));
-            }
+                data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
 
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
         }
