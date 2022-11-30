@@ -945,7 +945,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const
+    std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
     const auto & sample_block = key_expr->getSampleBlock();
 
@@ -1076,7 +1076,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_type,
         out_value,
         out_type,
-        [](IFunctionBase & func, const IDataType & type)
+        [](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
                 return false;
@@ -1131,7 +1131,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         out_key_column_type,
         out_value,
         out_type,
-        [](IFunctionBase & func, const IDataType &)
+        [](const IFunctionBase & func, const IDataType &)
         {
             return func.isDeterministic();
         });

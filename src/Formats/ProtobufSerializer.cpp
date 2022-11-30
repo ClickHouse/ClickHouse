@@ -1736,7 +1736,7 @@ namespace
         }
 
         const std::shared_ptr<const DataTypeAggregateFunction> aggregate_function_data_type;
-        ConstAggregateFunctionPtr aggregate_function;
+        AggregateFunctionPtr aggregate_function;
         String text_buffer;
     };
 

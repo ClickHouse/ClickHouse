@@ -15,10 +15,10 @@ class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 /** Function node represents function in query tree.
   * Function syntax: function_name(parameter_1, ...)(argument_1, ...).

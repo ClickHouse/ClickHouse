@@ -91,7 +91,7 @@ public:
         if (arguments.size() == 2)
             column_with_groups = arguments[1].column;
 
-        ConstAggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
+        AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
         AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());

@@ -19,7 +19,7 @@ namespace DB
 class ASTFunction;
 class Context;
 class IFunction;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
@@ -427,7 +427,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,

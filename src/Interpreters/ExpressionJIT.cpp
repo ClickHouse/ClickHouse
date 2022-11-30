@@ -263,7 +263,7 @@ public:
         return result;
     }
 
-    static void applyFunction(IFunctionBase & function, Field & value)
+    static void applyFunction(const IFunctionBase & function, Field & value)
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};

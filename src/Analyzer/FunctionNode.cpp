@@ -40,12 +40,12 @@ ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
 
 FunctionBasePtr FunctionNode::getFunction() const
 {
-    return std::dynamic_pointer_cast<IFunctionBase>(function);
+    return std::dynamic_pointer_cast<const IFunctionBase>(function);
 }
 
 AggregateFunctionPtr FunctionNode::getAggregateFunction() const
 {
-    return std::dynamic_pointer_cast<IAggregateFunction>(function);
+    return std::dynamic_pointer_cast<const IAggregateFunction>(function);
 }
 
 bool FunctionNode::isAggregateFunction() const
