@@ -408,7 +408,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     /* group_by_use_nulls */ false,
                     std::move(group_by_info),
                     std::move(group_by_sort_description),
-                    should_produce_results_in_order_of_bucket_number);
+                    should_produce_results_in_order_of_bucket_number,
+                    settings.enable_memory_bound_merging_of_aggregation_results);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -686,7 +687,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
+                if (!key_condition.addCondition(
+                        sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -703,7 +705,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
+                if (!key_condition.addCondition(
+                        sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
