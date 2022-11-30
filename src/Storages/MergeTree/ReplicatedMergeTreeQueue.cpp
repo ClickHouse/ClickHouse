@@ -1680,9 +1680,9 @@ size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
 }
 
 
-ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper)
+ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint)
 {
-    return ReplicatedMergeTreeMergePredicate(*this, zookeeper);
+    return ReplicatedMergeTreeMergePredicate(*this, zookeeper, std::move(partition_ids_hint));
 }
 
 
@@ -1785,7 +1785,15 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     else
         LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
 
-    auto merge_pred = getMergePredicate(zookeeper);
+    /// We need to check committing block numbers and new parts which could be committed.
+    /// Actually we don't need most of predicate logic here but it all the code related to committing blocks
+    /// and updatating queue state is implemented there.
+    PartitionIdsHint partition_ids_hint;
+    for (const auto & candidate : candidates)
+        for (const auto & partitions : candidate->block_numbers)
+            partition_ids_hint.insert(partitions.first);
+
+    auto merge_pred = getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
     for (const ReplicatedMergeTreeMutationEntryPtr & candidate : candidates)
@@ -1983,8 +1991,9 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 }
 
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)
+    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint_)
     : queue(queue_)
+    , partition_ids_hint(std::move(partition_ids_hint_))
     , prev_virtual_parts(queue.format_version)
 {
     {
@@ -1996,7 +2005,15 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     auto quorum_status_future = zookeeper->asyncTryGet(fs::path(queue.zookeeper_path) / "quorum" / "status");
 
     /// Load current inserts
-    Strings partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
+    /// Hint avoids listing partitions that we don't really need.
+    /// Dropped (or cleaned up by TTL) partitions are never removed from ZK,
+    /// so without hint it can do a few thousands requests (if not using MultiRead).
+    Strings partitions;
+    if (partition_ids_hint.empty())
+        partitions = zookeeper->getChildren(fs::path(queue.zookeeper_path) / "block_numbers");
+    else
+        std::copy(partition_ids_hint.begin(), partition_ids_hint.end(), std::back_inserter(partitions));
+
     std::vector<std::string> paths;
     paths.reserve(partitions.size());
     for (const String & partition : partitions)
@@ -2128,6 +2145,13 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
 
     if (left_max_block + 1 < right_min_block)
     {
+        if (!partition_ids_hint.empty() && !partition_ids_hint.contains(left->info.partition_id))
+        {
+            if (out_reason)
+                *out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
+            return false;
+        }
+
         auto committing_blocks_in_partition = committing_blocks.find(left->info.partition_id);
         if (committing_blocks_in_partition != committing_blocks.end())
         {
@@ -2318,6 +2342,9 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
     {
         const String & partition_id = kv.first;
         Int64 block_num = kv.second;
+
+        if (!partition_ids_hint.empty() && !partition_ids_hint.contains(partition_id))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition id {} was not provided as hint, it's a bug", partition_id);
 
         auto partition_it = committing_blocks.find(partition_id);
         if (partition_it != committing_blocks.end())
