@@ -1854,6 +1854,8 @@ class ClickHouseCluster:
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
+            if "privileged" in kwargs:
+                exec_cmd += ["--privileged"]
             result = subprocess_check_call(
                 exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
             )
