@@ -1855,6 +1855,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
+        part_log_elem.table_uuid = table_id.uuid;
 
         for (const auto & part : parts)
         {
@@ -4714,6 +4715,22 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
     return affected_partition_ids;
 }
 
+std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+{
+    auto lock = lockParts();
+    std::unordered_set<String> res;
+    std::string_view prev_id;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (prev_id == part->info.partition_id)
+            continue;
+
+        res.insert(part->info.partition_id);
+        prev_id = part->info.partition_id;
+    }
+    return res;
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
     const DataPartStates & affordable_states, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
@@ -6709,6 +6726,7 @@ try
 
     part_log_elem.database_name = table_id.database_name;
     part_log_elem.table_name = table_id.table_name;
+    part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
