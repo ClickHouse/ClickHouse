@@ -881,7 +881,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
     for (auto & [from, intermediate, _] : replicated_tables_to_rename)
     {
-        /// Due to some unknown failured there could be tables
+        /// Due to some unknown failures there could be tables
         /// which are already in an intermediate state
         /// For them we skip the first stage
         if (from == intermediate)
