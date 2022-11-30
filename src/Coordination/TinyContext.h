@@ -31,4 +31,6 @@ private:
     ConfigurationPtr config TSA_GUARDED_BY(keeper_dispatcher_mutex);
 };
 
+using TinyContextPtr = std::shared_ptr<TinyContext>;
+
 }

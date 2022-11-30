@@ -68,7 +68,7 @@ protected:
     std::string getDefaultConfigFileName() const override;
 
 private:
-    TinyContext tiny_context;
+    TinyContextPtr tiny_context;
 
     struct KeeperHTTPContext;
     HTTPContextPtr httpContext();
