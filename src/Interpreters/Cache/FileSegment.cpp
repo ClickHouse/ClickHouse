@@ -86,6 +86,7 @@ FileSegment::FileSegment(
 
 String FileSegment::getPathInLocalCache() const
 {
+    chassert(cache);
     return cache->getPathInLocalCache(key(), offset(), segment_kind);
 }
 
