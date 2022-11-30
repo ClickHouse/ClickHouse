@@ -209,9 +209,12 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                if ((ToDayOfWeekImpl::execute(x, timezone_x) == ToDayOfWeekImpl::execute(y, timezone_y)) && ((x_comp.time.hour > y_comp.time.hour)
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
+                if ((x_day_of_week > y_day_of_week)
+                    || ((x_day_of_week == y_day_of_week) && (x_comp.time.hour > y_comp.time.hour))
                     || ((x_comp.time.hour == y_comp.time.hour) && ((x_comp.time.minute > y_comp.time.minute)
-                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second))))))
+                    || ((x_comp.time.minute == y_comp.time.minute) && (x_comp.time.second > y_comp.time.second)))))
                     --res;
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeDayNumImpl<ResultPrecision::Extended>>>)
