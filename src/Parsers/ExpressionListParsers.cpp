@@ -194,11 +194,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         return false;
 
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
-    auto asterisk = std::make_shared<ASTAsterisk>();
-    asterisk->transformers = std::make_shared<ASTExpressionList>();
-    asterisk->children.push_back(asterisk->transformers);
-
-    auto aggregate_function = makeASTFunction(aggregate_function_name, std::move(asterisk));
+    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
     auto table_expression = std::make_shared<ASTTableExpression>();
