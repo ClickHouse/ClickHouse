@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -35,10 +36,18 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 }
 
 
-void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     UInt64 size;
     readVarUInt(size, istr);
+    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "input_format_max_binary_string_size",
+            size,
+            size > settings.max_binary_string_size);
+
     field = String();
     String & s = field.get<String &>();
     s.resize(size);
@@ -54,7 +63,7 @@ void SerializationString::serializeBinary(const IColumn & column, size_t row_num
 }
 
 
-void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnString & column_string = assert_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
@@ -62,6 +71,13 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 
     UInt64 size;
     readVarUInt(size, istr);
+    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "input_format_max_binary_string_size",
+            size,
+            settings.max_binary_string_size);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size + 1;

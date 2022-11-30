@@ -23,7 +23,7 @@ void SerializationAggregateFunction::serializeBinary(const Field & field, WriteB
     writeBinary(state.data, ostr);
 }
 
-void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
     AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
@@ -36,7 +36,7 @@ void SerializationAggregateFunction::serializeBinary(const IColumn & column, siz
     function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 

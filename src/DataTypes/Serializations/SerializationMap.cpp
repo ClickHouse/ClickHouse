@@ -49,7 +49,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr) 
     }
 }
 
-void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     size_t size;
     readVarUInt(size, istr);
@@ -59,8 +59,8 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr) const
     for (size_t i = 0; i < size; ++i)
     {
         Tuple tuple(2);
-        key->deserializeBinary(tuple[0], istr);
-        value->deserializeBinary(tuple[1], istr);
+        key->deserializeBinary(tuple[0], istr, settings);
+        value->deserializeBinary(tuple[1], istr, settings);
         map.push_back(std::move(tuple));
     }
 }
@@ -70,9 +70,9 @@ void SerializationMap::serializeBinary(const IColumn & column, size_t row_num, W
     nested->serializeBinary(extractNestedColumn(column), row_num, ostr);
 }
 
-void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationMap::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    nested->deserializeBinary(extractNestedColumn(column), istr);
+    nested->deserializeBinary(extractNestedColumn(column), istr, settings);
 }
 
 

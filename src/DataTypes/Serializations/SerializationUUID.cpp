@@ -88,7 +88,7 @@ void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr)
     writeBinary(x, ostr);
 }
 
-void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationUUID::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readBinary(x, istr);
@@ -100,7 +100,7 @@ void SerializationUUID::serializeBinary(const IColumn & column, size_t row_num, 
     writeBinary(assert_cast<const ColumnVector<UUID> &>(column).getData()[row_num], ostr);
 }
 
-void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationUUID::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readBinary(x, istr);

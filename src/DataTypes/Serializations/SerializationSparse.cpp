@@ -307,9 +307,9 @@ void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ost
     nested->serializeBinary(field, ostr);
 }
 
-void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    nested->deserializeBinary(field, istr);
+    nested->deserializeBinary(field, istr, settings);
 }
 
 void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -318,7 +318,7 @@ void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num
     nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr);
 }
 
-void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &) const
+void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeBinary' is not implemented for SerializationSparse");
 }

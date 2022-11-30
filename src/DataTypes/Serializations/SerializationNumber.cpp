@@ -110,7 +110,7 @@ void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);
@@ -124,7 +124,7 @@ void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);

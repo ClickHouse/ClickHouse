@@ -36,7 +36,7 @@ void MergeTreeIndexGranuleHypothesis::deserializeBinary(ReadBuffer & istr, Merge
 
     Field field_met;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
-    size_type->getDefaultSerialization()->deserializeBinary(field_met, istr);
+    size_type->getDefaultSerialization()->deserializeBinary(field_met, istr, {});
     met = field_met.get<UInt8>();
     is_empty = false;
 }

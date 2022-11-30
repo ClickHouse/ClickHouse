@@ -382,7 +382,7 @@ void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &) 
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
@@ -394,7 +394,7 @@ void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, Write
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) const
+void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }

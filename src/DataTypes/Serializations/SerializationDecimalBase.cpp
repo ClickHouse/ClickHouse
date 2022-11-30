@@ -39,7 +39,7 @@ void SerializationDecimalBase<T>::serializeBinaryBulk(const IColumn & column, Wr
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);
@@ -47,7 +47,7 @@ void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);

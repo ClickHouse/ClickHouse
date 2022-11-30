@@ -36,7 +36,7 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 }
 
 
-void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = String();
     String & s = field.get<String &>();
@@ -51,7 +51,7 @@ void SerializationFixedString::serializeBinary(const IColumn & column, size_t ro
 }
 
 
-void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();

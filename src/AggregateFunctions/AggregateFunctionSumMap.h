@@ -328,12 +328,12 @@ public:
         {
             case 0:
             {
-                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
             case 1:
             {
-                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
                 break;
             }
         }
@@ -341,7 +341,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf);
+            keys_serialization->deserializeBinary(key, buf, {});
 
             Array values;
             values.resize(values_types.size());

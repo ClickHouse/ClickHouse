@@ -722,18 +722,18 @@ void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuff
 {
     dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr);
 }
-void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr);
+    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
 }
 
 void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeBinary, ostr);
 }
-void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &ISerialization::deserializeBinary, istr);
+    deserializeImpl(column, &ISerialization::deserializeBinary, istr, settings);
 }
 
 void SerializationLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

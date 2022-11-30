@@ -163,13 +163,13 @@ void SerializationNullable::serializeBinary(const Field & field, WriteBuffer & o
     }
 }
 
-void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationNullable::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     bool is_null = false;
     readBinary(is_null, istr);
     if (!is_null)
     {
-        nested->deserializeBinary(field, istr);
+        nested->deserializeBinary(field, istr, settings);
     }
     else
     {
@@ -235,11 +235,11 @@ static ReturnType safeDeserialize(
 }
 
 
-void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationNullable::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column, *nested,
         [&istr] { bool is_null = false; readBinary(is_null, istr); return is_null; },
-        [this, &istr] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr); });
+        [this, &istr, settings] (IColumn & nested_column) { nested->deserializeBinary(nested_column, istr, settings); });
 }
 
 

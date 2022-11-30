@@ -20,9 +20,9 @@ private:
     }
 public:
     void serializeBinary(const Field &, WriteBuffer &) const override                       { throwNoSerialization(); }
-    void deserializeBinary(Field &, ReadBuffer &) const override                            { throwNoSerialization(); }
+    void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }
     void serializeBinary(const IColumn &, size_t, WriteBuffer &) const override             { throwNoSerialization(); }
-    void deserializeBinary(IColumn &, ReadBuffer &) const override                          { throwNoSerialization(); }
+    void deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const override                          { throwNoSerialization(); }
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override    { throwNoSerialization(); }
 

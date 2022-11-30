@@ -181,7 +181,7 @@ public:
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf);
+                serialization->deserializeBinary(arr[i], buf, {});
         }
     }
 

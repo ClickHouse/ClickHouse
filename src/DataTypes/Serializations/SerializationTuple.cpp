@@ -39,7 +39,7 @@ void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr
     }
 }
 
-void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     const size_t size = elems.size();
 
@@ -47,7 +47,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) con
     Tuple & tuple = field.get<Tuple &>();
     tuple.reserve(size);
     for (size_t i = 0; i < size; ++i)
-        elems[i]->deserializeBinary(tuple.emplace_back(), istr);
+        elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
 }
 
 void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -97,12 +97,12 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
     }
 }
 
-void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe(elems.size(), column, [&]
     {
         for (size_t i = 0; i < elems.size(); ++i)
-            elems[i]->deserializeBinary(extractElementColumn(column, i), istr);
+            elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
     });
 }
 

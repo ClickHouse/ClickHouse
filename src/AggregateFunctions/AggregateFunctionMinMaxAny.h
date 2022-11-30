@@ -807,7 +807,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf, {});
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)

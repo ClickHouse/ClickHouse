@@ -86,9 +86,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file);
+        serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
-        serialization->deserializeBinary(max_val, *file);
+        serialization->deserializeBinary(max_val, *file, {});
 
         // NULL_LAST
         if (min_val.isNull())
@@ -755,7 +755,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
         for (size_t i = 0; i < key_size; ++i)
         {
