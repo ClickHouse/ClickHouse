@@ -244,7 +244,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unkown type for attribute {}", attribute_type);
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unknown type for attribute {}", attribute_type);
         }
     }
 
@@ -359,7 +359,7 @@ Attribute makeAttribute(const std::string & name, const std::string & type)
     }
     else
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unkown type for attribute {}", type);
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Unknown type for attribute {}", type);
     }
 
     return Attribute(name, true, data_type, type);
