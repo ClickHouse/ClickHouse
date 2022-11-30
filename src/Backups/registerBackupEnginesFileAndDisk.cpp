@@ -99,7 +99,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
-        String backup_name_for_logging = params.backup_info.toStringForLogging(params.context);
+        String backup_name_for_logging = params.backup_info.toStringForLogging();
         const String & engine_name = params.backup_info.backup_engine_name;
 
         if (!params.backup_info.id_arg.empty())
