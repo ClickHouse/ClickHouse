@@ -44,10 +44,9 @@ d3	1	0
 d4	3	0
 d5	1	0
 d6	2	1
-== OPTIMIZE on replicas ==
-== Replica 1 ==
+== (Replicas) Test optimize ==
 d2	1	0
 d4	1	0
-== Replica 2 ==
-d2	1	0
-d4	1	0
+== (Replicas) Test settings ==
+c2	1	0
+c4	1	0

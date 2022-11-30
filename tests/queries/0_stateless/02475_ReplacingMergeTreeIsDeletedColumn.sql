@@ -52,35 +52,36 @@ OPTIMIZE TABLE test FINAL;
 -- d6 has NOT to be removed since we set clean_deleted_rows as 'Never'
 select * from test;
 
-DROP TABLE IF EXISTS testReplica1;
-DROP TABLE IF EXISTS testReplica2;
+DROP TABLE IF EXISTS testCleanupR1;
 
-CREATE TABLE testReplica1 (uid String, version UInt32, is_deleted UInt8)
-    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r1', version, is_deleted)
+CREATE TABLE testCleanupR1 (uid String, version UInt32, is_deleted UInt8)
+    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_cleanup/', 'r1', version, is_deleted)
     ORDER BY uid;
 
-INSERT INTO testReplica1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
-INSERT INTO testReplica1 (*) VALUES ('d3', 2, 1);
-INSERT INTO testReplica1 (*) VALUES ('d1', 2, 1);
 
-SELECT '== OPTIMIZE on replicas ==';
-OPTIMIZE TABLE testReplica1 FINAL CLEANUP;
-SYSTEM SYNC REPLICA testReplica1;
+INSERT INTO testCleanupR1 (*) VALUES ('d1', 1, 0),('d2', 1, 0),('d3', 1, 0),('d4', 1, 0);
+INSERT INTO testCleanupR1 (*) VALUES ('d3', 2, 1);
+INSERT INTO testCleanupR1 (*) VALUES ('d1', 2, 1);
+
+OPTIMIZE TABLE testCleanupR1 FINAL CLEANUP;
 
 -- Only d3 to d5 remain
-SELECT '== Replica 1 ==';
-SELECT * FROM testReplica1;
+SELECT '== (Replicas) Test optimize ==';
+SELECT * FROM testCleanupR1;
 
-CREATE TABLE testReplica2 (uid String, version UInt32, is_deleted UInt8)
-    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_02454/', 'r2', version, is_deleted)
-    ORDER BY uid
+------------------------------
+
+DROP TABLE IF EXISTS testSettingsR1;
+
+CREATE TABLE testSettingsR1 (col1 String, version UInt32, is_deleted UInt8)
+    ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/test_setting/', 'r1', version, is_deleted)
+    ORDER BY col1
     SETTINGS clean_deleted_rows = 'Always';
 
-INSERT INTO testReplica2 (*) VALUES ('d1', 1, 1),('d2', 1, 0),('d3', 1, 1),('d4', 1, 0);
+INSERT INTO testSettingsR1 (*) VALUES ('c1', 1, 1),('c2', 1, 0),('c3', 1, 1),('c4', 1, 0);
 
-OPTIMIZE TABLE testReplica2 FINAL;
-SYSTEM SYNC REPLICA testReplica2;
+OPTIMIZE TABLE testSettingsR1 FINAL;
 
 -- Only d3 to d5 remain
-SELECT '== Replica 2 ==';
-SELECT * FROM testReplica2;
+SELECT '== (Replicas) Test settings ==';
+SELECT * FROM testSettingsR1;

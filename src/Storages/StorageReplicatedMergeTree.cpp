@@ -4603,11 +4603,14 @@ bool StorageReplicatedMergeTree::optimize(
             }
 
             /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
-            if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+            if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE) {
+                std::cout << "select_decision == SelectPartsDecision::NOTHING_TO_MERGE" << std::endl;
                 return false;
+            }
 
             if (select_decision != SelectPartsDecision::SELECTED)
             {
+                std::cout << "sselect_decision != SelectPartsDecision::SELECTED" << std::endl;
                 constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
                 assert(disable_reason != unknown_disable_reason);
                 if (!partition_id.empty())
@@ -4617,6 +4620,7 @@ bool StorageReplicatedMergeTree::optimize(
                 return handle_noop(message);
             }
 
+        std::cout << "----------------------------" << std::endl;
             ReplicatedMergeTreeLogEntryData merge_entry;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper, future_merged_part->parts,
@@ -4627,13 +4631,16 @@ bool StorageReplicatedMergeTree::optimize(
 
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
+        std::cout << "create_result == CreateMergeEntryResult::MissingPart" << std::endl;
                 String message = "Can't create merge queue node in ZooKeeper, because some parts are missing";
                 LOG_TRACE(log, fmt::runtime(message));
                 return handle_noop(message);
             }
 
-            if (create_result == CreateMergeEntryResult::LogUpdated)
+            if (create_result == CreateMergeEntryResult::LogUpdated){
+        std::cout << "create_result == CreateMergeEntryResult::LogUpdated" << std::endl;
                 continue;
+                }
 
             merge_entries.push_back(std::move(merge_entry));
             return true;
