@@ -1322,7 +1322,7 @@ private:
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
-                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / it->name();
+                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
                     projection_data_part_storage_dst->createHardLinkFrom(
                         *projection_data_part_storage_src, p_it->name(), p_it->name());
 
