@@ -77,7 +77,8 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        return result_is_nullable ? place[0] : true;
+        if constexpr (result_is_nullable) return place[0];
+        return true;
     }
 
 public:
