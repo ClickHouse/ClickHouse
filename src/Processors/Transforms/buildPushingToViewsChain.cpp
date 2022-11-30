@@ -275,10 +275,8 @@ Chain buildPushingToViewsChain(
         SCOPE_EXIT({ current_thread = original_thread; });
 
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
-        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
-        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
-        /// N times more interruptions
-        view_thread_status_ptr->disableProfiling();
+        /// Copy of a ThreadStatus should be internal.
+        view_thread_status_ptr->setInternalThread();
         /// view_thread_status_ptr will be moved later (on and on), so need to capture raw pointer.
         view_thread_status_ptr->deleter = [thread_status = view_thread_status_ptr.get(), running_group]
         {
@@ -620,9 +618,10 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -643,9 +642,10 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }

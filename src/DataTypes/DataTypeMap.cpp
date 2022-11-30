@@ -22,6 +22,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
+    : nested(nested_)
+{
+    const auto * type_array = typeid_cast<const DataTypeArray *>(nested.get());
+    if (!type_array)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected Array(Tuple(key, value)) type, got {}", nested->getName());
+
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+    if (!type_tuple)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected Array(Tuple(key, value)) type, got {}", nested->getName());
+
+    if (type_tuple->getElements().size() != 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected Array(Tuple(key, value)) type, got {}", nested->getName());
+
+    key_type = type_tuple->getElement(0);
+    value_type = type_tuple->getElement(1);
+    assertKeyType();
+}
 
 DataTypeMap::DataTypeMap(const DataTypes & elems_)
 {

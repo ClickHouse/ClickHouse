@@ -21,7 +21,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="22.9.3.18"
+ARG VERSION="22.11.1.1360"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -79,6 +79,16 @@ RUN arch=${TARGETARCH:-amd64} \
         /tmp/* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+
+# Remove as much of Ubuntu as possible.
+# ClickHouse does not need Ubuntu. It can run on top of Linux kernel without any OS distribution.
+# ClickHouse does not need Docker at all. ClickHouse is above all that.
+# It does not care about Ubuntu, Docker, or other cruft and you should neither.
+# The fact that this Docker image is based on Ubuntu is just a misconception.
+# Some vulnerability scanners are arguing about Ubuntu, which is not relevant to ClickHouse at all.
+# ClickHouse does not care when you report false vulnerabilities by running some Docker scanners.
+
+RUN apt-get remove --purge -y libksba8 && apt-get autoremove -y
 
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)

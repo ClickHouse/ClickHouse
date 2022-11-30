@@ -408,7 +408,7 @@ Pipe StorageKeeperMap::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     checkTable<true>();
     storage_snapshot->check(column_names);
@@ -682,24 +682,20 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
 
     auto client = getClient();
 
-    std::vector<std::future<Coordination::GetResponse>> values;
-    values.reserve(keys.size());
+    Strings full_key_paths;
+    full_key_paths.reserve(keys.size());
 
     for (const auto & key : keys)
     {
-        const auto full_path = fullPathForKey(key);
-        values.emplace_back(client->asyncTryGet(full_path));
+        full_key_paths.emplace_back(fullPathForKey(key));
     }
 
-    auto wait_until = std::chrono::system_clock::now() + std::chrono::milliseconds(Coordination::DEFAULT_OPERATION_TIMEOUT_MS);
+    auto values = client->tryGet(full_key_paths);
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
-        auto & value = values[i];
-        if (value.wait_until(wait_until) != std::future_status::ready)
-            throw DB::Exception(ErrorCodes::KEEPER_EXCEPTION, "Failed to fetch values: timeout");
+        auto response = values[i];
 
-        auto response = value.get();
         Coordination::Error code = response.error;
 
         if (code == Coordination::Error::ZOK)

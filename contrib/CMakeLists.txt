@@ -114,6 +114,7 @@ if (ENABLE_TESTS)
 endif()
 
 add_contrib (llvm-project-cmake llvm-project)
+add_contrib (libfuzzer-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 add_contrib (aws-s3-cmake
     aws
@@ -164,8 +165,11 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
+add_contrib (morton-nd-cmake morton-nd)
 
-add_contrib(annoy-cmake annoy)
+add_contrib (annoy-cmake annoy)
+
+add_contrib (xxHash-cmake xxHash)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

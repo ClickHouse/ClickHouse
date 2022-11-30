@@ -202,13 +202,6 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     result_arr->getOffsets().insert(ranges_offsets->begin(), ranges_offsets->end());
 
-    /// AggregateFunction's states should be inserted into column using specific way
-    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&result_data);
-
-    if (!res_col_aggregate_function && agg_func.isState())
-        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
-
     /// Perform the aggregation
 
     size_t begin = 0;
@@ -379,11 +372,9 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
                 for (size_t k = local_begin; k < local_end; ++k)
                     true_func->add(place, aggregate_arguments, begin + k, arena.get());
             }
-
-            if (!res_col_aggregate_function)
-                agg_func.insertResultInto(place, result_data, arena.get());
-            else
-                res_col_aggregate_function->insertFrom(place);
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            agg_func.insertMergeResultInto(place, result_data, arena.get());
         }
     }
 

@@ -220,8 +220,11 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
-    Names source_column_names = source_part->getColumns().getNames();
-    NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
+    const auto & source_columns = source_part->getColumns();
+    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
+    for (const auto & it : source_columns)
+        source_columns_name_to_type[it.name] = it.type;
+
     for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
         if (updated_header.has(it->name))
@@ -233,14 +236,25 @@ getColumnsForNewDataPart(
         }
         else
         {
-            if (!source_columns_name_set.contains(it->name))
+            auto source_col = source_columns_name_to_type.find(it->name);
+            if (source_col == source_columns_name_to_type.end())
             {
                 /// Source part doesn't have column but some other column
                 /// was renamed to it's name.
                 auto renamed_it = renamed_columns_to_from.find(it->name);
-                if (renamed_it != renamed_columns_to_from.end()
-                    && source_columns_name_set.contains(renamed_it->second))
-                    ++it;
+                if (renamed_it != renamed_columns_to_from.end())
+                {
+                    source_col = source_columns_name_to_type.find(renamed_it->second);
+                    if (source_col == source_columns_name_to_type.end())
+                        it = storage_columns.erase(it);
+                    else
+                    {
+                        /// Take a type from source part column.
+                        /// It may differ from column type in storage.
+                        it->type = source_col->second;
+                        ++it;
+                    }
+                }
                 else
                     it = storage_columns.erase(it);
             }
@@ -262,7 +276,12 @@ getColumnsForNewDataPart(
                 if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
                     it = storage_columns.erase(it);
                 else
+                {
+                    /// Take a type from source part column.
+                    /// It may differ from column type in storage.
+                    it->type = source_col->second;
                     ++it;
+                }
             }
         }
     }
@@ -600,7 +619,6 @@ static NameToNameVector collectFilesForRenames(
 /// Initialize and write to disk new part fields like checksums, columns, etc.
 void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
-    const DataPartStorageBuilderPtr & data_part_storage_builder,
     MergeTreeData::MutableDataPartPtr new_data_part,
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
@@ -608,7 +626,7 @@ void finalizeMutatedPart(
 {
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
@@ -618,7 +636,7 @@ void finalizeMutatedPart(
     if (execute_ttl_type != ExecuteTTLType::NONE)
     {
         /// Write a file with ttl infos in json format.
-        auto out_ttl = data_part_storage_builder->writeFile("ttl.txt", 4096, context->getWriteSettings());
+        auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
@@ -627,7 +645,7 @@ void finalizeMutatedPart(
 
     if (!new_data_part->getSerializationInfos().empty())
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
@@ -636,18 +654,18 @@ void finalizeMutatedPart(
 
     {
         /// Write file with checksums.
-        auto out_checksums = data_part_storage_builder->writeFile("checksums.txt", 4096, context->getWriteSettings());
+        auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
         new_data_part->checksums.write(*out_checksums);
     } /// close fd
 
     {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
+        auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
     } /// close fd
 
     {
         /// Write a file with a description of columns.
-        auto out_columns = data_part_storage_builder->writeFile("columns.txt", 4096, context->getWriteSettings());
+        auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, context->getWriteSettings());
         new_data_part->getColumns().writeText(*out_columns);
     } /// close fd
 
@@ -715,8 +733,6 @@ struct MutationContext
         = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
-    DataPartStorageBuilderPtr data_part_storage_builder;
-
     IMergedBlockOutputStreamPtr out{nullptr};
 
     String mrk_extension;
@@ -797,11 +813,9 @@ public:
             if (next_level_parts.empty())
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                auto builder = selected_parts[0]->data_part_storage->getBuilder();
-                selected_parts[0]->renameTo(projection.name + ".proj", true, builder);
+                selected_parts[0]->renameTo(projection.name + ".proj", true);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
-                builder->commit();
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
                 /// Task is finished
@@ -846,7 +860,6 @@ public:
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 ctx->new_data_part.get(),
-                ctx->data_part_storage_builder.get(),
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
@@ -1006,8 +1019,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             if (projection_block)
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
-                tmp_part.builder->commit();
+                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
             }
@@ -1029,8 +1041,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (projection_block)
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
-            temp_part.builder->commit();
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
@@ -1130,7 +1141,7 @@ private:
 
     void prepare()
     {
-        ctx->data_part_storage_builder->createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1165,7 +1176,6 @@ private:
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
-            ctx->data_part_storage_builder,
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
@@ -1261,7 +1271,7 @@ private:
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
-        ctx->data_part_storage_builder->createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
@@ -1272,7 +1282,7 @@ private:
 
         NameSet hardlinked_files;
         /// Create hardlinks for unchanged files
-        for (auto it = ctx->source_part->data_part_storage->iterate(); it->isValid(); it->next())
+        for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
@@ -1298,22 +1308,22 @@ private:
 
             if (it->isFile())
             {
-                ctx->data_part_storage_builder->createHardLinkFrom(
-                    *ctx->source_part->data_part_storage, it->name(), destination);
+                ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
+                    ctx->source_part->getDataPartStorage(), it->name(), destination);
                 hardlinked_files.insert(it->name());
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                ctx->data_part_storage_builder->createProjection(destination);
+                ctx->new_data_part->getDataPartStorage().createProjection(destination);
 
-                auto projection_data_part_storage = ctx->source_part->data_part_storage->getProjection(destination);
-                auto projection_data_part_storage_builder = ctx->data_part_storage_builder->getProjection(destination);
+                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
+                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
 
-                for (auto p_it = projection_data_part_storage->iterate(); p_it->isValid(); p_it->next())
+                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
-                    projection_data_part_storage_builder->createHardLinkFrom(
-                        *projection_data_part_storage, p_it->name(), p_it->name());
+                    projection_data_part_storage_dst->createHardLinkFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
                     hardlinked_files.insert(p_it->name());
                 }
             }
@@ -1343,7 +1353,6 @@ private:
                 builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
-                ctx->data_part_storage_builder,
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 ctx->updated_header,
@@ -1395,7 +1404,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
     }
 
 
@@ -1565,10 +1574,7 @@ bool MutateTask::prepare()
         ctx->data->getRelativeDataPath(),
         tmp_part_dir_name);
 
-    ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
-        single_disk_volume,
-        ctx->data->getRelativeDataPath(),
-        tmp_part_dir_name);
+    data_part_storage->beginTransaction();
 
     ctx->new_data_part = ctx->data->createPart(
         ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, data_part_storage);
@@ -1669,11 +1675,6 @@ bool MutateTask::prepare()
 const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 {
     return ctx->hardlinked_files;
-}
-
-DataPartStorageBuilderPtr MutateTask::getBuilder() const
-{
-    return ctx->data_part_storage_builder;
 }
 
 }

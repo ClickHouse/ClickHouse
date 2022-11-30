@@ -387,7 +387,7 @@ progress {
 , stats {
   rows: 8
   blocks: 4
-  allocated_bytes: 324
+  allocated_bytes: 1092
   applied_limit: true
   rows_before_limit: 8
 }

@@ -22,14 +22,15 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::hashidsxx
+        ch_contrib::morton_nd
 )
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
         divide_impl
+        ch_contrib::xxHash
 )
-
 
 if (TARGET ch_rust::blake3)
     list (APPEND PUBLIC_LIBS
@@ -64,8 +65,6 @@ endif ()
 if (TARGET ch_contrib::base64)
     list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
-
-list (APPEND PRIVATE_LIBS ch_contrib::lz4)
 
 if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)

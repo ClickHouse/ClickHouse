@@ -76,6 +76,8 @@ public:
         data(place).~Data();
     }
 
+    bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<Data>; }
+
     void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
     {
     }
@@ -93,7 +95,7 @@ public:
     void deserialize(AggregateDataPtr __restrict /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         char c = 0;
-        buf.read(c);
+        buf.readStrict(c);
     }
 
     void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override

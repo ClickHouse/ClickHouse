@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-void TemporaryDataOnDiskScope::deltaAllocAndCheck(int compressed_delta, int uncompressed_delta)
+void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
     if (parent)
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);

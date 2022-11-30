@@ -272,15 +272,9 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
 
 Поведение для
 * `enable_extended_results_for_datetime_functions = 0`: Функции `toStartOf*`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime`. Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime`. Хотя эти функции могут принимать значения типа `Date32` или `DateTime64` в качестве аргумента, при обработке аргумента вне нормального диапазона значений (`1970` - `2148` для `Date` и `1970-01-01 00:00:00`-`2106-02-07 08:28:15` для `DateTime`) будет получен некорректный результат.
-В случае если значение аргумента вне нормального диапазона:
-    * `1970-01-01 (00:00:00)` будет возвращён для моментов времени до 1970 года,
-    * `2106-02-07 08:28:15` будет взят в качестве аргумента, если полученный аргумент превосходит данное значение и возвращаемый тип - `DateTime`,
-    * `2149-06-06` будет взят в качестве аргумента, если полученный аргумент превосходит данное значение и возвращаемый тип - `Date`,
-    * `2149-05-31` будет результатом функции `toLastDayOfMonth` при обработке аргумента больше `2149-05-31`.
 * `enable_extended_results_for_datetime_functions = 1`:
     * Функции `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` возвращают `Date` или `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `Date32` или `DateTime64` если их аргумент `Date32` или `DateTime64`.
     * Функции `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` возвращают `DateTime` если их аргумент `Date` или `DateTime` и они возвращают `DateTime64` если их аргумент `Date32` или `DateTime64`.
-
 :::
 
 ## toStartOfYear {#tostartofyear}
@@ -321,20 +315,20 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Округляет дату или дату-с-временем до последнего числа месяца.
 Возвращается дата.
 
-Если `toLastDayOfMonth` вызывается с аргументом типа `Date` большим чем 2149-05-31, то результат будет вычислен от аргумента 2149-05-31.
+:::note "Attention"
+Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
+:::
 
 ## toMonday {#tomonday}
 
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
-Частный случай: для дат `1970-01-01`, `1970-01-02`, `1970-01-03` и `1970-01-04` результатом будет `1970-01-01`.
 Возвращается дата.
 
 ## toStartOfWeek(t[,mode]) {#tostartofweek}
 
 Округляет дату или дату со временем до ближайшего воскресенья или понедельника в соответствии с mode.
 Возвращается дата.
-Частный случай: для дат `1970-01-01`, `1970-01-02`, `1970-01-03` и `1970-01-04` (и `1970-01-05`, если `mode` равен `1`) результатом будет `1970-01-01`.
-Аргумент `mode` работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
+Аргумент mode работает точно так же, как аргумент mode [toWeek()](#toweek). Если аргумент mode опущен, то используется режим 0.
 
 ## toStartOfDay {#tostartofday}
 
@@ -608,7 +602,7 @@ date_trunc(unit, value[, timezone])
 
 -   Дата и время, отсеченные до указанной части.
 
-Тип: [Datetime](../../sql-reference/data-types/datetime.md).
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Примеры**
 
@@ -721,9 +715,9 @@ date_diff('unit', startdate, enddate, [timezone])
     - `quarter`
     - `year`
 
--   `startdate` — первая дата или дата со временем, которая вычитается из `enddate`. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
+-   `startdate` — первая дата или дата со временем, которая вычитается из `enddate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `enddate` — вторая дата или дата со временем, из которой вычитается `startdate`. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
+-   `enddate` — вторая дата или дата со временем, из которой вычитается `startdate`. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 -   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). Если этот аргумент указан, то он применяется как для `startdate`, так и для `enddate`. Если этот аргумент не указан, то используются часовые пояса аргументов `startdate` и `enddate`. Если часовые пояса аргументов `startdate` и `enddate` не совпадают, то результат не определен. [String](../../sql-reference/data-types/string.md).
 
@@ -919,7 +913,7 @@ now([timezone])
 
 -   Текущие дата и время.
 
-Тип: [Datetime](../../sql-reference/data-types/datetime.md).
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Пример**
 
@@ -975,8 +969,7 @@ SELECT now('Europe/Moscow');
 
 ## timeSlots(StartTime, Duration,\[, Size\]) {#timeslotsstarttime-duration-size}
 Для интервала, начинающегося в `StartTime` и длящегося `Duration` секунд, возвращает массив моментов времени, кратных `Size`. Параметр `Size` указывать необязательно, по умолчанию он равен 1800 секундам (30 минутам) - необязательный параметр.
-Данная функция может использоваться, например, для анализа количества просмотров страницы за соответствующую сессию.
-Аргумент `StartTime` может иметь тип `DateTime` или `DateTime64`. В случае, если используется `DateTime`, аргументы `Duration` и `Size` должны иметь тип `UInt32`; Для DateTime64 они должны быть типа `Decimal64`.
+
 Возвращает массив DateTime/DateTime64 (тип будет совпадать с типом параметра ’StartTime’). Для DateTime64 масштаб(scale) возвращаемой величины может отличаться от масштаба фргумента ’StartTime’ --- результат будет иметь наибольший масштаб среди всех данных аргументов.
 
 Пример использования:
@@ -1085,7 +1078,7 @@ dateName(date_part, date)
 **Аргументы**
 
 -   `date_part` — часть даты. Возможные значения: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
--   `date` — дата. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `date` — дата. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — часовой пояс. Необязательный аргумент. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
@@ -1133,8 +1126,7 @@ SELECT FROM_UNIXTIME(423543535);
 └──────────────────────────┘
 ```
 
-В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
-
+В случае, когда есть два или три аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md), а второй является строкой постоянного формата и третий является строкой постоянной временной зоны — функция работает также, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
 
 Запрос:
 

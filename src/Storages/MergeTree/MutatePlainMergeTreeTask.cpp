@@ -83,14 +83,9 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
 
-                auto builder = mutate_task->getBuilder();
-                if (!builder)
-                    builder = new_part->data_part_storage->getBuilder();
-
-
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, builder);
+                storage.renameTempPartAndReplace(new_part, transaction);
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
