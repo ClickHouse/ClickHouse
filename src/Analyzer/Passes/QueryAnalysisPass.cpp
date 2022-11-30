@@ -2465,22 +2465,18 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 result_column = it->second;
         }
 
-        QueryTreeNodePtr result_expression;
+        QueryTreeNodePtr result_expression = result_column;
         bool clone_is_needed = true;
 
         String table_expression_source = table_expression_data.table_expression_description;
         if (!table_expression_data.table_expression_name.empty())
             table_expression_source += " with name " + table_expression_data.table_expression_name;
 
-        if (!match_full_identifier && compound_identifier)
+        if (result_column && !match_full_identifier && compound_identifier)
         {
             size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
             result_expression = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, identifier_bind_size, result_column, table_expression_source, scope);
             clone_is_needed = false;
-        }
-        else
-        {
-            result_expression = result_column;
         }
 
         if (!result_expression)

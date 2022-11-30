@@ -254,6 +254,8 @@ private:
         ContextPtr ctx,
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
+    bool supportsSubcolumns() const override;
+
     bool supportsSubsetOfColumns() const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
