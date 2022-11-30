@@ -150,7 +150,7 @@ if __name__ == "__main__":
             os.path.join(workspace_path, "summary.tsv"), "r", encoding="utf-8"
         ) as summary_f:
             for line in summary_f:
-                l = line.split("\t")
+                l = line.rstrip("\n").split("\t")
                 test_results.append((l[0], l[1]))
 
         with open(
