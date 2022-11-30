@@ -3005,6 +3005,8 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
+            # for umount/mount on fly
+            - SYS_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
