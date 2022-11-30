@@ -2485,6 +2485,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
         group_by_info = std::make_shared<InputOrderInfo>(
             group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
+
+        sort_description_for_merging = group_by_info->sort_description_for_merging;
     }
 
     auto merge_threads = max_streams;
