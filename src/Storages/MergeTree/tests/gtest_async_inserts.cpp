@@ -15,7 +15,7 @@ class AsyncInsertsTest : public ::testing::TestPartResult
 
 TEST(AsyncInsertsTest, testScatterOffsetsBySelector)
 {
-    auto testImpl = [](std::vector<size_t> offsets, std::vector<size_t> selector_data, size_t part_num, std::vector<std::vector<size_t>> expected)
+    auto test_impl = [](std::vector<size_t> offsets, std::vector<size_t> selector_data, size_t part_num, std::vector<std::vector<size_t>> expected)
     {
         auto offset_ptr = std::make_shared<ChunkOffsets>(offsets);
         IColumn::Selector selector(selector_data.size());
@@ -35,11 +35,11 @@ TEST(AsyncInsertsTest, testScatterOffsetsBySelector)
         }
     };
 
-    testImpl({5}, {0,1,0,1,0}, 2, {{3},{2}});
-    testImpl({5,10}, {0,1,0,1,0,1,0,1,0,1}, 2, {{3,5},{2,5}});
-    testImpl({4,8,12}, {0,1,0,1,0,2,0,2,1,2,1,2}, 3, {{2,4},{2,4},{2,4}});
-    testImpl({1,2,3,4,5}, {0,1,2,3,4}, 5, {{1},{1},{1},{1},{1}});
-    testImpl({3,6,10}, {1,1,1,2,2,2,0,0,0,0}, 3, {{4},{3},{3}});
+    test_impl({5}, {0,1,0,1,0}, 2, {{3},{2}});
+    test_impl({5,10}, {0,1,0,1,0,1,0,1,0,1}, 2, {{3,5},{2,5}});
+    test_impl({4,8,12}, {0,1,0,1,0,2,0,2,1,2,1,2}, 3, {{2,4},{2,4},{2,4}});
+    test_impl({1,2,3,4,5}, {0,1,2,3,4}, 5, {{1},{1},{1},{1},{1}});
+    test_impl({3,6,10}, {1,1,1,2,2,2,0,0,0,0}, 3, {{4},{3},{3}});
 }
 
 }
