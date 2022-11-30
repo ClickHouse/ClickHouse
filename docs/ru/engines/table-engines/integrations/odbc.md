@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/integrations/odbc
-sidebar_position: 2
-sidebar_label: ODBC
+toc_priority: 2
+toc_title: ODBC
 ---
 
 # ODBC {#table-engine-odbc}

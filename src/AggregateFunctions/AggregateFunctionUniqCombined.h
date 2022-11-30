@@ -43,7 +43,7 @@ namespace detail
     {
         static Ret hash(UInt128 x)
         {
-            return static_cast<Ret>(sipHash64(x));
+            return sipHash64(x);
         }
     };
 
@@ -70,9 +70,9 @@ namespace detail
 }
 
 // Unlike HashTableGrower always grows to power of 2.
-struct UniqCombinedHashTableGrower : public HashTableGrowerWithPrecalculation<>
+struct UniqCombinedHashTableGrower : public HashTableGrower<>
 {
-    void increaseSize() { increaseSizeDegree(1); }
+    void increaseSize() { ++size_degree; }
 };
 
 template <typename Key, UInt8 K>

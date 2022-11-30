@@ -27,7 +27,7 @@ Pipe StorageValues::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

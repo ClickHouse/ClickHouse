@@ -1,9 +1,0 @@
-<clickhouse>
-    <access_control_improvements>
-        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
-        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
-        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
-        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
-        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
-    </access_control_improvements>
-</clickhouse>

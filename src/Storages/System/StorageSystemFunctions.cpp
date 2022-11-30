@@ -6,10 +6,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
-
 
 namespace DB
 {
@@ -24,13 +23,7 @@ enum class FunctionOrigin : Int8
 namespace
 {
     template <typename Factory>
-    void fillRow(
-        MutableColumns & res_columns,
-        const String & name,
-        UInt64 is_aggregate,
-        const String & create_query,
-        FunctionOrigin function_origin,
-        const Factory & factory)
+    void fillRow(MutableColumns & res_columns, const String & name, UInt64 is_aggregate, const String & create_query, FunctionOrigin function_origin, const Factory & f)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -42,25 +35,15 @@ namespace
         }
         else
         {
-            res_columns[2]->insert(factory.isCaseInsensitive(name));
-            if (factory.isAlias(name))
-                res_columns[3]->insert(factory.aliasTo(name));
+            res_columns[2]->insert(f.isCaseInsensitive(name));
+            if (f.isAlias(name))
+                res_columns[3]->insert(f.aliasTo(name));
             else
                 res_columns[3]->insertDefault();
         }
 
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
-
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
-        {
-            if (factory.isAlias(name))
-                res_columns[6]->insertDefault();
-            else
-                res_columns[6]->insert(factory.getDocumentation(name).description);
-        }
-        else
-            res_columns[6]->insertDefault();
     }
 }
 
@@ -81,8 +64,7 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"case_insensitive", std::make_shared<DataTypeUInt8>()},
         {"alias_to", std::make_shared<DataTypeString>()},
         {"create_query", std::make_shared<DataTypeString>()},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
-        {"description", std::make_shared<DataTypeString>()},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())}
     };
 }
 
@@ -117,15 +99,4 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         fillRow(res_columns, function_name, UInt64(0), "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
     }
 }
-
-void StorageSystemFunctions::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    UserDefinedSQLFunctionFactory::instance().backup(backup_entries_collector, data_path_in_backup);
-}
-
-void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    UserDefinedSQLFunctionFactory::instance().restore(restorer, data_path_in_backup);
-}
-
 }

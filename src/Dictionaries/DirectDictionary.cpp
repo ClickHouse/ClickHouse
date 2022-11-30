@@ -8,9 +8,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 
 namespace DB
 {
@@ -69,7 +67,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -171,13 +169,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto requested_keys = requested_keys_extractor.extractAllKeys();
     size_t requested_keys_size = requested_keys.size();
 
-    HashMap<KeyType, PaddedPODArray<size_t>> requested_key_to_index;
+    HashMap<KeyType, size_t> requested_key_to_index;
     requested_key_to_index.reserve(requested_keys_size);
 
     for (size_t i = 0; i < requested_keys.size(); ++i)
     {
         auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key].push_back(i);
+        requested_key_to_index[requested_key] = i;
     }
 
     auto result = ColumnUInt8::create(requested_keys_size, false);
@@ -187,7 +185,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
@@ -208,13 +206,10 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             const auto * it = requested_key_to_index.find(block_key);
             assert(it);
 
-            auto & result_data_found_indexes = it->getMapped();
-            for (size_t result_data_found_index : result_data_found_indexes)
-            {
-                /// block_keys_size cannot be used, due to duplicates.
-                keys_found += !result_data[result_data_found_index];
-                result_data[result_data_found_index] = true;
-            }
+            size_t result_data_found_index = it->getMapped();
+            /// block_keys_size cannot be used, due to duplicates.
+            keys_found += !result_data[result_data_found_index];
+            result_data[result_data_found_index] = true;
 
             block_keys_extractor.rollbackCurrentKey();
         }
@@ -263,37 +258,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
         return nullptr;
 }
 
-class SourceFromQueryPipeline : public ISource
-{
-public:
-    explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
-        : ISource(pipeline_.getHeader())
-        , pipeline(std::move(pipeline_))
-        , executor(pipeline)
-    {}
-
-    std::string getName() const override { return "SourceFromQueryPipeline"; }
-
-    Chunk generate() override
-    {
-        Chunk chunk;
-        while (executor.pull(chunk))
-        {
-            if (chunk)
-                return chunk;
-        }
-
-        return {};
-    }
-
-
-private:
-    QueryPipeline pipeline;
-    PullingPipelineExecutor executor;
-};
-
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
+Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
@@ -309,7 +275,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
         for (auto key : requested_keys)
             ids.emplace_back(key);
 
-        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadIds(ids)));
+        pipe = source_ptr->loadIds(ids);
     }
     else
     {
@@ -318,7 +284,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
         for (size_t i = 0; i < requested_keys_size; ++i)
             requested_rows.emplace_back(i);
 
-        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadKeys(key_columns, requested_rows)));
+        pipe = source_ptr->loadKeys(key_columns, requested_rows);
     }
 
     return pipe;
@@ -327,7 +293,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadAll()));
+    return source_ptr->loadAll();
 }
 
 namespace

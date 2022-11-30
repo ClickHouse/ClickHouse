@@ -1,7 +1,7 @@
 #include "getMappedArea.h"
 #include <Common/Exception.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>

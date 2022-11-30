@@ -1,7 +1,7 @@
 -- Tags: distributed
 
 SET max_execution_speed = 1000000;
-SET timeout_before_checking_execution_speed = 0;
+SET timeout_before_checking_execution_speed = 0.001;
 SET max_block_size = 100;
 
 SET log_queries=1;
