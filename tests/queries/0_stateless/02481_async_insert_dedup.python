@@ -14,6 +14,20 @@ from pure_http_client import ClickHouseClient
 
 client = ClickHouseClient()
 
+# test table without partition
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part NO DELAY")
+client.query('''
+CREATE TABLE t_async_insert_dedup_no_part (
+KeyID     UInt32
+) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/t_async_insert_dedup', '{replica}')
+ORDER BY (KeyID)
+''')
+
+client.query("insert into t_async_insert_dedup_no_part values (1), (2), (3), (4), (5)", settings = {"async_insert": 1, "wait_for_async_insert": 1, "insert_keeper_fault_injection_probability": 0})
+result = client.query("select count(*) from t_async_insert_dedup_no_part")
+print(result, flush=True)
+client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part NO DELAY")
+
 # generate data and push to queue
 def generate_data(q, total_number):
     old_data = []
@@ -81,10 +95,6 @@ for i in range(3):
     insert.start()
 
 gen.join()
-
-
-#result = client.query("select count(*) from t_async_insert_dedup")
-#print(result, flush=True)
 
 retry = 0
 
