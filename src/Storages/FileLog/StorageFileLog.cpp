@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TABLE_METADATA_ALREADY_EXISTS;
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
 }
