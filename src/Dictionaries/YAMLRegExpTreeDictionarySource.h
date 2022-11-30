@@ -26,7 +26,7 @@ namespace ErrorCodes
 class YAMLRegExpTreeDictionarySource : public IDictionarySource
 {
 public:
-    YAMLRegExpTreeDictionarySource(const std::string & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl);
+    YAMLRegExpTreeDictionarySource(const String & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl);
 
     YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other);
 
@@ -55,10 +55,10 @@ public:
 
     bool isModified() const override;
 
-    std::string toString() const override;
+    String toString() const override;
 
 private:
-    const std::string filepath;
+    const String filepath;
 
     Block sample_block;
     ContextPtr context;
