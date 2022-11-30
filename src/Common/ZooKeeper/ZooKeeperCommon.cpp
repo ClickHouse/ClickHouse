@@ -530,7 +530,6 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 {
-
     while (true)
     {
         OpNum op_num;

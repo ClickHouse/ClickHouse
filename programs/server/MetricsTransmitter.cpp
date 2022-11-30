@@ -123,7 +123,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (const auto & name_value : async_metrics_values)
         {
-            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
+            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
         }
     }
 
