@@ -272,11 +272,11 @@ private:
   *
   * Timezone matters because days can have different length.
   */
-template <bool is_date_diff>
+template <bool is_relative>
 class FunctionDateDiff : public IFunction
 {
 public:
-    static constexpr auto name = is_date_diff ? "dateDiff" : "age";
+    static constexpr auto name = is_relative ? "dateDiff" : "age";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
@@ -364,7 +364,7 @@ public:
         return res;
     }
 private:
-    DateDiffImpl<is_date_diff> impl{name};
+    DateDiffImpl<is_relative> impl{name};
 };
 
 
