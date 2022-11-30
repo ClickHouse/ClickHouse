@@ -193,6 +193,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row{});
+        result[0].offsets = chunk_offsets;
         return result;
     }
 
