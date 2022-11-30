@@ -54,10 +54,16 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
     if (params.size() == 3)
     {
         if (params.at(1).getType() != arguments[0]->getDefault().getType() || params.at(2).getType() != arguments[0]->getDefault().getType())
-        {
             throw Exception("The second and third parameters are not the same type as the first arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
     }
+
+    /// This value represents the width of the resulting sparkbar.
+    /// Later we will directly allocate width * sizeof(Float64) amount of memory,
+    ///  which must be below 8GiB. We will set the limit a little lower than that.
+    size_t width = params.at(0).safeGet<UInt64>();
+    if (width > (1 << 30))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first parameter of the function {} must be in range [0:1073741824]", name);
+
     return createAggregateFunctionSparkbarImpl(name, *arguments[0], *arguments[1], arguments, params);
 }
 
