@@ -139,14 +139,14 @@ public:
         }
         else
         {
-            auto second_argument_constant_value = function_arguments_nodes[1]->getConstantValueOrNull();
+            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
 
-            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_value)
+            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
             {
                 /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
                   * with `tuple_argument.column_name`.
                   */
-                const auto & tuple_element_constant_value = second_argument_constant_value->getValue();
+                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
                 const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
 
                 const auto & data_type_tuple = assert_cast<const DataTypeTuple &>(*column.type);
