@@ -25,6 +25,10 @@ function test_completion_word()
 # NOTE: log will be appended
 exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
 
+# NOTE: when expect have EOF on stdin it also closes stdout, so let's reopen it
+# again for logging
+set stdout_channel [open "/dev/stdout" w]
+
 log_user 0
 set timeout 60
 match_max 100000
@@ -49,7 +53,7 @@ while {\$is_done == 0} {
     send -- "\\t"
     expect {
         "$compword_begin$compword_end" {
-            puts "$compword_begin$compword_end: OK"
+            puts \$stdout_channel "$compword_begin$compword_end: OK"
             set is_done 1
         }
         default {
@@ -58,13 +62,18 @@ while {\$is_done == 0} {
     }
 }
 
+close \$stdout_channel
+
 send -- "\\3\\4"
 expect eof
 EOF
 
     # NOTE: run expect under timeout since there is while loop that is not
     # limited with timeout.
-    timeout 2m expect -f "$SCRIPT_PATH"
+    #
+    # NOTE: cat is required to serialize stdout for expect (without this pipe
+    # it will reopen the file again, and the output will be mixed).
+    timeout 2m expect -f "$SCRIPT_PATH" | cat
 }
 
 # last 3 bytes will be completed,
