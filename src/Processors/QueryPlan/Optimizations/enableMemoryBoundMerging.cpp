@@ -40,7 +40,7 @@ void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &)
         else if (auto * async_reading_step = typeid_cast<ReadFromParallelRemoteReplicasStep *>(child_node))
             async_reading_steps.push_back(async_reading_step);
         else if (local_plan)
-            /// Usually there is a signle local plan.
+            /// Usually there is a single local plan.
             /// TODO: we can support many local plans and calculate common sort description prefix. Do we need it?
             return;
         else

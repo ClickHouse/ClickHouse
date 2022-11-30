@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int LOGICAL_ERROR;
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header)
