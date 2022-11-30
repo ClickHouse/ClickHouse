@@ -49,8 +49,7 @@ using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
-using ConstAggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
+using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 struct AggregateFunctionProperties;
 

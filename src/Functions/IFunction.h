@@ -285,7 +285,7 @@ public:
 
 };
 
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).

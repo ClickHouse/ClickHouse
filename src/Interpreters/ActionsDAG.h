@@ -17,7 +17,7 @@ class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;

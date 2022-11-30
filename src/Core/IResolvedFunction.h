@@ -24,6 +24,6 @@ public:
     virtual ~IResolvedFunction() = default;
 };
 
-using IResolvedFunctionPtr = std::shared_ptr<IResolvedFunction>;
+using IResolvedFunctionPtr = std::shared_ptr<const IResolvedFunction>;
 
 }
