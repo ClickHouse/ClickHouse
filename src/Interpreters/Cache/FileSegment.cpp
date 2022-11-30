@@ -66,7 +66,7 @@ FileSegment::FileSegment(
         {
             throw Exception(
                 ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state");
+                "Can only create cell with either EMPTY, DOWNLOADED or SKIP_CACHE state");
         }
     }
 }

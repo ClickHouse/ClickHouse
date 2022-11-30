@@ -3,6 +3,7 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-l
 sidebar_position: 41
 sidebar_label: Storing Dictionaries in Memory
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Storing Dictionaries in Memory 
 
@@ -22,7 +23,9 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 -   The dictionary being accessed could not be loaded.
 -   Error querying a `cached` dictionary.
 
-You can view the list of external dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
+
+<CloudDetails /> 
 
 The configuration looks like this:
 
@@ -303,17 +306,25 @@ or
 CREATE DICTIONARY somedict (
     id UInt64,
     first Date,
-    last Date
+    last Date,
+    advertiser_id UInt64
 )
 PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'date_table'))
+LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
+To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
 
 ``` sql
-dictGetT('dict_name', 'attr_name', id, date)
+dictGet('dict_name', 'attr_name', id, date)
+```
+Query example:
+
+``` sql
+SELECT dictGet('somedict', 'advertiser_id', 1, '2022-10-20 23:20:10.000'::DateTime64::UInt64);
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.

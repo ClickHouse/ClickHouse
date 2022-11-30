@@ -571,7 +571,7 @@ Example:
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -591,6 +591,27 @@ LIMIT 10
 │ ██████.net     │   59141 │
 │ example.com    │   57316 │
 └────────────────┴─────────┘
+```
+
+## formatReadableDecimalSize(x)
+
+Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
+
+Example:
+
+``` sql
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableDecimalSize(filesize_bytes) AS filesize
+```
+
+``` text
+┌─filesize_bytes─┬─filesize───┐
+│              1 │ 1.00 B     │
+│           1024 │ 1.02 KB   │
+│        1048576 │ 1.05 MB   │
+│      192851925 │ 192.85 MB │
+└────────────────┴────────────┘
 ```
 
 ## formatReadableSize(x)

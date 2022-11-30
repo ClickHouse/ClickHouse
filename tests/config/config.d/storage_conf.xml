@@ -93,6 +93,15 @@
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </s3_cache_5>
+            <s3_cache_6>
+                <type>cache</type>
+                <disk>s3_disk_6</disk>
+                <path>s3_cache_6/</path>
+                <max_size>22548578304</max_size>
+                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <enable_bypass_cache_with_threashold>1</enable_bypass_cache_with_threashold>
+				<bypass_cache_threashold>100</bypass_cache_threashold>
+            </s3_cache_6>
             <s3_cache_small>
                 <type>cache</type>
                 <disk>s3_disk_6</disk>
@@ -183,6 +192,13 @@
                     </main>
                 </volumes>
             </s3_cache_4>
+            <s3_cache_6>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_6</disk>
+                    </main>
+                </volumes>
+            </s3_cache_6>
             <s3_cache_multi>
                 <volumes>
                     <main>

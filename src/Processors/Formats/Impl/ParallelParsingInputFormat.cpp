@@ -128,8 +128,9 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
         background_exception = std::current_exception();
         if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
         {
+            /// NOTE: it is not that safe to use line number hack here (may exceed INT_MAX)
             if (e->getLineNumber() != -1)
-                e->setLineNumber(e->getLineNumber() + offset);
+                e->setLineNumber(static_cast<int>(e->getLineNumber() + offset));
 
             auto file_name = getFileNameFromReadBuffer(getReadBuffer());
             if (!file_name.empty())

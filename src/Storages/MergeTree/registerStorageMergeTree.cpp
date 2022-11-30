@@ -307,8 +307,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
-                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause."
-                                                   "See also allow_deprecated_syntax_for_merge_tree setting.");
+                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
+                                                   "See also `allow_deprecated_syntax_for_merge_tree` setting.");
     }
 
     /// For Replicated.

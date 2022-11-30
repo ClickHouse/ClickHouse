@@ -432,20 +432,12 @@ struct AllocatorBufferDeleter<true, Allocator, Cell>
 
 
 // The HashTable
-template
-<
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower,
-    typename Allocator
->
-class HashTable :
-    private boost::noncopyable,
-    protected Hash,
-    protected Allocator,
-    protected Cell::State,
-    protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
+template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
+class HashTable : private boost::noncopyable,
+                  protected Hash,
+                  protected Allocator,
+                  protected Cell::State,
+                  public ZeroValueStorage<Cell::need_zero_value_storage, Cell> /// empty base optimization
 {
 public:
     // If we use an allocator with inline memory, check that the initial

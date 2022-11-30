@@ -105,7 +105,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make clang-c++ python3
+sudo yum --nogpg install git cmake make clang python3 ccache
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse

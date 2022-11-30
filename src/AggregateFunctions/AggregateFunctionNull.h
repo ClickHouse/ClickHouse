@@ -163,14 +163,18 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                if constexpr (merge)
+                    nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                else
+                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -180,8 +184,21 @@ public:
         }
         else
         {
-            nested_function->insertResultInto(nestedPlace(place), to, arena);
+            if constexpr (merge)
+                nested_function->insertMergeResultInto(nestedPlace(place), to, arena);
+            else
+                nested_function->insertResultInto(nestedPlace(place), to, arena);
         }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

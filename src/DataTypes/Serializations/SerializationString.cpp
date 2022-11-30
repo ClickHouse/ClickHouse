@@ -88,7 +88,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     const ColumnString::Chars & data = column_string.getChars();
     const ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    size_t size = column.size();
+    size_t size = column_string.size();
     if (!size)
         return;
 

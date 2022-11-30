@@ -194,7 +194,7 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
         if (meta.load(disk, path))
         {
             FreezeMetaData::clean(disk, path);
-            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", local_context, zookeeper);
+            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.replica_name, "", local_context, zookeeper);
         }
     }
 

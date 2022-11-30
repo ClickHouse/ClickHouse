@@ -105,7 +105,13 @@ public:
         return column_holder->allocatedBytes() + reverse_index.allocatedBytes()
             + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
     }
-    void forEachSubcolumn(IColumn::ColumnCallback callback) override
+
+    void forEachSubcolumn(IColumn::ColumnCallback callback) const override
+    {
+        callback(column_holder);
+    }
+
+    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -113,9 +119,15 @@ public:
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
-    void forEachSubcolumnRecursively(IColumn::ColumnCallback callback) override
+    void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
     {
-        callback(column_holder);
+        callback(*column_holder);
+        column_holder->forEachSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    {
+        callback(*column_holder);
         column_holder->forEachSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
@@ -550,7 +562,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     auto insert_key = [&](StringRef ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
         auto inserted_pos = cur_index.insert(ref);
-        positions[num_added_rows] = inserted_pos;
+        positions[num_added_rows] = static_cast<IndexType>(inserted_pos);
         if (inserted_pos == next_position)
             return update_position(next_position);
 
@@ -562,9 +574,9 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         auto row = start + num_added_rows;
 
         if (null_map && (*null_map)[row])
-            positions[num_added_rows] = getNullValueIndex();
+            positions[num_added_rows] = static_cast<IndexType>(getNullValueIndex());
         else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[num_added_rows] = getNestedTypeDefaultValueIndex();
+            positions[num_added_rows] = static_cast<IndexType>(getNestedTypeDefaultValueIndex());
         else
         {
             auto ref = src_column->getDataAt(row);
@@ -576,7 +588,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
                 if (insertion_point == reverse_index.lastInsertionPoint())
                     res = insert_key(ref, *secondary_index);
                 else
-                    positions[num_added_rows] = insertion_point;
+                    positions[num_added_rows] = static_cast<IndexType>(insertion_point);
             }
             else
                 res = insert_key(ref, reverse_index);

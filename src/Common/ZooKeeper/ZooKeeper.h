@@ -45,7 +45,7 @@ struct ShuffleHost
 {
     String host;
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {
@@ -76,7 +76,7 @@ using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 template <typename T>
 concept ZooKeeperResponse = std::derived_from<T, Coordination::Response>;
 
-template <ZooKeeperResponse ResponseType>
+template <ZooKeeperResponse ResponseType, bool try_multi>
 struct MultiReadResponses
 {
     template <typename TResponses>
@@ -96,7 +96,17 @@ struct MultiReadResponses
                 if constexpr (std::same_as<TResponses, RegularResponses>)
                     return dynamic_cast<ResponseType &>(*resp[index]);
                 else
+                {
+                    if constexpr (try_multi)
+                    {
+                        /// We should not ignore errors except ZNONODE
+                        /// for consistency with exists, tryGet and tryGetChildren
+                        const auto & error = resp[index].error;
+                        if (error != Coordination::Error::ZOK && error != Coordination::Error::ZNONODE)
+                            throw KeeperException(error);
+                    }
                     return resp[index];
+                }
             },
             responses);
     }
@@ -144,8 +154,9 @@ class ZooKeeper
 public:
 
     using Ptr = std::shared_ptr<ZooKeeper>;
+    using ErrorsList = std::initializer_list<Coordination::Error>;
 
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -217,7 +228,7 @@ public:
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
-    using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse>;
+    using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
     template <typename TIter>
     MultiExistsResponse exists(TIter start, TIter end)
     {
@@ -233,7 +244,8 @@ public:
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
-    using MultiGetResponse = MultiReadResponses<Coordination::GetResponse>;
+    using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
+    using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
 
     template <typename TIter>
     MultiGetResponse get(TIter start, TIter end)
@@ -264,13 +276,13 @@ public:
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
-    MultiGetResponse tryGet(TIter start, TIter end)
+    MultiTryGetResponse tryGet(TIter start, TIter end)
     {
         return multiRead<Coordination::GetResponse, true>(
             start, end, zkutil::makeGetRequest, [&](const auto & path) { return asyncTryGet(path); });
     }
 
-    MultiGetResponse tryGet(const std::vector<std::string> & paths)
+    MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
     {
         return tryGet(paths.begin(), paths.end());
     }
@@ -297,7 +309,8 @@ public:
                              Coordination::WatchCallback watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse>;
+    using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
+    using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
     template <typename TIter>
     MultiGetChildrenResponse
@@ -333,7 +346,7 @@ public:
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     template <typename TIter>
-    MultiGetChildrenResponse
+    MultiTryGetChildrenResponse
     tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
         return multiRead<Coordination::ListResponse, true>(
@@ -343,7 +356,7 @@ public:
             [&](const auto & path) { return asyncTryGetChildren(path, list_request_type); });
     }
 
-    MultiGetChildrenResponse
+    MultiTryGetChildrenResponse
     tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
     {
         return tryGetChildren(paths.begin(), paths.end(), list_request_type);
@@ -393,9 +406,11 @@ public:
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
-    /// Wait for the ephemeral node created in previous session to disappear.
-    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
-    void waitForEphemeralToDisappearIfAny(const std::string & path);
+    /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
+    /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
+    /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
+    /// disappear automatically after 3x session_timeout.
+    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -509,7 +524,7 @@ private:
     using AsyncFunction = std::function<std::future<TResponse>(const std::string &)>;
 
     template <typename TResponse, bool try_multi, typename TIter>
-    MultiReadResponses<TResponse> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
+    MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
         if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
         {
@@ -521,12 +536,12 @@ private:
             {
                 Coordination::Responses responses;
                 tryMulti(requests, responses);
-                return MultiReadResponses<TResponse>{std::move(responses)};
+                return MultiReadResponses<TResponse, try_multi>{std::move(responses)};
             }
             else
             {
                 auto responses = multi(requests);
-                return MultiReadResponses<TResponse>{std::move(responses)};
+                return MultiReadResponses<TResponse, try_multi>{std::move(responses)};
             }
         }
 
@@ -534,14 +549,14 @@ private:
         std::vector<std::future<TResponse>> future_responses;
 
         if (responses_size == 0)
-            return MultiReadResponses<TResponse>(std::move(future_responses));
+            return MultiReadResponses<TResponse, try_multi>(std::move(future_responses));
 
         future_responses.reserve(responses_size);
 
         for (auto it = start; it != end; ++it)
             future_responses.push_back(async_fun(*it));
 
-        return MultiReadResponses<TResponse>{std::move(future_responses)};
+        return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
     std::unique_ptr<Coordination::IKeeper> impl;
@@ -609,7 +624,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path + ": ");
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + path);
         }
     }
 

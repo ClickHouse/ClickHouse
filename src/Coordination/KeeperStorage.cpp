@@ -377,6 +377,9 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
 {
     assert(deltas.empty() || deltas.front().zxid >= commit_zxid);
 
+    // collect nodes that have no further modification in the current transaction
+    std::unordered_set<std::string> modified_nodes;
+
     while (!deltas.empty() && deltas.front().zxid == commit_zxid)
     {
         if (std::holds_alternative<SubDeltaEnd>(deltas.front().operation))
@@ -393,7 +396,17 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
             assert(path_deltas.front() == &front_delta);
             path_deltas.pop_front();
             if (path_deltas.empty())
+            {
                 deltas_for_path.erase(front_delta.path);
+
+                // no more deltas for path -> no modification
+                modified_nodes.insert(std::move(front_delta.path));
+            }
+            else if (path_deltas.front()->zxid > commit_zxid)
+            {
+                // next delta has a zxid from a different transaction -> no modification in this transaction
+                modified_nodes.insert(std::move(front_delta.path));
+            }
         }
         else if (auto * add_auth = std::get_if<AddAuthDelta>(&front_delta.operation))
         {
@@ -409,9 +422,12 @@ void KeeperStorage::UncommittedState::commit(int64_t commit_zxid)
     }
 
     // delete all cached nodes that were not modified after the commit_zxid
-    // the commit can end on SubDeltaEnd so we don't want to clear cached nodes too soon
-    if (deltas.empty() || deltas.front().zxid > commit_zxid)
-        std::erase_if(nodes, [commit_zxid](const auto & node) { return node.second.zxid == commit_zxid; });
+    // we only need to check the nodes that were modified in this transaction
+    for (const auto & node : modified_nodes)
+    {
+        if (nodes[node].zxid == commit_zxid)
+            nodes.erase(node);
+    }
 }
 
 void KeeperStorage::UncommittedState::rollback(int64_t rollback_zxid)
@@ -922,7 +938,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         stat.version = 0;
         stat.aversion = 0;
         stat.cversion = 0;
-        stat.dataLength = request.data.length();
+        stat.dataLength = static_cast<Int32>(request.data.length());
         stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
 
         new_deltas.emplace_back(
@@ -1222,7 +1238,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                     value.stat.version++;
                     value.stat.mzxid = zxid;
                     value.stat.mtime = time;
-                    value.stat.dataLength = data.length();
+                    value.stat.dataLength = static_cast<Int32>(data.length());
                     value.setData(data);
                 },
                 request.version});

@@ -378,7 +378,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE" << (settings.hilite ? hilite_none : "");
 
         if (!with_name.empty())
         {
@@ -399,7 +399,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::UNFREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE" << (settings.hilite ? hilite_none : "");
 
         if (!with_name.empty())
         {

@@ -161,7 +161,7 @@ void ParquetBlockInputFormat::prepareReader()
         /// STRUCT type require the number of indexes equal to the number of
         /// nested elements, so we should recursively
         /// count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
+        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
         const auto & name = schema->field(i)->name();
 
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
@@ -201,6 +201,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
+    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
