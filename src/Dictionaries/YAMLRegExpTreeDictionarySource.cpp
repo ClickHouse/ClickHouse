@@ -48,8 +48,8 @@
 namespace DB
 {
 
-inline const std::string kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
-inline const std::string kYAMLRegExpTree = "YAMLRegExpTree";
+inline const String kYAMLRegExpTreeDictionarySource = "YAMLRegExpTreeDictionarySource";
+inline const String kYAMLRegExpTree = "YAMLRegExpTree";
 
 namespace ErrorCodes
 {
@@ -61,13 +61,13 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
-                                   [[maybe_unused]] const std::string & config_prefix,
+                                   [[maybe_unused]] const String & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
                                    [[maybe_unused]] ContextPtr global_context,
-                                   const std::string &,
+                                   const String &,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr
     {
-#if USE_CASSANDRA
+#if USE_YAML_CPP
         if (dict_struct.has_expressions)
         {
             throw Exception(
@@ -92,7 +92,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 
 }
 
-#if USE_CASSANDRA
+#if USE_YAML_CPP
 
 namespace DB
 
@@ -115,8 +115,8 @@ namespace DB
 *   ```
 */
 
-inline const std::string kAttributes = "attributes";
-inline const std::string kConfiguration = "configuration";
+inline const String kAttributes = "attributes";
+inline const String kConfiguration = "configuration";
 
 /**
 *   Attributes allowed fields
@@ -130,16 +130,16 @@ inline const std::string kConfiguration = "configuration";
 *   ```
 */
 
-inline const std::string kType = "type";
+inline const String kType = "type";
 
 /**
 *   Allowed data types
 */
 
-inline const std::string kUInt = "UInt";
-inline const std::string kInt = "Int";
-inline const std::string kFloat = "Float";
-inline const std::string kString = "String";
+inline const String kUInt = "UInt";
+inline const String kInt = "Int";
+inline const String kFloat = "Float";
+inline const String kString = "String";
 
 /**
 *   Configuration allowed fields
@@ -157,9 +157,9 @@ inline const std::string kString = "String";
 *   ```
 */
 
-inline const std::string kMatch = "match";
-inline const std::string kRegExp = "regexp";
-inline const std::string kSet = "set";
+inline const String kMatch = "match";
+inline const String kRegExp = "regexp";
+inline const String kSet = "set";
 
 /**
 *   The data can be loaded from table (using any available dictionary source) with the following structure:
@@ -173,8 +173,8 @@ inline const std::string kSet = "set";
 *   ```
 */
 
-inline const std::string kId = "id";
-inline const std::string kParentId = "parent_id";
+inline const String kId = "id";
+inline const String kParentId = "parent_id";
 
 //////////////////////////////////////////////////////////////////////
 
@@ -188,25 +188,25 @@ namespace ErrorCodes
 
 //////////////////////////////////////////////////////////////////////
 
-Field toUInt(const std::string & value)
+Field toUInt(const String & value)
 {
     const auto result = static_cast<UInt64>(std::strtoul(value.c_str(), nullptr, 10));
     return Field(result);
 }
 
-Field toInt(const std::string & value)
+Field toInt(const String & value)
 {
     const auto result = static_cast<Int64>(std::strtol(value.c_str(), nullptr, 10));
     return Field(result);
 }
 
-Field toFloat(const std::string & value)
+Field toFloat(const String & value)
 {
     const auto result = static_cast<Float64>(std::strtof(value.c_str(), nullptr));
     return Field(result);
 }
 
-Field toString(const std::string & value)
+Field toString(const String & value)
 {
     return Field(value);
 }
@@ -215,7 +215,7 @@ class Attribute
 {
 public:
     explicit Attribute(
-        const std::string & name_, const bool is_nullable_, const DataTypePtr & data_type_, const std::string & attribute_type_)
+        const String & name_, const bool is_nullable_, const DataTypePtr & data_type_, const String & attribute_type_)
         : name(name_)
         , is_nullable(is_nullable_)
         , data_type(data_type_)
@@ -224,7 +224,7 @@ public:
     {
     }
 
-    void insert(const std::string & value)
+    void insert(const String & value)
     {
         if (attribute_type == kUInt)
         {
@@ -259,7 +259,7 @@ public:
         column_ptr->insertDefault();
     }
 
-    std::string getName() const { return name; }
+    String getName() const { return name; }
 
     DataTypePtr getDataType() const
     {
@@ -289,13 +289,13 @@ public:
     }
 
 private:
-    std::string name;
+    String name;
 
     bool is_nullable;
     std::unordered_set<UInt64> null_indices;
 
     DataTypePtr data_type;
-    std::string attribute_type;
+    String attribute_type;
 
     MutableColumnPtr column_ptr;
 
@@ -304,11 +304,11 @@ private:
 
 //////////////////////////////////////////////////////////////////////
 
-using StringToString = std::unordered_map<std::string, std::string>;
-using StringToNode = std::unordered_map<std::string, YAML::Node>;
-using StringToAttribute = std::unordered_map<std::string, Attribute>;
+using StringToString = std::unordered_map<String, String>;
+using StringToNode = std::unordered_map<String, YAML::Node>;
+using StringToAttribute = std::unordered_map<String, Attribute>;
 
-YAML::Node loadYAML(const std::string & filepath)
+YAML::Node loadYAML(const String & filepath)
 {
     try
     {
@@ -330,14 +330,14 @@ StringToNode parseYAMLMap(const YAML::Node & node)
 
     for (const auto & pair : node)
     {
-        const auto key = pair.first.as<std::string>();
+        const auto key = pair.first.as<String>();
         result[key] = pair.second;
     }
 
     return result;
 }
 
-Attribute makeAttribute(const std::string & name, const std::string & type)
+Attribute makeAttribute(const String & name, const String & type)
 {
     DataTypePtr data_type;
 
@@ -365,7 +365,7 @@ Attribute makeAttribute(const std::string & name, const std::string & type)
     return Attribute(name, true, data_type, type);
 }
 
-Attribute makeAttribute(const std::string & name, const YAML::Node & node)
+Attribute makeAttribute(const String & name, const YAML::Node & node)
 {
     if (!node.IsMap())
     {
@@ -386,7 +386,7 @@ Attribute makeAttribute(const std::string & name, const YAML::Node & node)
         throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value for `type` must be scalar, attribute {}", name);
     }
 
-    const auto type = type_node.as<std::string>();
+    const auto type = type_node.as<String>();
 
     return makeAttribute(name, type);
 }
@@ -408,7 +408,7 @@ void getValuesFromSet(const YAML::Node & node, StringToString & attributes_to_in
 {
     if (!node.IsMap())
     {
-        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` must be mapping", kSet);
+        throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` must be map", kSet);
     }
     const auto attributes = parseYAMLMap(node);
 
@@ -416,10 +416,10 @@ void getValuesFromSet(const YAML::Node & node, StringToString & attributes_to_in
     {
         if (!value.IsScalar())
         {
-            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value for attribute {} must be scalar", key);
+            throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Value of attribute {} must be scalar", key);
         }
 
-        attributes_to_insert[key] = value.as<std::string>();
+        attributes_to_insert[key] = value.as<String>();
     }
 }
 
@@ -459,13 +459,13 @@ UInt64 processMatch(const bool is_root, UInt64 parent_id, const YAML::Node & nod
     {
         throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "Single `{}` node must contain {}", kMatch, kRegExp);
     }
-    const auto regexp_node = match[kRegExp];
+    const auto & regexp_node = match[kRegExp];
 
     if (!regexp_node.IsScalar())
     {
         throw Exception(ErrorCodes::INVALID_REGEXP_TREE_CONFIGURATION, "`{}` should be a {}", kRegExp, kString);
     }
-    attributes_to_insert[kRegExp] = regexp_node.as<std::string>();
+    attributes_to_insert[kRegExp] = regexp_node.as<String>();
 
     if (match.contains(kSet))
     {
@@ -547,7 +547,7 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node)
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
-    const std::string & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl)
+    const String & filepath_, Block & sample_block_, ContextPtr context_, bool created_from_ddl)
     : filepath(filepath_), sample_block(sample_block_), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
 {
     const auto user_files_path = context->getUserFilesPath();
@@ -587,7 +587,7 @@ bool YAMLRegExpTreeDictionarySource::isModified() const
     return getLastModification() != last_modification;
 }
 
-std::string YAMLRegExpTreeDictionarySource::toString() const
+String YAMLRegExpTreeDictionarySource::toString() const
 {
     return fmt::format("File: {}", filepath);
 }

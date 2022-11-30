@@ -257,7 +257,7 @@ RegExpTreeDictionary::RegExpTreeDictionary(
     calculateBytesAllocated();
 }
 
-std::unordered_set<UInt64> RegExpTreeDictionary::matchSearchAllIndices(const std::string & key) const
+std::unordered_set<UInt64> RegExpTreeDictionary::matchSearchAllIndices([[maybe_unused]] const std::string & key) const
 {
 #if USE_VECTORSCAN
     std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
@@ -294,7 +294,6 @@ std::unordered_set<UInt64> RegExpTreeDictionary::matchSearchAllIndices(const std
 
     return matches;
 #else
-#    void(key)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multi search all indices is not implemented when USE_VECTORSCAN is off");
 #endif // USE_VECTORSCAN
 }
