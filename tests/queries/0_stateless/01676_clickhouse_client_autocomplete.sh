@@ -5,9 +5,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+SCRIPT_PATH="$CURDIR/$CLICKHOUSE_TEST_UNIQUE_NAME.generated-expect"
+
 # NOTE: database = $CLICKHOUSE_DATABASE is superfluous
 
-function test_completion_word_client()
+function test_completion_word()
 {
     local w=$1 && shift
 
@@ -15,13 +17,16 @@ function test_completion_word_client()
     local compword_begin=${w:0:$((w_len-3))}
     local compword_end=${w:$((w_len-3))}
 
-    # NOTE: here and below you should escape variables of the expect.
-    timeout 60s expect << EOF
+    # NOTE:
+    # - here and below you should escape variables of the expect.
+    # - you should not use "expect <<..." since in this case timeout/eof will
+    #   not work (I guess due to attached stdin)
+    cat > "$SCRIPT_PATH" << EOF
 # NOTE: log will be appended
 exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
 
 log_user 0
-set timeout 3
+set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
@@ -30,7 +35,7 @@ expect_after {
     timeout { exit 1 }
 }
 
-spawn bash -c "$CLICKHOUSE_CLIENT_BINARY $CLICKHOUSE_CLIENT_OPT"
+spawn bash -c "$*"
 expect ":) "
 
 # Make a query
@@ -39,10 +44,12 @@ expect "SET $compword_begin"
 
 # Wait for suggestions to load, they are loaded in background
 set is_done 0
+set timeout 1
 while {\$is_done == 0} {
     send -- "\\t"
     expect {
         "$compword_begin$compword_end" {
+            puts "$compword_begin$compword_end: OK"
             set is_done 1
         }
         default {
@@ -54,6 +61,10 @@ while {\$is_done == 0} {
 send -- "\\3\\4"
 expect eof
 EOF
+
+    # NOTE: run expect under timeout since there is while loop that is not
+    # limited with timeout.
+    timeout 2m expect -f "$SCRIPT_PATH"
 }
 
 # last 3 bytes will be completed,
@@ -93,56 +104,6 @@ client_compwords_positive=(
     # FIXME: none
 )
 
-
-function test_completion_word_local()
-{
-    local w=$1 && shift
-
-    local w_len=${#w}
-    local compword_begin=${w:0:$((w_len-3))}
-    local compword_end=${w:$((w_len-3))}
-
-    # NOTE: here and below you should escape variables of the expect.
-    timeout 60s expect << EOF
-# NOTE: log will be appended
-exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
-
-log_user 0
-set timeout 3
-match_max 100000
-expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
-}
-
-spawn bash -c "$CLICKHOUSE_LOCAL"
-expect ":) "
-
-# Make a query
-send -- "SET $compword_begin"
-expect "SET $compword_begin"
-
-# Wait for suggestions to load, they are loaded in background
-set is_done 0
-while {\$is_done == 0} {
-    send -- "\\t"
-    expect {
-        "$compword_begin$compword_end" {
-            set is_done 1
-        }
-        default {
-            sleep 1
-        }
-    }
-}
-
-send -- "\\3\\4"
-expect eof
-EOF
-}
-
 local_compwords_positive=(
     # system.functions
     concatAssumeInjective
@@ -156,12 +117,15 @@ local_compwords_positive=(
     SimpleAggregateFunction
 )
 
+echo "# clickhouse-client"
 for w in "${client_compwords_positive[@]}"; do
-    test_completion_word_client "$w" || echo "[FAIL] $w (positive)"
+    test_completion_word "$w" "$CLICKHOUSE_CLIENT"
+done
+echo "# clickhouse-local"
+for w in "${local_compwords_positive[@]}"; do
+    test_completion_word "$w" "$CLICKHOUSE_LOCAL"
 done
 
-for w in "${local_compwords_positive[@]}"; do
-    test_completion_word_local "$w" || echo "[FAIL] $w (positive)"
-done
+rm -f "${SCRIPT_PATH:?}"
 
 exit 0
