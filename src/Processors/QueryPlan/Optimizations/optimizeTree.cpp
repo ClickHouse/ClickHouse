@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/Exception.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <stack>
 
 namespace DB
@@ -129,6 +131,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         }
 
         optimizePrimaryKeyCondition(stack);
+        enableMemoryBoundMerging(*frame.node, nodes);
 
         stack.pop_back();
     }
