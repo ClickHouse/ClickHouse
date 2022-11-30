@@ -588,6 +588,19 @@ void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markFormatSupportsSubcolumns(const String & name)
+{
+    auto & target = dict[name].supports_subcolumns;
+    if (target)
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subcolumns", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
+bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.supports_subcolumns;
+}
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {

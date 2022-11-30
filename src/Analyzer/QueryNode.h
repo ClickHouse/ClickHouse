@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 /** Query node represents query in query tree.
   *
   * Example: SELECT * FROM test_table WHERE id == 0;
@@ -553,25 +548,6 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        if (constant_value)
-            return constant_value->getType();
-
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar query node");
-    }
-
-    /// Perform constant folding for scalar subquery node
-    void performConstantFolding(ConstantValuePtr constant_folded_value)
-    {
-        constant_value = std::move(constant_folded_value);
-    }
-
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return constant_value;
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -596,7 +572,6 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
-    ConstantValuePtr constant_value;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;
