@@ -46,7 +46,11 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
         for (const auto & file_segment : file_segments)
         {
             res_columns[0]->insert(cache_base_path);
-            res_columns[1]->insert(file_segment->getPathInLocalCache());
+
+            /// Do not use `file_segment->getPathInLocalCache` here because it will lead to nullptr dereference
+            /// (because file_segments in getSnapshot doesn't have `cache` field set)
+            res_columns[1]->insert(
+                cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind()));
 
             const auto & range = file_segment->range();
             res_columns[2]->insert(range.left);

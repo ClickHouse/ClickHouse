@@ -100,7 +100,7 @@ public:
 
     void SetUp() override
     {
-        if(const char * test_log_level = std::getenv("TEST_LOG_LEVEL"))
+        if(const char * test_log_level = std::getenv("TEST_LOG_LEVEL")) // NOLINT(concurrency-mt-unsafe)
             setupLogs(test_log_level);
         else
             setupLogs(TEST_LOG_LEVEL);
