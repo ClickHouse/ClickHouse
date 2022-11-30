@@ -17,6 +17,9 @@ function test_completion_word_client()
 
     # NOTE: here and below you should escape variables of the expect.
     timeout 60s expect << EOF
+# NOTE: log will be appended
+exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
+
 log_user 0
 set timeout 3
 match_max 100000
@@ -101,6 +104,9 @@ function test_completion_word_local()
 
     # NOTE: here and below you should escape variables of the expect.
     timeout 60s expect << EOF
+# NOTE: log will be appended
+exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
+
 log_user 0
 set timeout 3
 match_max 100000
