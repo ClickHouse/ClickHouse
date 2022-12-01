@@ -73,6 +73,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Common/scope_guard_safe.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -1137,6 +1138,10 @@ void MergeTreeData::loadDataPartsFromDisk(
         {
             pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
@@ -1855,6 +1860,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
+        part_log_elem.table_uuid = table_id.uuid;
 
         for (const auto & part : parts)
         {
@@ -1963,6 +1969,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
 
@@ -4714,6 +4724,22 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
     return affected_partition_ids;
 }
 
+std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
+{
+    auto lock = lockParts();
+    std::unordered_set<String> res;
+    std::string_view prev_id;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (prev_id == part->info.partition_id)
+            continue;
+
+        res.insert(part->info.partition_id);
+        prev_id = part->info.partition_id;
+    }
+    return res;
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(
     const DataPartStates & affordable_states, const DataPartsLock & /*lock*/, DataPartStateVector * out_states) const
@@ -6709,6 +6735,7 @@ try
 
     part_log_elem.database_name = table_id.database_name;
     part_log_elem.table_name = table_id.table_name;
+    part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
