@@ -23,4 +23,4 @@ Additional cache types:
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
 
-To drop one of caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
+To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
