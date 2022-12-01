@@ -552,11 +552,13 @@ void Changelog::writeThread()
     WriteOperation write_operation;
     while (write_operations.pop(write_operation))
     {
-        std::lock_guard writer_lock(writer_mutex);
-        assert(initialized && current_writer);
+        assert(initialized);
 
         if (auto * append_log = std::get_if<AppendLog>(&write_operation))
         {
+            std::lock_guard writer_lock(writer_mutex);
+            assert(current_writer);
+
             const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
             const bool log_is_complete = append_log->index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
 
@@ -569,8 +571,11 @@ void Changelog::writeThread()
         {
             const auto & flush = std::get<Flush>(write_operation);
 
-            if (current_writer)
-                current_writer->flush(force_sync);
+            {
+                std::lock_guard writer_lock(writer_mutex);
+                if (current_writer)
+                    current_writer->flush(force_sync);
+            }
 
             {
                 std::lock_guard lock{durable_idx_mutex};
