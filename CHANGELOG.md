@@ -35,6 +35,7 @@
 * Add generic implementation for arbitrary structured named collections, access type and `system.named_collections`. [#43147](https://github.com/ClickHouse/ClickHouse/pull/43147) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 #### Performance Improvement
+* Parallelized merging of `uniqExact` states for aggregation without key, i.e. queries like `SELECT uniqExact(number) FROM table`. The improvement becomes noticeable when the number of unique keys approaches 10^6. Also `uniq` performance is slightly optimized. [#43072](https://github.com/ClickHouse/ClickHouse/pull/43072) ([Nikita Taranov](https://github.com/nickitat)).
 * `match` function can use the index if it's a condition on string prefix. This closes [#37333](https://github.com/ClickHouse/ClickHouse/issues/37333). [#42458](https://github.com/ClickHouse/ClickHouse/pull/42458) ([clarkcaoliu](https://github.com/Clark0)).
 * Speed up AND and OR operators when they are sequenced. [#42214](https://github.com/ClickHouse/ClickHouse/pull/42214) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
 * Support parallel parsing for `LineAsString` input format. This improves performance just slightly. This closes [#42502](https://github.com/ClickHouse/ClickHouse/issues/42502). [#42780](https://github.com/ClickHouse/ClickHouse/pull/42780) ([Kruglov Pavel](https://github.com/Avogar)).

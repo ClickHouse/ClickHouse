@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class DiskMemory;
+
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
@@ -22,9 +22,7 @@ class WriteBufferFromFileBase;
 class DiskMemory : public IDisk
 {
 public:
-    explicit DiskMemory(const String & name_) : name(name_), disk_path("memory://" + name_ + '/') {}
-
-    const String & getName() const override { return name; }
+    explicit DiskMemory(const String & name_);
 
     const String & getPath() const override { return disk_path; }
 
@@ -121,7 +119,6 @@ private:
     };
     using Files = std::unordered_map<String, FileData>; /// file path -> file data
 
-    const String name;
     const String disk_path;
     Files files;
     mutable std::mutex mutex;

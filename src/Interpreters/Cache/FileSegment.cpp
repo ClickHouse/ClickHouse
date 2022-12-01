@@ -23,6 +23,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String toString(FileSegmentKind type)
+{
+    switch (type)
+    {
+        case FileSegmentKind::Regular:
+            return "Regular";
+        case FileSegmentKind::Persistent:
+            return "Persistent";
+        case FileSegmentKind::Temporary:
+            return "Temporary";
+    }
+}
+
 FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
@@ -39,7 +52,7 @@ FileSegment::FileSegment(
 #else
     , log(&Poco::Logger::get("FileSegment"))
 #endif
-    , is_persistent(settings.is_persistent)
+    , segment_kind(settings.type)
 {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
@@ -73,7 +86,8 @@ FileSegment::FileSegment(
 
 String FileSegment::getPathInLocalCache() const
 {
-    return cache->getPathInLocalCache(key(), offset(), isPersistent());
+    chassert(cache);
+    return cache->getPathInLocalCache(key(), offset(), segment_kind);
 }
 
 FileSegment::State FileSegment::state() const
@@ -309,7 +323,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         if (current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer)
+        if (!cache_writer && from != nullptr)
         {
             if (current_downloaded_size > 0)
                 throw Exception(
@@ -324,11 +338,14 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
     try
     {
-        cache_writer->write(from, size);
+        /// if `from` is nullptr, then we just allocate and hold space by current segment and it was (or would) be written outside
+        if (cache_writer && from != nullptr)
+            cache_writer->write(from, size);
 
         std::unique_lock download_lock(download_mutex);
 
-        cache_writer->next();
+        if (cache_writer && from != nullptr)
+            cache_writer->next();
 
         downloaded_size += size;
     }
@@ -380,6 +397,13 @@ FileSegment::State FileSegment::wait()
 
 bool FileSegment::reserve(size_t size_to_reserve)
 {
+    size_t reserved = tryReserve(size_to_reserve, true);
+    assert(reserved == 0 || reserved == size_to_reserve);
+    return reserved == size_to_reserve;
+}
+
+size_t FileSegment::tryReserve(size_t size_to_reserve, bool strict)
+{
     if (!size_to_reserve)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
@@ -394,10 +418,16 @@ bool FileSegment::reserve(size_t size_to_reserve)
         expected_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
         if (expected_downloaded_size + size_to_reserve > range().size())
-            throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+        {
+            if (strict)
+            {
+                throw Exception(
+                    ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
+                    "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
+                    size_to_reserve, range().toString(), downloaded_size);
+            }
+            size_to_reserve = range().size() - expected_downloaded_size;
+        }
 
         chassert(reserved_size >= expected_downloaded_size);
     }
@@ -415,17 +445,16 @@ bool FileSegment::reserve(size_t size_to_reserve)
     {
         std::lock_guard cache_lock(cache->mutex);
 
-        size_to_reserve = size_to_reserve - already_reserved_size;
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
+        size_t need_to_reserve = size_to_reserve - already_reserved_size;
+        reserved = cache->tryReserve(key(), offset(), need_to_reserve, cache_lock);
 
-        if (reserved)
-        {
-            std::lock_guard segment_lock(mutex);
-            reserved_size += size_to_reserve;
-        }
+        if (!reserved)
+            return 0;
+
+        std::lock_guard segment_lock(mutex);
+        reserved_size += need_to_reserve;
     }
-
-    return reserved;
+    return size_to_reserve;
 }
 
 void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::mutex> & segment_lock)
@@ -545,6 +574,15 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         resetDownloaderUnlocked(segment_lock);
     }
 
+    if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
+    {
+        LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
+        detach(cache_lock, segment_lock);
+        setDownloadState(State::SKIP_CACHE);
+        cache->remove(key(), offset(), cache_lock, segment_lock);
+        return;
+    }
+
     switch (download_state)
     {
         case State::SKIP_CACHE:
@@ -626,7 +664,7 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
     info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(segment_lock) << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "detached: " << is_detached << ", ";
-    info << "persistent: " << is_persistent;
+    info << "kind: " << toString(segment_kind);
 
     return info.str();
 }
@@ -721,7 +759,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->ref_count = file_segment.use_count();
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(segment_lock);
     snapshot->download_state = file_segment->download_state;
-    snapshot->is_persistent = file_segment->isPersistent();
+    snapshot->segment_kind = file_segment->getKind();
 
     return snapshot;
 }
@@ -782,6 +820,8 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
         if (!cache)
             cache = file_segment->cache;
+
+        assert(cache == file_segment->cache); /// all segments should belong to the same cache
 
         try
         {

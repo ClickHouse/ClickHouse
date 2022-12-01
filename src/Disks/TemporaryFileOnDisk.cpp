@@ -2,6 +2,7 @@
 #include <Poco/TemporaryFile.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
+#include <Disks/TemporaryFileInPath.h>
 
 #include <filesystem>
 
@@ -14,7 +15,6 @@ namespace CurrentMetrics
 {
     extern const Metric TotalTemporaryFiles;
 }
-
 
 namespace DB
 {
