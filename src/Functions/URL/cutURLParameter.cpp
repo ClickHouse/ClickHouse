@@ -59,16 +59,16 @@ public:
         const ColumnPtr column_needle = arguments[1].column;
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
-        const ColumnArray * col_const_array = checkAndGetColumnConstData<ColumnArray>(column_needle.get());
+        const ColumnArray * col_needle_const_array = checkAndGetColumnConstData<ColumnArray>(column_needle.get());
 
-        if (!col_needle && !col_const_array)
+        if (!col_needle && !col_needle_const_array)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Second argument of function {} must be constant string or constant array",
                 getName());
 
-        if (col_const_array)
+        if (col_needle_const_array)
         {
-            if (col_const_array->getData().size() > 0 && typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType()->getTypeId() != TypeIndex::String)
+            if (!col_needle_const_array->getData().empty() && typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType()->getTypeId() != TypeIndex::String)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Second argument of function {} must be constant array of strings",
                     getName());
@@ -80,7 +80,7 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vector(col->getChars(), col->getOffsets(), col_needle, col_const_array, vec_res, offsets_res);
+            vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res);
             return col_res;
         }
         else
@@ -89,7 +89,7 @@ public:
                 arguments[0].column->getName(), getName());
     }
 
-    static void cutURL(ColumnString::Chars & data, std::string pattern, size_t prev_offset, size_t & cur_offset, size_t & offset_adjust)
+    static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset, size_t & offset_adjust)
     {
         pattern += '=';
         const char * param_str = pattern.c_str();
@@ -139,7 +139,7 @@ public:
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const ColumnConst * col_needle,
-        const ColumnArray * col_const_array,
+        const ColumnArray * col_needle_const_array,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
@@ -154,19 +154,18 @@ public:
         {
             cur_offset = offsets[i] - offset_adjust;
 
-            if (!col_const_array)
+            if (col_needle_const_array)
             {
-                cutURL(res_data, col_needle->getValue<String>(), prev_offset, cur_offset, offset_adjust);
+                size_t num_needles = col_needle_const_array->getData().size();
+                for (size_t j = 0; j < num_needles; ++j)
+                {
+                    auto field = col_needle_const_array->getData()[j];
+                    cutURL(res_data, field.get<String>(), prev_offset, cur_offset, offset_adjust);
+                }
             }
             else
             {
-                size_t data_size = col_const_array->getData().size();
-
-                for (size_t j = 0; j < data_size; ++j)
-                {
-                    auto field = col_const_array->getData()[j];
-                    cutURL(res_data, field.get<String>(), prev_offset, cur_offset, offset_adjust);
-                }
+                cutURL(res_data, col_needle->getValue<String>(), prev_offset, cur_offset, offset_adjust);
             }
             res_offsets[i] = cur_offset;
             prev_offset = cur_offset;
