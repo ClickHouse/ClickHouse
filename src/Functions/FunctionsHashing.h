@@ -3,11 +3,17 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
+#include <wyhash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
-#include <wyhash.h>
 
 #include "config.h"
+
+#ifdef __clang__
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#endif
+#include <xxhash.h>
 
 #if USE_BLAKE3
 #    include <blake3.h>
@@ -17,7 +23,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
-#include <xxhash.h>
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -588,7 +593,7 @@ struct ImplXxHash32
     static constexpr auto name = "xxHash32";
     using ReturnType = UInt32;
 
-    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
       *  non-reproducible from outside of CH.
@@ -609,7 +614,24 @@ struct ImplXxHash64
     using ReturnType = UInt64;
     using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 0); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
+     */
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct ImplXXH3
+{
+    static constexpr auto name = "xxh3";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH3_64bits(s, len); }
 
     /*
        With current implementation with more than 1 arguments it will give the results
@@ -1508,7 +1530,12 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }
+
+#ifdef __clang__
+#    pragma clang diagnostic pop
+#endif

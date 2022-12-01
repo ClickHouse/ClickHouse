@@ -112,6 +112,16 @@ if __name__ == "__main__":
     else:
         check_name_with_group = check_name
 
+    is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
+    if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
+        status = "success"
+        message = "Skipped, not labeled with 'pr-performance'"
+        report_url = GITHUB_RUN_URL
+        post_commit_status(
+            gh, pr_info.sha, check_name_with_group, message, status, report_url
+        )
+        sys.exit(0)
+
     test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
         "test_grep_exclude_filter"
     ]
