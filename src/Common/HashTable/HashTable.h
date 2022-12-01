@@ -70,7 +70,7 @@ namespace ZeroTraits
 {
 
 template <typename T>
-bool check(const T x) { return x == T{}; }
+bool check(const T & x) { return x == T{}; }
 
 template <typename T>
 void set(T & x) { x = {}; }
