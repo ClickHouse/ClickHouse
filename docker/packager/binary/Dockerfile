@@ -21,6 +21,7 @@ RUN apt-get install \
         libc6 \
         libc6-dev \
         libc6-dev-arm64-cross \
+        libgcc-9-dev \
         --yes
 
 # Install CMake 3.20+ for Rust compilation
