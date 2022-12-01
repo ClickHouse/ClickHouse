@@ -80,7 +80,7 @@ public:
 
     static Key hash(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
 
     String getPathInLocalCache(const Key & key) const;
 
@@ -89,8 +89,10 @@ public:
     size_t capacity() const { return max_size; }
 
     size_t getUsedCacheSize() const;
+    size_t getTotalMaxSize() const;
 
     size_t getFileSegmentsNum() const;
+    size_t getTotalMaxElements() const;
 
     static bool isReadOnly();
 
@@ -221,6 +223,8 @@ private:
 
     FileSegmentCell * getCell(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
 
+    /// Returns non-owened pointer to the cell stored in the `files` map.
+    /// Doesn't reserve any space.
     FileSegmentCell * addCell(
         const Key & key,
         size_t offset,
