@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 import sys
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -52,7 +52,7 @@ class DockerImage:
             and self.only_amd64 == other.only_amd64
         )
 
-    def __lt__(self, other) -> bool:
+    def __lt__(self, other: Any) -> bool:
         if not isinstance(other, DockerImage):
             return False
         if self.parent and not other.parent:
@@ -270,7 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache,
+    additional_cache: str,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:
@@ -441,11 +441,15 @@ def main():
 
     result_images = {}
     images_processing_result = []
+    additional_cache = ""
+    if pr_info.release_pr or pr_info.merged_pr:
+        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined
         # We use it as tag to reduce rebuilding time
         images_processing_result += process_image_with_parents(
-            image, image_versions, pr_info.release_pr, args.push
+            image, image_versions, additional_cache, args.push
         )
         result_images[image.repo] = result_version
 
