@@ -834,17 +834,23 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
     return data_types;
 }
 
+String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
+{
+    return fmt::format(
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}",
+        settings.schema_inference_hints,
+        settings.max_rows_to_read_for_schema_inference);
+}
+
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
 {
-    String result;
+    String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
-    result = fmt::format(
-        "schema_inference_hints={}, try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, max_rows_to_read_for_schema_inference={}",
-        settings.schema_inference_hints,
+    result += fmt::format(
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes,
-        settings.max_rows_to_read_for_schema_inference);
+        settings.try_infer_datetimes);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
