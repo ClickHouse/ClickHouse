@@ -31,7 +31,7 @@ namespace ErrorCodes
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.get<const String &>();
-    if (s.size() > settings.max_binary_string_size)
+    if (settings.max_binary_string_size && s.size() > settings.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
@@ -66,7 +66,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-    if (s.size > settings.max_binary_string_size)
+    if (settings.max_binary_string_size && s.size > settings.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
