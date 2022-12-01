@@ -167,6 +167,10 @@ add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
 
+if (ARCH_S390X)
+    add_contrib(crc32-s390x-cmake crc32-s390x)
+endif()
+
 add_contrib(annoy-cmake annoy)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
