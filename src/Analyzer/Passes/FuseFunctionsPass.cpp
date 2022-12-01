@@ -1,18 +1,18 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Functions/FunctionFactory.h>
-
-#include <AggregateFunctions/IAggregateFunction.h>
-
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/HashUtils.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+
+#include <Functions/FunctionFactory.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 
 namespace DB
 {
@@ -160,11 +160,11 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
         if (parameter_nodes.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have exactly one parameter", function_name);
 
-        const auto & constant_value = parameter_nodes.front()->getConstantValueOrNull();
-        if (!constant_value)
+        const auto * constant_node = parameter_nodes.front()->as<ConstantNode>();
+        if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
-        const auto & value = constant_value->getValue();
+        const auto & value = constant_node->getValue();
         if (value.getType() != Field::Types::Float64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function '{}' should have parameter of type Float64, got '{}'",
