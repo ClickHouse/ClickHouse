@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
@@ -14,11 +15,14 @@
 #include <IO/WriteHelpers.h>
 #include <filesystem>
 #include <thread>
+#include <DataTypes/DataTypesNumber.h>
+
+#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 
 namespace fs = std::filesystem;
+using namespace DB;
 
-fs::path caches_dir = fs::current_path() / "lru_cache_test";
-String cache_base_path = caches_dir / "cache1" / "";
+static constexpr auto TEST_LOG_LEVEL = "debug";
 
 void assertRange(
     [[maybe_unused]] size_t assert_n, DB::FileSegmentPtr file_segment,
@@ -53,7 +57,7 @@ String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & k
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
-void download(DB::FileSegmentPtr file_segment)
+void download(const std::string & cache_base_path, DB::FileSegmentPtr file_segment)
 {
     const auto & key = file_segment->key();
     size_t size = file_segment->range().size();
@@ -67,30 +71,57 @@ void download(DB::FileSegmentPtr file_segment)
     file_segment->write(data.data(), size, file_segment->getCurrentWriteOffset());
 }
 
-void prepareAndDownload(DB::FileSegmentPtr file_segment)
+void prepareAndDownload(const std::string & cache_base_path, DB::FileSegmentPtr file_segment)
 {
-    // std::cerr << "Reserving: " << file_segment->range().size() << " for: " << file_segment->range().toString() << "\n";
     ASSERT_TRUE(file_segment->reserve(file_segment->range().size()));
-    download(file_segment);
+    download(cache_base_path, file_segment);
 }
 
-void complete(const DB::FileSegmentsHolder & holder)
+void complete(const std::string & cache_base_path, const DB::FileSegmentsHolder & holder)
 {
     for (const auto & file_segment : holder.file_segments)
     {
         ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-        prepareAndDownload(file_segment);
+        prepareAndDownload(cache_base_path, file_segment);
         file_segment->completeWithState(DB::FileSegment::State::DOWNLOADED);
     }
 }
 
-
-TEST(FileCache, get)
+class FileCacheTest : public ::testing::Test
 {
-    if (fs::exists(cache_base_path))
-        fs::remove_all(cache_base_path);
-    fs::create_directories(cache_base_path);
+public:
 
+    static void setupLogs(const std::string & level)
+    {
+        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel(level);
+    }
+
+    void SetUp() override
+    {
+        if(const char * test_log_level = std::getenv("TEST_LOG_LEVEL")) // NOLINT(concurrency-mt-unsafe)
+            setupLogs(test_log_level);
+        else
+            setupLogs(TEST_LOG_LEVEL);
+
+        if (fs::exists(cache_base_path))
+            fs::remove_all(cache_base_path);
+        fs::create_directories(cache_base_path);
+    }
+
+    void TearDown() override
+    {
+        if (fs::exists(cache_base_path))
+            fs::remove_all(cache_base_path);
+    }
+
+    fs::path caches_dir = fs::current_path() / "lru_cache_test";
+    std::string cache_base_path = caches_dir / "cache1" / "";
+};
+
+TEST_F(FileCacheTest, get)
+{
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -126,7 +157,7 @@ TEST(FileCache, get)
             ASSERT_TRUE(segments[0]->reserve(segments[0]->range().size()));
             assertRange(2, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADING);
 
-            download(segments[0]);
+            download(cache_base_path, segments[0]);
             segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             assertRange(3, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         }
@@ -147,7 +178,7 @@ TEST(FileCache, get)
             assertRange(5, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::EMPTY);
 
             ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(segments[1]);
+            prepareAndDownload(cache_base_path, segments[1]);
             segments[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
         }
@@ -180,8 +211,8 @@ TEST(FileCache, get)
             assertRange(10, segments[0], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
         }
 
-        complete(cache.getOrSet(key, 17, 4, {})); /// Get [17, 20]
-        complete(cache.getOrSet(key, 24, 3, {})); /// Get [24, 26]
+        complete(cache_base_path, cache.getOrSet(key, 17, 4, {})); /// Get [17, 20]
+        complete(cache_base_path, cache.getOrSet(key, 24, 3, {})); /// Get [24, 26]
         /// completeWithState(cache.getOrSet(key, 27, 1, false)); /// Get [27, 27]
 
         /// Current cache:    [__________][_____]   [____]    [___][]
@@ -203,7 +234,7 @@ TEST(FileCache, get)
             assertRange(13, segments[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::EMPTY);
 
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(segments[2]);
+            prepareAndDownload(cache_base_path, segments[2]);
 
             segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
 
@@ -244,7 +275,7 @@ TEST(FileCache, get)
             assertRange(21, segments[3], DB::FileSegment::Range(21, 21), DB::FileSegment::State::EMPTY);
 
             ASSERT_TRUE(segments[3]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(segments[3]);
+            prepareAndDownload(cache_base_path, segments[3]);
 
             segments[3]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             ASSERT_TRUE(segments[3]->state() == DB::FileSegment::State::DOWNLOADED);
@@ -267,8 +298,8 @@ TEST(FileCache, get)
 
             ASSERT_TRUE(segments[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(segments[0]);
-            prepareAndDownload(segments[2]);
+            prepareAndDownload(cache_base_path, segments[0]);
+            prepareAndDownload(cache_base_path, segments[2]);
             segments[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
         }
@@ -290,8 +321,8 @@ TEST(FileCache, get)
 
             ASSERT_TRUE(s5[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            prepareAndDownload(s5[0]);
-            prepareAndDownload(s1[0]);
+            prepareAndDownload(cache_base_path, s5[0]);
+            prepareAndDownload(cache_base_path, s1[0]);
             s5[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             s1[0]->completeWithState(DB::FileSegment::State::DOWNLOADED);
 
@@ -394,7 +425,7 @@ TEST(FileCache, get)
                 cv.wait(lock, [&]{ return lets_start_download; });
             }
 
-            prepareAndDownload(segments[2]);
+            prepareAndDownload(cache_base_path, segments[2]);
             segments[2]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             ASSERT_TRUE(segments[2]->state() == DB::FileSegment::State::DOWNLOADED);
 
@@ -459,7 +490,7 @@ TEST(FileCache, get)
                 ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
 
                 ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
-                prepareAndDownload(segments_2[1]);
+                prepareAndDownload(cache_base_path, segments_2[1]);
                 segments_2[1]->completeWithState(DB::FileSegment::State::DOWNLOADED);
             });
 
@@ -516,4 +547,142 @@ TEST(FileCache, get)
         assertRange(50, segments1[2], DB::FileSegment::Range(20, 24), DB::FileSegment::State::EMPTY);
     }
 
+}
+
+TEST_F(FileCacheTest, rangeWriter)
+{
+    DB::FileCacheSettings settings;
+    settings.max_size = 25;
+    settings.max_elements = 5;
+    settings.max_file_segment_size = 10;
+
+    DB::FileCache cache(cache_base_path, settings);
+    cache.initialize();
+    auto key = cache.hash("key1");
+
+    DB::FileSegmentRangeWriter writer(&cache, key, nullptr, "", "key1");
+
+    std::string data(100, '\xf0');
+
+    size_t total_written = 0;
+    for (const size_t size : {3, 5, 8, 1, 1, 3})
+    {
+        total_written += size;
+        ASSERT_EQ(writer.tryWrite(data.data(), size, writer.currentOffset()), size);
+    }
+    ASSERT_LT(total_written, settings.max_size);
+
+    size_t offset_before_unsuccessful_write = writer.currentOffset();
+    size_t space_left = settings.max_size - total_written;
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left + 1, writer.currentOffset()), 0);
+
+    ASSERT_EQ(writer.currentOffset(), offset_before_unsuccessful_write);
+
+    ASSERT_EQ(writer.tryWrite(data.data(), space_left, writer.currentOffset()), space_left);
+
+    writer.finalize();
+}
+
+static Block generateBlock(size_t size = 0)
+{
+    Block block;
+    ColumnWithTypeAndName column;
+    column.name = "x";
+    column.type = std::make_shared<DataTypeUInt64>();
+
+    {
+        MutableColumnPtr mut_col = column.type->createColumn();
+        for (size_t i = 0; i < size; ++i)
+            mut_col->insert(i);
+        column.column = std::move(mut_col);
+    }
+
+    block.insert(column);
+
+    LOG_DEBUG(&Poco::Logger::get("FileCacheTest"), "generated block {} bytes", block.bytes());
+    return block;
+}
+
+static size_t readAllTemporaryData(TemporaryFileStream & stream)
+{
+    Block block;
+    size_t read_rows = 0;
+    do
+    {
+        block = stream.read();
+        read_rows += block.rows();
+    } while (block);
+    return read_rows;
+}
+
+TEST_F(FileCacheTest, temporaryData)
+{
+    DB::FileCacheSettings settings;
+    settings.max_size = 10240;
+    settings.max_file_segment_size = 1024;
+
+    DB::FileCache file_cache(cache_base_path, settings);
+    file_cache.initialize();
+
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
+
+    auto some_data_holder = file_cache.getOrSet(file_cache.hash("some_data"), 0, 1024 * 5, CreateFileSegmentSettings{});
+
+    {
+        auto segments = fromHolder(some_data_holder);
+        ASSERT_EQ(segments.size(), 5);
+        for (auto & segment : segments)
+        {
+            ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
+            ASSERT_TRUE(segment->reserve(segment->range().size()));
+            download(cache_base_path, segment);
+            segment->completeWithState(DB::FileSegment::State::DOWNLOADED);
+        }
+    }
+
+    size_t size_used_before_temporary_data = file_cache.getUsedCacheSize();
+    size_t segments_used_before_temporary_data = file_cache.getFileSegmentsNum();
+    ASSERT_GT(size_used_before_temporary_data, 0);
+    ASSERT_GT(segments_used_before_temporary_data, 0);
+
+    size_t size_used_with_temporary_data;
+    size_t segments_used_with_temporary_data;
+    {
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto & stream = tmp_data->createStream(generateBlock());
+
+        ASSERT_GT(stream.write(generateBlock(100)), 0);
+
+        EXPECT_GT(file_cache.getUsedCacheSize(), 0);
+        EXPECT_GT(file_cache.getFileSegmentsNum(), 0);
+
+        size_t used_size_before_attempt = file_cache.getUsedCacheSize();
+        /// data can't be evicted because it is still held by `some_data_holder`
+        ASSERT_THROW(stream.write(generateBlock(1000)), DB::Exception);
+
+        ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
+
+        some_data_holder.reset();
+
+        stream.write(generateBlock(1011));
+
+        auto stat = stream.finishWriting();
+
+        EXPECT_EQ(stat.num_rows, 1111);
+        EXPECT_EQ(readAllTemporaryData(stream), 1111);
+
+        size_used_with_temporary_data = file_cache.getUsedCacheSize();
+        segments_used_with_temporary_data = file_cache.getFileSegmentsNum();
+        EXPECT_GT(size_used_with_temporary_data, 0);
+        EXPECT_GT(segments_used_with_temporary_data, 0);
+    }
+
+    /// All temp data should be evicted after removing temporary files
+    EXPECT_LE(file_cache.getUsedCacheSize(), size_used_with_temporary_data);
+    EXPECT_LE(file_cache.getFileSegmentsNum(), segments_used_with_temporary_data);
+
+    /// Some segments reserved by `some_data_holder` was eviced by temporary data
+    EXPECT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
+    EXPECT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
 }
