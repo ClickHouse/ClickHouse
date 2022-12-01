@@ -41,6 +41,14 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 class FunctionNode;
 using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
+enum class FunctionKind
+{
+    UNKNOWN,
+    ORDINARY,
+    AGGREGATE,
+    WINDOW,
+};
+
 class FunctionNode final : public IQueryTreeNode
 {
 public:
@@ -133,13 +141,23 @@ public:
     /** Get non aggregate function.
       * If function is not resolved nullptr returned.
       */
-    FunctionBasePtr getFunction() const;
+    FunctionBasePtr getFunction() const
+    {
+        if (kind != FunctionKind::ORDINARY)
+            return {};
+        return std::reinterpret_pointer_cast<const IFunctionBase>(function);
+    }
 
     /** Get aggregate function.
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
       */
-    AggregateFunctionPtr getAggregateFunction() const;
+    AggregateFunctionPtr getAggregateFunction() const
+    {
+        if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+            return {};
+        return std::reinterpret_pointer_cast<const IAggregateFunction>(function);
+    }
 
     /// Is function node resolved
     bool isResolved() const
@@ -150,14 +168,20 @@ public:
     /// Is function node window function
     bool isWindowFunction() const
     {
-        return getWindowNode() != nullptr;
+        return kind == FunctionKind::WINDOW;
     }
 
     /// Is function node aggregate function
-    bool isAggregateFunction() const;
+    bool isAggregateFunction() const
+    {
+        return kind == FunctionKind::AGGREGATE;
+    }
 
     /// Is function node ordinary function
-    bool isOrdinaryFunction() const;
+    bool isOrdinaryFunction() const
+    {
+        return kind == FunctionKind::ORDINARY;
+    }
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.
@@ -202,6 +226,7 @@ protected:
 
 private:
     String function_name;
+    FunctionKind kind = FunctionKind::UNKNOWN;
     IResolvedFunctionPtr function;
 
     static constexpr size_t parameters_child_index = 0;

@@ -37,42 +37,27 @@ ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
     return argument_types;
 }
 
-
-FunctionBasePtr FunctionNode::getFunction() const
-{
-    return std::dynamic_pointer_cast<const IFunctionBase>(function);
-}
-
-AggregateFunctionPtr FunctionNode::getAggregateFunction() const
-{
-    return std::dynamic_pointer_cast<const IAggregateFunction>(function);
-}
-
-bool FunctionNode::isAggregateFunction() const
-{
-    return typeid_cast<AggregateFunctionPtr>(function) != nullptr && !isWindowFunction();
-}
-
-bool FunctionNode::isOrdinaryFunction() const
-{
-    return typeid_cast<FunctionBasePtr>(function) != nullptr;
-}
-
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
 {
     function_name = function_value->getName();
     function = std::move(function_value);
+    kind = FunctionKind::ORDINARY;
 }
 
 void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value)
 {
     function_name = aggregate_function_value->getName();
     function = std::move(aggregate_function_value);
+    kind = FunctionKind::AGGREGATE;
 }
 
 void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
 {
+    if (!hasWindow())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Trying to resolve FunctionNode without window definition as a window function {}", window_function_value->getName());
     resolveAsAggregateFunction(window_function_value);
+    kind = FunctionKind::WINDOW;
 }
 
 void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
