@@ -33,6 +33,7 @@
 #include <Common/logger_useful.h>
 #include <base/range.h>
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <filesystem>
 
@@ -290,6 +291,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         if (thread_group)

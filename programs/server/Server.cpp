@@ -212,6 +212,7 @@ try
 
     /// Clearing old temporary files.
     fs::directory_iterator dir_end;
+    size_t unknown_files = 0;
     for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
         if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
@@ -220,8 +221,17 @@ try
             fs::remove(it->path());
         }
         else
-            LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+        {
+            unknown_files++;
+            if (unknown_files < 100)
+                LOG_DEBUG(log, "Found unknown {} {} in temporary path",
+                    it->is_regular_file() ? "file" : (it->is_directory() ? "directory" : "element"),
+                    it->path().string());
+        }
     }
+
+    if (unknown_files)
+        LOG_DEBUG(log, "Found {} unknown files in temporary path", unknown_files);
 }
 catch (...)
 {
@@ -1475,8 +1485,7 @@ try
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
-            settings.async_insert_threads,
-            settings.async_insert_cleanup_timeout_ms));
+            settings.async_insert_threads));
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
