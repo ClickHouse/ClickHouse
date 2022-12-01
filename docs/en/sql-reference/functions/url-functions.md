@@ -464,7 +464,7 @@ Removes the query string and fragment identifier. The question mark and number s
 
 ### cutURLParameter(URL, name)
 
-Removes the `name` URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
+Removes the `name` parameter from URL, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
 **Syntax**
 
@@ -479,7 +479,7 @@ cutURLParameter(URL, name)
 
 **Returned value**
 
--   URL with removed `name` URL parameter and its value.
+-   URL with `name` URL parameter removed.
 
 Type: `String`.
 
@@ -489,14 +489,14 @@ Query:
 
 ``` sql
 SELECT
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f', 'a') as url_without_a,
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f', ['c', 'e']) as url_without_c_and_e;
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
 ```
 
 Result:
 
 ``` text
-┌─url_without_a──────────────┬─url_without_c_and_e────┐
-│ http://bigmir.net/?c=d&e=f │ http://bigmir.net/?a=b │
-└────────────────────────────┴────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
 ```
