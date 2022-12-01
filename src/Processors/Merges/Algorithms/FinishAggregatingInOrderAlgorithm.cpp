@@ -55,11 +55,12 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
 
-    const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get());
-    if (!arenas_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have ChunkInfoWithAllocatedBytes in FinishAggregatingInOrderAlgorithm");
+    Int64 allocated_bytes = 0;
+    /// Will be set by AggregatingInOrderTransform during local aggregation; will be nullptr during merging on initiator.
+    if (const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+        allocated_bytes = arenas_info->allocated_bytes;
 
-    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
+    states[source_num] = State{input.chunk, description, allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
@@ -130,6 +131,7 @@ Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 
     auto info = std::make_shared<ChunksToMerge>();
     info->chunks = std::make_unique<Chunks>(std::move(chunks));
+    info->chunk_num = chunk_num++;
 
     Chunk chunk;
     chunk.setChunkInfo(std::move(info));
