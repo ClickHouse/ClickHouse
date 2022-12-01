@@ -70,7 +70,8 @@ void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &)
             sort_description = mergine_aggeregated->getOutputStream().sort_description;
         }
     }
-    else
+
+    if (sort_description.empty())
         return;
 
     for (auto & reading : reading_steps)
@@ -87,8 +88,6 @@ void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &)
             reading->enforceAggregationInOrder();
     }
 
-    ///
-    //union_step->updateOutputSortDescription();
     root_mergine_aggeregated->updateInputSortDescription(sort_description, DataStream::SortScope::Stream);
 }
 
