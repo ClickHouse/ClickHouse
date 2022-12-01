@@ -290,3 +290,6 @@
 [submodule "contrib/morton-nd"]
 	path = contrib/morton-nd
 	url = https://github.com/morton-nd/morton-nd
+[submodule "contrib/crc32-s390x"]
+	path = contrib/crc32-s390x
+	url = https://github.com/linux-on-ibm-z/crc32-s390x.git
