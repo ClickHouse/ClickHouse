@@ -306,6 +306,7 @@ Changelog::Changelog(
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
 {
+    std::lock_guard writer_lock(writer_mutex);
     std::optional<ChangelogReadResult> last_log_read_result;
 
     /// Last log has some free space to write
@@ -339,7 +340,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     removeAllLogs();
                     min_log_id = last_commited_log_index;
                     max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
-                    rotate(max_log_id + 1);
+                    rotate(max_log_id + 1, writer_lock);
                     return;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
@@ -430,7 +431,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer)
-        rotate(max_log_id + 1);
+        rotate(max_log_id + 1, writer_lock);
 
     initialized = true;
 }
@@ -505,7 +506,7 @@ void Changelog::removeAllLogs()
     logs.clear();
 }
 
-void Changelog::rotate(uint64_t new_start_log_index)
+void Changelog::rotate(uint64_t new_start_log_index, std::lock_guard<std::mutex> &)
 {
     /// Flush previous log
     if (current_writer)
@@ -554,37 +555,39 @@ void Changelog::writeThread()
     WriteOperation write_operation;
     while (write_operations.pop(write_operation))
     {
-        std::visit([&, this]<typename WriteOperationType>(const WriteOperationType & operation) -> void
+        std::lock_guard writer_lock(writer_mutex);
+        assert(initialized && current_writer);
+
+        if (auto * append_log = std::get_if<AppendLog>(&write_operation))
         {
-            if constexpr (std::same_as<WriteOperationType, AppendLog>)
+            const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
+            const bool log_is_complete = append_log->index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
+
+            if (log_is_complete)
+                rotate(append_log->index, writer_lock);
+
+            current_writer->appendRecord(buildRecord(append_log->index, append_log->log_entry));
+        }
+        else
+        {
+            const auto & flush = std::get<Flush>(write_operation);
+
+            if (current_writer)
+                current_writer->flush(force_sync);
+
             {
-                const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
-                const bool log_is_complete = operation.index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
-
-                if (log_is_complete)
-                    rotate(operation.index);
-
-                current_writer->appendRecord(buildRecord(operation.index, operation.log_entry));
+                std::lock_guard lock{durable_idx_mutex};
+                last_durable_idx = flush.index;
             }
+
+            durable_idx_cv.notify_all();
+
+            // we shouldn't start the raft_server before sending it here
+            if (auto raft_server_locked = raft_server.lock())
+                raft_server_locked->notify_log_append_completion(true);
             else
-            {
-                if (current_writer)
-                    current_writer->flush(force_sync);
-
-                {
-                    std::lock_guard lock{durable_idx_mutex};
-                    last_durable_idx = operation.index;
-                }
-
-                durable_idx_cv.notify_all();
-
-                // we shouldn't start the raft_server before sending it here
-                if (auto raft_server_locked = raft_server.lock())
-                    raft_server_locked->notify_log_append_completion(true);
-                else
-                    LOG_WARNING(log, "Raft server is not set in LogStore.");
-            }
-        }, write_operation);
+                LOG_WARNING(log, "Raft server is not set in LogStore.");
+        }
     }
 }
 
@@ -606,29 +609,32 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
-    /// This write_at require to overwrite everything in this file and also in previous file(s)
-    const bool go_to_previous_file = index < current_writer->getStartIndex();
-
-    if (go_to_previous_file)
     {
-        auto index_changelog = existing_changelogs.lower_bound(index);
+        std::lock_guard lock(writer_mutex);
+        /// This write_at require to overwrite everything in this file and also in previous file(s)
+        const bool go_to_previous_file = index < current_writer->getStartIndex();
 
-        ChangelogFileDescription description;
-
-        if (index_changelog->first == index) /// exactly this file starts from index
-            description = index_changelog->second;
-        else
-            description = std::prev(index_changelog)->second;
-
-        /// Initialize writer from this log file
-        current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, index_changelog->first);
-
-        /// Remove all subsequent files if overwritten something in previous one
-        auto to_remove_itr = existing_changelogs.upper_bound(index);
-        for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
+        if (go_to_previous_file)
         {
-            std::filesystem::remove(itr->second.path);
-            itr = existing_changelogs.erase(itr);
+            auto index_changelog = existing_changelogs.lower_bound(index);
+
+            ChangelogFileDescription description;
+
+            if (index_changelog->first == index) /// exactly this file starts from index
+                description = index_changelog->second;
+            else
+                description = std::prev(index_changelog)->second;
+
+            /// Initialize writer from this log file
+            current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, index_changelog->first);
+
+            /// Remove all subsequent files if overwritten something in previous one
+            auto to_remove_itr = existing_changelogs.upper_bound(index);
+            for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
+            {
+                std::filesystem::remove(itr->second.path);
+                itr = existing_changelogs.erase(itr);
+            }
         }
     }
 
@@ -642,6 +648,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    std::lock_guard lock(writer_mutex);
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
     bool remove_all_logs = false;
@@ -688,7 +695,7 @@ void Changelog::compact(uint64_t up_to_log_index)
     std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
 
     if (need_rotate)
-        rotate(up_to_log_index + 1);
+        rotate(up_to_log_index + 1, lock);
 
     LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
 }

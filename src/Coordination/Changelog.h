@@ -148,7 +148,7 @@ private:
     static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
 
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
-    void rotate(uint64_t new_start_log_index);
+    void rotate(uint64_t new_start_log_index, std::lock_guard<std::mutex> & writer_lock);
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
@@ -174,6 +174,7 @@ private:
     Poco::Logger * log;
     bool compress_logs;
 
+    std::mutex writer_mutex;
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
     /// Mapping log_id -> log_entry
@@ -205,6 +206,7 @@ private:
     ThreadFromGlobalPool write_thread;
     ConcurrentBoundedQueue<WriteOperation> write_operations;
 
+    // last_durable_index needs to be exposed through const getter so we make mutex mutable
     mutable std::mutex durable_idx_mutex;
     std::condition_variable durable_idx_cv;
     uint64_t last_durable_idx{0};
