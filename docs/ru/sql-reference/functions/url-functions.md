@@ -404,7 +404,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 ### cutURLParameter(URL, name) {#cuturlparameterurl-name}
 
-Удаляет параметр URL с именем `name`, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+Удаляет параметр с именем `name` из URL, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
 
 **Синтаксис**
 
@@ -419,7 +419,7 @@ cutURLParameter(URL, name)
 
 **Возвращаемое значение**
 
--   URL с удалённым параметром URL с именем `name` и его значением.
+-   URL с удалённым параметром URL с именем `name`.
 
 Type: `String`.
 
@@ -429,14 +429,14 @@ Type: `String`.
 
 ``` sql
 SELECT
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f', 'a') as url_without_a,
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f', ['c', 'e']) as url_without_c_and_e;
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
 ```
 
 Результат:
 
 ``` text
-┌─url_without_a──────────────┬─url_without_c_and_e────┐
-│ http://bigmir.net/?c=d&e=f │ http://bigmir.net/?a=b │
-└────────────────────────────┴────────────────────────┘
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
 ```
