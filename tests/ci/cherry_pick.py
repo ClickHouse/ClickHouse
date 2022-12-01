@@ -79,7 +79,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self.backport_pr = None  # type: Optional[PullRequest]
         self._backported = None  # type: Optional[bool]
         self.git_prefix = (  # All commits to cherrypick are done as robot-clickhouse
-            "git -c user.email=robot-clickhouse@clickhouse.com "
+            "git -c user.email=robot-clickhouse@users.noreply.github.com "
             "-c user.name=robot-clickhouse -c commit.gpgsign=false"
         )
         self.pre_check()
