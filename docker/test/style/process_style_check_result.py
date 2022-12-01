@@ -11,7 +11,7 @@ def process_result(result_folder):
     description = ""
     test_results = []
     checks = (
-        "header duplicates",
+        "duplicate includes",
         "shellcheck",
         "style",
         "black",
@@ -19,7 +19,7 @@ def process_result(result_folder):
         "typos",
         "whitespaces",
         "workflows",
-        "doc typos",
+        "docs spelling",
     )
 
     for name in checks:
