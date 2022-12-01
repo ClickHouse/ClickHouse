@@ -13,6 +13,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/KnownObjectNames.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -177,6 +178,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
+    format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
+    format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -445,6 +448,7 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
     registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -483,6 +487,7 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
     registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
@@ -583,6 +588,19 @@ void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
     target = true;
 }
 
+void FormatFactory::markFormatSupportsSubcolumns(const String & name)
+{
+    auto & target = dict[name].supports_subcolumns;
+    if (target)
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subcolumns", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
+bool FormatFactory::checkIfFormatSupportsSubcolumns(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.supports_subcolumns;
+}
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {
