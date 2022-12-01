@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 DICTIONARIES = ["configs/dictionaries/regexp_tree_dict.xml"]
 CONFIG_FILES = ["configs/regexp_tree_config.yaml"]
 
-DICT_NAME = 'ext-dict-yaml'
+DICT_NAME = "ext-dict-yaml"
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
