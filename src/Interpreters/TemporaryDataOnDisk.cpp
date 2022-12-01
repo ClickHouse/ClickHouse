@@ -7,6 +7,7 @@
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
+#include <Disks/TemporaryFileInPath.h>
 
 #include <Common/logger_useful.h>
 
@@ -35,34 +36,31 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
 
     size_t new_consumprion = stat.compressed_size + compressed_delta;
     if (compressed_delta > 0 && limit && new_consumprion > limit)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES, "Limit for temporary files size exceeded");
+        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumprion, limit);
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
+VolumePtr TemporaryDataOnDiskScope::getVolume() const
 {
-    DiskPtr disk;
-    if (max_file_size > 0)
-    {
-        auto reservation = volume->reserve(max_file_size);
-        if (!reservation)
-            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
-        disk = reservation->getDisk();
-    }
-    else
-    {
-        disk = volume->getDisk();
-    }
-
-    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
-
-    std::lock_guard lock(mutex);
-    TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this));
-    return *tmp_stream;
+    if (!volume)
+        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
+    return volume;
 }
 
+TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
+{
+    TemporaryFileStreamPtr tmp_stream;
+    if (cache)
+        tmp_stream = TemporaryFileStream::create(cache, header, max_file_size, this);
+    else
+        tmp_stream = TemporaryFileStream::create(volume, header, max_file_size, this);
+
+    std::lock_guard lock(mutex);
+    return *streams.emplace_back(std::move(tmp_stream));
+}
 
 std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams() const
 {
@@ -89,12 +87,13 @@ struct TemporaryFileStream::OutputWriter
     {
     }
 
-    void write(const Block & block)
+    size_t write(const Block & block)
     {
         if (finalized)
             throw Exception("Cannot write to finalized stream", ErrorCodes::LOGICAL_ERROR);
-        out_writer.write(block);
+        size_t written_bytes = out_writer.write(block);
         num_rows += block.rows();
+        return written_bytes;
     }
 
     void finalize()
@@ -155,21 +154,68 @@ struct TemporaryFileStream::InputReader
     NativeReader in_reader;
 };
 
-TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)
+TemporaryFileStreamPtr TemporaryFileStream::create(const VolumePtr & volume, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_)
+{
+    if (!volume)
+        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
+
+    DiskPtr disk;
+    if (max_file_size > 0)
+    {
+        auto reservation = volume->reserve(max_file_size);
+        if (!reservation)
+            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
+        disk = reservation->getDisk();
+    }
+    else
+    {
+        disk = volume->getDisk();
+    }
+
+    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, parent_->getMetricScope());
+    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, /* cache_placeholder */ nullptr, /* parent */ parent_);
+}
+
+TemporaryFileStreamPtr TemporaryFileStream::create(FileCache * cache, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_)
+{
+    auto tmp_file = std::make_unique<TemporaryFileInPath>(fs::path(cache->getBasePath()) / "tmp");
+
+    auto cache_placeholder = std::make_unique<FileCachePlaceholder>(cache, tmp_file->getPath());
+    cache_placeholder->reserveCapacity(max_file_size);
+
+    return std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, std::move(cache_placeholder), parent_);
+}
+
+TemporaryFileStream::TemporaryFileStream(
+    TemporaryFileHolder file_,
+    const Block & header_,
+    std::unique_ptr<ISpacePlaceholder> space_holder_,
+    TemporaryDataOnDisk * parent_)
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
+    , space_holder(std::move(space_holder_))
     , out_writer(std::make_unique<OutputWriter>(file->getPath(), header))
 {
 }
 
-void TemporaryFileStream::write(const Block & block)
+size_t TemporaryFileStream::write(const Block & block)
 {
     if (!out_writer)
         throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
 
+    size_t block_size_in_memory = block.bytes();
+
+    if (space_holder)
+        space_holder->reserveCapacity(block_size_in_memory);
+
     updateAllocAndCheck();
-    out_writer->write(block);
+
+    size_t bytes_written = out_writer->write(block);
+    if (space_holder)
+        space_holder->setUsed(bytes_written);
+
+    return bytes_written;
 }
 
 TemporaryFileStream::Stat TemporaryFileStream::finishWriting()

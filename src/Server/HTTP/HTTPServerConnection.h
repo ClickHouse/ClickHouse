@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
+#include <Server/HTTP/HTTPContext.h>
 
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerSession.h>
@@ -15,7 +15,7 @@ class HTTPServerConnection : public Poco::Net::TCPServerConnection
 {
 public:
     HTTPServerConnection(
-        ContextPtr context,
+        HTTPContextPtr context,
         TCPServer & tcp_server,
         const Poco::Net::StreamSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
@@ -27,7 +27,7 @@ protected:
     static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
 
 private:
-    ContextPtr context;
+    HTTPContextPtr context;
     TCPServer & tcp_server;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;

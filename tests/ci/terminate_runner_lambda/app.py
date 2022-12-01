@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
-import requests
 import argparse
-import jwt
 import sys
 import json
 import time
 from collections import namedtuple
+from typing import Any, Dict, List, Tuple
+
+import boto3  # type: ignore
+import requests  # type: ignore
+import jwt
 
 
-def get_key_and_app_from_aws():
-    import boto3
-
+def get_key_and_app_from_aws() -> Tuple[str, int]:
     secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
@@ -22,7 +23,7 @@ def get_key_and_app_from_aws():
     return data["clickhouse-app-key"], int(data["clickhouse-app-id"])
 
 
-def get_installation_id(jwt_token):
+def get_installation_id(jwt_token: str) -> int:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -33,10 +34,12 @@ def get_installation_id(jwt_token):
     for installation in data:
         if installation["account"]["login"] == "ClickHouse":
             installation_id = installation["id"]
-    return installation_id
+            break
+
+    return installation_id  # type: ignore
 
 
-def get_access_token(jwt_token, installation_id):
+def get_access_token(jwt_token: str, installation_id: int) -> str:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -47,15 +50,16 @@ def get_access_token(jwt_token, installation_id):
     )
     response.raise_for_status()
     data = response.json()
-    return data["token"]
+    return data["token"]  # type: ignore
 
 
 RunnerDescription = namedtuple(
     "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
 )
+RunnerDescriptions = List[RunnerDescription]
 
 
-def list_runners(access_token):
+def list_runners(access_token: str) -> RunnerDescriptions:
     headers = {
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -94,9 +98,9 @@ def list_runners(access_token):
     return result
 
 
-def how_many_instances_to_kill(event_data):
+def how_many_instances_to_kill(event_data: dict) -> Dict[str, int]:
     data_array = event_data["CapacityToTerminate"]
-    to_kill_by_zone = {}
+    to_kill_by_zone = {}  # type: Dict[str, int]
     for av_zone in data_array:
         zone_name = av_zone["AvailabilityZone"]
         to_kill = av_zone["Capacity"]
@@ -104,15 +108,16 @@ def how_many_instances_to_kill(event_data):
             to_kill_by_zone[zone_name] = 0
 
         to_kill_by_zone[zone_name] += to_kill
+
     return to_kill_by_zone
 
 
-def get_candidates_to_be_killed(event_data):
+def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     data_array = event_data["Instances"]
-    instances_by_zone = {}
+    instances_by_zone = {}  # type: Dict[str, List[str]]
     for instance in data_array:
         zone_name = instance["AvailabilityZone"]
-        instance_id = instance["InstanceId"]
+        instance_id = instance["InstanceId"]  # type: str
         if zone_name not in instances_by_zone:
             instances_by_zone[zone_name] = []
         instances_by_zone[zone_name].append(instance_id)
@@ -120,7 +125,7 @@ def get_candidates_to_be_killed(event_data):
     return instances_by_zone
 
 
-def delete_runner(access_token, runner):
+def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
     headers = {
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -134,10 +139,12 @@ def delete_runner(access_token, runner):
     print(
         f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}"
     )
-    return response.status_code == 204
+    return bool(response.status_code == 204)
 
 
-def main(github_secret_key, github_app_id, event):
+def main(
+    github_secret_key: str, github_app_id: int, event: dict
+) -> Dict[str, List[str]]:
     print("Got event", json.dumps(event, sort_keys=True, indent=4))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
@@ -156,17 +163,16 @@ def main(github_secret_key, github_app_id, event):
 
     to_delete_runners = []
     instances_to_kill = []
-    for zone in to_kill_by_zone:
-        num_to_kill = to_kill_by_zone[zone]
+    for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
         if num_to_kill > len(candidates):
             raise Exception(
                 f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
             )
 
-        delete_for_av = []
+        delete_for_av = []  # type: RunnerDescriptions
         for candidate in candidates:
-            if candidate not in set([runner.name for runner in runners]):
+            if candidate not in set(runner.name for runner in runners):
                 print(
                     f"Candidate {candidate} was not in runners list, simply delete it"
                 )
@@ -214,7 +220,7 @@ def main(github_secret_key, github_app_id, event):
     return response
 
 
-def handler(event, context):
+def handler(event: dict, context: Any) -> Dict[str, List[str]]:
     private_key, app_id = get_key_and_app_from_aws()
     return main(private_key, app_id, event)
 
