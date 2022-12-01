@@ -549,9 +549,6 @@ ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_e
 
 void Changelog::writeThread()
 {
-    // we don't protect current_writer because rotate at the same time can be called from compact only
-    // when the node is applying snapshot from leader
-    // in that case, no entry write should happen, i.e. this thread will be inactive
     WriteOperation write_operation;
     while (write_operations.pop(write_operation))
     {
