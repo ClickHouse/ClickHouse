@@ -397,11 +397,9 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 
     materializeBlockInplace(block);
 
-    /// number of buckets doesn't change after right table is split to buckets
-    /// so, there is no need to copy buckets vector but we still need to ensure that current thread see actual buckets vector state
-    /// hence using getNumBuckets(), - mutex inside serves as memory barrier
-    const size_t num_buckets = getNumBuckets();
-    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
+    /// number of buckets doesn't change after right table is split to buckets i.e. read-only access to buckets
+    /// todo: ensure that joinBlock thread see actual buckets vector state after we finished splitting right table to buckets
+    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, buckets.size());
 
     block = std::move(blocks[current_bucket->idx]);
 
