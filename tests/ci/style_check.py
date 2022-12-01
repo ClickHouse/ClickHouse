@@ -28,6 +28,13 @@ from upload_result_helper import upload_results
 
 NAME = "Style Check"
 
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
+
 
 def process_result(result_folder):
     test_results = []
@@ -89,14 +96,8 @@ def checkout_head(pr_info: PRInfo):
         # We can't push to forks, sorry folks
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
     fetch_cmd = (
-        f"{git_prefix} fetch --depth=1 "
+        f"{GIT_PREFIX} fetch --depth=1 "
         f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
@@ -118,15 +119,9 @@ def commit_push_staged(pr_info: PRInfo):
     if not git_staged:
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_prefix = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@clickhouse.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
-    )
-    git_runner(f"{git_prefix} commit -m 'Automatic style fix'")
+    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
     push_cmd = (
-        f"{git_prefix} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
+        f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
     )
     if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
         with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
