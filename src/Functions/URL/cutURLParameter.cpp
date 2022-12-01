@@ -89,14 +89,14 @@ public:
                 arguments[0].column->getName(), getName());
     }
 
-    static void cutURL(ColumnString::Chars & data, std::string pattern)
+    static void cutURL(ColumnString::Chars & data, std::string pattern, size_t prev_offset, size_t & cur_offset, size_t & offset_adjust)
     {
         pattern += '=';
         const char * param_str = pattern.c_str();
         size_t param_len = pattern.size();
 
-        const char * url_begin = reinterpret_cast<const char *>(&data[0]);
-        const char * url_end = reinterpret_cast<const char *>(&data[data.size()-1]) - 1;
+        const char * url_begin = reinterpret_cast<const char *>(&data[prev_offset]);
+        const char * url_end = reinterpret_cast<const char *>(&data[cur_offset - 2]);
         const char * begin_pos = url_begin;
         const char * end_pos = begin_pos;
 
@@ -130,7 +130,10 @@ public:
                 --begin_pos;
         } while (false);
 
-        data.erase(data.begin() + (begin_pos - url_begin), data.begin() + (end_pos - url_begin));
+        size_t cut_length = end_pos - begin_pos;
+        cur_offset -= cut_length;
+        offset_adjust += cut_length;
+        data.erase(data.begin() + prev_offset + (begin_pos - url_begin), data.begin() + prev_offset+  (end_pos - url_begin));
     }
 
     static void vector(const ColumnString::Chars & data,
@@ -139,24 +142,21 @@ public:
         const ColumnArray * col_const_array,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
-        res_data.reserve(data.size());
+        res_data.resize(data.size());
+        memcpySmallAllowReadWriteOverflow15(&res_data[0], &data[0], data.size());
         res_offsets.resize(offsets.size());
 
         size_t prev_offset = 0;
-        size_t res_offset = 0;
-
-        ColumnString::Chars res_chars;
+        size_t cur_offset;
+        size_t offset_adjust = 0;
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t cur_offset = offsets[i];
-
-            res_chars.clear();
-            res_chars.insert(res_chars.end(), data.begin()+prev_offset, data.begin()+cur_offset);
+            cur_offset = offsets[i] - offset_adjust;
 
             if (!col_const_array)
             {
-                cutURL(res_chars, col_needle->getValue<String>());
+                cutURL(res_data, col_needle->getValue<String>(), prev_offset, cur_offset, offset_adjust);
             }
             else
             {
@@ -165,14 +165,10 @@ public:
                 for (size_t j = 0; j < data_size; ++j)
                 {
                     auto field = col_const_array->getData()[j];
-                    cutURL(res_chars, field.get<String>());
+                    cutURL(res_data, field.get<String>(), prev_offset, cur_offset, offset_adjust);
                 }
             }
-            res_data.resize(res_offset + res_chars.size());
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &res_chars[0], res_chars.size());
-            res_offset += res_chars.size();
-            res_offsets[i] = res_offset;
-
+            res_offsets[i] = cur_offset;
             prev_offset = cur_offset;
         }
     }
