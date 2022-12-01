@@ -57,7 +57,8 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -1226,7 +1227,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    TableNamesSet loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
     if (!loading_dependencies.empty())
         DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 

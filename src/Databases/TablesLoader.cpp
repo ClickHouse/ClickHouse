@@ -1,6 +1,6 @@
 #include <Databases/TablesLoader.h>
 #include <Databases/IDatabase.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>

@@ -4,7 +4,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -205,7 +205,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
+                TableNamesSet loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
@@ -321,7 +321,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    TableNamesSet new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);

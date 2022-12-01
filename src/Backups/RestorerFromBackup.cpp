@@ -17,7 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Databases/IDatabase.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -341,7 +341,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
+    res_table_info.dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
 

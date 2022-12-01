@@ -1,7 +1,6 @@
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -9,12 +8,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Poco/String.h>
 
+
 namespace DB
 {
 
-using TableLoadingDependenciesVisitor = DDLDependencyVisitor::Visitor;
+using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
@@ -27,7 +27,7 @@ TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const
     return data.dependencies;
 }
 
-void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
+void DDLLoadingDependencyVisitor::visit(const ASTPtr & ast, Data & data)
 {
     /// Looking for functions in column default expressions and dictionary source definition
     if (const auto * function = ast->as<ASTFunction>())
@@ -66,7 +66,7 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgument(const ASTFunction & funct
     return -1;
 }
 
-void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
+void DDLLoadingDependencyVisitor::visit(const ASTFunction & function, Data & data)
 {
     ssize_t table_name_arg_idx = getPositionOfTableNameArgument(function);
     if (table_name_arg_idx < 0)
@@ -74,7 +74,7 @@ void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
     extractTableNameFromArgument(function, data, table_name_arg_idx);
 }
 
-void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
+void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
 {
     if (dict_source.name != "clickhouse")
         return;
@@ -92,7 +92,7 @@ void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_s
     data.dependencies.emplace(std::move(info->table_name));
 }
 
-void DDLDependencyVisitor::visit(const ASTStorage & storage, Data & data)
+void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (!storage.engine)
         return;
@@ -103,7 +103,7 @@ void DDLDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 }
 
 
-void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx)
+void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx)
 {
     /// Just ignore incorrect arguments, proper exception will be thrown later
     if (!function.arguments || function.arguments->children.size() <= arg_idx)
@@ -147,52 +147,6 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
         qualified_name.database = data.default_database;
     }
     data.dependencies.emplace(std::move(qualified_name));
-}
-
-
-void NormalizeAndEvaluateConstants::visit(const ASTPtr & ast, Data & data)
-{
-    assert(data.create_query_context->hasQueryContext());
-
-    /// Looking for functions in column default expressions and dictionary source definition
-    if (const auto * function = ast->as<ASTFunction>())
-        visit(*function, data);
-    else if (const auto * dict_source = ast->as<ASTFunctionWithKeyValueArguments>())
-        visit(*dict_source, data);
-}
-
-void NormalizeAndEvaluateConstants::visit(const ASTFunction & function, Data & data)
-{
-    /// Replace expressions like "dictGet(currentDatabase() || '.dict', 'value', toUInt32(1))"
-    /// with "dictGet('db_name.dict', 'value', toUInt32(1))"
-    ssize_t table_name_arg_idx = getPositionOfTableNameArgument(function);
-    if (table_name_arg_idx < 0)
-        return;
-
-    if (!function.arguments || function.arguments->children.size() <= static_cast<size_t>(table_name_arg_idx))
-        return;
-
-    auto & arg = function.arguments->as<ASTExpressionList &>().children[table_name_arg_idx];
-    if (arg->as<ASTFunction>())
-        arg = evaluateConstantExpressionAsLiteral(arg, data.create_query_context);
-}
-
-
-void NormalizeAndEvaluateConstants::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
-{
-    if (!dict_source.elements)
-        return;
-
-    auto & expr_list = dict_source.elements->as<ASTExpressionList &>();
-    for (auto & child : expr_list.children)
-    {
-        ASTPair * pair = child->as<ASTPair>();
-        if (pair->second->as<ASTFunction>())
-        {
-            auto ast_literal = evaluateConstantExpressionAsLiteral(pair->children[0], data.create_query_context);
-            pair->replace(pair->second, ast_literal);
-        }
-    }
 }
 
 }

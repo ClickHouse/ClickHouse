@@ -2,7 +2,7 @@
 #include <Common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -142,7 +142,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
+    TableNamesSet new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
