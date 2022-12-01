@@ -98,8 +98,9 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        if constexpr (std::endian::native == std::endian::big)
-            read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#endif
         istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
@@ -115,8 +116,9 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
     {
-        if constexpr (std::endian::native == std::endian::big)
-            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#endif
         ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
     }
 }
