@@ -110,7 +110,7 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
 
     writeVarUInt(total_rows, ostr);
-    
+
     static size_t atom_size = 8;
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
