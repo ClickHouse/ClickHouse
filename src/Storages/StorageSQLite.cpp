@@ -57,7 +57,7 @@ Pipe StorageSQLite::read(
     ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    unsigned int)
+    size_t /*num_streams*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);

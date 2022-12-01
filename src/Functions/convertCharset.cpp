@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_ICU
 #    include <Columns/ColumnConst.h>

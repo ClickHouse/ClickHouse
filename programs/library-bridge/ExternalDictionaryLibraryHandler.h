@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/SharedLibrary.h>
+#include "SharedLibrary.h"
 #include <Common/logger_useful.h>
 #include "ExternalDictionaryLibraryUtils.h"
 
@@ -50,6 +50,6 @@ private:
     void * lib_data;
 };
 
-using SharedLibraryHandlerPtr = std::shared_ptr<ExternalDictionaryLibraryHandler>;
+using ExternalDictionaryLibraryHandlerPtr = std::shared_ptr<ExternalDictionaryLibraryHandler>;
 
 }

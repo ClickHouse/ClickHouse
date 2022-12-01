@@ -387,7 +387,7 @@ progress {
 , stats {
   rows: 8
   blocks: 4
-  allocated_bytes: 324
+  allocated_bytes: 1092
   applied_limit: true
   rows_before_limit: 8
 }
@@ -744,7 +744,7 @@ def test_opentelemetry_context_propagation():
     assert (
         node.query(
             f"SELECT attribute['db.statement'], attribute['clickhouse.tracestate'] FROM system.opentelemetry_span_log "
-            f"WHERE trace_id='{trace_id}' AND parent_span_id={parent_span_id}"
+            f"WHERE trace_id='{trace_id}' AND operation_name='query'"
         )
         == "SELECT 1\tsome custom state\n"
     )

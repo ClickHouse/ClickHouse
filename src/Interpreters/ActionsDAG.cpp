@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/SortDescription.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -1168,6 +1169,17 @@ ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
+    first.mergeInplace(std::move(second));
+
+    /// Drop unused inputs and, probably, some actions.
+    first.removeUnusedActions();
+
+    return std::make_shared<ActionsDAG>(std::move(first));
+}
+
+void ActionsDAG::mergeInplace(ActionsDAG && second)
+{
+    auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
@@ -1193,7 +1205,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             if (it == first_result.end() || it->second.empty())
             {
                 if (first.project_input)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                                     "Cannot find column {} in ActionsDAG result", input_node->result_name);
 
                 first.inputs.push_back(input_node);
@@ -1255,11 +1267,6 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 
     first.projected_output = second.projected_output;
-
-    /// Drop unused inputs and, probably, some actions.
-    first.removeUnusedActions();
-
-    return std::make_shared<ActionsDAG>(std::move(first));
 }
 
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
@@ -1939,6 +1946,108 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
     removeUnusedActions(false);
     return actions;
+}
+
+static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)
+{
+    /// only function node can several children
+    /// but we support monotonicity check only for functions with one argument
+    /// so, currently we consider just first child - it covers majority of cases
+    /// TODO: if one parameter is variable and other are constant then we can try to check monotonicity as well
+
+    /// first find the column
+    const ActionsDAG::Node * node = start_node;
+    bool found = false;
+    while (node)
+    {
+        /// if column found
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == sorted_column)
+        {
+            found = true;
+            break;
+        }
+
+        if (node->children.empty())
+            break; /// column not found
+
+        node = node->children.front();
+    }
+    if (!found)
+        return false;
+
+    /// if column found, check if sorting is preserved
+    const Field field{};
+    node = start_node;
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            auto func = node->function_base;
+            if (func)
+            {
+                if (!func->hasInformationAboutMonotonicity())
+                    return false;
+
+                const auto & types = func->getArgumentTypes();
+                if (types.empty())
+                    return false;
+
+                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+                if (!monotonicity.is_always_monotonic)
+                    return false;
+            }
+        }
+
+        if (node->children.empty())
+            break;
+
+        node = node->children.front();
+    }
+    return true;
+}
+
+bool ActionsDAG::isSortingPreserved(
+    const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column) const
+{
+    if (sort_description.empty())
+        return true;
+
+    if (hasArrayJoin())
+        return false;
+
+    const Block & output_header = updateHeader(input_header);
+    for (const auto & desc : sort_description)
+    {
+        /// header contains column with the same name
+        if (output_header.findByName(desc.column_name))
+        {
+            /// find the corresponding node in output
+            const auto * output_node = tryFindInOutputs(desc.column_name);
+            if (!output_node)
+            {
+                /// sorted column name in header but NOT in expression output -> no expression is applied to it -> sorting preserved
+                continue;
+            }
+        }
+
+        /// check if any output node is related to the sorted column and sorting order is preserved
+        bool preserved = false;
+        for (const auto * output_node : outputs)
+        {
+            if (output_node->result_name == ignore_output_column)
+                continue;
+
+            if (isColumnSortingPreserved(output_node, desc.column_name))
+            {
+                preserved = true;
+                break;
+            }
+        }
+        if (!preserved)
+            return false;
+    }
+
+    return true;
 }
 
 }

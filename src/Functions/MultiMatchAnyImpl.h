@@ -7,8 +7,7 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
-#include "config_functions.h"
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -100,9 +99,11 @@ struct MultiMatchAnyImpl
             return;
         }
 #if USE_VECTORSCAN
-        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+        MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+        MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
+
         hs_scratch_t * scratch = nullptr;
-        hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
+        hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
             throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -133,9 +134,9 @@ struct MultiMatchAnyImpl
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
-                hyperscan_regex->getDB(),
+                regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
-                length,
+                static_cast<unsigned>(length),
                 0,
                 smart_scratch.get(),
                 on_match,
@@ -155,7 +156,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, std::string(needles[j].data(), needles[j].size()), nullptr, accum);
+            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, String(needles[j].data(), needles[j].size()), nullptr, accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)
@@ -224,9 +225,10 @@ struct MultiMatchAnyImpl
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
-            const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+            MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
             hs_scratch_t * scratch = nullptr;
-            hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
+            hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
                 throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
@@ -256,9 +258,9 @@ struct MultiMatchAnyImpl
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
-                hyperscan_regex->getDB(),
+                regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
-                cur_haystack_length,
+                static_cast<unsigned>(cur_haystack_length),
                 0,
                 smart_scratch.get(),
                 on_match,

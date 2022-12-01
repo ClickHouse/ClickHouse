@@ -623,6 +623,7 @@ NamesAndTypesList Block::getNamesAndTypesList() const
 NamesAndTypes Block::getNamesAndTypes() const
 {
     NamesAndTypes res;
+    res.reserve(columns());
 
     for (const auto & elem : data)
         res.emplace_back(elem.name, elem.type);
@@ -666,9 +667,15 @@ Names Block::getDataTypeNames() const
 }
 
 
-std::unordered_map<String, size_t> Block::getNamesToIndexesMap() const
+Block::NameMap Block::getNamesToIndexesMap() const
 {
-    return index_by_name;
+    NameMap res;
+    res.reserve(index_by_name.size());
+
+    for (const auto & [name, index] : index_by_name)
+        res[name] = index;
+
+    return res;
 }
 
 

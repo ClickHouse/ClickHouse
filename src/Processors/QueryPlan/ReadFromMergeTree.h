@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -139,7 +140,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
-        unsigned num_streams,
+        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
         const MergeTreeData & data,
         const Names & real_column_names,
@@ -149,12 +150,21 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
-    void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
-    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
+    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
 private:
-    const MergeTreeReaderSettings reader_settings;
+    int getSortDirection() const
+    {
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
+
+        return 1;
+    }
+
+    MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
     Names real_column_names;
@@ -174,7 +184,8 @@ private:
     ContextPtr context;
 
     const size_t max_block_size;
-    const size_t requested_num_streams;
+    size_t requested_num_streams;
+    size_t output_streams_limit = 0;
     const size_t preferred_block_size_bytes;
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;

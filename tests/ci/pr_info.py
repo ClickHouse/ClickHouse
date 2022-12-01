@@ -64,6 +64,7 @@ def get_pr_for_commit(sha, ref):
 class PRInfo:
     default_event = {
         "commits": 1,
+        "head_commit": {"message": "commit_message"},
         "before": "HEAD~",
         "after": "HEAD",
         "ref": None,
@@ -86,8 +87,10 @@ class PRInfo:
         self.changed_files = set()  # type: Set[str]
         self.body = ""
         self.diff_urls = []
-        self.release_pr = ""
-        ref = github_event.get("ref", "refs/head/master")
+        # release_pr and merged_pr are used for docker images additional cache
+        self.release_pr = 0
+        self.merged_pr = 0
+        ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
 
@@ -132,9 +135,13 @@ class PRInfo:
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
+            # master or backport/xx.x/xxxxx - where the PR will be merged
             self.base_ref = github_event["pull_request"]["base"]["ref"]
+            # ClickHouse/ClickHouse
             self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
+            # any_branch-name - the name of working branch name
             self.head_ref = github_event["pull_request"]["head"]["ref"]
+            # UserName/ClickHouse or ClickHouse/ClickHouse
             self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {
@@ -154,6 +161,14 @@ class PRInfo:
 
             self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
+            # `head_commit` always comes with `commits`
+            commit_message = github_event["head_commit"]["message"]
+            if commit_message.startswith("Merge pull request #"):
+                merged_pr = commit_message.split(maxsplit=4)[3]
+                try:
+                    self.merged_pr = int(merged_pr[1:])
+                except ValueError:
+                    logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"

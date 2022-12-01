@@ -1,4 +1,5 @@
 ---
+slug: /zh/commercial/
 sidebar_label: 商业支持
 sidebar_position: 70
 ---

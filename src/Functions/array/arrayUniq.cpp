@@ -233,7 +233,7 @@ void FunctionArrayUniq::executeMethodImpl(
             method.emplaceKey(set, j, pool);
         }
 
-        res_values[i] = set.size() + found_null;
+        res_values[i] = static_cast<UInt32>(set.size() + found_null);
         prev_off = off;
     }
 }

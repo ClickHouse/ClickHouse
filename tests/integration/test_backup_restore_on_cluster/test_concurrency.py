@@ -29,7 +29,6 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
-
 user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
@@ -175,11 +174,21 @@ def test_concurrent_backups_on_different_nodes():
 
 @pytest.mark.parametrize(
     "db_engine, table_engine",
-    [("Replicated", "ReplicatedMergeTree"), ("Ordinary", "MergeTree")],
+    [
+        ("Ordinary", "MergeTree"),
+        ("Atomic", "MergeTree"),
+        ("Replicated", "ReplicatedMergeTree"),
+        ("Memory", "MergeTree"),
+        ("Lazy", "Log"),
+    ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
+
+    if db_engine == "Lazy":
+        db_engine = "Lazy(20)"
+
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"
 
@@ -189,7 +198,7 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     start_time = time.time()
     end_time = start_time + 60
 
-    def create_table():
+    def create_tables():
         while time.time() < end_time:
             node = nodes[randint(0, num_nodes - 1)]
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
@@ -200,13 +209,13 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
                 f"INSERT INTO {table_name} SELECT rand32() FROM numbers(10)"
             )
 
-    def drop_table():
+    def drop_tables():
         while time.time() < end_time:
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
             node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
 
-    def rename_table():
+    def rename_tables():
         while time.time() < end_time:
             table_name1 = f"mydb.tbl{randint(1, num_nodes)}"
             table_name2 = f"mydb.tbl{randint(1, num_nodes)}"
@@ -215,7 +224,13 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
                 f"RENAME TABLE {table_name1} TO {table_name2}"
             )
 
-    def make_backup():
+    def truncate_tables():
+        while time.time() < end_time:
+            table_name = f"mydb.tbl{randint(1, num_nodes)}"
+            node = nodes[randint(0, num_nodes - 1)]
+            node.query(f"TRUNCATE TABLE IF EXISTS {table_name} NO DELAY")
+
+    def make_backups():
         ids = []
         while time.time() < end_time:
             time.sleep(
@@ -231,11 +246,12 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     ids = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
-        ids_future = executor.submit(make_backup)
+        ids_future = executor.submit(make_backups)
         futures.append(ids_future)
-        futures.append(executor.submit(create_table))
-        futures.append(executor.submit(drop_table))
-        futures.append(executor.submit(rename_table))
+        futures.append(executor.submit(create_tables))
+        futures.append(executor.submit(drop_tables))
+        futures.append(executor.submit(rename_tables))
+        futures.append(executor.submit(truncate_tables))
         for future in futures:
             future.result()
         ids = ids_future.result()

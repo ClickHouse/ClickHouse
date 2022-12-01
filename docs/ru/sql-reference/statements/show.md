@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
@@ -304,7 +305,7 @@ SHOW USERS
 
 ## SHOW ROLES {#show-roles-statement}
 
-Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Синтаксис {#show-roles-syntax}
 

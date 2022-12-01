@@ -43,7 +43,7 @@ namespace detail
     {
         static Ret hash(UInt128 x)
         {
-            return sipHash64(x);
+            return static_cast<Ret>(sipHash64(x));
         }
     };
 

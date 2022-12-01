@@ -9,7 +9,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -143,10 +143,7 @@ public:
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
     {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        auto * return_type = toNativeType(b, getReturnType());
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * value_ptr = aggregate_data_ptr;
         Data::compileCreate(builder, value_ptr);
     }
 
@@ -156,7 +153,7 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
 
         const auto & argument_value = argument_values[0];
@@ -171,10 +168,10 @@ public:
 
         auto * return_type = toNativeType(b, getReturnType());
 
-        auto * value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * value_dst_ptr = aggregate_data_dst_ptr;
         auto * value_dst = b.CreateLoad(return_type, value_dst_ptr);
 
-        auto * value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * value_src_ptr = aggregate_data_src_ptr;
         auto * value_src = b.CreateLoad(return_type, value_src_ptr);
 
         auto * result_value = Data::compileUpdate(builder, value_dst, value_src);
@@ -187,7 +184,7 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * return_type = toNativeType(b, getReturnType());
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, value_ptr);
     }

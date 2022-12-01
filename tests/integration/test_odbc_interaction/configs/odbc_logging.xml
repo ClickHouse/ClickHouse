@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <odbc_bridge_log>/var/log/clickhouse-server/clickhouse-odbc-bridge.log</odbc_bridge_log>

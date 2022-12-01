@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/bit-functions
+---
 # 位操作函数 {#wei-cao-zuo-han-shu}
 
 位操作函数适用于UInt8，UInt16，UInt32，UInt64，Int8，Int16，Int32，Int64，Float32或Float64中的任何类型。

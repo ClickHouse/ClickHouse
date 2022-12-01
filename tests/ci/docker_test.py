@@ -99,6 +99,11 @@ class TestDockerImageCheck(unittest.TestCase):
 
     def test_gen_version(self):
         pr_info = PRInfo(PRInfo.default_event.copy())
+        pr_info.base_ref = "anything-else"
+        versions, result_version = di.gen_versions(pr_info, None)
+        self.assertEqual(versions, ["0", "0-HEAD"])
+        self.assertEqual(result_version, "0-HEAD")
+        pr_info.base_ref = "master"
         versions, result_version = di.gen_versions(pr_info, None)
         self.assertEqual(versions, ["latest", "0", "0-HEAD"])
         self.assertEqual(result_version, "0-HEAD")

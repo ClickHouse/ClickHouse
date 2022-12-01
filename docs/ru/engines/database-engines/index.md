@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/database-engines/
 sidebar_position: 27
 sidebar_label: "Движки баз данных"
 ---

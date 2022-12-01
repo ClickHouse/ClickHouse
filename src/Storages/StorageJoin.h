@@ -68,7 +68,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -76,14 +76,10 @@ public:
     Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        Block block = metadata_snapshot->getSampleBlock();
         if (use_nulls && isLeftOrFull(kind))
-        {
             for (auto & col : block)
-            {
                 JoinCommon::convertColumnToNullable(col);
-            }
-        }
         return block;
     }
 

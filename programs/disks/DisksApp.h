@@ -4,6 +4,7 @@
 #include "CommandLink.cpp"
 #include "CommandList.cpp"
 #include "CommandListDisks.cpp"
+#include "CommandMkDir.cpp"
 #include "CommandMove.cpp"
 #include "CommandRead.cpp"
 #include "CommandRemove.cpp"

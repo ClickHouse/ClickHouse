@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/data-types/enum
+---
 # Enum8,Enum16 {#enum8-enum16}
 
 包括 `Enum8` 和 `Enum16` 类型。`Enum` 保存 `'string'= integer` 的对应关系。在 ClickHouse 中，尽管用户使用的是字符串常量，但所有含有 `Enum` 数据类型的操作都是按照包含整数的值来执行。这在性能方面比使用 `String` 数据类型更有效。

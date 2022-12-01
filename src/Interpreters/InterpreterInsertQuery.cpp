@@ -214,20 +214,25 @@ Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
-    ThreadStatus * thread_status,
+    ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, sample, thread_status, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
     const Block & query_sample_block,
-    ThreadStatus * thread_status,
+    ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ThreadStatus * thread_status = current_thread;
+
+    if (!thread_status_holder)
+        thread_status = nullptr;
+
     auto context_ptr = getContext();
     const ASTInsertQuery * query = nullptr;
     if (query_ptr)
@@ -252,7 +257,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     }
     else
     {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status, elapsed_counter_ms);
+        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status_holder, elapsed_counter_ms);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -287,11 +292,12 @@ Chain InterpreterInsertQuery::buildChainImpl(
         out.addSource(std::make_shared<SquashingChunksTransform>(
             out.getInputHeader(),
             table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
+            table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0ULL));
     }
 
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status, getContext()->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
+    counting->setProgressCallback(context_ptr->getProgressCallback());
     out.addSource(std::move(counting));
 
     return out;
@@ -346,7 +352,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::ALL; };
+                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::UNION_ALL; };
 
                 is_trivial_insert_select =
                     std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))

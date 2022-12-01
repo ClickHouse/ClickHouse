@@ -7,22 +7,16 @@ include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 # The `clickhouse` binary is a multi purpose tool that contains multiple execution modes (client, server, etc.),
 # each of them may be built and linked as a separate library.
 # If you do not know what modes you need, turn this option OFF and enable SERVER and CLIENT only.
-if (USE_MUSL)
-    # Only clickhouse-keeper can be built with musl currently
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
-endif ()
+option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-if (SPLIT_SHARED_LIBRARIES)
-    # Don't create self-extracting clickhouse for split build
-    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
+# Don't create self-extracting clickhouse for split build
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING AND SPLIT_SHARED_LIBRARIES)
+    message (STATUS "Self-extracting on split build is not supported")
+    unset (ENABLE_CLICKHOUSE_SELF_EXTRACTING CACHE)
 endif ()
 
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
@@ -55,7 +49,7 @@ else ()
 endif ()
 
 if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source" ${ENABLE_CLICKHOUSE_ALL})
+    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to external dynamically loaded libraries" ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
 # https://presentations.clickhouse.com/matemarketing_2020/
@@ -195,7 +189,7 @@ else()
     message(STATUS "ClickHouse su: OFF")
 endif()
 
-configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
+configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
     if(NOT CLICKHOUSE_ONE_SHARED)

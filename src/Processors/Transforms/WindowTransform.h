@@ -198,8 +198,19 @@ public:
         ++x.block;
     }
 
+    RowNumber nextRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        advanceRowNumber(result);
+        return result;
+    }
+
     void retreatRowNumber(RowNumber & x) const
     {
+#ifndef NDEBUG
+        auto original_x = x;
+#endif
+
         if (x.row > 0)
         {
             --x.row;
@@ -213,10 +224,17 @@ public:
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
-        auto xx = x;
-        advanceRowNumber(xx);
-        assert(xx == x);
+        auto advanced_retreated_x = x;
+        advanceRowNumber(advanced_retreated_x);
+        assert(advanced_retreated_x == original_x);
 #endif
+    }
+
+    RowNumber prevRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        retreatRowNumber(result);
+        return result;
     }
 
     auto moveRowNumber(const RowNumber & _x, int64_t offset) const;

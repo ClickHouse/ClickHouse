@@ -126,7 +126,8 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
+                /// TODO: use epoll_pwait() for more precise timers
+                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -156,7 +157,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
@@ -325,6 +326,7 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
+        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
@@ -380,7 +382,7 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -395,6 +397,7 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
+    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -584,6 +587,9 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
+    if (!connected.load(std::memory_order_acquire))
+        return;
+
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);

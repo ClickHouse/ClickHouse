@@ -3,7 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageNull.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionNull.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -52,6 +52,6 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>();
+    factory.registerFunction<TableFunctionNull>({.documentation = {}, .allow_readonly = true});
 }
 }

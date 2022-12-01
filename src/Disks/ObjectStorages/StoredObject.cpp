@@ -27,12 +27,12 @@ std::string StoredObject::getPathKeyForCache() const
 }
 
 StoredObject StoredObject::create(
-    const IObjectStorage & object_storage, const std::string & object_path, size_t object_size, bool object_bypasses_cache)
+    const IObjectStorage & object_storage, const std::string & object_path, size_t object_size, bool exists, bool object_bypasses_cache)
 {
     if (object_bypasses_cache)
         return StoredObject(object_path, object_size, {});
 
-    auto path_key_for_cache_creator = [&object_storage](const std::string & path) -> String
+    PathKeyForCacheCreator path_key_for_cache_creator = [&object_storage](const std::string & path) -> std::string
     {
         try
         {
@@ -48,6 +48,11 @@ StoredObject StoredObject::create(
             return "";
         }
     };
+
+    if (exists)
+    {
+        path_key_for_cache_creator = [path = path_key_for_cache_creator(object_path)](const std::string &) { return path; };
+    }
 
     return StoredObject(object_path, object_size, std::move(path_key_for_cache_creator));
 }

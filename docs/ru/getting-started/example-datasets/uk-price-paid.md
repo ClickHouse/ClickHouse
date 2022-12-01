@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/uk-price-paid
 sidebar_position: 20
 sidebar_label: Набор данных о стоимости недвижимости в Великобритании
 ---

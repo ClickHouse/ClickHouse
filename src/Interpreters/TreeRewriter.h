@@ -99,7 +99,7 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 /// Tree Rewriter in terms of CMU slides @sa https://15721.courses.cs.cmu.edu/spring2020/slides/19-optimizer1.pdf
 ///
-/// Optimises AST tree and collect information for further expression analysis in ExpressionAnalyzer.
+/// Optimizes AST tree and collect information for further expression analysis in ExpressionAnalyzer.
 /// Result AST has the following invariants:
 ///  * all aliases are substituted
 ///  * qualified names are translated

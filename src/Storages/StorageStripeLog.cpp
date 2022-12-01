@@ -320,6 +320,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 {
     assert(table_path != new_path_to_table_data);
     {
+        disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;
@@ -348,7 +349,7 @@ Pipe StorageStripeLog::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 

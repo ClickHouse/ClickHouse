@@ -229,7 +229,7 @@ public:
 
     TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
     TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false) TSA_REQUIRES(databases_mutex);
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool is_drop_database = false) const;
 
     void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
 
@@ -245,6 +245,7 @@ private:
 
     void shutdownImpl();
 
+    static void checkTableCanBeRemovedOrRenamedImpl(const TableNamesSet & dependent, const QualifiedTableName & removing_table, bool is_drop_database);
 
     struct UUIDToStorageMapPart
     {

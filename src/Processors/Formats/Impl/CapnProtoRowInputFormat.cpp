@@ -49,6 +49,11 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    /// Don't allow large amount of segments as it's done in capnproto library:
+    /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
+    /// Large amount of segments can indicate that corruption happened.
+    if (segment_count >= 512)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Message has too many segments. Most likely, data was corrupted");
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -86,7 +91,7 @@ static void insertSignedInteger(IColumn & column, const DataTypePtr & column_typ
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Int64:
             assert_cast<ColumnInt64 &>(column).insertValue(value);
@@ -112,7 +117,7 @@ static void insertUnsignedInteger(IColumn & column, const DataTypePtr & column_t
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
@@ -127,7 +132,7 @@ static void insertFloat(IColumn & column, const DataTypePtr & column_type, Float
     switch (column_type->getTypeId())
     {
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(value);
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
             break;
         case TypeIndex::Float64:
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
@@ -313,6 +318,8 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
     factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "CapnProto", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

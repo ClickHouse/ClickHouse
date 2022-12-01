@@ -393,24 +393,38 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        for (const ReplicaState & state : replica_states)
-        {
-            Connection * connection = state.connection;
-            if (connection != nullptr)
-                read_list.push_back(*connection->socket);
-        }
-
         auto timeout = is_draining ? drain_timeout : receive_timeout;
-        int n = Poco::Net::Socket::select(
-            read_list,
-            write_list,
-            except_list,
-            timeout);
+        int n = 0;
+
+        /// EINTR loop
+        while (true)
+        {
+            read_list.clear();
+            for (const ReplicaState & state : replica_states)
+            {
+                Connection * connection = state.connection;
+                if (connection != nullptr)
+                    read_list.push_back(*connection->socket);
+            }
+
+            /// poco returns 0 on EINTR, let's reset errno to ensure that EINTR came from select().
+            errno = 0;
+
+            n = Poco::Net::Socket::select(
+                read_list,
+                write_list,
+                except_list,
+                timeout);
+            if (n <= 0 && errno == EINTR)
+                continue;
+            break;
+        }
 
         /// We treat any error as timeout for simplicity.
         /// And we also check if read_list is still empty just in case.
         if (n <= 0 || read_list.empty())
         {
+            const auto & addresses = dumpAddressesUnlocked();
             for (ReplicaState & state : replica_states)
             {
                 Connection * connection = state.connection;
@@ -423,7 +437,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Timeout ({} ms) exceeded while reading from {}",
                 timeout.totalMilliseconds(),
-                dumpAddressesUnlocked());
+                addresses);
         }
     }
 

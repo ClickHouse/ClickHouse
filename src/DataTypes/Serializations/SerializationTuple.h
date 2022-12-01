@@ -34,11 +34,12 @@ public:
     /** Each sub-column in a tuple is serialized in separate stream.
       */
     void enumerateStreams(
-        SubstreamPath & path,
+        EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
+            const IColumn & column,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <span>
+#include <poll.h>
+#include <mutex>
 #include "DNSPTRResolver.h"
 
 using ares_channel = struct ares_channeldata *;
@@ -20,23 +23,32 @@ namespace DB
          * Allow only DNSPTRProvider to instantiate this class
          * */
         struct provider_token {};
-
     public:
         explicit CaresPTRResolver(provider_token);
         ~CaresPTRResolver() override;
 
-        std::vector<std::string> resolve(const std::string & ip) override;
+        std::unordered_set<std::string> resolve(const std::string & ip) override;
 
-        std::vector<std::string> resolve_v6(const std::string & ip) override;
+        std::unordered_set<std::string> resolve_v6(const std::string & ip) override;
 
     private:
         void wait();
 
-        void resolve(const std::string & ip, std::vector<std::string> & response);
+        void resolve(const std::string & ip, std::unordered_set<std::string> & response);
 
-        void resolve_v6(const std::string & ip, std::vector<std::string> & response);
+        void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response);
+
+        std::span<pollfd> get_readable_sockets(int * sockets, pollfd * pollfd);
+
+        int64_t calculate_timeout();
+
+        void process_possible_timeout();
+
+        void process_readable_sockets(std::span<pollfd> readable_sockets);
 
         ares_channel channel;
+
+        static std::mutex mutex;
     };
 }
 

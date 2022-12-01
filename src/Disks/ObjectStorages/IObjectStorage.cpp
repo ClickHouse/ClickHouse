@@ -11,22 +11,36 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
-AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
+void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
 {
-    constexpr size_t pool_size = 50;
-    constexpr size_t queue_size = 1000000;
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-    return reader;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
+}
+void IObjectStorage::getDirectoryContents(const std::string &,
+    RelativePathsWithSize &,
+    std::vector<std::string> &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+}
+
+IAsynchronousReader & IObjectStorage::getThreadPoolReader()
+{
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool writer(pool_size, pool_size, queue_size);
-    return writer;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+    return context->getThreadPoolWriter();
 }
 
 void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -44,9 +58,9 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     out->finalize();
 }
 
-std::string IObjectStorage::getCacheBasePath() const
+const std::string & IObjectStorage::getCacheBasePath() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
 }
 
 void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
@@ -61,6 +75,7 @@ ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) c
     std::unique_lock lock{throttlers_mutex};
     ReadSettings settings{read_settings};
     settings.remote_throttler = remote_read_throttler;
+    settings.for_object_storage = true;
     return settings;
 }
 
@@ -69,6 +84,7 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     std::unique_lock lock{throttlers_mutex};
     WriteSettings settings{write_settings};
     settings.remote_throttler = remote_write_throttler;
+    settings.for_object_storage = true;
     return settings;
 }
 
