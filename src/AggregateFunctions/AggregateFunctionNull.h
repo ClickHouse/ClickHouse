@@ -77,8 +77,10 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        if constexpr (result_is_nullable) return place[0];
-        return true;
+        if constexpr (result_is_nullable)
+            return place[0];
+        else
+            return true;
     }
 
 public:
@@ -99,9 +101,10 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return result_is_nullable
-            ? makeNullable(nested_function->getReturnType())
-            : nested_function->getReturnType();
+        if constexpr (result_is_nullable)
+            return makeNullable(nested_function->getReturnType());
+        else
+            return nested_function->getReturnType();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -137,8 +140,9 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if (result_is_nullable && getFlag(rhs))
-            setFlag(place);
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs))
+                setFlag(place);
 
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
