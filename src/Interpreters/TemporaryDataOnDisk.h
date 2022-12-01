@@ -6,6 +6,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
+#include <Disks/IO/FileCachePlaceholder.h>
 
 
 namespace CurrentMetrics
@@ -40,23 +41,25 @@ public:
         std::atomic<size_t> uncompressed_size;
     };
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, size_t limit_)
-        : volume(std::move(volume_)), limit(limit_)
+    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * cache_, size_t limit_)
+        : volume(std::move(volume_)), cache(cache_), limit(limit_)
     {}
 
     explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
-        : parent(std::move(parent_)), volume(parent->volume), limit(limit_)
+        : parent(std::move(parent_)), volume(parent->volume), cache(parent->cache), limit(limit_)
     {}
 
     /// TODO: remove
     /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
-    VolumePtr getVolume() const { return volume; }
+    VolumePtr getVolume() const;
 
 protected:
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
+
     VolumePtr volume;
+    FileCache * cache = nullptr;
 
     StatAtomic stat;
     size_t limit = 0;
@@ -91,6 +94,7 @@ public:
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
+    CurrentMetrics::Value getMetricScope() const { return current_metric_scope; }
 
 private:
     mutable std::mutex mutex;
@@ -116,9 +120,14 @@ public:
         size_t num_rows = 0;
     };
 
-    TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
+    static TemporaryFileStreamPtr create(const VolumePtr & volume, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_);
+    static TemporaryFileStreamPtr create(FileCache * cache, const Block & header, size_t max_file_size, TemporaryDataOnDisk * parent_);
 
-    void write(const Block & block);
+    TemporaryFileStream(TemporaryFileHolder file_, const Block & header_, std::unique_ptr<ISpacePlaceholder> space_holder, TemporaryDataOnDisk * parent_);
+
+    /// Returns number of written bytes
+    size_t write(const Block & block);
+
     Stat finishWriting();
     bool isWriteFinished() const;
 
@@ -142,7 +151,8 @@ private:
 
     Block header;
 
-    TemporaryFileOnDiskHolder file;
+    TemporaryFileHolder file;
+    std::unique_ptr<ISpacePlaceholder> space_holder;
 
     Stat stat;
 

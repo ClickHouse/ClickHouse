@@ -3,12 +3,15 @@
 #include <Functions/grouping.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/AggregationUtils.h>
 
 #include <Interpreters/Context.h>
+
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -203,7 +206,7 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
         for (const auto & parameter_node : parameters_nodes)
         {
             /// Function parameters constness validated during analysis stage
-            aggregate_description.parameters.push_back(parameter_node->getConstantValue().getValue());
+            aggregate_description.parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
         }
 
         const auto & arguments_nodes = aggregate_function_node_typed.getArguments().getNodes();
